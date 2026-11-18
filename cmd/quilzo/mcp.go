@@ -589,7 +589,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// error since the day somebody noticed the same shape there, and the
 		// comment it carries says why at length: a gate that cannot run must
 		// not exit like a gate that passed.
-		reports, err := checkAccessibility(root, s, draft, tplDir)
+		checked, reports, err := checkAccessibilityOf(root, s, draft, tplDir)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 				"the accessibility check could not run, so publishing would "+
@@ -650,16 +650,31 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if beforeLiveMoves != nil {
 			beforeLiveMoves()
 		}
+		// The design the gate above rendered through goes with it, a
+		// change to it alone included, as it does from the command line.
+		designChanged, undoDesign, derr := markDesignPublished(root, tplDir, designDigest(checked))
+		var moved errDesignMoved
+		if errors.As(derr, &moved) {
+			return nil, &mcp.Refusal{Reason: derr.Error()}
+		}
+		if derr != nil {
+			return nil, derr
+		}
 		pub, err := site.Publish(s, draft)
 		if err != nil {
+			undoDesign()
 			return nil, err
 		}
 		// Verified as the caller was, as mcp.write_page is.
 		who, model := interfaceClient(caller.Name, caller.Client)
+		detail := map[string]string{"on_behalf_of": caller.Name}
+		if designChanged {
+			detail["design"] = "changed"
+		}
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
 			Principal: who, Kind: audit.KindAI, Model: model,
-			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Verified: caller.Verified, Detail: detail,
 		})
 		var changed []string
 		for _, c := range pub.Changes {
@@ -668,6 +683,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		fireWebhooks(root, "published", pub.Published, changed)
 		// Nothing printed: standard output may be this conversation.
 		go func() { _, _, _ = syncPay(root, caller) }()
+		if designChanged && len(pub.Changes) == 0 {
+			return "published; the design is live, and the pages were live already", nil
+		}
 		return fmt.Sprintf("published; %d change(s) are live", len(pub.Changes)), nil
 	})
 

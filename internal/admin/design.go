@@ -91,6 +91,22 @@ type Design struct {
 	// The same operation as `quilzo theme font add`, so the screen and the
 	// command cannot accept different fonts.
 	AddFont func(filename string, body []byte, name string, replace bool) (FontAdded, error)
+	// Published records the design as it stands as the one a publish has
+	// passed, so the public site takes it with that publish, and says
+	// whether it differs from the one the last publish took; undo puts the
+	// record back, for a publish whose pages then fail to go live. A change
+	// to the design alone moved no page, so publishing it moved nothing and
+	// the site kept the old design: the screen said a design change is
+	// served from the next publish, and there was no publish that served it.
+	//
+	// checked is what Digest said before the publish's checks ran. A design
+	// that is no longer that one is refused rather than recorded: read again
+	// once the checks had passed, a palette saved past the gate while they
+	// ran was recorded as the one they passed, and went to readers.
+	Published func(checked string) (changed bool, undo func(), err error)
+	// Digest is the design as it stands, as a digest, taken before a
+	// publish's checks run and handed to Published once they pass.
+	Digest func() string
 }
 
 // FontAdded is what AddFont wrote.
@@ -507,6 +523,12 @@ func (s *Server) handleDesignGenerate(w http.ResponseWriter, r *http.Request) {
 		next[k] = v
 	}
 	for k, v := range generated {
+		// The veil over a backdrop comes with a palette whose words need a
+		// stronger one than the shipped, and a stronger one the site chose
+		// is kept, as `quilzo theme generate` keeps it.
+		if k == "scrim-strength" {
+			v = theme.StrongerVeil(overrides[k], v)
+		}
 		next[k] = v
 	}
 	th, problems := theme.New(next, s.siteFamilies())
@@ -519,7 +541,11 @@ func (s *Server) handleDesignGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditPub(p, "theme.generate", "/", map[string]string{"seed": seed, "scheme": r.FormValue("scheme"), "contrast": r.FormValue("contrast")})
-	s.designRedirect(w, r, "A new palette from "+seed+" is in place", "")
+	said := "A new palette from " + seed + " is in place"
+	if _, veiled := generated["scrim-strength"]; veiled {
+		said += ", with a veil of " + next["scrim-strength"] + " over a backdrop, as strong as the words on it need"
+	}
+	s.designRedirect(w, r, said, "")
 }
 
 // handleDesignInstall writes a starter's markup and its palette.

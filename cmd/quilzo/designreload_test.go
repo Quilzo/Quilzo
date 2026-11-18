@@ -24,6 +24,8 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gate"
+	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -450,7 +452,7 @@ func TestAConfigurationCaughtEmptyIsNotReadAsNoSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	editDraft(t, root, "index", "Published while the file was empty.")
-	commitLive(t, root)
+	commitLive(t, root, tpl)
 	protected("with a publish while the file was empty")
 	if w := served(rl, "/"); !strings.Contains(w.Body.String(), "Published while the file was empty.") {
 		t.Fatal("the publish was not served while the settings were kept")
@@ -687,12 +689,19 @@ func editDraft(t *testing.T, root, page, body string) {
 
 // commitLive moves the live ref to the draft without the gates, for a test
 // about what the site does when a publish arrives rather than about whether
-// one is allowed.
-func commitLive(t *testing.T, root string) {
+// one is allowed. Given a template directory, it records the design there
+// as the one the publish passed, as every publish does: the site takes only
+// a design a publish recorded.
+func commitLive(t *testing.T, root string, design ...string) {
 	t.Helper()
 	s, err := store.Open(root)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, dir := range design {
+		if _, _, err := markDesignPublished(root, dir, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := site.Publish(s, ""); err != nil {
 		t.Fatal(err)
@@ -776,5 +785,221 @@ func TestTheServedAgentCardLeadsWithTheSitesSentence(t *testing.T) {
 	}
 	if !strings.HasPrefix(card.Description, "An independent games studio making fast, bright games set after dark. Content held") {
 		t.Errorf("the card says %q", card.Description)
+	}
+}
+
+// A change to the design alone can be published.
+//
+// Every design command says the site serves it from its next publish, and a
+// publish with no page changed answered "already live" and moved nothing.
+// The site takes the design when a publish moves what it serves, so readers
+// kept the old design until somebody edited a page, restarted the site or
+// sent it SIGHUP, none of which any design command mentions.
+func TestAChangeToTheDesignAloneCanBePublished(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	before := served(rl, "/site.css").Body.String()
+
+	if err := cmdTheme(root, []string{"set", "style", "bold", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if served(rl, "/site.css").Body.String() != before {
+		t.Fatal("a design change reached readers before any publish")
+	}
+	said, err := humanOutput(t, func() error { return runPublish(t, root, "-templates", tpl) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(said, "already live") || !strings.Contains(said, "design") {
+		t.Errorf("a publish of a changed design said:\n%s", said)
+	}
+	if served(rl, "/site.css").Body.String() == before {
+		t.Fatal("the published design is not the one served")
+	}
+	pubs := actions(t, root, "publish")
+	if last := pubs[len(pubs)-1]; last.Detail["design"] != "changed" {
+		t.Errorf("the publish was recorded as %+v", last.Detail)
+	}
+
+	// Once it is live, the same design again is already live.
+	said, err = humanOutput(t, func() error { return runPublish(t, root, "-templates", tpl) })
+	if err != nil || !strings.Contains(said, "already live") {
+		t.Errorf("publishing again: %v\n%s", err, said)
+	}
+
+	// From the machine interface as well, which a site-building agent uses.
+	if err := cmdTheme(root, []string{"set", "style", "soft", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := callOp(t, buildMCP(root, s, &Caller{Name: "dana", Kind: audit.KindHuman, Verified: true}, tpl), "quilzo_publish", "publish")
+	if resp.Error != nil {
+		t.Fatalf("publishing over the machine interface: %+v", resp.Error)
+	}
+	if got := served(rl, "/site.css").Body.String(); !strings.Contains(got, "style: soft") {
+		t.Error("a design published over the machine interface is not the one served")
+	}
+}
+
+// A publish takes the design its gate checked, and not one saved while it
+// ran.
+//
+// The design a publish recorded as passed was read from templates/ again
+// after every gate had run, so a palette forced past the gate in that gap
+// was recorded as the one the gate passed and went to readers with the
+// publish, from the command line and the machine interface alike: the one
+// window the record was there to close. A design that moved after the gate
+// read it is refused now, and nothing goes live with it.
+func TestAPublishTakesTheDesignItsGateChecked(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	forced := false
+	beforeLiveMoves = func() {
+		if !forced {
+			return
+		}
+		if err := cmdTheme(root, []string{"set", "on-surface", "#777777", "surface", "#808080",
+			"--dir", tpl, "--force"}); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeLiveMoves = nil })
+	unforce := func() {
+		t.Helper()
+		if err := cmdTheme(root, []string{"unset", "on-surface", "surface", "--dir", tpl}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	editDraft(t, root, "index", "Checked with a radius of 3px.")
+	forced = true
+	err := runPublish(t, root, "-templates", tpl)
+	if css := served(rl, "/site.css").Body.String(); strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the gate read the design reached readers with the publish")
+	}
+	if err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Errorf("a publish whose design moved under its gate: %v", err)
+	}
+	if w := served(rl, "/"); strings.Contains(w.Body.String(), "Checked with a radius of 3px.") {
+		t.Error("the pages went live with a design nobody checked")
+	}
+
+	// From the machine interface as well, which a site-building agent uses.
+	forced = false
+	unforce()
+	forced = true
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := callOp(t, buildMCP(root, s, &Caller{Name: "dana", Kind: audit.KindHuman, Verified: true}, tpl),
+		"quilzo_publish", "publish")
+	if css := served(rl, "/site.css").Body.String(); strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the gate read the design reached readers over the machine interface")
+	}
+	if resp.Error == nil {
+		t.Error("the machine interface published a design that moved under its gate")
+	}
+
+	// And a design nobody touches in the gap goes live as it did.
+	forced = false
+	unforce()
+	if err := runPublish(t, root, "-templates", tpl); err != nil {
+		t.Fatal(err)
+	}
+	if css := served(rl, "/site.css").Body.String(); !strings.Contains(css, "--radius: 3px") {
+		t.Error("the checked design was not taken with the publish")
+	}
+}
+
+// A publish from the browser takes the design its checks judged, and not
+// one saved while they ran, as the command line's does.
+//
+// The Publish button recorded templates/ as it stood once every check had
+// passed, so a palette forced past the gate meanwhile was recorded as the
+// one they passed and went to readers with the publish.
+func TestAPublishFromTheBrowserTakesTheDesignItsChecksJudged(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	design, err := loadDesign(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	toks := &auth.TokenStore{}
+	session, _, err := toks.IssueSession("t", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := admin.New(s, pol, toks, design.Layouts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SiteCSS = design.Stylesheet
+	srv.ContentGates = func(ref string) (*gate.Report, []gate.Finding, error) {
+		return contentGates(root, s, ref).Run()
+	}
+	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
+	srv.Approvals = approvalsHooks(root, s)
+	dw := newDesignWatch(tpl, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
+	dw.every = 0
+	dw.say = func(string, ...any) {}
+	srv.DesignSet = adminDesignHooks(tpl, dw)
+	designPublishHooks(root, tpl, srv.DesignSet)
+	h := dw.Wrap(srv.Handler())
+	publish := func() *httptest.ResponseRecorder {
+		form := url.Values{"reason": {"a design change"}}
+		req := httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.Header.Set("Authorization", "Bearer "+session)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+
+	// The checks pass, and a forced palette lands before the record.
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	record := srv.DesignSet.Published
+	srv.DesignSet.Published = func(checked string) (bool, func(), error) {
+		if err := cmdTheme(root, []string{"set", "on-surface", "#777777", "surface", "#808080",
+			"--dir", tpl, "--force"}); err != nil {
+			t.Error(err)
+		}
+		return record(checked)
+	}
+	w := publish()
+	if css := served(rl, "/site.css").Body.String(); strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the checks reached readers with a publish from the browser")
+	}
+	if w.Code == http.StatusOK || !strings.Contains(w.Body.String(), "changed after") {
+		t.Errorf("the browser published a design that moved under its checks (%d):\n%s", w.Code, w.Body)
+	}
+
+	// Untouched, the checked design goes live with the button.
+	srv.DesignSet.Published = record
+	if err := cmdTheme(root, []string{"unset", "on-surface", "surface", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if w := publish(); w.Code != http.StatusOK {
+		t.Fatalf("publishing the design as checked (%d):\n%s", w.Code, w.Body)
+	}
+	if css := served(rl, "/site.css").Body.String(); !strings.Contains(css, "--radius: 3px") {
+		t.Error("the checked design was not taken with a publish from the browser")
 	}
 }

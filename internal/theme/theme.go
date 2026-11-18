@@ -476,6 +476,10 @@ func (t *Theme) validate(tok Token, value string) error {
 		if n <= 0 {
 			return fmt.Errorf("%s has to be greater than zero", tok.Name)
 		}
+		if b, bounded := ratioBounds[tok.Name]; bounded && (n < b.min || n > b.max) {
+			return fmt.Errorf("%q %s. %s takes %s to %s",
+				value, b.why, tok.Name, trimFloat(b.min), trimFloat(b.max))
+		}
 	case Choice:
 		if !choiceOK(tok.Name, value) {
 			return fmt.Errorf("%q is not a %s; one of %s", value, tok.Name, choiceList(tok.Name))
@@ -502,15 +506,92 @@ func (t *Theme) validate(tok Token, value string) error {
 	return nil
 }
 
-// lengthBounds holds the two lengths whose sensible range is narrower than
-// the pattern's.
+// ratioBounds are the ranges of the unitless numbers that size or space
+// text, inside which it stays readable.
+//
+// Only "greater than zero" was asked, so a line height of 0.5 put every
+// line on top of the one before, a heading scale of 0.1 drew the headings a
+// tenth of a pixel tall and the small print as large as a heading, and a
+// density of 0.1 took the space out of every card and button. The ranges
+// hold what any style or starter here sets and what a designer would choose:
+// the scale reaches the golden ratio, 1.618, the largest of the modular
+// scales a type-scale tool offers, which a range that stopped at 1.6 refused.
+var ratioBounds = map[string]struct {
+	why      string
+	min, max float64
+}{
+	"line":    {"would set the lines of body text on top of each other, or drift them apart", 1.3, 3},
+	"scale":   {"would draw the headings smaller than the text under them, or the small print too small to read", 1, 1.618},
+	"density": {"would take the space from round every block of text, or spread it past reading", 0.5, 2},
+}
+
+// sizeBounds are the ranges of the lengths that size or space text, by
+// unit, inside which it stays readable. A unit a token does not list is
+// refused for it, so text-base cannot be given in ch or as a bare number.
+//
+// Only glow and scrim-strength had a range. `theme set text-base 4px`,
+// `measure 5ch` and `border 40px` were saved and passed theme check, the
+// accessibility gate and the publish, and the page they made had body text
+// two pixels tall and paragraphs thirteen pixels wide: as unreadable as a
+// colour pair the contrast check refuses, with nothing to refuse it.
+var sizeBounds = map[string]struct {
+	why   string
+	units map[string][2]float64
+}{
+	"text-base": {"would set body text too small or too large to read", map[string][2]float64{
+		"px": {14, 32}, "rem": {0.875, 2}, "em": {0.875, 2}, "%": {87.5, 200}}},
+	"measure": {"would make a line of body text too narrow or too wide to read", map[string][2]float64{
+		"ch": {30, 100}, "rem": {15, 50}, "em": {15, 50}, "px": {240, 1600}, "%": {50, 100}}},
+	"page-width": {"would make the column the content is set in too narrow or too wide to read", map[string][2]float64{
+		"rem": {20, 160}, "em": {20, 160}, "px": {320, 2560}, "ch": {40, 320}, "%": {50, 100}}},
+	"border": {"would draw the edges of cards and tables so thick they crowd the words in them", map[string][2]float64{
+		"px": {0, 4}, "rem": {0, 0.25}, "em": {0, 0.25}, "": {0, 0}}},
+	"tracking-display": {"would run the letters of a heading together, or spread them apart", map[string][2]float64{
+		"em": {-0.1, 0.5}, "rem": {-0.1, 0.5}, "px": {-2, 8}, "": {0, 0}}},
+}
+
+// sizeRanges says what a bounded length takes, as a person would read it.
+func sizeRanges(units map[string][2]float64) string {
+	order := []string{"px", "rem", "em", "ch", "%", ""}
+	var parts []string
+	for _, u := range order {
+		r, ok := units[u]
+		if !ok {
+			continue
+		}
+		if r[0] == r[1] {
+			parts = append(parts, trimFloat(r[0])+u)
+			continue
+		}
+		parts = append(parts, trimFloat(r[0])+u+" to "+trimFloat(r[1])+u)
+	}
+	if len(parts) > 1 {
+		return strings.Join(parts[:len(parts)-1], ", ") + " or " + parts[len(parts)-1]
+	}
+	return strings.Join(parts, "")
+}
+
+// trimFloat writes a bound as short as it reads: 14, 0.875, 87.5.
+func trimFloat(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+// lengthBounds holds the lengths whose sensible range is narrower than the
+// pattern's.
 //
 // A glow is a blur radius, so a percentage or a measure in characters means
 // nothing and a negative one is not a glow; past four rem it is a fog over
 // the words it was meant to light. The veil is a proportion of opacity, so
-// only a percentage says it, and a hundred is the most there is.
+// only a percentage says it, and a hundred is the most there is. The lengths
+// that size or space text are held to sizeBounds.
 func lengthBounds(name, value string) error {
 	n, unit := splitNumber(value)
+	if b, bounded := sizeBounds[name]; bounded {
+		r, ok := b.units[unit]
+		if !ok || n < r[0] || n > r[1] {
+			return fmt.Errorf("%q %s. %s takes %s",
+				value, b.why, name, sizeRanges(b.units))
+		}
+		return nil
+	}
 	switch name {
 	case "glow":
 		if unit == "%" || unit == "ch" || n < 0 {

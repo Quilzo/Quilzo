@@ -142,6 +142,28 @@ func strengthFor(text, veil string, min, from float64) (int, bool) {
 	return 0, false
 }
 
+// StrongerVeil is the stronger of two veil strengths, as written in a theme
+// ("96%"), for a palette put in place of another: the veil a generated
+// palette brings is the least its words need, and a site that chose a
+// stronger one keeps it. One that cannot be read gives way to the other.
+func StrongerVeil(a, b string) string {
+	pct := func(v string) (float64, bool) {
+		n, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(v), "%"), 64)
+		return n, err == nil && strings.HasSuffix(strings.TrimSpace(v), "%")
+	}
+	na, okA := pct(a)
+	nb, okB := pct(b)
+	switch {
+	case !okA:
+		return b
+	case !okB:
+		return a
+	case nb > na:
+		return b
+	}
+	return a
+}
+
 // scrimStrength is the veil's strength as a fraction.
 func (t *Theme) scrimStrength() (float64, bool) {
 	v := strings.TrimSuffix(t.valueOf("scrim-strength"), "%")

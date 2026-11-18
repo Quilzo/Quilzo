@@ -113,3 +113,34 @@ func TestAColourSetOnTheScreenIsNotShadowedByAGeneratedPalette(t *testing.T) {
 		}
 	}
 }
+
+// A palette made on the screen is readable over a backdrop too, and keeps a
+// stronger veil the site chose.
+//
+// The screen said every colour it made passed, and every palette it made
+// failed all eight pairs over a backdrop at the shipped veil: a warning two
+// screens tall under "A new palette is in place", on a site with no
+// backdrop, and a refused publish on one that had one.
+func TestAPaletteMadeOnTheScreenIsReadableOverABackdrop(t *testing.T) {
+	srv, token := setup(t)
+	saved := map[string]string{"radius": "10px"}
+	designFake(srv, saved)
+	w := postForm(t, srv, "/design/generate", token, "seed=%237b2ff7")
+	if w.Code >= 400 {
+		t.Fatalf("generating: %d", w.Code)
+	}
+	th, _ := theme.New(saved, nil)
+	for _, f := range th.CheckBackdrop() {
+		if f.Blocking {
+			t.Errorf("over a backdrop: %s", f.Detail)
+		}
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "veil") {
+		t.Errorf("the screen does not say the palette brought a veil: %s", loc)
+	}
+	saved["scrim-strength"] = "99%"
+	postForm(t, srv, "/design/generate", token, "seed=%23e4572e")
+	if saved["scrim-strength"] != "99%" {
+		t.Errorf("a stronger veil the site chose became %s", saved["scrim-strength"])
+	}
+}

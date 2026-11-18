@@ -320,16 +320,7 @@ func themeSet(root string, args []string) error {
 		w.Human("\n  %s%d contrast failure(s) saved with --force; the publish "+
 			"gate will refuse them%s\n", bold, blocking, reset)
 	}
-	// The veil over a backdrop is judged apart from the palette and refuses
-	// only a page that has a backdrop, so it is not a reason to refuse this
-	// change. It is said here all the same: `theme set scrim-strength 10%`
-	// was answered with the new value and nothing else, and the first anybody
-	// heard of it was a page refused at publish.
-	if theme.Blocks(th.CheckBackdrop()) {
-		w.Human("\n  %swords over a backdrop picture or video are now below their ratio, "+
-			"so a page with a backdrop will not publish; `quilzo theme check` says "+
-			"which and by how much%s\n", bold, reset)
-	}
+	sayBackdrop(th)
 	schemes := "both schemes"
 	if sc := th.Scheme(); sc != "both" {
 		schemes = "the " + sc + " scheme it is drawn in"
@@ -338,6 +329,23 @@ func themeSet(root string, args []string) error {
 		dim, schemes, reset)
 	sayWhenReadersSeeIt()
 	return nil
+}
+
+// sayBackdrop says when words over a backdrop are below their ratio.
+//
+// The veil over a backdrop is judged apart from the palette and refuses only
+// a page that has a backdrop, so it is not a reason to refuse a change. It is
+// said all the same: `theme set scrim-strength 10%` was answered with the new
+// value and nothing else, and `theme import` and `theme generate` said every
+// contrast pair was checked over a palette whose words over a picture were
+// below their ratio. The first anybody heard of it was a page refused at
+// publish.
+func sayBackdrop(th *theme.Theme) {
+	if theme.Blocks(th.CheckBackdrop()) {
+		w.Human("\n  %swords over a backdrop picture or video are now below their ratio, "+
+			"so a page with a backdrop will not publish; `quilzo theme check` says "+
+			"which and by how much%s\n", bold, reset)
+	}
 }
 
 // sayWhenReadersSeeIt says when a change to the design reaches readers.
@@ -377,20 +385,43 @@ func themeUnset(root string, args []string) error {
 	if len(pos) == 0 {
 		return fmt.Errorf("usage: quilzo theme unset TOKEN [TOKEN …] | --all")
 	}
+	// A bare name is every key the token is set under, as the Design
+	// screen's reset takes it: `theme generate` writes one per scheme,
+	// primary.light and primary.dark, and an unset that looked only for a
+	// key called primary said "primary was not set", recorded the change it
+	// had not made, and left both schemes wearing the generated colour.
+	// A name with a scheme on it is that one key.
+	var removed []string
 	for _, name := range pos {
 		name = strings.TrimSpace(name)
-		if _, present := existing[name]; !present {
+		keys := []string{name}
+		if base, light, dark := theme.Scope(name); light && dark {
+			keys = append(keys, base+".light", base+".dark")
+		}
+		var gone []string
+		for _, k := range keys {
+			if _, present := existing[k]; present {
+				delete(existing, k)
+				gone = append(gone, k)
+			}
+		}
+		if len(gone) == 0 {
 			w.Human("  %s%s was not set%s\n", dim, name, reset)
 			continue
 		}
-		delete(existing, name)
-		w.Human("unset %s%s%s\n", bold, name, reset)
+		removed = append(removed, gone...)
+		w.Human("unset %s%s%s\n", bold, strings.Join(gone, ", "), reset)
+	}
+	// Nothing was set, so nothing changed: no write, no record of a change,
+	// and no word about a preview that has nothing new in it.
+	if len(removed) == 0 {
+		return nil
 	}
 	if err := writeThemeFile(*dir, existing); err != nil {
 		return err
 	}
 	record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
-		audit.Success, map[string]string{"removed": strings.Join(pos, ",")}))
+		audit.Success, map[string]string{"removed": strings.Join(removed, ",")}))
 	sayWhenReadersSeeIt()
 	return nil
 }
@@ -929,6 +960,17 @@ func themeGenerate(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The veil over a backdrop comes with the palette when its words need a
+	// stronger one than the shipped (theme.GenerateWith), and is not a colour:
+	// one the site set is kept if it is stronger, rather than clashing.
+	colours := map[string]string{}
+	for k, v := range generated {
+		if k != "scrim-strength" {
+			colours[k] = v
+		}
+	}
+	veil := generated["scrim-strength"]
+
 	// Somebody's own colours are not overwritten by accident. A generator that
 	// silently replaced a hand-tuned palette would be a command nobody could
 	// run twice.
@@ -936,7 +978,7 @@ func themeGenerate(root string, args []string) error {
 	// different strings and the same setting for the light scheme, so a key
 	// comparison finds nothing, generates over it, and leaves the hand-tuned
 	// value quietly in charge of the scheme it still names.
-	clash := theme.Colliding(existing, generated)
+	clash := theme.Colliding(existing, colours)
 	if len(clash) > 0 && !*replace {
 		return fmt.Errorf(
 			"this theme already sets %d colour(s), starting with %s.\n"+
@@ -952,8 +994,11 @@ func themeGenerate(root string, args []string) error {
 	for _, k := range clash {
 		delete(next, k)
 	}
-	for k, v := range generated {
+	for k, v := range colours {
 		next[k] = v
+	}
+	if veil != "" {
+		next["scrim-strength"] = theme.StrongerVeil(existing["scrim-strength"], veil)
 	}
 
 	fonts, ferr := loadFontsFor(*dir)
@@ -983,12 +1028,29 @@ func themeGenerate(root string, args []string) error {
 		return err
 	}
 
-	if w.JSON(map[string]any{"seed": pos[0], "tokens": len(generated)}) {
+	doc := map[string]any{"seed": pos[0], "tokens": len(generated)}
+	if veil != "" {
+		doc["veil"] = next["scrim-strength"]
+	}
+	if w.JSON(doc) {
 		return nil
 	}
 	w.Human("%s%d colour(s) generated from %s%s\n",
-		bold, len(generated), pos[0], reset)
-	w.Human("  %slight and dark, and every contrast pair checked%s\n", dim, reset)
+		bold, len(colours), pos[0], reset)
+	// Over a backdrop only when it is so. The strength is worked out against
+	// the page colour the palette brings, and a veil colour the site set is
+	// kept: black under a light page's dark words, and this said every pair
+	// passed over a backdrop and then, two lines down, that they did not.
+	if theme.Blocks(th.CheckBackdrop()) {
+		w.Human("  %slight and dark, and every contrast pair checked on the page%s\n", dim, reset)
+	} else {
+		w.Human("  %slight and dark, and every contrast pair checked, over a backdrop too%s\n", dim, reset)
+		if veil != "" {
+			w.Human("  %sthe veil over a backdrop picture or video is %s, as strong as the "+
+				"words on it need%s\n", dim, next["scrim-strength"], reset)
+		}
+	}
+	sayBackdrop(th)
 	w.Human("\n  %ssee it:      quilzo theme show%s\n", dim, reset)
 	w.Human("  %schange one:  quilzo theme set primary '#3b6ea5'%s\n", dim, reset)
 	sayWhenReadersSeeIt()

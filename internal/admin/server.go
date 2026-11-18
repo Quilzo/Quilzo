@@ -3839,6 +3839,8 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	// The design as the checks find it, so the publish records that one.
+	checked := s.designDigest()
 	waived, refusal := s.publishChecks(p, draft, reason)
 	if refusal != nil {
 		s.showRefusal(w, r, refusal, nil)
@@ -3847,20 +3849,36 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// The commit that was checked, and not whatever the draft is by now: a
 	// save landing between the checks and this would go live unchecked.
+	designChanged, undoDesign, derr := s.publishDesign(checked)
+	if derr != nil {
+		s.audit("publish", "/", map[string]string{
+			"by": p.Name, "outcome": "failed", "detail": derr.Error()})
+		http.Error(w, derr.Error(), http.StatusInternalServerError)
+		return
+	}
 	pub, err := site.Publish(s.Store, draft)
 	if err != nil {
+		undoDesign()
 		s.audit("publish", "/", map[string]string{
 			"by": p.Name, "outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.recordPublished(p, pub, waived, reason)
+	s.recordPublishedDesign(p, pub, waived, reason, designChanged)
+	body := fmt.Sprintf("%d change%s are now live. The previous version is "+
+		"still stored, so rolling back moves a pointer.",
+		len(pub.Changes), plural(len(pub.Changes)))
+	switch {
+	case designChanged && len(pub.Changes) == 0 && pub.Previous == pub.Published:
+		body = "The design is live now. The pages were live already, so nothing a " +
+			"rollback goes back to has moved."
+	case designChanged:
+		body += " The design changed since the last publish, and the site takes it with them."
+	}
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Published", "Principal": p,
 		"Heading": "Published",
-		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
-			"still stored, so rolling back moves a pointer.",
-			len(pub.Changes), plural(len(pub.Changes))),
+		"Body":    body,
 		// What was waived, and not the word "accessibility" whatever it was.
 		// The template said "Published with an accessibility override" for
 		// every one of the four gates this box clears, so somebody who typed a
@@ -4168,6 +4186,27 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	return waived, nil
 }
 
+// designDigest is the design as it stands, taken before a publish's checks
+// run so that what the publish records is what they judged.
+func (s *Server) designDigest() string {
+	if s.DesignSet == nil || s.DesignSet.Digest == nil {
+		return ""
+	}
+	return s.DesignSet.Digest()
+}
+
+// publishDesign records the design the checks rendered through as the one a
+// publish passed, a change to it alone included, as the command line does,
+// just before the pages move: the public site takes the two together.
+// checked is designDigest from before the checks, and a design that has
+// moved since is refused.
+func (s *Server) publishDesign(checked string) (bool, func(), error) {
+	if s.DesignSet == nil || s.DesignSet.Published == nil {
+		return false, func() {}, nil
+	}
+	return s.DesignSet.Published(checked)
+}
+
 // recordPublished records a publish and tells whoever listens: Review →
 // Publish, and a promotion into production, which is the same act.
 //
@@ -4187,13 +4226,23 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 // recorded next to it rather than left to be inferred from what happened
 // to be failing at the time.
 func (s *Server) recordPublished(p principal, pub site.Publication, waived []string, reason string) {
-	s.audit("publish", "/", map[string]string{
+	s.recordPublishedDesign(p, pub, waived, reason, false)
+}
+
+// recordPublishedDesign is recordPublished for a publish that may have
+// changed the design, which the record says.
+func (s *Server) recordPublishedDesign(p principal, pub site.Publication, waived []string, reason string, design bool) {
+	detail := map[string]string{
 		"by":      p.Name,
 		"commit":  shortHash(pub.Published),
 		"changes": fmt.Sprintf("%d", len(pub.Changes)),
 		"waived":  strings.Join(waived, ","),
 		"reason":  reason,
-	})
+	}
+	if design {
+		detail["design"] = "changed"
+	}
+	s.audit("publish", "/", detail)
 	s.tell("published", pub)
 }
 

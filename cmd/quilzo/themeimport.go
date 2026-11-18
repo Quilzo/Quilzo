@@ -195,6 +195,7 @@ func themeImport(root string, args []string) error {
 		w.Human("  %s%s%s\n", yellow, a.Detail, reset)
 	}
 	w.Human("  %severy contrast pair checked, in both schemes%s\n", dim, reset)
+	sayBackdrop(written)
 	if shared > 0 {
 		w.Human("\n  %s%d colour(s) are now the same in both schemes, so the "+
 			"dark scheme is showing the light palette.%s\n", yellow, shared, reset)

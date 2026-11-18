@@ -406,3 +406,25 @@ func TestAnApprovalPostedBySomebodyTheApproversLeaveOutIsRefused(t *testing.T) {
 		t.Errorf("the editor, whom the approvers leave out, approved: saved %d, %s", saved, loc)
 	}
 }
+
+// Publishing from the browser takes the design with it, a change to the
+// design alone included, and says so.
+//
+// The Design screen says a design change is served from the next publish,
+// and with no page changed the publish moved nothing, said "0 changes are
+// now live", and the site went on serving the old design.
+func TestPublishingFromTheBrowserTakesTheDesign(t *testing.T) {
+	srv, token := setup(t)
+	if w := postForm(t, srv, "/publish", token, "reason=go"); w.Code != http.StatusOK {
+		t.Fatalf("the first publish (%d):\n%s", w.Code, w.Body)
+	}
+	marked := 0
+	srv.DesignSet = &Design{Published: func(string) (bool, func(), error) { marked++; return true, func() {}, nil }}
+	w := postForm(t, srv, "/publish", token, "reason=go")
+	if w.Code != http.StatusOK || marked != 1 {
+		t.Fatalf("publishing a changed design (%d, recorded %d times):\n%s", w.Code, marked, w.Body)
+	}
+	if body := w.Body.String(); !strings.Contains(body, "The design is live now") {
+		t.Errorf("a publish of the design alone said:\n%s", body)
+	}
+}

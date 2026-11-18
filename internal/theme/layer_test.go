@@ -268,3 +268,101 @@ func TestTheCascadeKeywordsCannotTakeTheOutlineAway(t *testing.T) {
 		}
 	}
 }
+
+// A focus ring nobody can see is taken away as surely as one set to none,
+// and so is text nobody can see.
+//
+// The validator refused `outline: none` and `outline-color: transparent`
+// and accepted `:focus-visible { outline: 3px solid var(--surface) }`, a
+// ring the colour of the page, a ring a tenth of a pixel wide, one pushed a
+// thousand pixels away from what it marks, and `.hero .lead { color:
+// transparent }`, a standfirst nobody could read; and theme check said every
+// pair passed. A ring is measured where it is drawn, against the page and a
+// card, at the 3:1 the theme's own focus ring is held to; and a text colour
+// that lets the words through is refused, unless the same rule clips a
+// background to the text, which is how a gradient title is drawn.
+func TestARingOrTextNobodyCanSeeIsRefused(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, css := range []string{
+		":focus-visible { outline: 3px solid var(--surface); }",
+		"a:focus-visible { outline-color: var(--surface-container); }",
+		".btn:focus-visible { outline: var(--surface-container-high) solid 3px; }",
+		":root { --ring: var(--surface); } a:focus-visible { outline: 3px solid var(--ring); }",
+		"a:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus-ring) 10%, transparent); }",
+		"a:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus-ring) 5%, var(--surface)); }",
+		"a:focus-visible { outline: 0.1px solid var(--focus-ring); }",
+		"a:focus-visible { outline: thin solid var(--focus-ring); }",
+		"a:focus-visible { outline-width: 1px; }",
+		"a:focus-visible { outline-offset: -999px; }",
+		"a:focus-visible { outline-offset: 999px; }",
+		".hero .lead { color: transparent; }",
+		".lead { -webkit-text-fill-color: transparent; }",
+		".lead { color: color-mix(in srgb, var(--on-surface) 20%, transparent); }",
+		":root { --clear: transparent; } .lead { color: var(--clear); }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%q was accepted", css)
+		}
+	}
+	for _, css := range []string{
+		":focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }",
+		"a:focus-visible { outline: 3px solid var(--primary); }",
+		"a:focus-visible { outline: 2px solid var(--on-surface); outline-offset: 0; }",
+		"a:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus-ring) 80%, var(--on-surface)); }",
+		"a:focus-visible { outline: medium solid var(--focus-ring); }",
+		// A gradient title: the background is clipped to the words.
+		".section-head h2 { background: linear-gradient(90deg, var(--on-surface), var(--primary)); " +
+			"-webkit-background-clip: text; background-clip: text; color: transparent; }",
+		".card { border-color: transparent; background: transparent; }",
+	} {
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("%q was refused: %v", css, f)
+		}
+	}
+}
+
+// A ring nobody can see, or words nobody can read, written another way is
+// refused as surely as the spelling above.
+//
+// The ring's width and offset were measured only in units the same size on
+// every screen, so `outline: 0.1vw solid var(--focus-ring)`, a ring under
+// half a pixel on a phone, and `outline-offset: -100vw`, a ring a screen's
+// width from what it marks, passed; and so did `outline-width: 1e-1px`, a
+// tenth of a pixel written as a browser also reads it. A rule that set
+// background-clip to anything with "text" in it, or clipped a background it
+// never drew, could put its words in transparent: `.lead { color:
+// transparent; background-clip: text }` has no background to show, so the
+// standfirst was there for nobody.
+func TestARingOrTextNobodyCanSeeIsRefusedWrittenAnotherWay(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, css := range []string{
+		"a:focus-visible { outline: 0.1vw solid var(--focus-ring); }",
+		"a:focus-visible { outline-width: 0.2vmin; }",
+		"a:focus-visible { outline-width: 0.05cqi; }",
+		"a:focus-visible { outline-width: 0.01lh; }",
+		"a:focus-visible { outline-offset: -100vw; }",
+		"a:focus-visible { outline-offset: 2dvh; }",
+		"a:focus-visible { outline-width: 1e-1px; }",
+		"a:focus-visible { outline-width: 1E-1PX; }",
+		"a:focus-visible { outline-offset: 1e3px; }",
+		".lead { color: transparent; background-clip: text; }",
+		".lead { color: transparent; -webkit-background-clip: text; background: var(--surface); }",
+		".lead { color: transparent; background: linear-gradient(90deg, var(--on-surface), var(--primary)); " +
+			"background-clip: var(--text-clip); }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%q was accepted", css)
+		}
+	}
+	for _, css := range []string{
+		"a:focus-visible { outline: 0.2em solid var(--focus-ring); outline-offset: 1e0px; }",
+		"a:focus-visible { outline: 1vw solid var(--focus-ring); }",
+		"a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 0.1vw; }",
+		":root { --clip: text; } .section-head h2 { background-image: linear-gradient(90deg, var(--on-surface), var(--primary)); " +
+			"background-clip: var(--clip); color: transparent; }",
+	} {
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("%q was refused: %v", css, f)
+		}
+	}
+}

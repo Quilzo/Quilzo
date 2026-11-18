@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -46,8 +47,9 @@ import (
 //
 // The public site reads its settings again when the configuration, the
 // listings or the languages change, and reads both the design and the
-// settings when a publish moves the pages it serves, looked at once a second
-// whether or not anybody is visiting (siteReloader.Watch), and on SIGHUP.
+// settings when a publish moves the pages it serves or passes a new design
+// (publishedDesign), looked at once a second whether or not anybody is
+// visiting (siteReloader.Watch), and on SIGHUP.
 //
 // The site does not take a design change the moment the file changes, and
 // that is deliberate. The publish gate is what holds the design to the
@@ -122,6 +124,107 @@ func dirState(dirs ...string) string {
 		}
 	}
 	return b.String()
+}
+
+// # A publish that changes only the design
+//
+// A publish moved the live ref, and the site took the design when it saw the
+// ref move. A change to the design alone moves no ref: `theme set` and the
+// Design screen say the site serves the change from its next publish, and
+// that publish answered "already live" and left readers on the old design
+// until somebody edited a page, restarted the site or sent it SIGHUP, none
+// of which any design command mentions. So each publish records the digest
+// of the design it passed beside the store (publishedDesignPath), before the
+// ref moves, and says when that is all it changed; the site serving live
+// takes the design when the record moves, as it does when the ref moves.
+//
+// And takes only that design. A site that read templates/ whenever it saw a
+// publish took whatever was there by then: one reload for the ref and one
+// for the record were a second chance for a palette forced past the gate
+// after the publish to ride in with it. So a publish's reload takes the
+// design on disk only when its digest is the one recorded, and otherwise
+// keeps the design it has, which is the one the last publish passed. A site
+// started with a template directory other than the one publishing checks
+// therefore takes a new design when started again or sent SIGHUP.
+
+// publishedDesignPath is the digest of the design the last publish passed.
+func publishedDesignPath(root string) string { return filepath.Join(root, "design-published") }
+
+// publishedDesign is the digest the last publish recorded, "" before any.
+func publishedDesign(root string) string {
+	b, err := os.ReadFile(publishedDesignPath(root))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// markDesignPublished records the design in dir as the one a publish has
+// passed, and says whether it differs from the one the last publish
+// recorded. undo puts the record back as it was, for a publish whose pages
+// then fail to go live. A design that does not read is not recorded: it is
+// not one the site could take either.
+//
+// checked, when a gate judged the design, is the digest of the design it
+// judged ("" when none did). The record was of templates/ read again once
+// every gate had run, so a palette forced past the gate in between was
+// recorded as the one it passed and went to readers with the publish, the
+// window the record exists to close. A design in dir that is no longer the
+// one checked is refused (errDesignMoved), and nothing is recorded.
+func markDesignPublished(root, dir, checked string) (changed bool, undo func(), err error) {
+	undo = func() {}
+	d, lerr := loadDesign(dir)
+	if checked != "" && (lerr != nil || designDigest(d) != checked) {
+		return false, undo, errDesignMoved{dir}
+	}
+	if lerr != nil {
+		return false, undo, nil
+	}
+	prev, sum := publishedDesign(root), designDigest(d)
+	if sum == prev {
+		return false, undo, nil
+	}
+	path := publishedDesignPath(root)
+	if err := atomicfile.Write(path, []byte(sum+"\n"), 0o600); err != nil {
+		return false, undo, fmt.Errorf("the design was checked and could not be recorded as published, "+
+			"so the site has not been told to take it: %w", err)
+	}
+	return true, func() {
+		if prev == "" {
+			_ = os.Remove(path)
+			return
+		}
+		_ = atomicfile.Write(path, []byte(prev+"\n"), 0o600)
+	}, nil
+}
+
+// designNow is the digest of the design in dir as it stands, "" when it does
+// not read: what the browser's publish takes before its checks run, to hand
+// to markDesignPublished once they have passed.
+func designNow(dir string) string {
+	d, err := loadDesign(dir)
+	if err != nil {
+		return ""
+	}
+	return designDigest(d)
+}
+
+// designPublishHooks are how a publish from the browser records the design
+// its checks judged, as the command line's does.
+func designPublishHooks(root, dir string, d *admin.Design) {
+	d.Digest = func() string { return designNow(dir) }
+	d.Published = func(checked string) (bool, func(), error) {
+		return markDesignPublished(root, dir, checked)
+	}
+}
+
+// errDesignMoved is a design that changed after a publish's gate judged it.
+type errDesignMoved struct{ dir string }
+
+func (e errDesignMoved) Error() string {
+	return fmt.Sprintf("the design in %s changed after the accessibility check judged it, so "+
+		"what would go live is not what was checked; nothing was published. Publish again "+
+		"to check the design as it is now", e.dir)
 }
 
 // filesState is dirState for named files.
@@ -373,6 +476,10 @@ type siteReloader struct {
 	live   string
 	files  string
 	looked time.Time
+	// published is the digest of the design the last publish passed, as
+	// the site last read it: a publish that changed only the design moves
+	// it and not the ref (publishedDesign).
+	published string
 	// designDue is a publish whose design has not reached readers yet,
 	// because the build it came with was refused for a reason that was not
 	// the design: the next build that succeeds takes it, if templates/ is
@@ -391,8 +498,19 @@ func newSiteReloader(root, dir string, s *store.Store, ref string, d *Design, st
 	rl.gen.Store(&siteGen{st: st, handler: st.Handler(), design: d,
 		designSum: designDigest(d), settingsSum: settingsDigest(root), configSaid: configSays(root)})
 	rl.live = s.GetRef(ref)
+	rl.published = rl.publishedDesign()
 	rl.files = filesState(siteSettingsFiles(root)...)
 	return rl
+}
+
+// publishedDesign is the design a publish to live last passed, for the site
+// serving live. An environment's site takes its design when its own ref
+// moves, as it did.
+func (rl *siteReloader) publishedDesign() string {
+	if rl.ref != site.RefLive {
+		return ""
+	}
+	return publishedDesign(rl.root)
 }
 
 // Site is the site being served now.
@@ -414,13 +532,14 @@ func (rl *siteReloader) Check() {
 	// The ref is a small file the site reads several times a request already;
 	// a publish is noticed by the first request after it.
 	live := rl.store.GetRef(rl.ref)
+	published := rl.publishedDesign()
 	if !rl.mu.TryLock() {
 		return
 	}
 	defer rl.mu.Unlock()
 	now := rl.now()
-	if live != rl.live {
-		rl.live, rl.looked = live, now
+	if live != rl.live || published != rl.published {
+		rl.live, rl.published, rl.looked = live, published, now
 		rl.files = filesState(siteSettingsFiles(rl.root)...)
 		_ = rl.reload(reloadPublish)
 		return
@@ -467,6 +586,7 @@ func (rl *siteReloader) Reload() error {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.live = rl.store.GetRef(rl.ref)
+	rl.published = rl.publishedDesign()
 	rl.files = filesState(siteSettingsFiles(rl.root)...)
 	rl.looked = rl.now()
 	return rl.reload(reloadSignal)
@@ -512,6 +632,10 @@ func (rl *siteReloader) reload(trigger string) error {
 	if withDesign {
 		if d, err := loadDesign(rl.dir); err != nil {
 			designErr = err
+		} else if want := rl.publishedDesign(); want != "" && trigger != reloadSignal && designDigest(d) != want {
+			// Not the design the last publish passed: one saved since, which
+			// waits for the next publish, or SIGHUP. The design kept is the
+			// one that publish passed.
 		} else {
 			design = d
 		}

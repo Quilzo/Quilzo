@@ -1842,9 +1842,18 @@ func fieldChangesText(fields []site.FieldChange, indent string) string {
 // that drops the alt attribute produce an inaccessible site, and only the output
 // shows it.
 func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([]*a11y.Report, error) {
+	_, reports, err := checkAccessibilityOf(root, s, commitID, tplDir)
+	return reports, err
+}
+
+// checkAccessibilityOf is checkAccessibility, and the design it judged, for a
+// publish to record as the one its gate passed (markDesignPublished) rather
+// than reading templates/ again once every gate has run, by when it may hold
+// a palette saved past the gate.
+func checkAccessibilityOf(root string, s *store.Store, commitID, tplDir string) (*Design, []*a11y.Report, error) {
 	pages, err := site.PagesAt(s, commitID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The whole design, loaded exactly as the public server loads it. A gate
 	// that read one file while the server read a directory would be judging a
@@ -1854,7 +1863,7 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	if err != nil {
 		// No layouts means nothing renders, so there is nothing to judge. Say
 		// so rather than reporting a clean result over an empty check.
-		return nil, fmt.Errorf("nothing to render against: %w", err)
+		return nil, nil, fmt.Errorf("nothing to render against: %w", err)
 	}
 	// Rendered the way the site serves them. Checking a page with its
 	// navigation and its listings missing is checking a different document,
@@ -1903,7 +1912,7 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
-			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
+			return nil, nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
 		_, layout, lerr := design.Layouts.For(body)
 		if lerr != nil {
@@ -1914,7 +1923,7 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 		}
 		out, err := tmpl.Render(layout, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("rendering %s: %w", name, err)
+			return nil, nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
 		if render.HasBackdrop(ctx["page"]) {
@@ -1928,7 +1937,7 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	// Whether a recording has sound is the library's answer, recorded when it
 	// was added: a silent one owes a description rather than captions, and
 	// only a silent one may be a backdrop.
-	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
+	return design, append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
 }
 
 func cmdPublish(root string, args []string) error {
@@ -2144,8 +2153,12 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		w.Human("  %saccessibility not checked: publish.require_a11y is "+
 			"off%s\n", yellow, reset)
 	}
+	// The design the gate judged, which is the one this publish records as
+	// passed; nil when no gate looked at it.
+	var checked *Design
 	if required && !*skip {
-		reports, cerr := checkAccessibility(root, s, target, *tplDir)
+		judged, reports, cerr := checkAccessibilityOf(root, s, target, *tplDir)
+		checked = judged
 		if cerr != nil {
 			// A gate that cannot run must not exit like a gate that passed.
 			//
@@ -2257,20 +2270,44 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if beforeLiveMoves != nil {
 		beforeLiveMoves()
 	}
+	// The design the gates above passed is what the site takes with this
+	// publish, a change to it alone included, recorded before the pages
+	// move so the site reads the two together (designreload.go).
+	designChanged, undoDesign, derr := markDesignPublished(root, *tplDir, designDigest(checked))
+	var moved errDesignMoved
+	if errors.As(derr, &moved) {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "the design changed after it was checked"}))
+		return errBlocked{derr}
+	}
+	if derr != nil {
+		w.Human("  %s%v%s\n", yellow, derr, reset)
+	}
 	pub, err := site.Publish(s, target)
 	if err != nil {
+		undoDesign()
 		return err
 	}
-	if len(pub.Changes) == 0 && pub.Previous == pub.Published {
+	pagesMoved := len(pub.Changes) > 0 || pub.Previous != pub.Published
+	if !pagesMoved && !designChanged {
 		w.Human("already live\n")
 		return nil
 	}
-	record(root, caller.auditRecord("publish", "/", audit.Success,
-		map[string]string{
-			"commit":   short(pub.Published),
-			"changes":  fmt.Sprintf("%d", len(pub.Changes)),
-			"override": overrideNote(*force, *reason),
-		}))
+	detail := map[string]string{
+		"commit":   short(pub.Published),
+		"changes":  fmt.Sprintf("%d", len(pub.Changes)),
+		"override": overrideNote(*force, *reason),
+	}
+	if designChanged {
+		detail["design"] = "changed"
+	}
+	record(root, caller.auditRecord("publish", "/", audit.Success, detail))
+	if !pagesMoved {
+		// Only the design: the pages were live already, and nothing a
+		// pointer could go back to has moved.
+		w.Human("the design is live now; the pages were live already (%s)\n", onOneLine(short(pub.Published)))
+		return nil
+	}
 
 	// Told after the fact, never before, and a failure here never blocks. A
 	// receiver being down is not a reason to stop publishing — making it one
@@ -2282,6 +2319,9 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
 	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
+	if designChanged {
+		w.Human("  %sand the design changed since the last publish, which the site takes with it%s\n", dim, reset)
+	}
 	syncPayAfterLive(root, caller)
 	if pub.Previous != "" {
 		w.Human("  %sprevious %s is still stored; `quilzo rollback` moves the "+
