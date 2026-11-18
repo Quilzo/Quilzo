@@ -688,6 +688,8 @@ log transparency
 global
   --root DIR    store location (default .quilzo)
   --json        machine-readable output; stdout carries one document
+  --token TOKEN who you are, for this command; else ~/.quilzo/token (kept
+                0600), else QUILZO_TOKEN, read in that order
   NO_COLOR      suppress colour (also off automatically when not a terminal)
 
 exit codes
@@ -763,11 +765,28 @@ func main() {
 	// --root /data` looked for the agent in /data, and the program's own
 	// `--token X` became the caller's credential and was gone from the
 	// program's line. helpAsked stops there too.
+	//
+	// Either flag with nothing after it is a command line that is wrong,
+	// and said to be: `quilzo --root` was "there is no "--root" command",
+	// `quilzo log --root` went on in .quilzo, and `quilzo --root=` printed
+	// the help and nothing else.
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--" {
 			rest = append(rest, args[i:]...)
 			break
+		}
+		switch args[i] {
+		case "--root", "--root=":
+			if args[i] == "--root=" || i+1 == len(args) {
+				w.Error(fmt.Errorf("--root needs a directory: quilzo --root DIR COMMAND"))
+				os.Exit(out.ExitUsage)
+			}
+		case "--token", "--token=":
+			if args[i] == "--token=" || i+1 == len(args) {
+				w.Error(fmt.Errorf("--token needs a token: quilzo --token TOKEN COMMAND"))
+				os.Exit(out.ExitUsage)
+			}
 		}
 		if args[i] == "--root" && i+1 < len(args) {
 			root = args[i+1]
@@ -795,6 +814,12 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+	// Every spelling a command's flag set answers as help (isHelpFlag) is
+	// help here too: `quilzo log -help` was the help and `quilzo -help` was
+	// "there is no "-help" command".
+	if isHelpFlag(cmd) {
+		cmd = "--help"
+	}
 	invoked.cmd, invoked.args = cmd, cmdArgs
 
 	// A command that has left Quilzo is said to have left, before help, the
@@ -1175,6 +1200,11 @@ func main() {
 			return
 		}
 		fmt.Printf("quilzo %s\n", version)
+		// -V is "the same, shorter", as the help says: the version alone,
+		// for a script that reads one line. It printed all four.
+		if cmd == "-V" {
+			break
+		}
 		fmt.Println("Copyright (C) 2026 Rashik Adhikari")
 		fmt.Println("Licensed under the Apache License, Version 2.0 " +
 			"<https://www.apache.org/licenses/LICENSE-2.0>.")
@@ -1187,7 +1217,14 @@ func main() {
 			w.Error(errMovedOut(cmdArgs[0]))
 			os.Exit(out.ExitUsage)
 		}
+		// A word that is no command is said to be none, as it is without
+		// help in front of it: `quilzo help zzz` printed every command and
+		// exited 0, as though zzz were one of them.
 		if len(cmdArgs) > 0 {
+			if _, known := lookupNeed(cmdArgs[0], cmdArgs[1:]); !known {
+				err = errMisused{unknownCommand(cmdArgs[0])}
+				break
+			}
 			commandHelp(cmdArgs[0], cmdArgs[1:])
 		} else {
 			usage()

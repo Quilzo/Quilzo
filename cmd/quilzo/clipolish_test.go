@@ -4,8 +4,12 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +139,87 @@ func TestEveryLengthOfTimeTakesDays(t *testing.T) {
 		if m := refused.FindString(o + e); m != "" {
 			t.Errorf("`quilzo %s` refused its length of time (%s):\n%s", strings.Join(line, " "), m, firstLines(o+e, 4))
 		}
+	}
+}
+
+// The top level disagreed with its own help. `-V`, "the same, shorter",
+// printed the same four lines as --version; `help zzz` printed every
+// command and exited 0, as though zzz were one; `-help` was "no such
+// command" though `quilzo log -help` is help; `--root` with no directory
+// after it was "there is no "--root" command"; and the global section
+// named --root but none of the three places a token is read from.
+func TestTheTopLevelDoesWhatItsHelpSays(t *testing.T) {
+	o, _, code := cliRun(t, "", "", "-V")
+	if code != 0 || strings.TrimSpace(o) != "quilzo "+version {
+		t.Errorf("-V, the same as --version but shorter, exited %d with:\n%s", code, o)
+	}
+	if o, _, _ := cliRun(t, "", "", "--version"); !strings.Contains(o, "Copyright") {
+		t.Errorf("--version no longer says the copyright:\n%s", o)
+	}
+	o, e, code := cliRun(t, "", "", "help", "zzz")
+	if code != 2 || !strings.Contains(e, `there is no "zzz" command`) || strings.Contains(o, "global") {
+		t.Errorf("`help zzz` exited %d:\n%s%s", code, firstLines(o, 3), firstLines(e, 3))
+	}
+	if o, e, code := cliRun(t, "", "", "help", "token"); code != 0 || !strings.Contains(o, "quilzo token issue") {
+		t.Errorf("`help token` exited %d:\n%s%s", code, firstLines(o, 3), e)
+	}
+	for _, spelling := range []string{"-help", "--h"} {
+		if o, e, code := cliRun(t, "", "", spelling); code != 0 || !strings.Contains(o, "\nglobal\n") {
+			t.Errorf("`quilzo %s` exited %d, not the help:\n%s", spelling, code, firstLines(e, 3))
+		}
+	}
+	for _, line := range [][]string{{"--root"}, {"log", "--root"}, {"--root="}, {"--token"}} {
+		_, e, code := cliRun(t, "", "", line...)
+		if code != 2 || !strings.Contains(e, strings.TrimSuffix(line[len(line)-1], "=")+" needs") || strings.Contains(e, "there is no") {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 2))
+		}
+	}
+	o, _, _ = cliRun(t, "", "", "help")
+	_, global, _ := strings.Cut(o, "\nglobal\n")
+	global, _, _ = strings.Cut(global, "\n\n")
+	for _, want := range []string{"--token", "~/.quilzo/token", "QUILZO_TOKEN"} {
+		if !strings.Contains(global, want) {
+			t.Errorf("the global section does not name %s:\n%s", want, global)
+		}
+	}
+}
+
+// A token file any account can read was used without a word, though the
+// file is preferred to QUILZO_TOKEN for being 0600 (tokenFile). It is still
+// used, and the command says, once, that it can be read by others and how
+// to close it, as ssh does of a key.
+func TestATokenFileOthersCanReadIsSaidToBe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows file's mode does not say who may read it")
+	}
+	root, token := accessStore(t)
+	run := func(mode os.FileMode) (string, int) {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, ".quilzo"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(home, ".quilzo", "token")
+		if err := os.WriteFile(file, []byte(token+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(file, mode); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(os.Args[0], "quilzo-main", "--root", root, "token", "list")
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1")
+		var o, e bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &o, &e
+		err := cmd.Run()
+		if err != nil {
+			t.Errorf("token list with the file at %o: %v\n%s", mode, err, firstLines(e.String(), 3))
+		}
+		return e.String(), strings.Count(e.String(), file+" can be read")
+	}
+	if said, n := run(0o644); n != 1 || !strings.Contains(said, "chmod 600") {
+		t.Errorf("a token file others can read was used without a word, or said more than once:\n%s", said)
+	}
+	if said, n := run(0o600); n != 0 {
+		t.Errorf("a token file only its owner can read was warned about:\n%s", said)
 	}
 }
