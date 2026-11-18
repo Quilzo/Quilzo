@@ -76,13 +76,7 @@ func assistantList(root string) error {
 	if err != nil {
 		return err
 	}
-	// None is an empty list for a program, as over the agent interface,
-	// not the null a nil slice is written as.
-	list := set.Assistants
-	if list == nil {
-		list = []assistant.Assistant{}
-	}
-	if w.JSON(list) {
+	if w.JSON(set.Assistants) {
 		return nil
 	}
 	if len(set.Assistants) == 0 {
