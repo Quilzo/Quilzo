@@ -7,11 +7,18 @@ described in the [README](../README.md) work on exactly this: an immutable
 store, a publish that moves a pointer, and gates that refuse.
 
 ```bash
-quilzo init          # a store in the current directory
-quilzo demo          # install Marginalia, a complete shop
-quilzo site          # serve it on 127.0.0.1:8081
-quilzo serve --open  # the admin, opened in a browser at localhost:8080
+quilzo init               # a store in the current directory
+quilzo demo               # install Marginalia, a complete shop
+quilzo init --admin you   # you, its administrator: prints a link that adds your passkey
+quilzo site               # serve it on 127.0.0.1:8081
+quilzo serve --open       # the admin, opened in a browser at localhost:8080: open that link there
 ```
+
+From `init --admin` on, the command line asks who is running it, and the two
+servers do not. `quilzo token issue first --principal you`, run before you
+sign in, is your token for it, as in the [README](../README.md#quickstart):
+a store issues one without being shown one only while it holds none, and
+signing in to the admin makes one.
 
 Linux, macOS and Windows, amd64 and arm64.
 

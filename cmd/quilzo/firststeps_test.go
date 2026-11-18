@@ -737,6 +737,28 @@ func TestTheReadmeQuickstartReachesASignedInAdmin(t *testing.T) {
 	f.run("./quilzo agent runs")
 }
 
+// The reference's first lines end at an admin its reader is signed in to,
+// and a site.
+//
+// They were the Quickstart's: a store with nobody in it and `serve --open`,
+// which opened an admin with nobody to sign in to it.
+func TestTheReferencesFirstLinesReachASignedInAdmin(t *testing.T) {
+	f := newWalk(t)
+	doc := readDoc(t, "docs/cms.md")
+	f.runAll(mdBlocks(t, doc, "The content platform")[:1])
+	if _, ok := f.serving["admin"]; !ok {
+		t.Fatalf("the reference's first lines never start the admin\n%s", f.log.String())
+	}
+	if opened := f.browsed(); len(opened) > 0 && net.ParseIP(f.moved(opened[0]).Hostname()) != nil {
+		t.Errorf("serve --open opened %s: an address, where every passkey is refused", opened[0])
+	}
+	if len(f.links) == 0 {
+		t.Fatalf("nothing in the reference's first lines gives its reader a passkey\n%s", f.log.String())
+	}
+	f.enrolAndSignIn(f.links[len(f.links)-1])
+	f.siteHome()
+}
+
 // INSTALL's first site publishes, and is served.
 //
 // It added a page and published it, and the publish was refused: nothing
