@@ -1804,7 +1804,8 @@ var rules = []Rule{
 				// token of the holder's own first, when this was the one
 				// they administered with: revoking it left them none.
 				if t.Role == auth.RoleAdmin && !ownAdminToken(s, t.Principal, t.Resource) {
-					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin" + on + " --person; " + fix
+					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin" + on + " --person; " + fix +
+						"; the first is HOLDER's own, to administer from the command line with once this one is revoked"
 				}
 				out = append(out, Finding{
 					Resource: t.ID,
