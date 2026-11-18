@@ -49,6 +49,13 @@ func FileKind(path string) (string, bool) {
 		return "video", true
 	case "audio":
 		return "audio", true
+	case BackdropField:
+		// A picture or a recording: what is behind a section can be either,
+		// and the layout draws each its own way.
+		return Backdrop, true
 	}
 	return "", false
 }
+
+// Backdrop is the kind a backdrop field names: a picture or a video.
+const Backdrop = "backdrop"

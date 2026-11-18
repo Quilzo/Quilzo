@@ -23,7 +23,8 @@ import (
 //
 // This reads the store instead. Every step is a question about *this*
 // installation answered at request time: is there a page, is a type bound to
-// it, has anything been published, does anybody besides you hold a role. A step
+// it, has anything been published, is an agent declared, does anybody besides
+// you hold a role. A step
 // that is done says so and stays visible, because "what did I already do" is
 // the question somebody coming back after a week actually has.
 //
@@ -50,9 +51,12 @@ type step struct {
 	// Body says what the step is for. Never what to click — a screen that
 	// narrates its own buttons goes stale the moment one is renamed.
 	Body string
-	// Where is the screen that does it, and What names the link.
+	// Where is the screen that does it, and What names the link. Where is
+	// empty for somebody that screen would refuse, who is told What it is
+	// called and Who looks after it instead.
 	Where string
 	What  string
+	Who   string
 	// Done is read from the store at request time.
 	Done bool
 	// DoneNote states what was found, so a tick is evidence rather than a
@@ -78,6 +82,17 @@ func (s *Server) startState(p principal) []step {
 		}
 	}
 
+	// The agents this store declares. The screen introduced a content store
+	// and its four steps never named an agent, on the first screen of what is
+	// an agent platform, whose README declares and runs one before anything
+	// else.
+	agents := 0
+	if s.Agents != nil && s.Agents.Load != nil {
+		if declared, err := s.Agents.Load(); err == nil {
+			agents = len(declared)
+		}
+	}
+
 	// People other than whoever is looking, because "you have an account" is
 	// not a step and counting yourself would tick it on a fresh store.
 	others := 0
@@ -89,7 +104,7 @@ func (s *Server) startState(p principal) []step {
 		}
 	}
 
-	return []step{
+	steps := []step{
 		{
 			Title: "Write something",
 			Body: "A page is fields, not markup. What it looks like is the " +
@@ -117,15 +132,36 @@ func (s *Server) startState(p principal) []step {
 			Done: published, DoneNote: "live",
 		},
 		{
+			Title: "Declare an agent",
+			Body: "An agent is a declaration: what it may do, over what, on " +
+				"what budget, and who answers for it. One gate enforces it on " +
+				"every action and a person approves the actions that matter, " +
+				"so an agent that reads somebody else's words still does only " +
+				"what it declared.",
+			Where: "/agents", What: "Agents", Who: "an administrator",
+			Done: agents > 0, DoneNote: counted(agents, "agent", "agents"),
+		},
+		{
 			Title: "Decide who else may do what",
 			Body: "Four roles on a ladder: reader, author, publisher, admin. A " +
 				"token can carry less than the person holding it and never " +
 				"more, so a credential for a script is narrower than the " +
 				"person who issued it.",
-			Where: "/people", What: "People",
+			Where: "/people", What: "People", Who: "an administrator",
 			Done: others > 0, DoneNote: counted(others, "other person", "other people"),
 		},
 	}
+	// Each step links to its screen only for somebody who may open it. People
+	// was linked for every reader, author and publisher this screen is for,
+	// and refused each of them at the end of the link.
+	for i := range steps {
+		for _, d := range destinations {
+			if d.Path == steps[i].Where && !s.opens(p, d.Key) {
+				steps[i].Where = ""
+			}
+		}
+	}
+	return steps
 }
 
 // counted renders "1 page" or "3 pages", so a completed step states what was

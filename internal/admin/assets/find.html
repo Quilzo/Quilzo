@@ -42,10 +42,11 @@
 
 {{else}}
 <p class="notice warn">Nothing matched <strong>{{.Query}}</strong>.</p>
-<p class="help">This searches the pages in your draft, the screens of this
-  interface, your content types and the descriptions on your media. To look
-  through what people sent, use <a href="/forms#erasure">Find and erase</a> on
-  Forms.</p>
+<p class="help">{{if .ReadsSite}}This searches the pages in your draft, the screens of this
+  interface, your content types and the descriptions on your media.{{else}}This
+  searches the screens of this interface that you may open.{{end}}{{if .OpensForms}}
+  To look through what people sent, use <a href="/forms#erasure">Find and erase</a> on
+  Forms.{{end}}</p>
 
 {{end}}
 {{end}}

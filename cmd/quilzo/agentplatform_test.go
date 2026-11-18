@@ -229,8 +229,13 @@ func TestAChatbotAskedInARunIsChargedToTheRunAndItsPerson(t *testing.T) {
 	if models.total() > 4 {
 		t.Errorf("with a money budget of 0.30, the run made %d calls at 0.10", models.total())
 	}
-	if calls, dana := chargedTo(t, root, "chatbot:help", "person:dana"); calls == 0 || dana != calls {
-		t.Errorf("of %d calls as chatbot:help, %d were charged to the person who started the run", calls, dana)
+	// The person's, against their budget, and not the chatbot's, whose
+	// budget is what its visitors are answered within (chatbotConsumers).
+	if calls, _ := chargedTo(t, root, "chatbot:help", ""); calls != 0 {
+		t.Errorf("%d of the run's calls were charged to the chatbot's visitors' budget", calls)
+	}
+	if calls, _ := chargedTo(t, root, "person:dana", ""); calls == 0 {
+		t.Error("the chatbot's calls were not charged to the person who started the run")
 	}
 }
 
@@ -314,7 +319,12 @@ func TestAChatbotsQuestionEmbeddedInARunIsChargedToTheRunAndItsPerson(t *testing
 		t.Errorf("%d calls and %d questions embedded, at 1000 tokens each, are recorded as %d tokens, not %d",
 			models.total(), questions, rec.Trace.Spent.Tokens, want)
 	}
-	if calls, dana := chargedTo(t, root, "chatbot:help", "person:dana"); calls == 0 || dana != calls {
-		t.Errorf("of %d calls as chatbot:help, %d were charged to the person who started the run", calls, dana)
+	// The person's, against their budget, and not the chatbot's, whose
+	// budget is what its visitors are answered within (chatbotConsumers).
+	if calls, _ := chargedTo(t, root, "chatbot:help", ""); calls != 0 {
+		t.Errorf("%d of the run's calls were charged to the chatbot's visitors' budget", calls)
+	}
+	if calls, _ := chargedTo(t, root, "person:dana", ""); calls == 0 {
+		t.Error("the chatbot's calls were not charged to the person who started the run")
 	}
 }

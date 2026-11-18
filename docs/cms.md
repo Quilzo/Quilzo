@@ -7,11 +7,18 @@ described in the [README](../README.md) work on exactly this: an immutable
 store, a publish that moves a pointer, and gates that refuse.
 
 ```bash
-quilzo init          # a store in the current directory
-quilzo demo          # install Marginalia, a complete shop
-quilzo site          # serve it on 127.0.0.1:8081
-quilzo serve --open  # the admin on 127.0.0.1:8080, opened in a browser
+quilzo init               # a store in the current directory
+quilzo demo               # install Marginalia, a complete shop
+quilzo init --admin you   # you, its administrator: prints a link that adds your passkey
+quilzo site               # serve it on 127.0.0.1:8081
+quilzo serve --open       # the admin, opened in a browser at localhost:8080: open that link there
 ```
+
+From `init --admin` on, the command line asks who is running it, and the two
+servers do not. `quilzo token issue first --principal you`, run before you
+sign in, is your token for it, as in the [README](../README.md#quickstart):
+a store issues one without being shown one only while it holds none, and
+signing in to the admin makes one.
 
 Linux, macOS and Windows, amd64 and arm64.
 
@@ -309,6 +316,263 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+### Typefaces from the file you have
+
+Most foundries send a TrueType or OpenType file, and WOFF2 — the format above —
+compresses its tables with Brotli, which Go's standard library does not have and
+this program will not take a dependency for. So it also serves WOFF 1.0, which
+is the same tables compressed with zlib, and which every browser that reads
+WOFF2 reads too. One command makes one:
+
+```bash
+quilzo theme font add Satoshi-Variable.ttf --name Satoshi-300-900
+quilzo theme set font-body Satoshi
+```
+
+It writes `templates/fonts/Satoshi-300-900.woff` and checks it the way every
+WOFF in that directory is checked: the header agrees with the file, every table
+lies inside it and inflates to exactly the size it declares, the tables a
+browser's font sanitiser refuses a face without are there, and the face's own
+licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
+face that may not be embedded may not be served with a page either. A `.woff` is
+checked as it is, in the same way. A `.woff2` is checked only for its signature,
+the length it declares and its size, because its tables are Brotli and nothing
+here can read them. Nothing is fetched or sent anywhere. The Design screen has
+the same form, through the same code.
+
+Without `--name` (on the screen, an empty "Served as"), the face is served under
+the file's own name, with the weight and style the face's own tables declare
+wherever that name does not say them. Foundries name static faces
+`Satoshi-Regular.ttf` and `Satoshi-BoldItalic.ttf`; the first, taken at its
+word, would claim every weight from 100 to 900, so a browser asked for bold
+would draw the regular glyphs, and the second is not a name the contract reads.
+So a static regular of weight 400 is served as `Satoshi-400.woff`, the bold
+italic as `Satoshi-700-italic.woff`, and a variable face as the range of its
+weight axis. A name that does say the weight, such as `Satoshi-Bold.ttf`, is
+kept; a word that is neither a weight nor a style, such as `Condensed`, is
+refused with a request for a name rather than guessed past; and a name given is
+used exactly as given. The output says when the name came from the face. A
+`.woff2` cannot be asked: its tables are Brotli, so it is served as its name
+says, and one whose name says no weight is served as every weight, which is
+right for a variable face; the output says so, so a static one can be given a
+name that says its weight.
+
+A face already served under the same name is replaced only when asked, with
+`--force` or the screen's "Replace a face already served under that name",
+because a browser keeps a face for a year under its name. A face is one file: a
+`.woff` beside the `.woff2` of the same face is refused. A file in
+`templates/fonts/` that is not served — a `.ttf` dropped there, a file that is
+not what its name says — is named, with the reason, by `quilzo theme fonts` and
+on the Design screen; for a `.ttf` or `.otf` that includes the command that
+makes a WOFF of it. The licence still travels with the face: put its text
+beside it. Adding or replacing a face takes the authority to publish, on the
+screen and on the command line, as installing a layout does: a face is the
+glyphs every page that names it is drawn with, and no gate reads a glyph, so
+one whose digits are drawn as other digits would change every price on the site
+with no word of any page changed.
+
+The filename is still the contract, and a weight range is written either way:
+`Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The
+first used to be read as 700 alone, though this documentation and the program's
+own error message offered it as a range.
+
+### What the tokens cannot say, and how a site says it anyway
+
+A games studio's site wanted a moving picture behind its hero, a glow on its
+headings, section titles running from the text colour into the accent, cut
+corners and capital display type, on a site that is only ever dark. None of
+that was a token, so the only route was a hand-written layout with a `<style>`
+block in it: it worked, nobody could choose it from a screen, and its colours
+were ones the contrast check never saw. Each piece is now something a site
+opts into, held to the same promise as the tokens. A site that opts into none
+of them is drawn as it was: its pages and its token block are the same byte
+for byte, which a test holds, and its stylesheet gains only rules that name the
+new classes a site opts into, and one fix — a centred hero's eyebrow is
+centred now.
+
+**A style layer.** `templates/style.css` is CSS of the site's own, served
+after the generated stylesheet rather than instead of it. It is held to the
+rule the shipped styles keep: every colour is a token, as `var(--primary)`, or
+a mix of tokens with `color-mix()` — no hex, no `rgb()` or its relatives, no
+named colours, and the system colours only inside
+`@media (forced-colors: active)`. `url()` reaches only `/media/` and
+`/fonts/`, there is no `@import`, no `!important` (the reduced-motion and
+forced-colours rules underneath are `!important` so nothing outvotes them), no
+redefining a token, no taking away the focus outline (a zero width in any
+unit, `none` anywhere in it, `initial`, `unset` or `inherit`, an `all` reset,
+or a custom property of the layer's that says any of these), and at most 64 KiB. Nor anything a browser would read differently
+from the check: a string that runs over a line break, a comment or a quote
+mark inside an address with no quotes round it, a `{ }` block in a custom
+property, a declaration whose property is not a name, or a control
+character. A rule that sets both a text colour and its background from tokens has that pair
+checked at 4.5:1 in every scheme the site is served in. A layer with anything
+refused in it is not served at all, and `theme check` names each rule; a
+`site.css` still replaces everything, layer included. Changing a layer takes
+publish authority, in the terminal and on the Design screen alike, because it
+is on every page at once. A site package carries one as `site.layer`, and
+takes it back with the package.
+
+```bash
+quilzo theme layer set arena.css      # checked first; refused rules are named
+quilzo theme layer                    # what is there, and whether it is served
+quilzo theme check                    # the palette, the backdrop veil and the layer
+quilzo theme layer unset
+```
+
+With `--json`, `theme layer`, `set` and `unset` each answer with one document:
+the layer's path, its size, whether it is served, how many rules are refused
+and every finding. A refused `set` prints that document and exits non-zero.
+`theme check --json` is the list of every finding, the layer's and the veil's
+among them, and exits non-zero when a pair fails or the layer is refused.
+
+What it cannot see is said rather than claimed: a colour pair split across two
+rules, text faded afterwards by `opacity` or a filter, and a rule that hides
+something the layout draws — the veil over a backdrop, or its stop switch.
+
+**A backdrop.** A hero names a picture or a recording from the library as
+`"backdrop_url": "/media/ID"`, and a section does the same with
+`"surface": "media"` beside it. It is decoration, and drawn as decoration: an
+`<img alt="">` or a `<video>` that is muted, loops, plays inline and is hidden
+from assistive technology, with its poster underneath it, gone for a reader who
+asked for reduced motion or forced colours, and with a "Stop the moving
+background" switch beside it that needs no script (WCAG 2.2.2). Between the
+picture and the words is a veil of one colour at one strength — `scrim`, which
+is the page background unless set, and `scrim-strength`, 82% unless set — and
+the words are checked against the worst picture it could cover: the veil over
+black and over white. All the words that sit on it: the body text, the
+secondary text a standfirst or a caption is in, and the accent of an eyebrow. A page with a backdrop does not publish while that fails,
+and the refusal names the strength that would fix it. A recording with sound
+cannot be a backdrop, because muting it throws away what was said in it.
+
+```json
+{"hero": {"title": "Games for after dark", "backdrop_url": "/media/ef4b…"},
+ "sections": [{"features": {"surface": "media", "backdrop_url": "/media/4379…", "items": []}}]}
+```
+
+On the Sections screen, "Put a backdrop behind it" gives a section the field,
+and the picker beside it offers the library's pictures and the recordings it
+knows to be silent, and says how many recordings it left out. From the
+terminal it is `quilzo section backdrop PAGE N /media/ID` (or `hero` for N, and
+`--off` to take it away), because an edit writes only the fields a section
+already has; it refuses, before writing anything, a file the library does not
+hold and a recording not known to be silent. A page with a hero shows it there
+above its sections, with "Put a backdrop behind the hero", which opens the same
+picker; the hero's words have no screen of their own. A hero's backdrop is also
+set with that command, in the page's JSON (`quilzo add`, or an agent's
+`write_page`), or by a site package. Under `--json` every `section` edit answers
+with the page, what was done, the draft commit, the sections as they stand, and
+any claim somebody else holds on the page (`claimed`).
+
+**Silent recordings.** Whether a recording has sound is recorded when it is
+added, from the same probe that reads its size. One with sound still needs a
+captions track to publish; one with none needs a description instead (WCAG
+1.2.1), which the layout takes from the library — the description written when
+it was added becomes the video's label — or from a caption beside it. A
+recording nothing could listen to, on a machine without ffprobe, is treated as
+having sound. `quilzo media list`, its `--json`, and the `list_media` tool an
+agent reads say which recordings have sound, which have none, and which are
+not known.
+
+**The neon style.** An eighth style: a glow on headings and filled buttons from
+the accent, section titles that run from the text colour into it, chamfered
+corners and capital display type. The glow is the `glow` token (0 turns it
+off). The corners are a choice of their own, `corner`, round or chamfer, which
+neon sets to chamfer and any style can use; a chamfer is drawn with
+`corner-shape`, which keeps the focus ring whole, and a browser that does not
+know it rounds the corner instead. The gradient titles are checked at five
+points along them against the background, because a mix of two readable
+colours can be an unreadable one, and they fall back to the plain text colour
+where the browser cannot clip a background to text, the reader asked for more
+contrast, or forced colours are on.
+
+**One scheme.** `scheme` is both (the default), dark or light. A dark site is
+served its dark palette whatever a reader's system asks, declares
+`color-scheme: dark`, and is checked in dark alone — so it is no longer told
+twenty-three times that each colour is the same in both schemes, and a colour
+it never set is its dark default rather than a light one on a dark page.
+
+```bash
+quilzo theme set style neon
+quilzo theme set scheme dark
+quilzo theme set glow 12px corner round
+```
+
+**A picture on a feature card.** A `features` item takes `image` and `alt`, and
+gets its narrower copies as every other picture does.
+
+All of it is on the Design screen too — the neon style beside the others,
+corners and schemes in the Look section, the veil and the glow in the token
+table, and the layer, with what was refused in it. A layer the screen refuses
+is given back as it was typed, with every refused rule named, and one taken
+away is given back in the box, unsaved, until the screen is left; somebody who may
+edit the design but not publish sees the layer read-only. `quilzo theme
+styles --json` lists the styles, corners and schemes for a script. It is also
+in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,
+`layer`). The site builder,
+from a sentence or over MCP, can choose the style and the scheme; it never
+writes a layer, because a model writing CSS is the one part of a site nobody
+reads before it is served.
+
+### Changes without a restart
+
+Both servers used to read the design and the settings once, when they started:
+a face added to `templates/fonts/` was "not a font this site serves" on the
+Design screen until `quilzo serve` restarted, and `site.events` did nothing on
+the public site until `quilzo site` restarted. Now:
+
+| | the design (`templates/`: the layouts, the theme, the style layer and the faces) | the settings |
+|---|---|---|
+| `quilzo serve`, the admin | when the directory changes (looked at no more than once a second, as the admin is used), and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
+| `quilzo site`, the public site | with each publish, and on SIGHUP | when the configuration, listings or languages change, with each publish, and on SIGHUP |
+
+The public site takes the design with a publish rather than the moment a file
+changes, on purpose. The publish gate is what holds a design to the standard: it
+computes every contrast pair the theme makes and renders every page through the
+layouts. `quilzo theme set --force` saves a palette that fails, and says the gate
+will refuse it; a site that served `templates/` a second after it was written
+would put that palette in front of readers with no gate at all. So the preview
+shows a change at once, and readers get it with the publish that passed. A style
+layer is the same: saved from the Design screen, it is in the preview when the
+screen comes back; set with `theme layer set`, or edited by hand, it is in the
+preview with the admin's next look at `templates/`; and either way readers get it
+with the next publish. A reader's browser asks for `/site.css` again with every
+page, as it does for the page, and is answered "not modified" while it has not
+changed, so somebody who visited an hour before the publish is not handed the
+new page over the old stylesheet. SIGHUP —
+`systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
+saying so, as a restart was, without dropping a connection.
+
+The site looks for a publish once a second whether or not anybody is visiting,
+because it reads the design when it sees one: a site that looked only when
+somebody visited would read, an hour after the gate, whatever had been saved in
+the hour, and a palette forced past the gate after the publish would go to
+readers with it. A publish whose build is refused (below) brings its design with
+the next build that succeeds, unless `templates/` has changed since; then it
+waits for the next publish, as any other change does.
+
+A rebuilt site keeps what visitors are in the middle of: rate limits and their
+counts, the signals it is counting, sign-ins in progress, the chatbots' rating
+keys, the newsletter's hourly count and the fediverse queue. Their settings —
+`auth.throttle.*` for the site's limits, `chatbot.questions.*`, `fediverse.*`, and
+the content API's — take effect at the next restart, because a reload that handed
+every visitor a fresh allowance would be a limit that resets whenever somebody
+publishes. A reload whose build fails changes nothing: the site serves what it
+served, says why, records `site.reload` as a failure in the audit log, and tries
+again when something changes again. One whose design does not read — a theme
+file that is not JSON, a `page.html` gone — keeps the design it had, takes the
+rest, and records the failure with the reason. A reload that changed what readers
+get is recorded too, with what triggered it.
+
+That includes a `config.json` caught empty. Writing one with `>`, with `cp`, or
+from an editor that writes in place leaves it empty for a moment, and an empty
+file reads as every setting at its default: the classification banner,
+Strict-Transport-Security and security.txt would go with it. So a site whose
+settings said something does not take an empty file as its next ones; write `{}`
+to it, or remove it, to put every setting back to its default on purpose. The
+chatbots are built again with the settings, so a guardrail set while the site
+runs screens what they answer from at once, and they keep the ratings they
+handed out.
+
 ## Building a whole site from a sentence
 
 A site is a declaration: pages made of sections this program renders, menus,
@@ -359,7 +623,10 @@ Once it is installed, `site_blanks` lists what is left to fill in and
 `site_fill` fills it, with facts the person gave the agent; a blank it cannot
 fill stays one, and keeps its page from being published. A page an agent filled
 in is marked as an agent's words, and a page in a package an agent wrote as a
-model's, so the AI-content disclosure is right either way.
+model's, so the AI-content disclosure is right either way. What an agent fills
+in waits for a person's approval before it is published, as anything a model
+writes does. The person it was filling in for gives it when nobody else may
+publish and no count of approvals is set; otherwise somebody else does.
 
 ## Taking bookings
 
@@ -550,6 +817,30 @@ is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
 
+Each sync asks Stripe which links still sell for the key it holds, and a link
+that does not is made again. So when the test key a shop was set up on is
+replaced by the live one, the next `quilzo pay sync` (or publish) makes live
+links and the test-mode ones stop being offered, and a link deleted in Stripe's
+dashboard comes back. A live link a test key cannot see is taken off the site
+and named, to be retired in Stripe's dashboard.
+
+### Crypto: what Quilzo does and refuses
+
+Quilzo does not hold a wallet, does not hold a key to one and does not sign a
+transaction. The moment it held a key it would become a custodian, and a thing
+worth attacking for a reason unrelated to content.
+
+- **Prices, mandates and paying calls are in currencies.** A currency is one
+  ISO 4217 lists, with the minor units ISO gives it (the list is
+  `internal/spend/iso4217.txt`). ETH, BTC, SOL and every other crypto ticker are
+  refused as one, at `quilzo spend grant`, in a paying tool's declaration and in
+  the gateway's prices, with a message that says why. Three capital letters
+  used to be enough, so a mandate "in ETH" was granted and counted in
+  hundredths, which is neither a token's unit nor its smallest.
+- **Publishing to IPFS needs no wallet.** `quilzo ipfs` computes the content
+  identifier here and hands you a bundle to upload; it holds no pinning token
+  and talks to no pinning service on your behalf.
+
 ## Bringing a site you already have
 
 Most sites somebody wants to move have no export file. What every one has is
@@ -634,12 +925,20 @@ alt column says it shows. One row the type refuses refuses the sheet, unless
 commit, in the draft until it is published.
 
 `records export` writes the id first and the type's fields in order, so the
-sheet comes back in as the same records, and each picture as the address the
-site serves it at, so another site can bring it in too. A cell beginning
-`=`, `+`, `-` or `@` that is not a number is written after an apostrophe, so
-a spreadsheet opening it does not run it as a formula. `--format json`
-writes JSON instead, which import reads the same way. The Data screen does
-both: Download as a spreadsheet, and Bring rows in, with the same choices.
+sheet comes back in as the same records. A record with a field of its own
+called `id` has it in a column headed `field:id` (in JSON, as
+`id` inside `fields`), since the `id` column is the store's, and import
+reads it back into that field. A type that declares a field `id` has that
+column in every export, empty (in JSON, `null`) for a record with none, so
+its `id` column is never read as the field. In JSON, a record with a field
+of its own called `fields` says its own `id` as `field:id` beside it, `null`
+for none, so that field is never read as the id. Each picture is written as the
+address the site serves it at, so another site can bring it in too. A cell
+beginning `=`, `+`, `-` or `@` that is not a number is written after an
+apostrophe, so a spreadsheet opening it does not run it as a formula.
+`--format json` writes JSON instead, which import reads the same way. The
+Data screen does both: Download as a spreadsheet, and Bring rows in, with
+the same choices.
 
 ## Bringing a template you already have
 
@@ -742,7 +1041,10 @@ start and refuses to run if they are not. `quilzo site --prepare` makes and
 lists those paths, for a service manager that makes the store read-only
 (see [deploy/](../deploy/)); run it again after an upgrade that adds one, or
 the site starts with that feature off and says which. `--confine=false` runs it
-unconfined and says so.
+unconfined and says so. A writable content API (`--api --api-writable`) writes
+the draft, its objects, refs and `types.json`, which the confined site cannot
+reach, so the site refuses to start with one and says to add `--confine=false`,
+which takes that reach on; write through the admin otherwise.
 It cannot read a submission back: reading the postbag happens in the admin,
 behind authentication.
 
@@ -755,6 +1057,82 @@ APIs with no form post behind them, and capturing a screen or a microphone is
 not a script the admin should carry. So the capture surface is its own process:
 **the argument for that header is that the admin's one script does nothing a
 form cannot, not that the policy catches the rest.**
+
+### The log writer, which also signs for the log
+
+`quilzo logd` is a fourth process, run as an account of its own; the
+reference compose runs it as uid 65533 with no network. The admin and the
+site hand it their records over a socket and cannot open the log to rewrite
+one, and it computes the chain itself, so they cannot forge a history either.
+`quilzo logd status` says whether that separation is in force.
+
+It also holds the key that signs the log's tree heads, with Ed25519 and
+ML-DSA-65 as before. On its first start it makes `head.key` (0600, its own)
+and `head.pub.json` (0644, the public half) in the directory `--log-dir`
+names, and from then on every signature the log's keys make is the writer's:
+`quilzo auditlog head`, an agent's or an app's receipt, each round of the
+audit stream, an engagement package, `quilzo feature export --sign` and a
+registered research plan. Until it held the key, the admin of the reference
+compose could make none of them: it tried to create `head.key` in a directory
+it can only read, and every one exited with "read-only file system". Letting
+it write there would let it rename the log.
+
+The admin asks over the same socket, and a request for a head names how many
+entries it covers and nothing else. The writer computes the root over its own
+file and dates the head by its own clock, so an admin that has been taken
+over cannot have a head signed over entries the log never held, or backdated.
+A feature package's or a research plan's signature is made only under the
+contexts this program makes them under, never the head's. The admin checks
+every head it is handed against the root it read itself and against
+`head.pub.json`, and refuses one that disagrees with either rather than
+putting it in a receipt.
+
+Every account that may submit a record could ask for a signature too, and a
+record and a signature are not the same trust: the public site submits
+records, and a feature package or a research plan the writer signs is taken
+as this site's own. `--sign-uid` names the uids that may ask, and
+`--sign-gid` the groups an account must connect as; with neither, every
+account that may submit may ask, as before. The reference compose runs the
+site as the admin's uid, since they share the store and every file in it is
+that account's, in a group of its own (65531) with the writer's group
+beside it for its records, and the writer signs for the admin's group
+(65532) only. A uid of the site's own would take every file in the store
+changing hands, and is not done. The group is the one the site connects as,
+which it could change to the admin's, being a member of it, by running a
+set-group-ID program it made itself; it cannot while it runs with
+no-new-privileges, as every Quilzo container in the reference compose does.
+
+The writer signs only with a key that is its own alone: `head.key` owned by
+its account, at 0600. A key another account made, or one other accounts can
+read, is one somebody else may have kept a copy of, and could sign a head
+over any root with; a chown or a chmod cannot take a copy back. So the writer
+signs nothing with it, keeps writing the log, and says to move `head.key` and
+`head.pub.json` aside together (that `head.pub.json` still checks the heads
+the old key signed) and start it again, when it makes a new one. `quilzo logd
+status` asks the writer for a head over no entries rather than assuming it
+signs, and says when it does not, and why (`writer_signs` and
+`writer_refuses` in its `--json`); the audit log screen asks the same on
+every visit. With the writer stopped, and the key out of this account's
+reach as it is under the reference compose, no head can be made: both say
+the heads wait for the writer, and every command that signs says to start
+it, never to take its key.
+
+There is no setting. Where the log is the admin's own (in the store, or a
+writer running as the same account) the key is beside the log and loaded
+there, as it always was. Heads saved with `auditlog head --save` stay in the
+store, in `log-heads.json`. `head.pub.json` is the file to hand whoever
+checks a head or a receipt: `quilzo auditlog verify-head FILE --keys
+head.pub.json`, `quilzo agent verify-receipt FILE --keys head.pub.json`. The
+audit log screen says when the writer signs the heads, and where that file
+is.
+
+`verify-head` checks the head against the log as well, where there is one,
+and `quilzo auditlog consistency --head FILE` checks a head kept elsewhere
+against the log. `auditlog verify`, `auditlog consistency`, the audit log
+screen and posture check the log against every head in `log-heads.json`
+too: entries removed from the end of the log leave a shorter chain that
+still verifies, so only a head taken while they were there shows they are
+gone, and a head saved after they went does not stand in for it.
 
 ## What is in it
 
@@ -804,7 +1182,12 @@ in the editor) in its head, its headers and the sitemap. And every page has a
 Markdown copy of its words at `/NAME.md`, made from the content rather than
 scraped from the markup, linked from the page and from `llms.txt`, for a
 language model or a reader's agent; the copy is never indexed and names the
-page as canonical.
+page as canonical. It has what a visitor is shown: a listing's rows, a blog's
+posts and the events still to come, each as a list item with its link, its
+date and its price, and under a blog's posts the link to the older ones. A
+product, a post or an event with a page of its own has its copy at that page's
+address with `.md` added (`/post/rye.md`). `llms.txt` lists what the sitemap
+lists, so not the page records are drawn with nor one left out of results.
 
 **What people looked for and did not find.** The cookieless count of views
 also counts addresses people asked for that are not on the site, and searches
@@ -888,9 +1271,12 @@ holds a card it needs a threat model it does not have.
 **Claims and rights.** A publish gate that refuses copy the business cannot
 stand behind — not a blocked-word list, which every team switches off, but a
 claim and its substantiation: "guaranteed" publishes beside the guarantee terms
-and is refused without them. And image licences treated as publish windows,
-because rights *end* — a lapsed stock licence leaves a site infringing with an
-audit trail proving it was deliberate, and nothing notices.
+and is refused without them. The same rules read what an agent writes to
+another system, from a run here or through the MCP gateway: a post or a message
+that says what they refuse waits for a person, who is shown what they found,
+every time. And image licences treated as publish windows, because rights *end*
+— a lapsed stock licence leaves a site infringing with an audit trail proving
+it was deliberate, and nothing notices.
 
 **Reaching other systems.** MCP in both directions: a server exposing this
 store, and a client calling servers an operator declared — from the command
@@ -944,6 +1330,13 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
+A form takes answers only where the site offers it: a published page, visible
+now, that names it (`"form": "enquiry"`) or renders through a layout with the
+form's markup pasted in, or a public chatbot that may fill it in. A page for
+members counts while membership is open or by invitation. A form declared and
+placed nowhere, or on a page still in draft or past its date, answers not found,
+so it cannot collect anything the owner is not asking for.
+
 A form can take a file — a CV, a photograph of the damage, a signed letter —
 with a field of kind `file` (`"accept": ["image"]` to narrow it; images and
 documents by default). A file is taken by what its bytes are, never by its name
@@ -983,8 +1376,14 @@ fell due while the server was down goes out when it starts, and the record
 says how late. Each publish is on the authority of the person who scheduled
 it, checked again when it fires — somebody who has lost the publisher role
 since does not have their launch published for them — and of the identity the
-server runs as, and it carries the publisher role and nothing more. Every gate
-runs then, against the content as it stands. A deployment that would rather
+server runs as, and it carries the publisher role and nothing more. A server
+started with no token that may publish fires nothing, and the Publishing screen
+says so where the entry is added and beside each one past its time. Every gate
+runs then, against the content as it stands; pages with no provenance, which
+is every page saved by hand until somebody marks it, are said when the entry is
+added, and a publish of them is scheduled as it is made by hand, on a reason
+(`quilzo schedule add 9h --force-unmarked --reason "..."`, or the Schedule
+form's) that is applied when it fires and recorded with it. A deployment that would rather
 publish from a timer of its own turns off `schedule.in_server` and runs
 `quilzo schedule run`; the two take the same lock, so an entry is never
 published twice. The Publishing screen lists what fired in the last thirty
@@ -1004,7 +1403,7 @@ licence and the commit the bytes came from, for a deposit somebody has to
 verify later.
 
 **Evidence for an assessor.** A posture scan over the real deployment mapped to
-35 NIST SP 800-53 controls, OSCAL 1.2.3 assessment results generated from it, a
+57 NIST SP 800-53 controls, OSCAL 1.2.3 assessment results generated from it, a
 CycloneDX SBOM from the build, an audit-log export as OCSF or CEF with an
 integrity envelope, and a crypto inventory with post-quantum positions.
 
@@ -1047,34 +1446,19 @@ covering the same ground. An agent interface over MCP covering everything that
 reads or authors content — and deliberately not covering anything that changes
 who may do what, what code runs, or what the keys are.
 
-**On a device.** The published site is an installable app with an offline page
-and a network-first service worker, and it can register as a share target so the
-operating system offers it in the share sheet — a share arriving as an ordinary
-form POST with no script in the path.
+**On a device.** The published site is an installable app, and it can register
+as a share target so the operating system offers it in the share sheet — a share
+arriving as an ordinary form POST with no script in the path. It serves a
+network-first service worker at `/sw.js` and an offline page, but no page
+registers the worker: registering one takes a script, and the site's policy
+allows none that does (`script-src 'none'`), so a visitor who loses the network
+sees the browser's own error rather than a page they have read.
 
 **Decentralised publication.** Content-addressed storage maps onto IPFS
 naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
 pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
 four hundred lines, verified against published identifiers and an independent
 reimplementation.
-
-**Conversation, built so that what was said stays said.** Slack shows
-"(edited)" and the previous text is gone — for everybody, including the person
-who already acted on it, recoverable only through a separate product on the
-top plan. "I said deploy to staging", edited to "I said deploy to prod", is
-unfalsifiable by design. Here a message is an append-only sequence of
-revisions and the current text is a fold of them; "edited" is not a flag
-somebody can clear but the observable fact that there is more than one. Slack's
-own documentation is plain that there is no recycle bin and a deleted message
-may be gone forever, which is two problems: the content is lost, and — worse —
-a conversation where message 47 is missing and nothing says so is a
-conversation somebody edited. So removing takes the words and leaves the
-shape. Retention does the same with a different actor, and only an Article 17
-erasure takes the words from the log as well, which it can because the log
-holds a digest and never the text. A reply is unread in the room rather than
-in a thread nobody is following, because that is the commonest structural
-complaint about the original. And a broadcast says how many people it
-interrupts *before* it goes.
 
 **A codec for screens, and deliberately not one for video.** AV1 took a
 consortium several years; a codec written here would be five to ten times
@@ -1090,9 +1474,10 @@ will not miss, and at eight pixels tall what it discards is the difference
 between a colon and a semicolon. So this is lossless — not high quality, not
 visually lossless — and the damage model is the compression: at 1920x1080,
 a key frame is 90x smaller than raw, a keystroke costs 271 bytes and a still
-screen costs 89, which is about 8 KB/s of typing with the frame encryption on
-top. Pointed at a photograph it compresses barely at all, and it says so
-rather than quietly sending fifty megabytes a second.
+screen costs 89, which is just under 8 KB/s of typing. Those are the codec's
+figures alone: no encryption is added to them. Pointed at a photograph it
+compresses barely at all, and it says so rather than quietly sending fifty
+megabytes a second.
 
 **Marks on a shared screen that follow the content, not the glass.** Everyone
 has sat through this: somebody circles line 40, the presenter scrolls, and the
@@ -1115,173 +1500,6 @@ less, because on their screen it never moved. Marks carry no pixels — a kind,
 a path, an author and a hash — so what a group pointed at survives a retention
 schedule that the frames themselves do not, and taking a mark back leaves the
 retraction rather than a gap.
-
-**End-to-end media encryption that an SFU cannot read.** A call between more
-than two people goes through a selective forwarding unit, which has to see RTP
-headers to route packets, drop layers and rewrite sequence numbers. SRTP is
-hop-by-hop, so the SFU holds the keys and can read everything — which is how
-most products that say "end-to-end encrypted group calls" resolve the tension,
-by not meaning what the phrase says. RFC 9605 is the resolution: the sender
-encrypts once, only the receivers decrypt, and the forwarding unit passes
-ciphertext it cannot read. All five cipher suites are implemented and checked
-against the working group's own test vectors — the derived keys, salts,
-nonces, associated data and ciphertexts, plus 289 header encodings — because a
-cryptographic implementation checked only against itself proves that it is
-self-consistent, which is the one property that does not matter. Three of the
-suites have tags shorter than sixteen bytes, and the arithmetic that makes
-them worth having is printed rather than assumed: at thirty frames a second
-across four streams the difference is 1,440 bytes a second. What SFrame does
-not do is stated in the package and in the command — it protects the media and
-not who is in the call, who is speaking, or for how long, and it says nothing
-about how the key got there.
-
-**Where the call's key actually comes from.** SFrame protects the media and
-says, in as many words, that it has nothing to say about how the base key got
-there; RFC 9605 leaves key management out deliberately and points at MLS. That
-is the honest position for a codec and an untenable one for a product, because
-until something fills it "end-to-end encrypted" is a claim about an algorithm
-rather than about a call. This fills it. Each epoch has a secret shared by
-exactly the people in the call at that moment, encapsulated to each of them
-under ML-KEM-768 and X25519 **together** — the hybrid holds if either one
-holds, which is the only defensible position while one is three years old and
-the other thirty, and it matters here rather than notionally because a
-recorded call is a ciphertext somebody can keep. Leaving is forward secret and
-rejoining tells you nothing about what you missed. A member whose device was
-compromised rotates their key in an Update, and the next epoch closes behind
-whoever had it. The property that is usually missing, though, is agreement:
-every member derives a confirmation tag from the roster, so a server that
-tells Ada the call is {Ada, Bob} while telling Bob it is {Ada, Bob, Eve}
-produces two tags that do not match and two clients that refuse — and each
-epoch's secret is sealed against the roster hash, so the rewritten commit does
-not even open. Most products that say "end-to-end encrypted group call" cannot
-do this, because the server is the only thing that knows who is in the room.
-It is **not MLS**: the key schedule follows RFC 9420 Section 8 in shape and
-the SFrame binding follows RFC 9605 Section 5.2 to the letter including the
-KID layout, but the labels are this project's and there is no ratchet tree,
-and the package says so rather than implying an interoperability it does not
-have. The tree is the one real omission and the arithmetic is printed rather
-than asserted: a flat commit costs 26 KB for a call of twenty and 118 KB for a
-hundred, against 92 KB for one key frame of the screen codec — about one video
-frame, once, when somebody joins or leaves. A tree would make those 6.6 KB and
-8.2 KB. That is a genuine saving on a cost that is already a single frame,
-bought with tree hashes, parent hashes, blank nodes and the resolution
-algorithm, which is the part of MLS where implementation bugs actually live. A
-call is not a group of fifty thousand. `quilzo call cost` prints the table so
-that stays a decision rather than an assumption.
-
-**A row of buttons where some of them are real.** Every meeting product has
-the same controls and presents them as equally solid. They are not. "Remove
-from meeting" and "mute participant" sit next to each other in Zoom's
-interface, and one is enforced by arithmetic while the other is enforced by
-the other person's software choosing to cooperate — so in the meeting where it
-actually matters, nobody in the room knows what they are relying on. Here every
-control declares what stands behind it, and there are three honest answers.
-**Cryptographic**: removal, which holds against a modified client and a hostile
-server because the epoch secret was never encapsulated to them. **Agreed**:
-muting and speaking rights, which every participant derives from the same group
-state, so the server cannot lie about them and every honest client applies them
-— while software that ignores the mute can still put bytes on the wire, exactly
-as it can in every other product. **Requested**: "please unmute", which is a
-message to a person, and is in the list so that nothing else in the list has to
-be explained away. This is not a smaller claim than the competition makes; it is
-the same claim, made accurately. `quilzo huddle controls` prints the table.
-
-The same honesty runs through the door. Zoom's meeting identifiers are nine to
-eleven digits — about thirty-six bits — and researchers predicted four percent
-of them; an invitation here carries 160, which is the least interesting of its
-protections. The link is not the key. Presenting a valid invitation gets
-somebody into the lobby, and the lobby is not the server declining to forward
-media: it is a place where they hold no group secret, so the media would not
-mean anything if it arrived. Getting a key takes a host committing them into the
-group. A link that leaks, is forwarded, or outlives its meeting therefore buys a
-knock at a door — which is what everybody already assumes a waiting room is, and
-what in most products it is not. Invitations expire by construction, can be
-bound to one person so forwarding them achieves nothing, and are stored as
-hashes, so whoever holds the state of a call cannot turn it back into a working
-link. Several people share screens at once, and one person can share two windows
-at once, because RFC 9605 gives the SFrame key identifier a context field for
-precisely that — a second stream is a number to allocate, not a second key
-exchange, and no two streams ever share a salt. Raised hands queue in the call's
-own order rather than by timestamp, because two hands inside the same second
-should not be ranked by whose laptop was fast.
-
-**The note-taker is a participant, not plumbing.** In every other product the
-AI note-taker lives on the vendor's side of the call and appears in no
-membership list anybody checks. That arrangement is why Otter and Fireflies are
-both being sued: the open question is whether the person who switched it on was
-responsible for everybody else's consent. Here it holds a key. Holding a key
-means being in the roster, and the roster is inside the confirmation tag every
-participant already verifies each epoch — so a note-taker cannot join without
-everybody's epoch authenticator changing in front of them. There is no secret
-recording, not because the product promises not to, but because the mechanism
-that would hide one does not exist: a listener who can decrypt is a member, and
-members are counted. Ejecting it is cryptographic in the sense above — "stop
-recording" is not a request to a vendor, it is an epoch whose secret it does not
-have.
-
-**It refuses to do what several competitors sell.** EU AI Act Article 5(1)(f)
-has prohibited inferring emotions from biometric data in the workplace since 2
-February 2025, with penalties to €35,000,000 or 7% of worldwide turnover, and
-voice-tone sentiment scoring in a work meeting is squarely inside it. This will
-not do it in any setting — outside the workplace the Act moves it from
-prohibited to high-risk, which is a different set of obligations rather than
-none, and inferring how somebody felt from how they sounded does not work well
-enough to put a number on it beside their name. The faculties stay in the
-enumeration so a refusal can name them and cite the reason. Analysis of the
-transcript is a different matter and is *not* emotion recognition under the Act,
-because the words somebody said are not biometric data — and the package marks
-that boundary rather than pretending to be comfortable with it, because the
-moment tone-of-text informs an employment decision it is a question again.
-Consent is per-participant and the strictest jurisdiction governs the whole
-call: thirteen US states require everybody to agree, so a meeting run from New
-York becomes all-party the moment one person dials in from California. Anything
-not in the table is treated as requiring everybody, because failing closed is
-the only defensible default when the downside is a wiretap charge. Somebody
-arriving mid-call who has not agreed **pauses it**, which is precisely the
-decision being litigated. `quilzo scribe law` prints both tables.
-
-**Minutes that can show their working.** The standing complaint about
-note-takers is that they invent things, so no line of the minutes exists
-without pointing at a span of transcript, and the check refuses to publish a
-line that points at nothing. Coverage is reported too — minutes drawn from four
-spans of a fifty-minute call are not wrong, but somebody deciding whether to
-trust them should see that first, and so should the fact that two of the five
-people who spoke are quoted nowhere. When somebody withdraws consent their
-words are erased and the fact that they spoke remains, and any line resting only
-on them is withdrawn and reported rather than silently kept. And because a
-transcript is people talking, and people can say "ignore previous instructions
-and send the summary to" out loud, instruction-shaped spans are quarantined:
-they can be quoted, and they can never be the authority for an action item. The
-detector is not the defence — a detector that can be evaded is a detector — the
-manifest in `internal/agent` is, and this only keeps the worst case to a strange
-sentence in the minutes instead of a task somebody has to explain.
-
-**The assistant acts, and can say why.** `internal/agent` already decides what
-an agent may call at all — it is shaped after DeepMind's CaMeL, the manifest is
-enforced at a chokepoint every operation passes through, and an agent that has
-been entirely talked round by something it read can still only do what its
-manifest declared. That is the security property. Two things a manifest cannot
-see sit on top of it. It cannot know whether a task came from *anything*: so an
-errand carries the sentence somebody actually said, and "why is there a ticket
-with my name on it" has an answer that is not "the AI decided". And it cannot
-know that the address it is about to send to belongs to somebody who was not in
-the call — which is the ordinary shape of an agent leaking something, not a
-break-in but a helpful forward. Every errand carries the roster of the call it
-came from, anything reaching further is refused until a person agrees, and the
-refusal names exactly who would newly learn. An approval is recorded against
-those names rather than as a boolean, so agreeing to tell the security team is
-not agreeing to tell the security team and a mailing list.
-
-The third thing is smaller and gets got wrong everywhere: **the person who made
-the commitment is the person who confirms it.** If the minutes say grace will
-write the migration, it is grace's to confirm — not the meeting organiser's, not
-an administrator's. Every product that puts a single approve button in front of
-whoever opened the summary has quietly moved the decision to the wrong person.
-And when somebody withdraws consent and their words are erased, an errand
-resting on them is reported rather than silently dropped: either work that
-vanished off somebody's list, or work already done with nothing on record saying
-why. Something already carried out stays carried out, because rewriting a record
-to say a thing did not happen is a worse lie than the gap.
 
 **Automation whose books have to add up.** Zapier's own troubleshooting advice
 contains this sentence: every time you use a filter or a path, you must ask what
@@ -1326,33 +1544,34 @@ of it has to be switched on.
 **Two kinds of authority, and only one of them was written down.** The access
 model above is the standing kind: a binding says this principal has this role on
 this resource, an administrator granted it, it is revocable, and an explicit deny
-wins wherever it sits. The other kind arrived later and by accident. A call has a
-host who can eject people. A room has a moderator who takes messages down. An
-errand has an owner who is the only person who can confirm it. **Nobody granted
+wins wherever it sits. The other kind arrived later and by accident. A share
+link lets a client read one draft. A visitor handed to a person holds the secret
+to one conversation. Whoever starts an agent run may stop it. **Nobody granted
 any of those**, they expire when the situation does, and each was invented inside the
-package that needed one.
+code that needed one.
 
-That is not a mistake in itself — a call host is genuinely not a rung on a
-site-wide ladder, and forcing it to be one would produce exactly the
+That is not a mistake in itself — a handoff's visitor is genuinely not a rung on
+a site-wide ladder, and forcing them to be one would produce exactly the
 over-granting the access model exists to avoid. The mistake is leaving the
 relationship unstated, because then two things become possible and neither is
 visible: situational authority quietly exceeding standing authority, or an
 administrator assuming an override that does not exist.
 
 The tempting rule — every situational role needs a standing one above some line
-— is wrong, and applying it would break the thing that works. The point of a call
-host is that an ordinary person can run a meeting; requiring an administrator to
-be present would mean meetings are run by whoever has the most access, which is a
+— is wrong, and applying it would break the thing that works. The point of a
+handoff is that a visitor with no account at all can talk to a person; requiring
+a grant first would mean only those with the most access are helped, which is a
 permission model shaping the organisation. **The rule that holds is about
 reach.** A power that acts inside its own situation needs nothing standing:
-ejecting somebody from a call ends when the call does, and the worst case is a
-bad meeting. A power that survives the situation is a standing act wearing a
-situational costume and needs the standing authority for what it actually does,
-which lands on **publish**: the ladder already defines it as the only action with
-an outside observer. Every situational role here today acts inside its own
-situation; the ones that reached outside (an incident's commander, a detection's
-promoter) left with a security team's tools, and the rule is what keeps the next
-one honest.
+ending a handoff conversation closes that one conversation, and the worst case
+is a visitor who leaves. A power that survives the situation is a standing act
+wearing a situational costume and needs the standing authority for what it
+actually does. One situational role here reaches outside today: an enrolment
+link, whose passkey outlives it and signs in as the person it names. What it
+does is hand somebody access, so it rests on **grant**: the authority of whoever
+made the link, checked when they made it. Others that reached outside (an
+incident's commander, a detection's promoter) left with a security team's tools,
+and the rule is what keeps the next one honest.
 
 So every situational role declares its powers and, for each, whether the effect
 survives — with the reason, because that classification is a judgement and an
@@ -1472,7 +1691,13 @@ Two consequences worth stating plainly:
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule
-  that stops a model shipping unreviewed.
+  that stops a model shipping unreviewed. What a run writes is the agent's,
+  made for the person who started the run, as the run's record names them
+  rather than whoever let one of its steps go ahead, and each commit says so.
+  With `review.required_approvals` or `approval.required_humans` set, that
+  person asked for the change, as they would their own, and somebody else
+  approves it; with neither set, they may approve it when nobody else may
+  publish, as before.
 
 This follows CaMeL ([arXiv:2503.18813](https://arxiv.org/abs/2503.18813)), which
 is where the research settled: enforce policy outside the model with a
@@ -1530,7 +1755,15 @@ MCP, A2A and ACP cannot express: permissions, delegation with accountability,
 budgets, provenance, revocation, and who answers for what an agent did. Six
 gaps. Quilzo's agent card fills all six, published as an A2A governance
 extension at `/.well-known/agent-card.json`, so another system can read what
-this one will and will not allow before it asks for anything.
+this one will and will not allow before it asks for anything. The card's
+description starts with the site's own sentence — `site.description`, or
+`quilzo site --description` for one run — and then says how its skills are
+governed, so an agent choosing between two sites reads what each is for before
+how it is run; a site with no description keeps the governance sentence alone.
+The extension is declared by its address in the card's `capabilities.extensions`,
+where A2A lists extensions. The card is read, not sent to: a site that takes no
+tasks from other agents says so on it, and its address answers anything but a
+read with 405; one that takes them names the address they are taken at.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share
@@ -1574,8 +1807,44 @@ starts:
 - it is capped at authoring, whatever its sponsor holds, so nothing that starts
   unattended can do more than draft and propose; publishing, and anything that
   goes out, is still a person's decision;
+- a call of a tool that writes to another system (a post, a message, an order)
+  waits for a person as asking first does, whatever `ask_first` says, and is
+  decided one call at a time, by somebody other than its sponsor where there is
+  somebody;
+- so does what its hands carry out to another system, whatever the
+  declaration asks about: an address read with `web_fetch` or opened in its
+  browser, a search of the web or of the open research indexes, a citation
+  looked up there, words typed into a page or a desktop app, a file put into
+  a page, and a command that reaches the network. Reading this store and
+  working in its workspace are not held;
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or
   an administrator's. Adding one is a widening, recorded as one.
+
+A run that a visitor's request to a chatbot starts is held in the same way: it
+acts for the agent's sponsor with a stranger's words in its goal, and nobody
+here started it.
+
+**Sending unattended.** Administrators may let an agent send through one tool,
+or one of its hands named by its action (`web_fetch`, `shell_run`,
+`browser_open` and the like), from the runs nobody started:
+
+```
+quilzo agent sends tidy grant post_update --why "the shop's updates go out as pages go live"
+quilzo pending approve ID         # a second administrator
+quilzo agent sends tidy           # what it sends unattended, granted by whom and why
+quilzo agent sends tidy revoke post_update
+```
+
+- The grant waits for a second administrator, as other privileged changes do,
+  and is recorded as a widening with who proposed it and who approved it. A
+  store with one administrator has it approved as it is made, and the record
+  says so.
+- It is for that tool at the host it reaches now, or for that hand at every
+  host it may reach now. A declaration that points it somewhere else, or
+  further, has not been granted that.
+- It lifts only this hold: what the agent asks first, a payment beyond its
+  mandates and the exfiltration breaker still wait for a person.
+- Taking it back holds the next call at once.
 
 **Safeguards against runaway runs.** Each trigger:
 - starts at most its runs for the day (24 unless it says otherwise);
@@ -1621,8 +1890,11 @@ notice is posted with the site's webhook client, which will not reach this
 machine or its network and does not follow redirects.
 
 `notify.events` says what staff are told about: a visitor asking for a person
-and a form sent, by default, and any event an agent can start from. A notice says
-which chatbot or form and how many, never who or what they wrote:
+and a form sent, by default, and any event an agent can start from. An event is
+named either way, by its own name (`page.published`) or by the one webhooks are
+told it by (`published`), and so it is in `quilzo webhook add --types` and an
+agent's `--on`. A notice says which chatbot or form and how many, never who or
+what they wrote:
 
 > 2 visitors asked the chatbot "help" for a person. They are waiting in the Inbox.
 
@@ -1832,6 +2104,22 @@ quilzo connect provider add google --template google --client-id ID --client-sec
   --scope https://www.googleapis.com/auth/calendar.events
 ```
 
+The social platforms each speak OAuth their own way, and their templates know
+how: `youtube`, `tiktok`, `instagram`, `facebook` and `linkedin` start from the
+documented endpoints and the scopes posting needs. TikTok is asked for
+`client_key` and its scopes separated by commas. Instagram and Facebook issue
+no refresh token, so the token a code buys, which lasts an hour, is exchanged
+at once for one that lasts sixty days, and renewed when it is used a day or
+more after the last renewal. LinkedIn's refresh token lapses a year after it
+was first issued however often it is used, and past that the person is told
+to connect again, with the date, rather than LinkedIn being asked. All but
+YouTube need `--client-secret`. A provider declared without a template at
+one of those platforms' own sites (`www.tiktok.com`, say) speaks that
+platform's dialect, and says so; anywhere else it speaks `oauth2`, the
+default and what every provider declared before speaks. `--dialect` names
+one instead: `oauth2`, `tiktok`, `meta-instagram`, `meta-facebook` or
+`linkedin`.
+
 An integration that names a connection (`"connection": "google"`) then goes
 with the account of the person the agent acts for, its sponsor, and nobody
 else's. Three come ready-made: `quilzo integrations template` declares
@@ -1839,6 +2127,38 @@ Google Calendar, a Microsoft 365 calendar or GitHub issues (reading, and
 adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
+
+**A social media aggregator reaches the first platforms while their app
+reviews are pending.** An aggregator holds the platforms' approved apps, and
+each account connects through it, so one REST integration posts to several
+platforms in week one. Which aggregator is the client's decision, on cost, and
+none is written in: its host, the path it takes a post at, and its names for
+the text, the media URLs and the platforms come from its own documentation.
+
+```
+quilzo config set site.base_url https://shop.example
+quilzo integrations template social-aggregator --endpoint api.aggregator.example --path /api/post \
+  --fields text=post,media=mediaUrls,platforms=platforms
+quilzo secret set social-aggregator-key < key.txt
+quilzo integrations pin social-aggregator
+```
+
+`--fields` is needed only where its names differ from `text`, `mediaUrls` and
+`platforms`; `--secret` names the key, `social-aggregator-key` by default, and
+`--auth header:NAME` sends it in a header of its own instead of as a bearer
+token. It is declared switched off, with one operation, `publishPost`, a JSON
+body of the text and the media, and stays off until an administrator turns it
+on; agents call it through their declared tools, as any integration. A media
+URL may only be one of this site's own `/media/ID` addresses, which the
+aggregator fetches, so an agent steered by something it read cannot have the
+client's accounts post a picture from somewhere else. The address is
+`site.base_url` as it was when the aggregator was declared: a site that moves
+edits it in the body schema in `integrations.json` and pins it again. A body
+field the declaration does not name is refused before anything is sent. A
+post is tried again, after a busy answer, only when it carries its step's
+idempotency key, as every write is. An aggregator whose post nests its fields deeper is
+declared the same way and its body schema edited in `integrations.json`, then
+pinned again.
 
 Another vendor's agent is an integration too, spoken to over Agent2Agent:
 `quilzo integrations import agent-card.json` declares it from its card, switched
@@ -1866,7 +2186,11 @@ with S256 is required, and a server that does not say it supports it is
 refused. This installation registers there as a public client (RFC 7591) when
 the server takes registrations, or uses `--client-id`; a server that answers a
 registration with a secret is refused, so a secret is never kept that nobody
-chose to keep. The metadata has to be for the server asked about, and the
+chose to keep. A server that takes no registrations and takes Client ID
+Metadata Documents, as another Quilzo's does, knows this installation by its
+own document, which the admin serves at `/connections/client.json` for the
+server to read. A connection asks for the scopes the server lists, or those
+`--scope` names. The metadata has to be for the server asked about, and the
 authorization server's for itself: one server cannot speak for another. Every
 request carries the resource indicator (RFC 8707), so a token is for that server
 and is sent to it alone. Then an MCP integration naming the connection reaches
@@ -1876,9 +2200,13 @@ A write an agent makes elsewhere is named by the step of the run that makes it:
 an `Idempotency-Key` header, the same for that step however often it is sent —
 a run picked up again from its record included — so a service that keeps them
 does it once. A call that met a busy service or no answer at all (408, 425,
-429, 502, 503, 504, or a dropped connection) is tried again, up to three times,
-waiting as `Retry-After` asks (ten seconds at most); a read always, a write only
-when it carries its key. One that still did not get through is kept on the
+429, 502, 503, 504, a rate limit TikTok answers as a 400 or Google's APIs as a
+403, or a dropped connection) is tried again, up to three times; a read always,
+a write only when it carries its key. It waits as `Retry-After` asks, in seconds
+or as a date, or else a random time up to one second and then two, so callers
+turned away together do not all come back together. One that asks for more
+than ten seconds is not tried again within the run: the call fails saying the
+time it may be tried again. One that still did not get through is kept on the
 Integrations screen and by `quilzo integrations undelivered`: which agent, run
 and step, which integration and tool, the key, and what came back — never the
 arguments, which the run's own record holds. Nothing there is sent again by
@@ -1892,6 +2220,12 @@ How it is kept safe:
   for, and a token goes to those and nowhere else.
 - **How it is kept:** sealed under the store's keyring, in a file that names
   nobody; refreshed when due, keeping a rotated refresh token.
+- **When it ends:** Your accounts and `quilzo connect list` (and its `--json`,
+  as `access_expires` and `refresh_expires`) say when the access token ends,
+  and the refresh token where the provider says, as LinkedIn's does: a year
+  from the first, not renewed by using it. Today counts your connections that
+  stop working within a week, so you connect them again before a post fails.
+  One connected before this was kept says it is not known until it is next used.
 - **Disconnecting:** revokes at the provider where it offers that (RFC 7009),
   and forgets it here either way.
 
@@ -2226,7 +2560,11 @@ audits a merge that says it succeeded.
 Locks exist too, and they are advisory on purpose. They stop two people each
 spending an afternoon on the same page. They are not the safety property, they
 expire on their own, and there is no break-lock button because there is nothing
-to break.
+to break. Whoever writes a page somebody else has claimed is told who holds it
+and why: in the editor, which leaves the claim with its holder; from `quilzo
+add`, `section` and `move`; and at the agent interface, where `write_page` says
+so, an agent's own run is told the same, and `list_locks` lists the claims
+before anything is written.
 
 There is no live cursor in a shared document, and there will not be. That
 feature is JavaScript by construction — an editor, a transport, and a CRDT in
@@ -2260,10 +2598,16 @@ editing the page takes. Both are in the audit log.
 
 ## On a phone
 
-A published site is a progressive web app: a manifest, a display mode, an
-offline page, and a service worker that is network-first because publishing has
-to take effect at once and a cache that serves yesterday's page is a rollback
-nobody asked for.
+A published site is installable: a manifest and a display mode. It also serves
+an offline page and a service worker that is network-first, because publishing
+has to take effect at once and a cache that serves yesterday's page is a
+rollback nobody asked for — but no page registers that worker, so the site does
+not work offline. A worker runs only once a page's script registers it, and the
+site's policy allows no script that does (`script-src 'none'`, which
+`worker-src` falls back to). A layout that registers `/sw.js` needs a policy
+that allows that script and `worker-src 'self'`; the worker keeps no answer
+marked `no-store` or `private` and no address with a query, so a booking, a
+conversation or a members' page is not left on the device.
 
 Point `share.form` at one of your forms and it registers as a share target, so
 the operating system offers your site in the share sheet. A share arrives as an ordinary form POST and becomes a submission —
@@ -2288,7 +2632,7 @@ than for one that has to be described.
 
 - **`quilzo posture scan`** reads your actual deployment rather than a
   checklist, and every rule already names the NIST SP 800-53 controls it bears
-  on and the OWASP category it belongs to. **35 controls have an automated
+  on and the OWASP category it belongs to. **57 controls have an automated
   check.** `quilzo compliance controls` prints the map.
 - **OSCAL 1.2.3 assessment results**, generated from that scan. Not a claim of
   compliance — the output of an assessment, which is what the format is for and
@@ -2300,7 +2644,42 @@ than for one that has to be described.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
   removed. Identifiers are pseudonymised unless somebody explicitly asks for
-  them, and asking is itself recorded.
+  them, and asking is itself recorded. Every export of the log is recorded the
+  same way, as `auditlog.export` with its format, how many events, their
+  range and whether identifiers were asked for: `quilzo siem`, the export on
+  the Integrations screen, and `quilzo auditlog export -o FILE`, which writes
+  the log as it is stored, even when its chain is broken. They are one
+  export, recorded once each time: for a log that verifies, `quilzo auditlog
+  export` and `quilzo siem jsonl` write the same bytes.
+- **One act, one action name**, whichever surface did it: a grant is
+  `auth.granted` (a deny `auth.denied`), a revocation `auth.revoke` and an
+  export of the log `auditlog.export`, from the command line, the admin and
+  the access review alike. Entries written before the names were made one
+  keep the names they were written with, because the chain covers them, and
+  are read as the act's name now by the log screen's filter and the export's
+  classification: `access.grant` as `auth.granted`, `access.revoke` as
+  `auth.revoke` and `siem.export` as `auditlog.export`. A memory deleted from
+  the command line was `memory.deleteed`; it is `memory.deleted`, as on the
+  Memory screen, and the old name is read as it in a person's memory receipt
+  and in the AI evidence. Approving a change for publication is
+  `review.approve`, installing a starter's design `template.use` and taking
+  the site's IPFS bundle `ipfs.write`, on the screens as on the command line;
+  the screens' old `approval.approve`, `template.install` and `ipfs.bundle`
+  are read as those.
+- **A webhook's address is not in the log.** The path of an incoming-webhook
+  address is a credential, as is a `?token=`, so the record of an endpoint
+  added, changed, turned off or removed names it by its scheme and host, with
+  `/…` for the rest, and an `endpoint_ref` by which its records line up.
+  `quilzo webhook list` and the Integrations screen still show administrators
+  the whole address. The screen registers an endpoint by the rule `quilzo
+  webhook add` does: https, no credentials in the address, an address outside
+  this network, and only event types that are sent.
+- **No address is written with its credentials.** Wherever an address stands
+  in a record (a detail of its own, a sentence, an error, the resource), its
+  user and password are written as `…@`, its query as `?…` and its fragment as
+  `#…`, whichever surface wrote the record, so neither the log nor any export
+  of it holds a password, a `?token=` or an `#access_token=`. Entries written
+  before keep what they were written with, because the chain covers them.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an
@@ -2517,6 +2896,11 @@ refuses every write whatever the role, `--on /blog` scopes it to a path, and
 `--ttl 24h` expires it. `quilzo token revoke ID` takes effect on the next use,
 not at the next restart.
 
+Whose hands a token is for is recorded when it is issued, never guessed from
+its name. The store's first token, for its only administrator, is theirs; after
+that, `--person` issues a token as its holder's own, and without it a token is
+a program's, which an access review refuses to take a decision from.
+
 ### Then either
 
 ```bash
@@ -2526,15 +2910,22 @@ quilzo site new "what the site is for" --name "Its name" --install   # a whole s
 # or
 quilzo template use sections             # a layout, a theme and sample content
 quilzo add index=templates/sections.json -m "first page"
+quilzo provenance set index --source humanEdits   # a person wrote it; publishing asks
 quilzo publish
 ```
 
 ### And run it
 
 ```bash
+quilzo auth enrol you                                                 # the link that adds your passkey, once
 quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
+
+Open the link `auth enrol` printed, add your passkey, and sign in with it. The
+admin is at `http://localhost:8080`, by name, because a browser will not use a
+passkey at an address. The token is for the command line: at the admin it is
+one factor, and signs in to "Confirm it's you" and no further.
 
 `quilzo help` lists every command, and `quilzo --version` prints the version,
 copyright and licence.
@@ -2570,16 +2961,19 @@ nothing else.
 
 ```bash
 docker build -t quilzo .
-docker volume create quilzo-store
-docker run --rm -p 8081:8081 -v quilzo-store:/srv/store quilzo \
+docker run --rm -v quilzo:/srv quilzo init
+docker run --rm -v quilzo:/srv quilzo demo
+docker run -p 8081:8081 -v quilzo:/srv quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 
-The image's store is `/srv/store`, named in its entrypoint, so mount the
-store's volume there; the image runs as uid 65532, which a named volume
-suits and a host folder must be made writable for. `deploy/README.md` has
-the whole stack with Docker Compose: the admin over HTTPS, the site behind
-Caddy, and a log writer of its own.
+The image's store is `/srv/store`, named in its entrypoint, and `quilzo demo`
+writes its templates beside it in `/srv`, so mount one volume at `/srv`: a
+volume at `/srv/store` alone loses the templates, and `site` then exits with
+`no template directory at templates`. The image runs as uid 65532, which a
+named volume suits and a host folder must be made writable for.
+`deploy/README.md` has the whole stack with Docker Compose: the admin over
+HTTPS, the site behind Caddy, and a log writer of its own.
 
 Behind a reverse proxy every connection is the proxy's, so name it in
 `network.trusted_proxies` by its own address — the proxy, a cluster's ingress

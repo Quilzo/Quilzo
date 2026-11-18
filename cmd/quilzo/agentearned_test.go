@@ -102,3 +102,31 @@ func TestAnAgentEarnsAKindOfActionByItsRecord(t *testing.T) {
 		t.Fatal("after a reset the write did not ask")
 	}
 }
+
+// The model an agent's run is driven by is named from its configuration,
+// and never by anything that holds the model's key.
+//
+// Every reason that names the driving model is printed, by agent run and
+// agent earned, so the name has to come from somewhere that cannot be the
+// key. Without a gateway the run is driven by the configured model, and its
+// name is QUILZO_MODEL.
+func TestTheDrivingModelIsNamedFromItsConfiguration(t *testing.T) {
+	root := storeFolder(t)
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_MODEL_URL", "https://models.zqexample.invalid/v1")
+	t.Setenv("QUILZO_MODEL_KEY", "zqsecretkeyzq")
+	t.Setenv("QUILZO_MODEL", "zqmodel")
+	got := drivingModel(root, "helper")
+	if got.Model != "zqmodel" || got.Route != "" {
+		t.Fatalf("the run is driven by %+v, want the configured zqmodel", got)
+	}
+	if strings.Contains(got.String(), "zqsecretkeyzq") {
+		t.Fatalf("the driving model names the key: %q", got.String())
+	}
+	t.Setenv("QUILZO_MODEL", "")
+	if got := drivingModel(root, "helper"); got.Model != "gpt-oss:20b" {
+		t.Fatalf("with no model configured the run is driven by %+v, want the default", got)
+	}
+}

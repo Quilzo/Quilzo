@@ -30,7 +30,7 @@ func formatCost(micros int64, currency string) string { return agent.MoneyText(m
 func agentCost(root string, args []string) error {
 	fs := flag.NewFlagSet("agent cost", flag.ContinueOnError)
 	by := fs.String("by", "agent", "group by agent, person, goal or day")
-	since := fs.Duration("since", 30*24*time.Hour, "how far back to look")
+	since := flagDuration(fs, "since", 30*24*time.Hour, "how far back to look")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
@@ -41,7 +41,7 @@ func agentCost(root string, args []string) error {
 		return fmt.Errorf("--by is agent, person, goal or day, not %q", *by)
 	}
 	if len(pos) > 1 {
-		return fmt.Errorf("usage: quilzo agent cost [--by agent|person|goal|day] [--since 720h] [NAME]")
+		return errMisused{fmt.Errorf("usage: quilzo agent cost [--by agent|person|goal|day] [--since 720h] [NAME]")}
 	}
 	name := ""
 	if len(pos) == 1 {

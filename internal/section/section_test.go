@@ -190,6 +190,39 @@ func TestEveryKindHasASummaryAndAStubThatSaysSomething(t *testing.T) {
 	}
 }
 
+// The catalogue comes a group at a time. `quilzo section kinds` starts a
+// heading whenever the group changes, and events, posts, newsletter, notice
+// and cta were added at the end of the list after booking, so it printed
+// "data" and "closing" twice, with those five cut off from the rest of
+// their groups.
+func TestTheKindsOfAGroupComeTogether(t *testing.T) {
+	done := map[string]bool{}
+	current := ""
+	for _, k := range Kinds() {
+		if k.Group == current {
+			continue
+		}
+		if done[k.Group] {
+			t.Errorf("%s comes after the %s group has ended and another begun",
+				k.Name, k.Group)
+		}
+		done[current] = true
+		current = k.Group
+	}
+	var groups []string
+	for _, k := range Kinds() {
+		if len(groups) == 0 || groups[len(groups)-1] != k.Group {
+			groups = append(groups, k.Group)
+		}
+	}
+	if !reflect.DeepEqual(groups, Groups()) {
+		t.Errorf("the kinds come in groups %v, and Groups says %v", groups, Groups())
+	}
+	if len(Kinds()) != len(kinds) {
+		t.Errorf("%d kinds of %d", len(Kinds()), len(kinds))
+	}
+}
+
 // A page's arrangement is checked against the catalogue.
 //
 // A section whose kind this build does not know renders as nothing at all, so a
@@ -276,5 +309,59 @@ func TestEveryPictureBearingKindHasItsField(t *testing.T) {
 			t.Errorf("the %s stub names %s, which no store holds: adding one "+
 				"and publishing produces a broken picture", name, path)
 		}
+	}
+}
+
+// A reuse of a block is no unknown kind. Read as one, every page that reused
+// a block was refused at publish as rendering nothing; what it names is the
+// publish gate's to check, against the whole draft.
+func TestAReuseOfABlockIsNoUnknownKind(t *testing.T) {
+	body := map[string]any{"sections": []any{
+		map[string]any{IDField: "a1", BlockKind: map[string]any{"page": "promo"}},
+	}}
+	if bad, _ := Validate(body); len(bad) != 0 {
+		t.Fatalf("a reuse was refused: %v", bad)
+	}
+	// Without a page it names nothing, and is not passed as a reuse.
+	empty := map[string]any{"sections": []any{
+		map[string]any{BlockKind: map[string]any{}},
+	}}
+	if bad, _ := Validate(empty); len(bad) == 0 {
+		t.Fatal("a reuse naming no block was passed")
+	}
+}
+
+// A section waiting for its media is listed as unfinished. A video section
+// with no video and a gallery item with no picture published without a word,
+// and the layout told every reader "No video chosen yet. Send one to the
+// bot and pick it here", an instruction for the person editing the page.
+// The page is not refused, as a page whose split section leaves its picture
+// out is prose at full width; the publish says what is still to choose.
+func TestASectionWaitingForItsMediaIsListed(t *testing.T) {
+	body := map[string]any{"title": "A page", Field: []any{
+		map[string]any{"video": map[string]any{"title": "Watch", "src": "", "caption": "A talk."}},
+		map[string]any{"gallery": map[string]any{"title": "Work", "items": []any{
+			map[string]any{"image": "/media/" + strings.Repeat("a", 64), "alt": "A chair"},
+			map[string]any{"image": "", "alt": "A table", "caption": "Add a picture"},
+		}}},
+		map[string]any{"video": map[string]any{"title": "Watched", "src": "/media/" + strings.Repeat("b", 64)}},
+	}}
+	bad, advice := Validate(body)
+	if len(bad) > 0 {
+		t.Fatalf("a page waiting for its media was refused: %v", bad)
+	}
+	var said []string
+	for _, p := range advice {
+		said = append(said, p.String())
+	}
+	all := strings.Join(said, "\n")
+	if !strings.Contains(all, "section 1: ") || !strings.Contains(all, "no video") {
+		t.Errorf("a video section with no video is not listed: %q", all)
+	}
+	if !strings.Contains(all, "section 2: ") || !strings.Contains(all, "picture 2") {
+		t.Errorf("a gallery picture with no image is not listed: %q", all)
+	}
+	if strings.Contains(all, "section 3: ") || strings.Contains(all, "picture 1 ") {
+		t.Errorf("media that is there is listed as missing: %q", all)
 	}
 }

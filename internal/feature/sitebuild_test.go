@@ -5,10 +5,12 @@ package feature
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/section"
 )
@@ -48,6 +50,14 @@ func TestEveryKindOfSiteBuildsIntoAPackageThatInstalls(t *testing.T) {
 			}
 			for name, body := range pages {
 				bad, advice := section.Validate(body)
+				// Except the pictures a portfolio's gallery waits for, which
+				// only the person whose work it is can add, and which the
+				// publish lists until they do.
+				waits := map[section.Problem]bool{}
+				for _, p := range section.Waiting(body) {
+					waits[p] = true
+				}
+				advice = slices.DeleteFunc(advice, func(p section.Problem) bool { return waits[p] })
 				if len(bad)+len(advice) > 0 {
 					t.Errorf("page %s: %v %v", name, bad, advice)
 				}
@@ -272,5 +282,77 @@ func TestTheSitePromptListsEverySectionKind(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "[[what goes here]]") || !strings.Contains(prompt, "soft") {
 		t.Error("the prompt does not say how to leave a fact out, or which styles there are")
+	}
+}
+
+// A built site's question box answers from what its pages say, never from
+// how they are drawn. Every card the builder writes names an icon, and the
+// chatbot on a site from `quilzo site new` answered "…at their level Icon:
+// groups. [1]".
+func TestABuiltSitesWiringIsNotKnowledge(t *testing.T) {
+	for _, k := range SiteKinds() {
+		p, err := BuildSite(SiteBrief{Description: "Something for " + k.Name, Name: "Hart & Daughters", Kind: k.Name}, "dana", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ps := range assistant.Chunk(pageBodies(p), nil) {
+			for _, wiring := range []string{"Icon:", "Style:", "Surface:", "Columns:", "Head title:"} {
+				if strings.Contains(ps.Text, wiring) {
+					t.Errorf("%s: %s reads %q", k.Name, ps.ID, ps.Text)
+				}
+			}
+		}
+	}
+}
+
+// Every page a built site has says what it is to a search engine and a link
+// preview. None did: the layouts write a page's description as its meta
+// description and og:description, and no built page had one, although each
+// opens with a sentence saying what it is. That sentence is its description,
+// the home page's the blank somebody fills in with what the site is for, so
+// filling it in once fills both.
+func TestEveryBuiltPageSaysWhatItIs(t *testing.T) {
+	brief := SiteBrief{Description: "A bakery in Leeds", Name: "Hart's Bakery"}
+	start, err := BuildSite(brief, "dana", buildTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range SiteKinds() {
+		p, err := BuildSite(SiteBrief{Description: "Something for " + k.Name, Name: "Hart & Daughters", Kind: k.Name}, "dana", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drafted, _ := json.Marshal(p)
+		repaired, _, err := ReadSiteDraft(string(drafted), brief, start, "dana", "", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, built := range []*Package{p, repaired} {
+			for name, page := range pageBodies(built) {
+				body, _ := page.(map[string]any)
+				d, _ := body["description"].(string)
+				hero, _ := body["hero"].(map[string]any)
+				lead, _ := hero["lead"].(string)
+				if strings.TrimSpace(d) == "" {
+					t.Errorf("%s: the %s page has no description", k.Name, name)
+				} else if lead != "" && d != lead {
+					t.Errorf("%s: the %s page is described as %q and opens with %q", k.Name, name, d, lead)
+				}
+			}
+		}
+	}
+	// A description somebody wrote is theirs.
+	p, err := BuildSite(brief, "dana", buildTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range p.Pages {
+		if p.Pages[i].Name == "index" {
+			p.Pages[i].Body["description"] = "Bread before dawn."
+		}
+	}
+	finishSite(p)
+	if d := pageBodies(p)["index"].(map[string]any)["description"]; d != "Bread before dawn." {
+		t.Errorf("a written description became %q", d)
 	}
 }

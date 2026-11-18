@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
 
@@ -46,7 +48,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		for k, v := range extra {
 			out[k] = v
 		}
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	}
 
@@ -62,15 +64,16 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"description": "what the site is for, in a sentence or two",
 			"name":        "what the site is called",
 			"kind":        "optional: business, product, restaurant, portfolio, community or event",
-			"style":       "optional: classic, expressive, glass, editorial, bold, soft or business",
+			"style":       "optional: " + strings.Join(theme.Styles, ", "),
 			"colour":      "optional main colour, as #rrggbb",
+			"scheme":      "optional: both (the default), dark or light; dark draws the site dark for every reader",
 		},
 		Keywords: []string{"website", "site", "build", "create", "new site", "landing", "homepage", "make"},
 	}, func(a map[string]any) (any, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
 		defer cancel()
 		built, err := buildSite(ctx, root, feature.SiteBrief{Description: str(a, "description"), Name: str(a, "name"),
-			Kind: str(a, "kind"), Style: str(a, "style"), Colour: str(a, "colour")}, false, agent)
+			Kind: str(a, "kind"), Style: str(a, "style"), Colour: str(a, "colour"), Scheme: str(a, "scheme")}, false, agent)
 		if err != nil {
 			return refuse(err)
 		}
@@ -94,6 +97,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"name":    "optional: what the site is called, when not what it calls itself",
 			"pages":   "optional: how many pages to read, at most 30",
 		},
+		Types:    map[string]string{"pages": "number"},
 		Keywords: []string{"import", "migrate", "move", "bring", "wix", "squarespace", "wordpress", "website"},
 	}, func(a map[string]any) (any, error) {
 		pages := mcpSiteImportPages
@@ -113,6 +117,20 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 				b.Notes[i] = "pictures stay behind when an agent brings a site in, since nothing it brings is kept " +
 					"before a person decides; bring the site in from Make › Bring your site, or with quilzo site " +
 					"import, to keep the ones it describes"
+			}
+			// How many pages this call reads, not how many any door does.
+			// The importer's note named its own most, 400: an agent that had
+			// read the 30 it may was told to ask for up to 400, asked, was
+			// given the same 30 without a word, and the same note again.
+			if strings.HasPrefix(n, webimport.NoteMorePages) {
+				if len(s.Pages) < mcpSiteImportPages {
+					b.Notes[i] = fmt.Sprintf("%s; ask for more with pages, up to the %d an import over the agent "+
+						"interface reads", webimport.NoteMorePages, mcpSiteImportPages)
+				} else {
+					b.Notes[i] = fmt.Sprintf("%s: %d is the most an import over the agent interface reads, and a person "+
+						"reads more by bringing the site in from Make › Bring your site, or with quilzo site import",
+						webimport.NoteMorePages, mcpSiteImportPages)
+				}
 			}
 		}
 		body, err := json.MarshalIndent(b.Package, "", "  ")
@@ -134,6 +152,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"the format; a bookings block (as `quilzo booking example` prints) sets how the site takes " +
 			"appointments, for pages with a booking section.",
 		Args:     map[string]string{"package": "the package, as a JSON object"},
+		Types:    map[string]string{"package": "any"},
 		Keywords: []string{"feature", "package", "propose", "form", "booking", "directory", "install"},
 	}, func(a map[string]any) (any, error) {
 		raw, ok := a["package"]
@@ -145,8 +164,24 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, err
 		}
 		p, _, err := readFeatureBytes(root, body, "")
+		// In words this call can follow. The refusal was the command line's,
+		// "give the publisher's keys with --keys head.pub.json": a flag this
+		// call does not have, for a file an agent cannot give.
+		if errors.Is(err, errSignedPackage) {
+			return refuse(errors.New("this package is signed, and a signature is checked against its publisher's " +
+				"keys when a person installs the package: propose it without its signature, or leave it to a person " +
+				"to install"))
+		}
 		if err != nil {
 			return refuse(err)
+		}
+		// A site's look in tokens, yes; its CSS, no. A style layer is served
+		// on every page, and the checks hold it to tokens without making it
+		// a person's choice: a layer that hid the privacy notice would pass
+		// them. The site builder leaves one out for the same reason.
+		if p.Site != nil && p.Site.Layer != "" {
+			return refuse(errors.New("a style layer is CSS served on every page, and a person chooses it: " +
+				"propose the look as style, colour, scheme, corner and tokens, and leave the layer out"))
 		}
 		// Written by a model, so its pages say so once installed.
 		by, _ := proposingAgent(caller)
@@ -167,6 +202,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"in the site's time zone. Who booked is not here; a person reads that on the Bookings screen. To change " +
 			"the hours or services, propose a package with a bookings block (propose_feature).",
 		Args:     map[string]string{"days": "optional: how many days ahead, at most 31; 7 by default"},
+		Types:    map[string]string{"days": "number"},
 		Keywords: []string{"booking", "appointment", "availability", "free", "times", "calendar", "slots"},
 	}, func(a map[string]any) (any, error) {
 		setup, err := loadBookingSetup(root)
@@ -176,9 +212,12 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if setup == nil {
 			return `{"bookings":false,"note":"this site takes no bookings"}`, nil
 		}
+		// As many as asked for, up to the most: a number over it was read
+		// as no number, so two months of free times asked for were a
+		// week's, and an agent told a visitor nothing was free after it.
 		days := 7
-		if n, ok := a["days"].(float64); ok && n >= 1 && n <= 31 {
-			days = int(n)
+		if n, ok := a["days"].(float64); ok && n >= 1 {
+			days = int(min(n, 31))
 		}
 		book, err := openBookings(root)
 		if err != nil {
@@ -220,8 +259,8 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			}
 			out = append(out, entry)
 		}
-		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
-			"services": out})
+		b, err := mcpJSON(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
+			"days": days, "services": out})
 		return string(b), err
 	})
 
@@ -251,7 +290,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 				EndDate: str("end_date"), Until: str("until"), Venue: str("venue"), Online: str("online"),
 				Price: str("price"), Status: str("status")})
 		}
-		b, err := json.Marshal(map[string]any{"events": true, "listing": name, "zone": listing.Zone().String(),
+		b, err := mcpJSON(map[string]any{"events": true, "listing": name, "zone": listing.Zone().String(),
 			"upcoming": out})
 		return string(b), err
 	})
@@ -292,7 +331,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			out = append(out, shown{ID: is.ID, Page: is.Page, Subject: is.Subject, State: is.State,
 				Sent: is.Sent, To: is.To})
 		}
-		b, err := json.Marshal(map[string]any{"subscribed": counts.Subscribed, "waiting": counts.Waiting,
+		b, err := mcpJSON(map[string]any{"subscribed": counts.Subscribed, "waiting": counts.Waiting,
 			"left": counts.Left, "issues": out, "problems": newsletterProblems(root)})
 		return string(b), err
 	})
@@ -314,7 +353,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return refuse(err)
 		}
-		b, err := json.Marshal(map[string]any{"issue": is.ID, "subject": is.Subject, "state": is.State,
+		b, err := mcpJSON(map[string]any{"issue": is.ID, "subject": is.Subject, "state": is.State,
 			"next": "a person sends it from the Newsletter screen after reading a test"})
 		return string(b), err
 	})
@@ -334,8 +373,13 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
+		// The pages the caller may read, as list_pages has them: every page
+		// each blank is on was named, a page a deny kept from them included.
+		if pages, err = visiblePages(root, caller, pages); err != nil {
+			return nil, err
+		}
 		whats, on := siteBlanks(pages, known)
-		b, err := json.Marshal(map[string]any{"blanks": whats, "on": on})
+		b, err := mcpJSON(map[string]any{"blanks": whats, "on": on})
 		return string(b), err
 	})
 
@@ -346,6 +390,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"read from a source they pointed you to; a blank you cannot fill stays a blank, which keeps its " +
 			"page from being published. Filled pages are marked as an agent's words.",
 		Args:     map[string]string{"values": "object of blank (as site_blanks names it) to value"},
+		Types:    map[string]string{"values": "object"},
 		Keywords: []string{"fill", "blanks", "address", "hours", "price", "site"},
 	}, func(a map[string]any) (any, error) {
 		raw, _ := a["values"].(map[string]any)
@@ -362,9 +407,9 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		n, changed, err := fillSite(root, values, agent)
 		if err != nil {
-			return refuse(err)
+			return nil, draftRefusal(err)
 		}
-		b, err := json.Marshal(map[string]any{"filled": n, "pages": changed,
+		b, err := mcpJSON(map[string]any{"filled": n, "pages": changed,
 			"next": "The pages are in the draft, marked as an agent's words; a person publishes them."})
 		return string(b), err
 	})

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // A reader listing grants and tokens is shown their own; whoever may grant,
@@ -112,5 +113,61 @@ func TestSomebodyUnverifiedIsListedNobodysRows(t *testing.T) {
 	}
 	if who, everybody := listedFor(root, auth.ActGrant); everybody || who != "" {
 		t.Fatalf("somebody unverified is listed the rows of %q (everybody's: %v)", who, everybody)
+	}
+}
+
+// A reader listing what waits for a second administrator is shown what
+// they asked for; whoever may decide it is shown all of it.
+//
+// A reader was shown all of it. `pending list` asks only to view, so that
+// somebody who asked for something can see it wait, and it printed every
+// request in the queue: who is about to be made an administrator, which
+// enrolment links are being asked for and which settings weakened, with
+// each request's payload under --json, to a reader refused `pending show`
+// and the People screen for the same requests.
+func TestAReaderListsOnlyTheirOwnPendingRequests(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	seedPolicy(t, root, [2]string{"rae", "reader"})
+	ts, _ := loadTokens(root)
+	rae, _, err := ts.Issue("rae-laptop", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdAuth(root, []string{"grant", "secretadmin", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	saved := w
+	t.Cleanup(func() { w = saved })
+	list := func(secret string, json bool) string {
+		t.Helper()
+		t.Setenv("QUILZO_TOKEN", secret)
+		if err := authoriseCommand(root, "pending", []string{"list"}); err != nil {
+			t.Fatalf("pending list: %v", err)
+		}
+		_, read := captureStdout(t)
+		w = out.New(json)
+		err := cmdPending(root, []string{"list"})
+		got := read()
+		if err != nil {
+			t.Fatalf("pending list: %v", err)
+		}
+		return got
+	}
+	if got := list(rae, false); strings.Contains(got, "secretadmin") || !strings.Contains(got, "your own") {
+		t.Errorf("a reader's pending list:\n%s", got)
+	}
+	if got := list(rae, true); strings.TrimSpace(got) != "[]" {
+		t.Errorf("a reader's pending list --json:\n%s", got)
+	}
+	if got := list(dana, false); !strings.Contains(got, "secretadmin") {
+		t.Errorf("an administrator's pending list:\n%s", got)
+	}
+	if got := list(dana, true); !strings.Contains(got, "secretadmin") {
+		t.Errorf("an administrator's pending list --json:\n%s", got)
 	}
 }

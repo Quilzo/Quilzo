@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -33,6 +34,9 @@ func cmdShield(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return shieldStatus(root)
 	case "list":
 		return shieldList(root, args[1:])
@@ -55,11 +59,14 @@ func cmdShield(root string, args []string) error {
 	case "dry-run":
 		return shieldDryRun(root, args[1:])
 	case "repair":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return shieldRepair(root)
 	default:
-		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
+		return errMisused{fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
 			"lockdown, freeze, pause, lift, judge, trust, decoy, playbook, hold, "+
-			"release, dry-run or repair", args[0])
+			"release, dry-run or repair", args[0])}
 	}
 }
 
@@ -185,7 +192,7 @@ func shieldLine(p shield.Protection, now time.Time) {
 func shieldList(root string, args []string) error {
 	fs := flag.NewFlagSet("shield list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "include what has ended")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	st, err := shield.Load(root)
@@ -228,11 +235,20 @@ func shieldApply(root, kind string, args []string) error {
 	fs := flag.NewFlagSet("shield "+kind, flag.ContinueOnError)
 	where := fs.String("where", shield.All, "admin, site or all (block)")
 	level := fs.String("level", shield.Off, "off, or limited for a chatbot (feature)")
-	dur := fs.Duration("for", time.Hour, "how long, at most a week")
+	dur := flagDuration(fs, "for", time.Hour, "how long, at most a week")
 	reason := fs.String("reason", "", "why (required)")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
+	}
+	// The two that are about no one thing take no word, and the words were
+	// gathered for a target and not looked at: `shield freeze 6h --reason
+	// "…"`, the --for forgotten, froze publishing for the hour that is the
+	// default, and the protection ended five hours before it was meant to.
+	if kind == "lockdown" || kind == "freeze" {
+		if err := noArguments(pos); err != nil {
+			return err
+		}
 	}
 	c, by := shieldBy(root)
 	now := time.Now()
@@ -303,7 +319,7 @@ func shieldLift(root string, args []string) error {
 		pos = []string{"all"}
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo shield lift ID|all [--mistake]")
+		return errMisused{errors.New("usage: quilzo shield lift ID|all [--mistake]")}
 	}
 	c, by := shieldBy(root)
 	now := time.Now()
@@ -334,7 +350,7 @@ func shieldLift(root string, args []string) error {
 
 func shieldJudge(root string, args []string) error {
 	if len(args) != 2 || (args[1] != shield.Mistake && args[1] != shield.Right) {
-		return errors.New("usage: quilzo shield judge ID mistake|right")
+		return errMisused{errors.New("usage: quilzo shield judge ID mistake|right")}
 	}
 	c, by := shieldBy(root)
 	p, err := shield.Judge(root, args[0], args[1], by, time.Now())
@@ -351,6 +367,12 @@ func shieldJudge(root string, args []string) error {
 
 func shieldTrust(root string, args []string) error {
 	if len(args) == 0 || args[0] == "list" {
+		// Nothing after list: `shield trust list office` listed them all.
+		if len(args) > 0 {
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -367,7 +389,7 @@ func shieldTrust(root string, args []string) error {
 		return nil
 	}
 	if len(args) != 2 || (args[0] != "add" && args[0] != "remove") {
-		return errors.New("usage: quilzo shield trust [list] | add CIDR | remove CIDR")
+		return errMisused{errors.New("usage: quilzo shield trust [list] | add CIDR | remove CIDR")}
 	}
 	c, _ := shieldBy(root)
 	if err := shield.Trust(root, args[1], args[0] == "add", time.Now()); err != nil {
@@ -386,6 +408,9 @@ func shieldDecoy(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -403,7 +428,7 @@ func shieldDecoy(root string, args []string) error {
 	case "add":
 		fs := flag.NewFlagSet("shield decoy add", flag.ContinueOnError)
 		note := fs.String("where", "", "where it will be planted (required)")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		secret, d, err := shield.AddDecoy(root, *note, by, now)
@@ -419,7 +444,7 @@ func shieldDecoy(root string, args []string) error {
 		return nil
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield decoy remove ID")
+			return errMisused{errors.New("usage: quilzo shield decoy remove ID")}
 		}
 		if err := shield.RemoveDecoy(root, args[1], now); err != nil {
 			return err
@@ -428,7 +453,7 @@ func shieldDecoy(root string, args []string) error {
 		w.Human("%sremoved%s %s\n", green, reset, args[1])
 		return nil
 	}
-	return errors.New("usage: quilzo shield decoy [list] | add --where TEXT | remove ID")
+	return errMisused{errors.New("usage: quilzo shield decoy [list] | add --where TEXT | remove ID")}
 }
 
 func shieldPlaybookNamed(bk *shield.Book, name string) (shield.Playbook, bool) {
@@ -452,6 +477,9 @@ func shieldPlaybook(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pbs := bk.InForce()
 		if w.JSON(pbs) {
 			return nil
@@ -462,11 +490,11 @@ func shieldPlaybook(root string, args []string) error {
 		return nil
 	case "show":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield playbook show NAME")
+			return errMisused{errors.New("usage: quilzo shield playbook show NAME")}
 		}
 		pb, ok := shieldPlaybookNamed(bk, args[1])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", args[1])
+			return errNotFound{fmt.Errorf("there is no playbook %s", args[1])}
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -480,11 +508,11 @@ func shieldPlaybook(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT")
+			return errMisused{errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT")}
 		}
 		pb, ok := shieldPlaybookNamed(bk, pos[0])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", pos[0])
+			return errNotFound{fmt.Errorf("there is no playbook %s", pos[0])}
 		}
 		pb.Mode = pos[1]
 		return shieldPropose(root, c, by, pb, false, *why, now)
@@ -493,7 +521,7 @@ func shieldPlaybook(root string, args []string) error {
 		file := fs.String("file", "", "the playbook as it will be, as JSON")
 		remove := fs.String("remove", "", "a playbook added here, to remove")
 		why := fs.String("why", "", "why (required)")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		var pb shield.Playbook
@@ -513,12 +541,12 @@ func shieldPlaybook(root string, args []string) error {
 		return shieldPropose(root, c, by, pb, *remove != "", *why, now)
 	case "approve", "decline":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])
+			return errMisused{fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])}
 		}
 		// Their own change, approved alone: not for a day after another
 		// administrator stopped being one.
 		for _, q := range bk.Pending {
-			if q.ID != args[1] || q.By != by || args[0] != "approve" {
+			if q.ID != args[1] || !auth.SamePerson(q.By, by) || args[0] != "approve" {
 				continue
 			}
 			if rm := aloneRefusal(root, by, now); rm != nil {
@@ -538,7 +566,7 @@ func shieldPlaybook(root string, args []string) error {
 		return nil
 	case "withdraw":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield playbook withdraw ID")
+			return errMisused{errors.New("usage: quilzo shield playbook withdraw ID")}
 		}
 		p, err := shield.Withdraw(root, args[1], by, now)
 		if err != nil {
@@ -548,8 +576,8 @@ func shieldPlaybook(root string, args []string) error {
 		w.Human("%swithdrawn%s %s\n", green, reset, proposalWords(p))
 		return nil
 	}
-	return errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT | " +
-		"propose --file F --why TEXT | approve ID | decline ID | withdraw ID")
+	return errMisused{errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT | " +
+		"propose --file F --why TEXT | approve ID | decline ID | withdraw ID")}
 }
 
 func shieldPropose(root string, c *Caller, by string, pb shield.Playbook, remove bool, why string, now time.Time) error {
@@ -635,13 +663,15 @@ func refuseAlone(root string, c *Caller, rm *dual.Removal, about map[string]stri
 	detail := rm.Detail()
 	maps.Copy(detail, about)
 	record(root, c.auditRecord("dual.alone-refused", "/", audit.Denied, detail))
-	return errors.New(rm.Refusal())
+	// A gate's refusal, 3, as the help documents one; the rule of two
+	// people refusing an approval alone exited 1, as a command that broke.
+	return errBlocked{errors.New(rm.Refusal())}
 }
 
 func shieldHold(root string, args []string) error {
 	fs := flag.NewFlagSet("shield hold", flag.ContinueOnError)
 	why := fs.String("why", "", "why (required)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	c, by := shieldBy(root)
@@ -657,7 +687,7 @@ func shieldHold(root string, args []string) error {
 func shieldRelease(root string, args []string) error {
 	fs := flag.NewFlagSet("shield release", flag.ContinueOnError)
 	why := fs.String("why", "", "why (required)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	c, by := shieldBy(root)
@@ -705,7 +735,7 @@ func shieldRepair(root string) error {
 // in the same window; past eight that is close to what the engine saw
 // rather than the same, and the run says so.
 func history(root string, days int, now time.Time) ([]shield.Signal, error) {
-	evs, err := audit.Read(auditPath(root))
+	evs, err := auditEntries(root)
 	if err != nil {
 		return nil, err
 	}
@@ -773,8 +803,8 @@ func shieldDryRun(root string, args []string) error {
 	fs := flag.NewFlagSet("shield dry-run", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back to look")
 	file := fs.String("file", "", "a playbook to try, as JSON, instead of one in force")
-	pos, err := parseAnywhere(fs, args)
-	if err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
 	if *days < 1 || *days > 400 {
@@ -802,7 +832,7 @@ func shieldDryRun(root string, args []string) error {
 	case len(pos) == 1:
 		pb, ok := shieldPlaybookNamed(bk, pos[0])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", pos[0])
+			return errNotFound{fmt.Errorf("there is no playbook %s", pos[0])}
 		}
 		pbs = []shield.Playbook{pb}
 	default:
@@ -832,17 +862,11 @@ func shieldDryRun(root string, args []string) error {
 
 // parseAnywhere parses flags wherever they are among the arguments, so
 // `shield lift ID --mistake` reads as it is written, and returns the rest.
+//
+// What follows "--" is returned as it is. The loop parsed it as flags, so a
+// program's own --verbose after the "--" was "flag provided but not
+// defined" (cliargs.go has the loop now).
 func parseAnywhere(fs *flag.FlagSet, args []string) ([]string, error) {
-	var pos []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		args = fs.Args()
-		if len(args) == 0 {
-			return pos, nil
-		}
-		pos = append(pos, args[0])
-		args = args[1:]
-	}
+	pos, _, err := parseInterspersed(fs, args)
+	return pos, err
 }

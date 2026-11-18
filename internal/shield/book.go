@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // The playbooks in force, and the changes waiting for a second person.
@@ -225,6 +226,16 @@ func Propose(root string, pb Playbook, remove bool, why, by string, now time.Tim
 	return p, err
 }
 
+// ErrSameProposer is the person who proposed a change approving it, for
+// errors.Is: a refusal by the rule of two people, which the command line
+// exits 3 for, as the help documents a refusal by a gate. It exited 1, as
+// a decision that could not be written does.
+var ErrSameProposer = errors.New("a change is approved by somebody other than the person who proposed it")
+
+// ErrNoChange is an id that names no change waiting, for errors.Is: the
+// command line exits 4 for it, "not found", where it exited 1.
+var ErrNoChange = errors.New("no change")
+
 // Decide approves or declines a waiting change. The person who proposed it
 // may not approve it, unless they are the only administrator there is.
 func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Proposal, error) {
@@ -234,13 +245,16 @@ func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Propos
 			if p.ID != id {
 				continue
 			}
-			if approve && p.By == by && !onlyAdmin {
-				return errors.New("a change is approved by somebody other than the person who proposed it")
+			// Whoever proposed it under another spelling of their name is
+			// still them (auth.SamePerson): compared exactly, "dana"
+			// approved "Dana"'s change as the second person.
+			if approve && auth.SamePerson(p.By, by) && !onlyAdmin {
+				return ErrSameProposer
 			}
 			p.DecidedBy, p.Decided = by, now
 			p.Outcome = "declined"
 			if approve {
-				p.Outcome, p.Alone = "approved", p.By == by
+				p.Outcome, p.Alone = "approved", auth.SamePerson(p.By, by)
 				if p.Release {
 					if err := release(root, now); err != nil {
 						return err
@@ -254,7 +268,7 @@ func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Propos
 			out = p
 			return nil
 		}
-		return fmt.Errorf("no change %s is waiting", id)
+		return fmt.Errorf("%w %s is waiting", ErrNoChange, id)
 	})
 	return out, err
 }
@@ -306,7 +320,7 @@ func Withdraw(root, id, by string, now time.Time) (Proposal, error) {
 			out = p
 			return nil
 		}
-		return fmt.Errorf("no change %s is waiting", id)
+		return fmt.Errorf("%w %s is waiting", ErrNoChange, id)
 	})
 	return out, err
 }

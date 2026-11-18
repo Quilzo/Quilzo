@@ -106,7 +106,7 @@ func fleetUnregister(root, name string, by *Caller) error {
 		return err
 	}
 	if !reg.Remove(name) {
-		return fmt.Errorf("no agent called %s is registered", name)
+		return errNotFound{fmt.Errorf("no agent called %s is registered", name)}
 	}
 	if err := saveJSON(fleetPath(root), reg); err != nil {
 		return err
@@ -303,7 +303,7 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 	touch := func(id, kind, name string, at time.Time) {
 		v.Touch(id, kind, name, at)
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	if events, err := auditEntries(root); err == nil {
 		for _, e := range events {
 			at, err := time.Parse(time.RFC3339, e.At)
 			if err != nil || at.Before(since) {
@@ -330,8 +330,11 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 				touch(to, "host", e.Detail["host"], at)
 				edges.Add("agent:"+e.Detail["agent"], to, at)
 			case "mcp.call", "mcp.gateway", "model.door":
-				from := "app:" + e.Model
-				if e.Model == "" {
+				// From the app, for the person who connected it, or from the
+				// person when their own token made the call (appOf).
+				app := appOf(e.Model)
+				from := "app:" + app
+				if app == "" {
 					from = "person:" + person
 				}
 				to, label := "quilzo", "Quilzo's interface"
@@ -341,18 +344,22 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 				case "model.door":
 					to, label = "models", "Quilzo's model gateway"
 				}
-				touch(from, fleet.KindApp, e.Model, at)
+				if app != "" {
+					touch(from, fleet.KindApp, app, at)
+				} else {
+					touch(from, fleet.KindPerson, person, at)
+				}
 				touch(to, fleet.KindQuilzo, label, at)
 				edges.Add(from, to, at)
-				if person != "" && e.Model != "" {
+				if person != "" && app != "" {
 					touch("person:"+person, fleet.KindPerson, person, at)
 					edges.Add("person:"+person, from, at)
 				}
 			case "a2a.task":
 				a := "agent:" + e.Detail["agent"]
 				from := "person:" + person
-				if e.Model != "" {
-					from = "app:" + e.Model
+				if app := appOf(e.Model); app != "" {
+					from = "app:" + app
 				}
 				edges.Add(from, a, at)
 			}
@@ -412,7 +419,7 @@ func recentUsage(root string, since time.Time) []gateway.Usage {
 // shadowAI is agents' own programs reaching AI services directly, from the
 // log's records of where each reached (agent.egress).
 func shadowAI(root string, since, now time.Time) []fleet.Sighting {
-	recs, err := audit.Read(auditPath(root))
+	recs, err := auditEntries(root)
 	if err != nil {
 		return nil
 	}
@@ -438,11 +445,11 @@ func cmdFleet(root string, args []string) error {
 			fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
 			name := fs.String("name", "", "what it is called here")
 			pos, rest := leadingArgs(args[1:], 1)
-			if err := fs.Parse(rest); err != nil {
+			if err := parseFlags(fs, rest, &pos, 1); err != nil {
 				return err
 			}
 			if len(pos) != 1 {
-				return errors.New("quilzo fleet add CARD_URL [--name NAME]")
+				return errMisused{errors.New("quilzo fleet add CARD_URL [--name NAME]")}
 			}
 			e, err := fleetRegister(root, pos[0], *name, resolveCaller(root, flagToken), time.Now())
 			if err != nil {
@@ -452,13 +459,22 @@ func cmdFleet(root string, args []string) error {
 			return nil
 		case "remove":
 			if len(args) != 2 {
-				return errors.New("quilzo fleet remove NAME")
+				return errMisused{errors.New("quilzo fleet remove NAME")}
 			}
 			return fleetUnregister(root, args[1], resolveCaller(root, flagToken))
 		case "check":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			changed, err := fleetCheck(root, time.Now())
 			if err != nil {
 				return err
+			}
+			// The agents whose cards changed, under --json. This wrote only
+			// through Human, so a script asking whether any card had changed
+			// was answered with nothing and exit 0.
+			if w.JSON(map[string]any{"changed": changed}) {
+				return nil
 			}
 			if len(changed) == 0 {
 				w.Human("no registered agent's card has changed\n")
@@ -470,7 +486,7 @@ func cmdFleet(root string, args []string) error {
 		case "shadow":
 			fs := flag.NewFlagSet("fleet shadow", flag.ContinueOnError)
 			days := fs.Int("days", 30, "how far back")
-			if err := fs.Parse(args[1:]); err != nil {
+			if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 				return err
 			}
 			now := time.Now()
@@ -487,12 +503,12 @@ func cmdFleet(root string, args []string) error {
 			}
 			return nil
 		default:
-			return fmt.Errorf("unknown fleet command %q; try add, remove, check or shadow", args[0])
+			return errMisused{fmt.Errorf("unknown fleet command %q; try add, remove, check or shadow", args[0])}
 		}
 	}
 	fs := flag.NewFlagSet("fleet", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back calls are read")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	v, err := buildFleet(root, *days, time.Now())

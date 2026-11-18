@@ -193,14 +193,17 @@ func (s *Site) addTypes() {
 				//
 				// This is the bill for a template language that cannot
 				// execute: it has no arithmetic, so £24.00 cannot be computed
-				// from 2400 at render time, and anything a reader sees that is
-				// not literally stored has to be stored. The alternative is a
-				// language with expressions in it, which is the class of
-				// feature server-side template injection lives in.
+				// from 2400 in a layout. The alternative is a language with
+				// expressions in it, which is the class of feature
+				// server-side template injection lives in.
 				//
-				// Paying it here rather than hiding it. Two fields, one
-				// authoritative for machines and one for people, is a cost
-				// worth naming in a demonstration rather than papering over.
+				// It was paid by storing both and keeping them in step by
+				// hand, and they drifted: a price changed from 1200 to 1300
+				// and published showed £12.00 beside a Buy button charging
+				// £13.00. So what a row shows is written in Go from price and
+				// currency where a record becomes a row
+				// (listing.WrittenPrice), and this stored copy is shown only
+				// for a record with no price to write it from.
 				{Name: "price_display", Kind: schema.Text, Label: "Price, written out",
 					Required: true, MaxLen: 20},
 				{Name: "sku", Kind: schema.Text, Label: "SKU", Required: true},
@@ -471,7 +474,8 @@ func (s *Site) addProducts() {
 			"dimensions": x.dims, "launched": x.launched,
 			// The two written-out fields, derived here because the template
 			// language has no arithmetic and no mapping — see the note on
-			// price_display in the type.
+			// price_display in the type, which a row writes again from the
+			// price whenever it is shown.
 			"price_display":      pounds(x.price),
 			"availability_label": availabilityLabel(x.avail),
 		}

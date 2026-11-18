@@ -44,18 +44,22 @@ import (
 // site, and this one cannot.
 
 func mediaReplace(root string, args []string) error {
-	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("replace", flag.ContinueOnError)
 	recordOnly := fs.Bool("record-only", false,
 		"note the succession and leave the content pointing at the old file")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only,
+	// `quilzo media replace --record-only OLD NEW` was answered with the usage
+	// line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media replace OLD NEW [--record-only]\n" +
 				"  OLD is the picture being retired and NEW is the one " +
-				"taking its place")
+				"taking its place")}
 	}
 	oldID, newID := pos[0], pos[1]
 
@@ -145,9 +149,20 @@ func mediaReplace(root string, args []string) error {
 	}
 	// The half the field was declared for. A live site still pointing at the
 	// retired file is not an error and is exactly what somebody needs to know.
+	//
+	// Except a caption file, which no page names: the live site reads it
+	// off the video that carries it, so publishing changes nothing, and the
+	// new file reaches the site when it is attached to that video.
 	if used, uerr := mediaInUse(root, old.ID); uerr == nil && used {
-		w.Human("  %sthe live site still uses %s; publish to change that%s\n",
-			yellow, old.Name, reset)
+		if old.Kind == media.Caption {
+			w.Human("  %sa video the live site shows carries %s as captions, and "+
+				"publishing does not change that: attach %s to it with `quilzo "+
+				"media captions VIDEO %s --lang TAG`%s\n",
+				yellow, old.Name, next.Name, shortID(next.ID), reset)
+		} else {
+			w.Human("  %sthe live site still uses %s; publish to change that%s\n",
+				yellow, old.Name, reset)
+		}
 	}
 	return nil
 }

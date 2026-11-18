@@ -341,3 +341,262 @@ func TestTheApprovalCountSurvivesSerialisation(t *testing.T) {
 			back.Have, back.Need, body)
 	}
 }
+
+// A change a machine made for a person is named by the machine, and the
+// person reads it where only a person's reading is asked; where a count of
+// approvals is set they asked for it, as they would their own work.
+//
+// The machine interface and the writing assistant commit under the name of
+// the person they act for, and the proposal was named by that: dana was
+// told she wrote what her client wrote and could not approve it, and on an
+// installation run by one person it could never be published.
+func TestWhatAMachineWroteForAPersonIsTheirsToRead(t *testing.T) {
+	for _, message := range []string{"mcp: write index", "assist: retitle the homepage"} {
+		writer, person := WrittenFor(message, "dana")
+		if writer == "dana" || writer == "" || person != "dana" {
+			t.Fatalf("%q under dana is written by %q for %q", message, writer, person)
+		}
+		m := &MachineChange{Commit: "aaa", Author: "dana", Message: message}
+		if !strings.Contains(m.Describe("aaa"), "dana's") {
+			t.Errorf("a refusal does not say whose machine wrote %q: %s", message, m.Describe("aaa"))
+		}
+
+		prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+		prop.MarkMachine(m)
+		if prop.OnBehalfOf != "dana" || prop.AuthorKind != "ai" {
+			t.Fatalf("a proposal for %q is %q for %q", message, prop.AuthorKind, prop.OnBehalfOf)
+		}
+		if err := prop.Approve("dana", "read it", now); err != nil {
+			t.Fatalf("dana may not read what %s wrote for her: %v", writer, err)
+		}
+		only := Policy{RequireHumanForAI: true}
+		if d := only.Evaluate(prop, people, now); !d.Allowed {
+			t.Errorf("with only a person's reading asked, dana's reading of %q did not count: %s", message, d.Reason)
+		}
+		for _, counted := range []Policy{{Required: 1, RequireHumanForAI: true}, {RequiredHumans: 1, RequireHumanForAI: true}} {
+			if !counted.Requested(prop, "dana") {
+				t.Errorf("with %+v dana is not who asked for %q", counted, message)
+			}
+			d := counted.Evaluate(prop, people, now)
+			if d.Allowed || !strings.Contains(d.Reason, "for dana") {
+				t.Errorf("with %+v dana approved what was written for her: %+v", counted, d)
+			}
+		}
+	}
+
+	// An agent's own commit names the agent, and nobody it was for.
+	if writer, person := WrittenFor(AgentPrefix+"tidy wrote index", "agent/tidy"); writer != "agent/tidy" || person != "" {
+		t.Errorf("an agent's commit is written by %q for %q", writer, person)
+	}
+	// Nor is a person's own commit anybody else's.
+	if writer, person := WrittenFor("fixed a typo", "dana"); writer != "dana" || person != "" {
+		t.Errorf("a person's commit is written by %q for %q", writer, person)
+	}
+}
+
+// The approval of the person a model wrote a change for stops counting once
+// a count is set, and somebody else's approval is then enough: hers is set
+// aside, not held against everybody else's.
+//
+// Dana read what her client wrote and approved it while no count was set,
+// as the rule allows, and a count of one was set before it was published.
+// Her approval was then reported as a refusal whatever anybody else said:
+// sam's approval was the one the count asked for, and the change still
+// could not be published until the draft itself changed. So was a proposal
+// waiting when the program was upgraded, approved by dana while a person's
+// later commit was all its author said.
+func TestAnApprovalThatNoLongerCountsDoesNotOutvoteOneThatDoes(t *testing.T) {
+	m := &MachineChange{Commit: "aaa", Author: "dana", Message: "mcp: write index"}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	if err := prop.Approve("dana", "read it", now); err != nil {
+		t.Fatal(err)
+	}
+	counted := Policy{Required: 1, RequireHumanForAI: true}
+
+	// Hers alone is not enough, and the refusal says why.
+	d := counted.Evaluate(prop, people, now)
+	if d.Allowed || !strings.Contains(d.Reason, "for dana") {
+		t.Fatalf("with a count set, dana's approval of what was written for her: %+v", d)
+	}
+
+	if err := prop.Approve("sam", "read it too", now); err != nil {
+		t.Fatal(err)
+	}
+	if d := counted.Evaluate(prop, people, now); !d.Allowed || d.Have != 1 {
+		t.Fatalf("sam's approval did not count beside dana's: %+v", d)
+	}
+
+	// Where sam's is not enough either, the refusal says what is still
+	// missing as well as why dana's was set aside.
+	two := Policy{Required: 2, RequiredHumans: 2, RequireHumanForAI: true}
+	if d := two.Evaluate(prop, people, now); d.Allowed || !strings.Contains(d.Reason, "for dana") ||
+		!strings.Contains(d.Reason, "from people") {
+		t.Fatalf("with two people asked for, sam's approval and dana's: %+v", d)
+	}
+}
+
+// Everybody a machine wrote some of a change for asked for it where a count
+// of approvals is set, and may read it where only a person's reading is
+// asked; a proposal recorded with one person still reads as it did.
+//
+// Only the person the newest machine's change was made for was named. Dana's
+// client rewrote the pricing and lee's client then wrote the about page:
+// the proposal named lee, and dana's approval counted for her own client's
+// prices.
+func TestEverybodyAMachineWroteForAskedForTheChange(t *testing.T) {
+	m := &MachineChange{Commit: "aaa", Author: "lee", Message: "mcp: write about", People: []string{"lee", "dana"}}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	prop.MarkMachine(m)
+	if prop.OnBehalfOf != "lee" || strings.Join(prop.AlsoOnBehalfOf, ",") != "dana" ||
+		strings.Join(prop.ForWhom(), ",") != "lee,dana" {
+		t.Fatalf("marked twice, the proposal is for %q and also %q", prop.OnBehalfOf, prop.AlsoOnBehalfOf)
+	}
+
+	counted := Policy{Required: 1, RequireHumanForAI: true}
+	only := Policy{RequireHumanForAI: true}
+	for _, who := range []string{"lee", "dana"} {
+		if !counted.Requested(prop, who) {
+			t.Errorf("with a count set, %s is not who asked for a change a machine wrote for them", who)
+		}
+		if only.Requested(prop, who) {
+			t.Errorf("with no count set, %s may not read what a machine wrote for them", who)
+		}
+		p := prop
+		p.Approvals = nil
+		if err := p.Approve(who, "read it", now); err != nil {
+			t.Fatal(err)
+		}
+		if d := counted.Evaluate(p, people, now); d.Allowed || !strings.Contains(d.Reason, "for "+who) {
+			t.Errorf("with a count set, %s's approval counted: %+v", who, d)
+		}
+	}
+	if counted.Requested(prop, "sam") {
+		t.Error("sam, whom no machine wrote for, is taken for who asked for it")
+	}
+
+	// A copy marked again, as the review screen marks one, leaves the
+	// list it was copied from as it was.
+	judged := prop
+	judged.MarkMachine(&MachineChange{Commit: "aaa", Author: "kit", Message: "mcp: write faq", People: []string{"kit"}})
+	if strings.Join(prop.ForWhom(), ",") != "lee,dana" || strings.Join(judged.ForWhom(), ",") != "lee,dana,kit" {
+		t.Errorf("the copy is for %q and the proposal now %q", judged.ForWhom(), prop.ForWhom())
+	}
+
+	// A proposal recorded before the list existed names its one person,
+	// and they are still who asked for it.
+	var old Proposal
+	if err := json.Unmarshal([]byte(`{"content":"aaa","author":"mcp-client","author_kind":"ai",`+
+		`"on_behalf_of":"dana","created_at":1}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if !counted.Requested(old, "dana") || strings.Join(old.ForWhom(), ",") != "dana" {
+		t.Errorf("an old proposal for dana reads as for %q", old.ForWhom())
+	}
+	body, err := json.Marshal(prop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"on_behalf_of":"lee"`) || !strings.Contains(string(body), `"also_on_behalf_of":["dana"]`) {
+		t.Errorf("the proposal is kept as %s", body)
+	}
+}
+
+// An agent's name cannot hide who its run was started by.
+//
+// The person was read from the message by cutting it at its first
+// " wrote ", and an agent may be called anything: dana's agent "tidy wrote
+// up" committed "agent: tidy wrote up wrote pricing for dana", which was
+// read as an agent called tidy, not the one recorded as making it, and so
+// as written for nobody. With a count of approvals set, dana approved her
+// own run's change as though somebody else had asked for it.
+func TestAnAgentsNameCannotHideWhoItsRunWasFor(t *testing.T) {
+	for _, name := range []string{"tidy wrote up", "tidy for lee", "tidy"} {
+		msg := AgentMessage(name, "pricing", "dana")
+		if writer, person := WrittenFor(msg, "agent/"+name); writer != "agent/"+name || person != "dana" {
+			t.Errorf("%q by agent/%s is written by %q for %q", msg, name, writer, person)
+		}
+		// And still only from a commit that agent is recorded as making.
+		if _, person := WrittenFor(msg, "agent/tidy wrote"); person != "" && name != "tidy" {
+			t.Errorf("%q by agent/tidy wrote is taken as written for %q", msg, person)
+		}
+	}
+}
+
+// An agent's commit names the person who started its run, and is read back
+// as the agent's, written for them; and only from a commit the agent it
+// names is recorded as making.
+func TestAnAgentsCommitIsWrittenForThePersonWhoStartedTheRun(t *testing.T) {
+	msg := AgentMessage("tidy", "index", "dana")
+	if !MachineWrote(msg) || !strings.HasPrefix(msg, AgentPrefix) {
+		t.Fatalf("%q does not say a machine wrote it", msg)
+	}
+	if writer, person := WrittenFor(msg, "agent/tidy"); writer != "agent/tidy" || person != "dana" {
+		t.Errorf("%q by agent/tidy is written by %q for %q", msg, writer, person)
+	}
+	// Recorded as made by anybody but the agent it names, it is not that
+	// agent's, and names nobody.
+	for _, author := range []string{"lee", "agent/other"} {
+		if _, person := WrittenFor(msg, author); person != "" {
+			t.Errorf("%q by %s is taken as written for %q", msg, author, person)
+		}
+	}
+	// An agent's commit made before the person was named says nobody.
+	if got := AgentMessage("tidy", "index", ""); got != AgentPrefix+"tidy wrote index" {
+		t.Errorf("with nobody to name, the message is %q", got)
+	}
+	m := &MachineChange{Commit: "aaa", Author: "agent/tidy", Message: msg}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	if prop.Author != "agent/tidy" || prop.OnBehalfOf != "dana" {
+		t.Fatalf("the proposal for the run's write is by %q for %q", prop.Author, prop.OnBehalfOf)
+	}
+	if !(Policy{Required: 1}).Requested(prop, "dana") || (Policy{RequireHumanForAI: true}).Requested(prop, "dana") {
+		t.Error("dana is not who asked for her run's change with a count set, or is without one")
+	}
+}
+
+// The author is the author under any spelling of their name, and so is one
+// approver clicking twice: another case, spaces around it or a mailto: in
+// front is the same person, refused as the author and counted once.
+//
+// Evaluate, Approve and Requested compared names exactly, so "dana"
+// approved "Dana"'s change as the second pair of eyes, and "Sam" and "sam"
+// were two approvals, where a privileged request (internal/dual) refused
+// the same two names as one person.
+func TestTheAuthorIsRecognisedWhateverTheCaseOfTheirName(t *testing.T) {
+	one := Policy{Required: 1}
+	prop := Proposal{Content: "aaa", Author: "Dana", AuthorKind: "human"}
+	for _, by := range []string{"dana", " DANA ", "mailto:dana"} {
+		if err := prop.Approve(by, "", now); err == nil {
+			t.Fatalf("%q approved Dana's change", by)
+		}
+		if !one.Requested(prop, by) {
+			t.Errorf("%q is not who asked for Dana's change", by)
+		}
+	}
+	prop.Approvals = append(prop.Approvals, Approval{Content: "aaa", By: "dana", At: now.Unix()})
+	if d := one.Evaluate(prop, people, now); d.Allowed {
+		t.Fatalf("dana's approval of Dana's change counted: %+v", d)
+	}
+
+	two := Policy{Required: 2}
+	prop = Proposal{Content: "aaa", Author: "dana", AuthorKind: "human"}
+	if err := prop.Approve("Sam", "", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := prop.Approve("sam", "", now); err == nil {
+		t.Error("sam approved again as somebody else")
+	}
+	prop.Approvals = append(prop.Approvals, Approval{Content: "aaa", By: "sam", At: now.Unix()})
+	if d := two.Evaluate(prop, people, now); d.Allowed || d.Have != 1 {
+		t.Fatalf("Sam and sam counted as two people: %+v", d)
+	}
+
+	// Whoever a model wrote it for, likewise.
+	written := Proposal{Content: "aaa", Author: "agent/tidy", AuthorKind: "ai", OnBehalfOf: "Dana"}
+	if !one.Requested(written, "dana") {
+		t.Error("dana is not who asked for what a model wrote for Dana")
+	}
+}

@@ -19,6 +19,10 @@ import (
 func TestTheGraceIsWrittenOnceAndThePeopleWithoutASecondFactorAreNamed(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
+	// Somebody was here before two factors became the rule, as on an
+	// upgraded installation: the grace is for them. A store nobody has
+	// entered gets none, from its first grant (authGrant).
+	seedPolicy(t, root, [2]string{"kim", "author"})
 	now := time.Now()
 	from := mfaFrom(root, now)
 	if d := from.Sub(now); d < mfaGrace-time.Minute || d > mfaGrace+time.Minute {

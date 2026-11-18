@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/decide"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The deciders, for an agent: the bounded-question pattern this program
@@ -189,9 +190,4 @@ func (c charged) Complete(ctx context.Context, system, user string) (string, err
 	return c.m.Complete(ctx, system, user)
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "…") }

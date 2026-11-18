@@ -24,7 +24,7 @@ func lockoutStore(root string) *lockout.Store {
 // authUnlock is `quilzo auth unlock NAME`.
 func authUnlock(root string, args []string) error {
 	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
-		return errors.New("usage: quilzo auth unlock NAME")
+		return errMisused{errors.New("usage: quilzo auth unlock NAME")}
 	}
 	name := args[0]
 	caller := resolveCaller(root, "")

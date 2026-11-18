@@ -23,3 +23,14 @@ extensions:
       # bytes pass through on the way out and reported provisioning
       # requests as cross-site scripting.
       - ["github.com/quilzo/quilzo/internal/scim", "", False, "reply", "", "", "Parameter[2]", "html-injection", "manual"]
+      # A page's Markdown copy (/NAME.md) is sent as text/markdown with
+      # X-Content-Type-Options: nosniff, so no browser reads it as HTML, and
+      # it is drawn with no request arguments, so nothing a request carries
+      # is in it. markdownOf is called from that one handler and nowhere
+      # else. CodeQL cannot see the content type, which markdownHeaders sets
+      # for both kinds of copy, and it joined the admin's preview form to
+      # this output through the renderer the two share, reporting the copy
+      # as cross-site scripting at the handler and at every wrapper its
+      # bytes pass through. TestAMarkdownCopyIsNeverReadAsAPage holds the
+      # header and the absence of request arguments.
+      - ["github.com/quilzo/quilzo/internal/public", "", False, "markdownOf", "", "", "ReturnValue", "html-injection", "manual"]

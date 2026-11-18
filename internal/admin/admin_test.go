@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -925,6 +927,39 @@ func TestEveryPageListingATokenFindingSaysWhoseItIs(t *testing.T) {
 	}
 }
 
+// Every page listing a token's finding gives its fix with the holder it
+// names in place of HOLDER, as quilzo posture scan does.
+//
+// "Held by lee" was shown above "Fix: quilzo token issue ... --principal
+// HOLDER", which left the administrator to put one into the other.
+func TestEveryPageListingATokenFindingPutsTheHolderInItsFix(t *testing.T) {
+	srv, token := setup(t)
+	if _, _, err := srv.Tokens.Issue("deploy-bot", "lee", auth.RoleAdmin, "/", 30*24*time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	rep := posture.Scan(posture.State{Policy: &auth.Policy{}, Tokens: srv.Tokens, Now: time.Now()}, nil)
+	withPosture(srv, rep)
+	pages := []string{"/security", "/security/rule/token.admin-role"}
+	for _, f := range frameworks.Catalogue {
+		for _, st := range posture.ByFramework(rep, f.ID) {
+			for _, about := range st.Findings {
+				if about.Rule == "token.admin-role" && len(pages) == 2 {
+					pages = append(pages, "/security/frameworks/"+f.ID)
+				}
+			}
+		}
+	}
+	for _, page := range pages {
+		body := get(t, srv, page, token).Body.String()
+		if !strings.Contains(body, "Held by <strong>lee</strong>") {
+			t.Fatalf("control: %s does not say whose token it is", page)
+		}
+		if strings.Contains(body, "--principal HOLDER") || !strings.Contains(body, "--principal lee") {
+			t.Errorf("%s gives the fix without the holder it names", page)
+		}
+	}
+}
+
 // The dogfooding rule applies here too, and a table of severities is the
 // easiest place to signal meaning with colour alone.
 func TestTheSecurityPagesPassOurOwnAccessibilityChecks(t *testing.T) {
@@ -1088,4 +1123,80 @@ func decideForm(t *testing.T, srv *Server, path, token string, form url.Values) 
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	return w
+}
+
+// A page that reaches its expires date while live, as it was told to, is
+// not a gate the next publish has to be given a reason to clear.
+//
+// The check read every page in the draft, so once an offer's date had
+// passed every later publish from this screen, of anything, was refused as
+// "1 page already past the date it stops being public" until somebody wrote
+// a reason or removed a page that was doing what it was set to. A page the
+// publish puts up or changes past its date is still caught.
+func TestAPageThatExpiredWhileLiveIsNotAWaiverForTheNextPublish(t *testing.T) {
+	srv, _ := setup(t)
+	p := principal{Name: "editor", Role: auth.RoleAdmin, Scope: "/"}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Live while its window was open: its date is now in the past.
+	pages["oldoffer"] = map[string]any{"title": "Old offer", "body": "Ten per cent off.", "expires": "2026-01-01T00:00:00Z"}
+	if _, err := site.SaveDraft(srv.Store, pages, "an offer", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(srv.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	waivedFor := func(change func(map[string]any)) []string {
+		t.Helper()
+		next := map[string]any{}
+		for k, v := range pages {
+			next[k] = v
+		}
+		change(next)
+		draft, err := site.SaveDraft(srv.Store, next, "next", "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		waived, refusal := srv.publishChecks(p, draft, "a reason for whatever needs one")
+		if refusal != nil {
+			t.Fatalf("refused: %+v", refusal)
+		}
+		return waived
+	}
+	if waived := waivedFor(func(m map[string]any) {
+		m["post"] = map[string]any{"title": "A new post", "body": "Something unrelated."}
+	}); slices.Contains(waived, "expired-pages") {
+		t.Fatalf("a page that expired on schedule had to be waived to publish a post: %v", waived)
+	}
+	if waived := waivedFor(func(m map[string]any) {
+		m["oldoffer"] = map[string]any{"title": "Old offer", "body": "Fifteen per cent off.", "expires": "2026-01-01T00:00:00Z"}
+	}); !slices.Contains(waived, "expired-pages") {
+		t.Fatalf("a changed page already past its date was not caught: %v", waived)
+	}
+}
+
+// A publish refused on Review shows what would go live, as Review did
+// before the button was pressed. The refusal for pages with no provenance,
+// the one that asks for a reason to publish anyway, was rendered without
+// the changes and said "No content differences" at the moment the person
+// was asked to write a reason against them; so did every other refusal
+// drawn on the same screen, and the one made while publishing is frozen.
+func TestARefusedPublishShowsTheChanges(t *testing.T) {
+	srv, token := setup(t)
+	w := postForm(t, srv, "/publish", token, "")
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "without provenance") {
+		t.Fatalf("not the provenance refusal: %d %s", w.Code, body)
+	}
+	if strings.Contains(body, "No content differences") || !strings.Contains(body, "2 changes between live and draft") {
+		t.Errorf("the refusal does not show the two changes waiting to go live:\n%s", body)
+	}
+
+	srv.Frozen = func() error { return errors.New("publishing is frozen") }
+	body = postForm(t, srv, "/publish", token, "").Body.String()
+	if strings.Contains(body, "No content differences") || !strings.Contains(body, "2 changes between live and draft") {
+		t.Errorf("the refusal while frozen does not show the changes:\n%s", body)
+	}
 }

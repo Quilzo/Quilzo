@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/provider"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -143,6 +144,9 @@ func cmdGateway(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return gatewayStatus(root)
 	case "route":
 		return gatewayRoute(root, args[1:])
@@ -152,7 +156,7 @@ func cmdGateway(root string, args []string) error {
 		return gatewayBudget(root, args[1:])
 	case "currency":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: quilzo gateway currency USD")
+			return errMisused{fmt.Errorf("usage: quilzo gateway currency USD")}
 		}
 		code := strings.ToUpper(strings.TrimSpace(args[1]))
 		return changeGateway(root, "currency", code, func(c *gateway.Config) error {
@@ -160,7 +164,7 @@ func cmdGateway(root string, args []string) error {
 			return c.Validate()
 		})
 	default:
-		return fmt.Errorf("unknown gateway command %q; try status, route, budget or currency", args[0])
+		return errMisused{fmt.Errorf("unknown gateway command %q; try status, route, budget or currency", args[0])}
 	}
 }
 
@@ -174,6 +178,13 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	if gw == nil {
+		// Under --json, the document a declared gateway answers with, and
+		// empty: no routes, and nothing spent through one today. This wrote
+		// only through Human, so a script asking where model calls go was
+		// answered with nothing and exit 0.
+		if w.JSON(map[string]any{"routes": []gateway.Health{}, "today": []gateway.Spend{}}) {
+			return nil
+		}
 		w.Human("no gateway declared; every model call goes to the one model " +
 			"in QUILZO_MODEL_URL.\n  add a route with quilzo gateway route add NAME --url U --model M\n")
 		return nil
@@ -183,7 +194,16 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	spend := ledger.Summary(*cfg, time.Now())
-	if w.JSON(map[string]any{"routes": gw.Health(), "today": spend}) {
+	routes := gw.Health()
+	// An empty list is [] here too, not null, so the two answers have one
+	// shape.
+	if routes == nil {
+		routes = []gateway.Health{}
+	}
+	if spend == nil {
+		spend = []gateway.Spend{}
+	}
+	if w.JSON(map[string]any{"routes": routes, "today": spend}) {
 		return nil
 	}
 	w.Human("%sroutes, in fallback order%s\n", bold, reset)
@@ -247,7 +267,10 @@ func gatewayStatus(root string) error {
 // Grant, not publish: a route decides where prompts go — what visitors typed
 // and what the site holds — and pointing it somewhere new is a decision about
 // who receives that, of the same weight as deciding who may sign in.
-func changeGateway(root, change, name string, edit func(*gateway.Config) error) error {
+//
+// What the edit says of the change (said) goes in the record beside the
+// name, when it says anything.
+func changeGateway(root, change, name string, edit func(*gateway.Config) error, said ...map[string]string) error {
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -265,15 +288,41 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 	if err := gateway.Save(gatewayPath(root), cfg); err != nil {
 		return err
 	}
+	detail := map[string]string{"name": name}
+	for _, more := range said {
+		maps.Copy(detail, more)
+	}
 	record(root, audit.Record{Action: "gateway." + change, Resource: "/gateway/" + name,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
-		Verified: caller.Verified, Detail: map[string]string{"name": name}})
+		Verified: caller.Verified, Detail: detail})
+	// What was set, here for every change to the gateway: the currency, a
+	// route and a budget were each set without a word, exit 0, and under
+	// --json with nothing, while `config set` and `agent declare` confirm.
+	if w.JSON(map[string]any{"change": change, "name": name, "changed": detail}) {
+		return nil
+	}
+	switch change {
+	case "currency":
+		w.Human("the gateway's currency is %s\n", name)
+	case "route.add":
+		w.Human("route %s added\n", name)
+	case "route.remove":
+		w.Human("route %s removed\n", name)
+	case "budget":
+		if to := detail["to"]; to != "" && to != "none" {
+			w.Human("budget for %s: %s\n", name, to)
+		} else {
+			w.Human("%s has no budget of its own now\n", name)
+		}
+	default:
+		w.Human("gateway %s: %s\n", change, name)
+	}
 	return nil
 }
 
 func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
+		return errMisused{fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
 			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
 			"       quilzo gateway route add NAME ... --draws [--price-picture 0.04] [--ask-base64]   a route that draws pictures\n" +
 			"       quilzo gateway route add NAME ... --embeds   a route that makes embeddings (chatbot.embeddings)\n" +
@@ -282,7 +331,7 @@ func gatewayRoute(root string, args []string) error {
 			"       quilzo gateway route add NAME --provider google-veo|fal --model M --films   one that makes video (quilzo media film)\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"         [--effort low|medium|high|xhigh|max] [--geo us|global] [--server-fallback]   Anthropic's Messages API only\n" +
-			"       quilzo gateway route remove NAME")
+			"       quilzo gateway route remove NAME")}
 	}
 	verb, name := args[0], args[1]
 	fs := flag.NewFlagSet("route", flag.ContinueOnError)
@@ -317,7 +366,7 @@ func gatewayRoute(root string, args []string) error {
 	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
 	var provParams multiFlag
 	fs.Var(&provParams, "param", "a provider's parameter, name=value (an Azure resource, an AWS region)")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
@@ -340,7 +389,7 @@ func gatewayRoute(root string, args []string) error {
 		}
 		p, ok := cat.Get(*prov)
 		if !ok {
-			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", *prov)
+			return errNotFound{fmt.Errorf("no provider called %q; quilzo gateway providers lists them", *prov)}
 		}
 		pp = map[string]string{}
 		for _, kv := range provParams {
@@ -374,7 +423,7 @@ func gatewayRoute(root string, args []string) error {
 		}
 		if verb == "remove" {
 			if len(kept) == len(c.Routes) {
-				return fmt.Errorf("no route called %s", name)
+				return errNotFound{fmt.Errorf("no route called %s", name)}
 			}
 			c.Routes = kept
 			return nil
@@ -425,29 +474,126 @@ func gatewayBudget(root string, args []string) error {
 	moneyDay := fs.String("money-per-day", "", "spending a day, in the gateway's currency, like 5.00")
 	moneyMonth := fs.String("money-per-month", "", "spending a calendar month, in the gateway's currency")
 	drop := fs.Bool("remove", false, "remove this caller's budget")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo gateway budget CALLER [--per-minute N] [--chars-per-day N]\n" +
+		return errMisused{fmt.Errorf("usage: quilzo gateway budget CALLER [--per-minute N] [--chars-per-day N]\n" +
 			"         [--tokens-per-day N] [--money-per-day 5.00] [--money-per-month 100]\n" +
-			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")
+			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")}
 	}
 	who := pos[0]
+	// Only the limits named change; the others are kept as they are.
+	//
+	// The budget was rebuilt from the flags given, zero meaning unlimited,
+	// so `gateway budget chatbot:help`, typed to see it, wiped every limit
+	// on the public chatbot and said nothing, and `--per-minute 10` alone
+	// dropped its character and token caps. Asked with nothing to change,
+	// it shows the budget; --remove is how one goes.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if !*drop && len(set) == 0 {
+		return showBudget(root, who)
+	}
+	// What it was and what it became, for the record: "gateway.budget
+	// chatbot:help" was all it said, the same for a cap raised to unlimited
+	// as for one lowered.
+	changed := map[string]string{"from": "none", "to": "none"}
 	return changeGateway(root, "budget", who, func(c *gateway.Config) error {
 		var kept []gateway.Budget
-		for _, b := range c.Budgets {
-			if b.Consumer != who {
-				kept = append(kept, b)
+		b := gateway.Budget{Consumer: who}
+		for _, old := range c.Budgets {
+			if old.Consumer == who {
+				b = old
+				changed["from"] = budgetWords(old)
+				continue
 			}
+			kept = append(kept, old)
 		}
 		if !*drop {
-			kept = append(kept, gateway.Budget{Consumer: who, PerMinute: *perMinute,
-				CharsPerDay: *perDay, TokensPerDay: *tokens, MoneyPerDay: *moneyDay, MoneyPerMonth: *moneyMonth})
+			if set["per-minute"] {
+				b.PerMinute = *perMinute
+			}
+			if set["chars-per-day"] {
+				b.CharsPerDay = *perDay
+			}
+			if set["tokens-per-day"] {
+				b.TokensPerDay = *tokens
+			}
+			if set["money-per-day"] {
+				b.MoneyPerDay = *moneyDay
+			}
+			if set["money-per-month"] {
+				b.MoneyPerMonth = *moneyMonth
+			}
+			kept = append(kept, b)
+			changed["to"] = budgetWords(b)
 		}
 		c.Budgets = kept
 		return c.Validate()
-	})
+	}, changed)
+}
+
+// showBudget is `quilzo gateway budget CALLER` with nothing to change: the
+// budget that applies to the caller, its own or the one for everybody
+// else, under the same authority that changes one, since a budget says
+// what a caller is allowed to spend.
+//
+// A caller with none of its own was told "the one for * applies, if there
+// is one", which showed no limit and left whether there was one to be
+// looked up.
+func showBudget(root, who string) error {
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return err
+	}
+	cfg, err := gateway.Load(gatewayPath(root))
+	if err != nil {
+		return err
+	}
+	b, found := gateway.Budget{Consumer: who}, false
+	if cfg != nil {
+		if applies, ok := cfg.BudgetFor(who); ok {
+			b, found = applies, true
+		}
+	}
+	if w.JSON(b) {
+		return nil
+	}
+	switch {
+	case !found && who == "*":
+		w.Human("there is no budget for *: nothing limits a caller with no budget of its own\n")
+		return nil
+	case !found:
+		w.Human("%s has no budget of its own and there is none for *: nothing limits it\n", who)
+		return nil
+	case b.Consumer != who:
+		w.Human("%s has no budget of its own; the one for %s applies\n", who, b.Consumer)
+	default:
+		w.Human("%s%s%s\n", bold, who, reset)
+	}
+	w.Human("  %s\n", budgetWords(b))
+	return nil
+}
+
+// budgetWords is a budget's limits on one line, as it is shown and as a
+// change to it is recorded.
+func budgetWords(b gateway.Budget) string {
+	limit := func(n int, what string) string {
+		if n == 0 {
+			return "unlimited " + what
+		}
+		return fmt.Sprintf("%d %s", n, what)
+	}
+	money := func(m string) string {
+		if m == "" {
+			return "unlimited"
+		}
+		return m
+	}
+	return fmt.Sprintf("%s, %s, %s, money %s a day and %s a month", limit(b.PerMinute, "calls a minute"),
+		limit(b.CharsPerDay, "characters a day"), limit(b.TokensPerDay, "tokens a day"),
+		money(b.MoneyPerDay), money(b.MoneyPerMonth))
 }
 
 // gatewayCapability is the gateway for the admin's Models screen.
@@ -679,6 +825,11 @@ func providerMaxTokens(root string, r gateway.Route) string {
 
 // gatewayProviders lists the providers a route can name, or one of them.
 func gatewayProviders(root string, args []string) error {
+	// One provider, or all of them: a second was not read.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	cat, err := loadProviders(root)
 	if err != nil {
 		return err
@@ -686,7 +837,7 @@ func gatewayProviders(root string, args []string) error {
 	if len(args) > 0 {
 		p, ok := cat.Get(args[0])
 		if !ok {
-			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", args[0])
+			return errNotFound{fmt.Errorf("no provider called %q; quilzo gateway providers lists them", args[0])}
 		}
 		if w.JSON(p) {
 			return nil

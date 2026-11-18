@@ -35,6 +35,10 @@ var capAreaOf = map[string]string{
 	"find": "Pages and content", "diff": "Pages and content",
 	"content_id": "Pages and content", "list_media": "Pages and content",
 	"list_menus": "Pages and content", "list_notes": "Pages and content",
+	// Who has claimed a page, which an agent looks at before rewriting one,
+	// as a person would.
+	"list_locks": "Pages and content",
+
 	"list_records": "Pages and content", "list_terms": "Pages and content",
 	"list_types": "Pages and content", "list_collections": "Pages and content",
 	"run_listing": "Pages and content", "export_site": "Pages and content",

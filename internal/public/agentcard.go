@@ -41,6 +41,16 @@ func (st *Site) agentCard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// A document, not an endpoint. With tasks off the card's url is its own
+	// address, and this answered every method, so a caller that read it and
+	// sent a task there was answered 200 with the card, which looks like an
+	// answer. 405 is one it can act on.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "the agent card is read, not sent to; this site takes no tasks here",
+			http.StatusMethodNotAllowed)
+		return
+	}
 	card, err := st.AgentCard()
 	if err != nil {
 		// Could not be built at all (the agents could not be read): a fault,

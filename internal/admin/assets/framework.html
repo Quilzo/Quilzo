@@ -1,7 +1,7 @@
 {{template "head" .}}
 <nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security/frameworks">Frameworks</a></li></ol></nav>
 <h1>{{.F.Name}}</h1>
-<p class="lead">{{.F.About}} <span class="hint">{{.F.Version}}. <a href="{{.F.URL}}" target="_blank" rel="noopener noreferrer">Read {{.F.Name}}{{template "newtab"}}</a>.</span></p>
+<p class="lead">{{.F.About}} <span class="hint">{{.F.Version}}. <span class="nobreak"><a href="{{.F.URL}}" target="_blank" rel="noopener noreferrer">Read {{.F.Name}}{{template "newtab"}}</a>.</span></span></p>
 <dl class="stats-row">
   <div{{if .Failing}} class="critical"{{end}}><dt>Failing</dt><dd>{{.Failing}}</dd></div>
   <div><dt>Passing</dt><dd>{{.Passing}}</dd></div>
@@ -12,7 +12,7 @@
   <tbody>{{range .View}}<tr>
     <th scope="row">{{.Ref.ID}}</th>
     <td><span class="wf-word {{if eq .State "failing"}}critical{{else if eq .State "passing"}}good{{else}}warning{{end}}">{{.State}}</span></td>
-    <td>{{range .Findings}}<p><strong>{{.Title}}</strong><br>{{.Detail}}{{with index $.Holders .Resource}}<br><span class="hint">Held by <strong>{{.}}</strong></span>{{end}}{{if .Fix}}<br><span class="hint">Fix: <code class="cmd">{{.Fix}}</code></span>{{end}}</p>{{end}}
+    <td>{{range .Findings}}<p><strong>{{.Title}}</strong><br>{{.Detail}}{{with index $.Holders .Resource}}<br><span class="hint">Held by <strong>{{.}}</strong></span>{{end}}{{if .Fix}}<br><span class="hint">Fix: <code class="cmd">{{fixfor .Fix (index $.Holders .Resource)}}</code></span>{{end}}</p>{{end}}
       <span class="hint">{{range $i, $r := .Rules}}{{if $i}}, {{end}}<a href="/security/rule/{{$r}}"><code>{{$r}}</code></a>{{end}}</span></td>
   </tr>{{end}}</tbody></table></div>
 {{else}}<p>No check covers this framework yet.</p>{{end}}

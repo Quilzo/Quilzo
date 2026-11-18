@@ -214,5 +214,11 @@ func (s *Server) handleEnrolRegister(w http.ResponseWriter, r *http.Request) {
 	// that should not have been given can be found again.
 	s.audit("passkey.enrolled", "/", map[string]string{"by": l.Principal, "via": "enrolment link",
 		"link_by": l.By, "label": cred.Label})
-	writeJSON(w, map[string]any{"ok": true, "next": "/signin/passkey"})
+	// On to sign in with it, and told there it was added: the enrolment
+	// page said so for the moment before it went, and the sign-in page
+	// said nothing, so the message flashed and was gone. A flag and not
+	// the person's name, since anybody can write a link with a name in it,
+	// and a page naming who holds a passkey before anybody has proved
+	// anything tells a stranger who has an account here.
+	writeJSON(w, map[string]any{"ok": true, "next": "/signin/passkey?added=1"})
 }

@@ -27,7 +27,10 @@ import (
 //     is refused, since a code without it is a code anybody who sees it
 //     can use.
 //  4. A client id: one given, or registered there (RFC 7591) as a public
-//     client, which PKCE alone protects.
+//     client, which PKCE alone protects, or, where the server takes no
+//     registrations and takes Client ID Metadata Documents, the address
+//     of this installation's own (ClientDocument), which is the only
+//     way another Quilzo's authorization server registers anybody.
 //
 // Every address is https and every answer is bounded; the resource
 // indicator (RFC 8707) goes on every authorization and token request, so a
@@ -221,6 +224,42 @@ func Register(ctx context.Context, post JSONPoster, d Discovered, clientName, re
 			"secret it issued by hand instead, kept as a credential")
 	}
 	return out.ClientID, nil
+}
+
+// ClientDocument is this installation's Client ID Metadata Document, served
+// at clientID itself: a public client that sends people back to redirect,
+// which PKCE alone protects, as one registered by Register is.
+func ClientDocument(clientID, clientName, redirect string) ([]byte, error) {
+	if err := checkEndpoint(clientID); err != nil {
+		return nil, fmt.Errorf("the document's address: %w", err)
+	}
+	if err := checkEndpoint(redirect); err != nil {
+		return nil, fmt.Errorf("the redirect: %w", err)
+	}
+	return json.Marshal(map[string]any{
+		"client_id":                  clientID,
+		"client_name":                clip(clientName, 100),
+		"redirect_uris":              []string{redirect},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": "none",
+	})
+}
+
+// Scopes reads the scopes a connection is to ask for, given as words: the
+// person deciding knows what their agent will do there, and a server's
+// list says only what it offers.
+func Scopes(given string) ([]string, error) {
+	var out []string
+	for _, s := range strings.FieldsFunc(given, func(r rune) bool { return r == ' ' || r == ',' }) {
+		if !reScope.MatchString(s) {
+			return nil, fmt.Errorf("%q is not a scope", clip(s, 60))
+		}
+		if !slices.Contains(out, s) && len(out) < 32 {
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 // FromDiscovered is a provider for a discovered resource, with a client id.

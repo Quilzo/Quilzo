@@ -6,6 +6,7 @@ package store
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -289,5 +290,38 @@ func TestAFlatTreeStillReads(t *testing.T) {
 	after, _ := s.GetNested(next)
 	if len(after) != 3 {
 		t.Errorf("%d entries after adding a record to a flat tree", len(after))
+	}
+}
+
+// A subtree whose object cannot be read is an error, not a leaf.
+//
+// The walk asked each child whether it is a tree, and an object that is
+// missing, or fails its own hash, or will not decrypt, answered no: it was
+// listed as a leaf, so a collection whose subtree had gone read as no
+// collection at all, and the publish gate's check of every product reported
+// clean having looked at none of them. Only an unrelated read of every
+// object at the root, on the way to the pages, had been catching it, and once
+// a commit's pages were read once instead of on every call nothing did.
+func TestASubtreeThatCannotBeReadIsAnError(t *testing.T) {
+	s := newStore(t)
+	base := seed(t, s, 3)
+	root, err := s.GetTree(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, ok := root["data"]
+	if !ok {
+		t.Fatalf("no data subtree: %v", root)
+	}
+	path, err := s.pathFor(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetNested(base)
+	if err == nil {
+		t.Fatalf("a tree with a subtree missing read without an error, as %v", got)
 	}
 }

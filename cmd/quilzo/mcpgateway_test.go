@@ -4,13 +4,18 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
@@ -173,6 +178,33 @@ func TestAToolAPersonApprovesIsHeldUntilSomebodyElseDecides(t *testing.T) {
 	}
 }
 
+// A call held for a person is not decided by that person under another
+// spelling of their name (auth.SamePerson), as at every other check that
+// a second person is somebody else. Somebody else still decides it.
+//
+// The check compared the names exactly, so "dana" approved the call held
+// for "Dana" as its second person, on the command line and on the
+// Integrations screen alike.
+func TestAHeldCallIsNotDecidedByItsPersonUnderAnotherSpelling(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author", Ask: []string{"create_issue"}})
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "Dana", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gatewayCallAs(t, root, appToken("Dana", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "held as") {
+		t.Fatalf("Dana's call: %v", err)
+	}
+	held := mustHeld(t, root)
+	if len(held) != 1 || held[0].Principal != "Dana" {
+		t.Fatalf("%+v", held)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("dana"), time.Now()); err == nil || !strings.Contains(err.Error(), "somebody else") {
+		t.Fatalf("dana decided the call held for Dana: %v", err)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("sam"), time.Now()); err != nil {
+		t.Fatalf("somebody else deciding it: %v", err)
+	}
+}
+
 func mustHeld(t *testing.T, root string) []heldCall {
 	t.Helper()
 	held, err := heldCalls(root, time.Now())
@@ -186,12 +218,22 @@ func mustHeld(t *testing.T, root string) []heldCall {
 // recorded as a failure. It was recorded as a success, as it was for
 // `quilzo integrations call`, so the record of a call into somebody
 // else's system said it worked when the tool had said it did not.
+//
+// And answered as a failure: the gateway dropped the far side's isError,
+// so the calling agent read the failure's text as what the tool did and
+// carried on as though it had happened.
 func TestAToolThatFailsThroughTheGatewayIsRecordedAsAFailure(t *testing.T) {
 	root, tr := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
 	tr.fails = true
-	out, err := gatewayCallAs(t, root, appToken("rae", auth.RoleAuthor))
-	if err != nil || !strings.Contains(out, "no such project") {
-		t.Fatalf("%q %v", out, err)
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/tracker", nil), root, "tracker", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call",
+		Params: json.RawMessage(`{"name":"create_issue","arguments":{"title":"Printer on fire"}}`)})
+	answer, _ := json.Marshal(resp.Result)
+	if resp.Error != nil || !strings.Contains(string(answer), `"isError":true`) || !strings.Contains(string(answer), "no such project") {
+		t.Fatalf("%+v %s", resp.Error, answer)
 	}
 	evs, _ := audit.Read(auditPath(root))
 	var last *audit.Event
@@ -223,5 +265,209 @@ func TestTheGatewayIsOffOnlyWhenSomethingSaysSo(t *testing.T) {
 	}
 	if _, err := gatewayCallAs(t, root, appToken("rae", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "turned off") {
 		t.Fatalf("with the interface shielded off: %v", err)
+	}
+}
+
+// An outside agent's call through the gateway answers to the brand rules,
+// as a run's call here does. The rules read what an agent run here writes
+// to another system, and the gateway forwarded the same post from another
+// vendor's agent, a claim the site would refuse to publish, unread.
+func TestABrandFindingThroughTheGatewayWaitsForAPerson(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	rae := appToken("rae", auth.RoleAuthor)
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/tracker", nil), root, "tracker", rae)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := map[string]any{"title": "Every order guaranteed to arrive by Friday"}
+	out, err := srv.Direct.Call("create_issue", claim)
+	if err == nil || strings.Contains(out, "filed") || !strings.Contains(err.Error(), "held as gq_") ||
+		!strings.Contains(err.Error(), "guaranteed") {
+		t.Fatalf("a claim the site would refuse went through the gateway unread: %q %v", out, err)
+	}
+	held := mustHeld(t, root)
+	if len(held) != 1 || !strings.Contains(held[0].Why, "guarantee_terms") {
+		t.Fatalf("the person deciding is not shown what the rules found: %+v", held)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("dana"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := srv.Direct.Call("create_issue", claim); err != nil || !strings.Contains(out, "filed") {
+		t.Fatalf("after a person approved it: %q %v", out, err)
+	}
+	// What says nothing the rules hold goes through as before.
+	if out, err := gatewayCallAs(t, root, rae); err != nil || !strings.Contains(out, "filed") {
+		t.Fatalf("a call with no claim was held: %q %v", out, err)
+	}
+	// Rules that cannot be read hold it too: nothing it says was checked.
+	if err := os.WriteFile(brandPath(root), []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gatewayCallAs(t, root, appToken("sam", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "brand.json") {
+		t.Fatalf("a call went through unchecked while the rules could not be read: %v", err)
+	}
+	// And the agent is told so without being told where the store keeps
+	// its files.
+	if err := os.Remove(brandPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(brandPath(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err = gatewayCallAs(t, root, appToken("dana", auth.RoleAuthor))
+	if err == nil || !strings.Contains(err.Error(), "brand.json") || strings.Contains(err.Error(), root) {
+		t.Fatalf("an unreadable rules file: %v", err)
+	}
+}
+
+// annotatedServer is a tool server whose tools say what they do: one
+// destructive, one read-only, one that says nothing and one that says
+// nothing and is on the gateway's list of tools a person approves.
+type annotatedServer struct{}
+
+func (annotatedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	schema := `{"type":"object","properties":{}}`
+	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","tools":[`+
+		`{"name":"delete_everything","description":"Delete it all.","inputSchema":%s,"annotations":{"title":"Delete","readOnlyHint":false,"destructiveHint":true}},`+
+		`{"name":"list_things","description":"List them.","inputSchema":%s,"annotations":{"readOnlyHint":true}},`+
+		`{"name":"count_things","description":"Count them.","inputSchema":%s},`+
+		`{"name":"move_things","description":"Move them.","inputSchema":%s}]}}`, msg.ID, schema, schema, schema, schema)
+}
+
+// What a forwarded tool says it does is the server's to say, and the
+// gateway may only make it sound more dangerous.
+//
+// Every tool was offered as {readOnlyHint: !integration.writes}, whatever
+// the server published, so on an integration declared with a list of tools
+// and no "writes" mark a tool the server called destructive was offered to
+// other systems' agents as read-only, and a client that runs read-only
+// tools without asking would have run it.
+func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
+	root, pol := identityStore(t)
+	if err := pol.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	mcpTransport = viaHandler(annotatedServer{})
+	t.Cleanup(func() { mcpTransport = nil })
+	uses := []string{"count_things", "delete_everything", "list_things", "move_things"}
+	set := agent.Integrations{Declared: []agent.Integration{{Name: "things", Kind: agent.IntegrationMCP, Enabled: true,
+		Purpose: "keep things", Endpoint: "things.example", Uses: uses,
+		Gateway: &agent.GatewayPolicy{Role: "author", Ask: []string{"move_things"}}}}}
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationsPin(root, []string{"things"}); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/things", nil), root, "things", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[string]any{}
+	for _, tool := range srv.Direct.Tools {
+		got[tool.Name] = tool.Annotations
+	}
+	if len(got) != 4 {
+		t.Fatalf("offered %v", got)
+	}
+	for name, want := range map[string]bool{"delete_everything": false, "list_things": true,
+		"count_things": true, "move_things": false} {
+		if got[name]["readOnlyHint"] != want {
+			t.Errorf("%s is offered with readOnlyHint %v; want %v (%v)", name, got[name]["readOnlyHint"], want, got[name])
+		}
+	}
+	if got["delete_everything"]["destructiveHint"] != true {
+		t.Errorf("the destructive tool is not offered as destructive: %v", got["delete_everything"])
+	}
+	if _, ok := got["delete_everything"]["title"]; ok {
+		t.Errorf("the far side's own words were offered as a hint: %v", got["delete_everything"])
+	}
+	// A server cannot talk the gateway out of what the integration says:
+	// declared as writing, nothing it offers is read-only.
+	set.Declared[0].Writes = true
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	srv, err = gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/things", nil), root, "things", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range srv.Direct.Tools {
+		if tool.Annotations["readOnlyHint"] != false {
+			t.Errorf("%s of an integration that writes is offered as read-only", tool.Name)
+		}
+	}
+}
+
+// A call through the gateway made with a person's own token is their
+// client's, recorded as the agent interface records it: kind ai, for the
+// person. It was recorded as the person acting by hand, so the agent watch,
+// which reads what models do, saw none of eight identical refused calls.
+func TestAGatewayCallWithAPersonsTokenIsTheirClients(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tok := auth.Token{ID: "tok_lee", Principal: "lee", Role: auth.RoleReader, Resource: "/"}
+	for range 8 {
+		if _, err := gatewayCallAs(t, root, tok); err == nil {
+			t.Fatal("a reader called a tool offered to authors")
+		}
+	}
+	evs, _ := audit.Read(auditPath(root))
+	n := 0
+	for _, e := range evs {
+		if e.Action != "mcp.gateway" {
+			continue
+		}
+		n++
+		if e.Kind != audit.KindAI || e.Model != "mcp-client" || e.Outcome != audit.Denied ||
+			e.Detail["credential"] != "tok_lee" || e.Detail["on_behalf_of"] == "" {
+			t.Fatalf("%+v", e)
+		}
+	}
+	if n != 8 {
+		t.Fatalf("%d gateway records", n)
+	}
+	var flagged []agentwatch.Report
+	for _, r := range agentwatch.Look(evs, time.Now()) {
+		if r.Counts[agentwatch.RepeatedRefusal] > 0 {
+			flagged = append(flagged, r)
+		}
+	}
+	if len(flagged) != 1 || !flagged[0].Flagged || !strings.HasPrefix(flagged[0].Subject(), "mcp-client for ") {
+		t.Fatalf("eight identical refusals through the gateway: %+v", flagged)
+	}
+}
+
+// A call through the gateway with an argument the pinned tool does not
+// take is invalid params, and is neither held for a person nor sent.
+//
+// It was held for approval as an ordinary call, and once approved went out
+// with the field nobody had approved the tool taking.
+func TestAGatewayCallTheToolsSchemaDoesNotTakeIsNeitherHeldNorSent(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author", Ask: []string{"create_issue"}})
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/tracker", nil), root, "tracker", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call",
+		Params: json.RawMessage(`{"name":"create_issue","arguments":{"title":"x","note":"steered"}}`)})
+	if resp.Error == nil || resp.Error.Code != mcp.CodeInvalidParams || !strings.Contains(resp.Error.Message, "note") {
+		t.Fatalf("%+v", resp.Error)
+	}
+	if held := mustHeld(t, root); len(held) != 0 {
+		t.Fatalf("held: %+v", held)
 	}
 }

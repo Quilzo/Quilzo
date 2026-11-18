@@ -153,3 +153,20 @@ func TestOpenShellSaysWhatItNeeds(t *testing.T) {
 		t.Fatalf("%q", n)
 	}
 }
+
+// An OpenShell sandbox's policy names the runtimes' settings of the image's
+// versions, not only this machine's: it was compiled from this machine's,
+// so Java in an image with another version than here could not read its
+// security file.
+func TestTheOpenShellPolicyNamesTheImagesRuntimeSettings(t *testing.T) {
+	p := string(Policy(Spec{Run: "run-20261007-ab12cd34", Agent: "coder", Program: "/usr/bin/java"},
+		"host.openshell.internal", map[string]int{"mcp": 41001}))
+	for _, want := range []string{`    - "/etc/java-17-openjdk"`, `    - "/etc/python3.10"`, `    - "/etc/java"`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the policy lacks %q", want)
+		}
+	}
+	if strings.Contains(p, `"/etc"`+"\n") || strings.Contains(p, "*") {
+		t.Errorf("the policy names /etc or a pattern:\n%s", p)
+	}
+}

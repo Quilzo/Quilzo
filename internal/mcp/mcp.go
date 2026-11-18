@@ -58,11 +58,19 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
+
+	"github.com/quilzo/quilzo/internal/jsonschema"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -122,7 +130,14 @@ type Operation struct {
 	Summary string
 	Detail  string
 	Args    map[string]string
-	Writes  bool
+	// Types are the JSON types of the arguments in Args that a handler
+	// takes as something other than text: "number", "boolean", "object",
+	// "array", or "any" for a value it takes as it comes. Every other
+	// argument Args names is a string. An operation that names its
+	// arguments takes those and no others, of those types, and anything
+	// else is invalid params before its handler runs (checkArguments).
+	Types  map[string]string
+	Writes bool
 	// Publishes marks a write that reaches readers. It is called through
 	// quilzo_publish and no other tool, so the tool a host lets an agent
 	// draft with is not the one that makes the draft live.
@@ -152,9 +167,25 @@ type Handler func(args map[string]any) (any, error)
 // The distinction is the same one the CLI makes with exit code 3: an agent that
 // reads "denied by policy" as "the server broke" will retry, and retrying a
 // refusal is how an agent turns one blocked action into a hundred.
-type Refusal struct{ Reason string }
+//
+// Retryable marks the one kind a retry can change: a write refused because
+// somebody else's landed first, where the next call reads the draft again.
+// Every refusal said retryable:false, so a client that honoured it gave up
+// on nine of ten writes that a second call would have made.
+type Refusal struct {
+	Reason    string
+	Retryable bool
+}
 
 func (r *Refusal) Error() string { return r.Reason }
+
+// ArgumentError is an argument that is not one its operation can take, as
+// its handler found it: invalid params, as an argument of the wrong type
+// is before any handler runs, so an agent changes the call rather than
+// reading the answer as the content being missing or the action refused.
+type ArgumentError struct{ Reason string }
+
+func (e *ArgumentError) Error() string { return e.Reason }
 
 // Server routes MCP traffic.
 type Server struct {
@@ -186,6 +217,18 @@ type Server struct {
 	// host's to authorise and forward. Nothing runs without Call.
 	Direct *Direct
 
+	// ArgumentsAsGiven hands every operation its arguments as they came,
+	// held only to the tool's own schema and not to what the operation
+	// says it takes (checkArguments). It is for a server whose handlers are
+	// not the operations' own and read arguments by other rules. A run's
+	// interface is one: it lists the store's operations and hands each
+	// call to the run as a step, and the run's executor reads a page from
+	// "page" or "name" and a search from "query", "q" or "text". Held to
+	// the store's names, a program that sent name was answered invalid
+	// params, and the step, with its place in the budget and the record,
+	// never happened.
+	ArgumentsAsGiven bool
+
 	operations map[string]Operation
 	handlers   map[string]Handler
 }
@@ -195,9 +238,21 @@ type Direct struct {
 	Instructions string
 	Tools        []Tool
 	// Call authorises and performs one tool. A *Refusal or a *ScopeError
-	// is a decision, answered as one.
+	// is a decision, answered as one; a *ToolFailed is the tool saying it
+	// failed, answered as a result marked isError.
 	Call func(name string, args map[string]any) (string, error)
 }
+
+// ToolFailed is another server's tool that ran and said it failed, with
+// what it said: answered as a result marked isError, as that server
+// answered it, so the agent reading it can tell a failure from what the
+// tool did. A gateway could only answer text or an error, and gave the
+// failure's text as a plain result: an agent read "the partner system
+// answered 503" as the tool's work and carried on as though it had
+// happened.
+type ToolFailed struct{ Text string }
+
+func (e *ToolFailed) Error() string { return e.Text }
 
 func NewServer(name, version string) *Server {
 	return &Server{
@@ -307,11 +362,19 @@ func opSchema(desc string) map[string]any {
 //
 // A plain keyword score rather than an embedding. The corpus is a dozen
 // operations written by one person; a retrieval model here would add a
-// dependency, a failure mode and a warm-up cost to a lookup that a substring
+// dependency, a failure mode and a warm-up cost to a lookup that a word
 // match answers correctly.
+//
+// Words, not substrings. Every query word was looked for anywhere in the
+// operation's text, so the "a" of "triage a support ticket" scored on
+// almost every operation, and three more on one with an "a" in its name:
+// agent_activity came first and decide was not among the first six. A word
+// counts once it is two letters or more and not one any sentence has, and
+// matches the same word, or one that starts with it either way round, so
+// "deciders" finds decide and "pages" list_pages; the same word counts for
+// more.
 func (s *Server) find(query string) []Operation {
-	q := strings.ToLower(strings.TrimSpace(query))
-	words := strings.Fields(q)
+	words := findWords(query)
 
 	type scored struct {
 		op    Operation
@@ -320,14 +383,11 @@ func (s *Server) find(query string) []Operation {
 	var out []scored
 	for _, op := range s.operations {
 		score := 0
-		hay := strings.ToLower(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
+		name := findWords(strings.ReplaceAll(op.Name, "_", " "))
+		hay := findWords(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
 		for _, w := range words {
-			if strings.Contains(hay, w) {
-				score += 2
-			}
-			if strings.Contains(strings.ToLower(op.Name), w) {
-				score += 3
-			}
+			score += 2 * findMatch(w, hay)
+			score += 3 * findMatch(w, name)
 		}
 		if score > 0 {
 			out = append(out, scored{op, score})
@@ -427,7 +487,10 @@ func (s *Server) complete(m map[string]any) map[string]any { return Complete(m, 
 // 2026-07-28 results do; for a server answering without this package's
 // Server, such as the public site's /mcp.
 func Complete(m map[string]any, name, version string) map[string]any {
-	out := make(map[string]any, len(m)+2)
+	// Sized for m alone. Adding the two keys below may grow it once, which
+	// costs nothing worth measuring, where a sum in the size is one code
+	// scanning reads as a length that could overflow.
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}
@@ -444,10 +507,33 @@ type callParams struct {
 func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	var p callParams
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: "a tool is called with its name, a string, and its arguments, an object"}
 	}
 	if s.Direct != nil {
 		return s.callDirect(p)
+	}
+
+	var tool *Tool
+	names := make([]string, 0, 5)
+	for _, t := range s.tools() {
+		names = append(names, t.Name)
+		if t.Name == p.Name {
+			tool = &t
+		}
+	}
+	if tool == nil {
+		return nil, &Error{Code: CodeMethodNotFound,
+			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
+				strings.Join(names, ", "))}
+	}
+	// The arguments as the tool's own schema says, before anything reads
+	// them. Read as they came, a query that was a number or missing was no
+	// query, and quilzo_find answered with every operation; an operation's
+	// arguments sent as a string were none, and read_page looked for the
+	// page "".
+	if err := fits(tool.InputSchema, p.Arguments); err != nil {
+		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
 	}
 
 	if p.Name == "quilzo_find" {
@@ -459,18 +545,6 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
 		"quilzo_publish": "publish",
 	}[p.Name]
-	if kind == "publish" && !s.publishes() {
-		kind = ""
-	}
-	if kind == "" {
-		names := make([]string, 0, 5)
-		for _, t := range s.tools() {
-			names = append(names, t.Name)
-		}
-		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
-				strings.Join(names, ", "))}
-	}
 
 	opName, _ := p.Arguments["operation"].(string)
 	if opName == "" {
@@ -480,7 +554,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	op, ok := s.operations[opName]
 	if !ok {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
+			Message: fmt.Sprintf("no operation %s; call quilzo_find", quoteName(opName))}
 	}
 
 	// A read tool must not be able to reach a write operation. Without this the
@@ -532,31 +606,132 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	if !s.ArgumentsAsGiven {
+		if err := op.checkArguments(args); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: fmt.Sprintf("%s: %v", opName, err)}
+		}
+	}
 
 	result, err := s.handlers[opName](args)
 	if err != nil {
 		var ref *Refusal
+		var bad *ArgumentError
+		if errors.As(err, &bad) {
+			return nil, &Error{Code: CodeInvalidParams, Message: bad.Reason}
+		}
 		if asRefusal(err, &ref) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
-	return textResult(fmt.Sprintf("%v", result)), nil
+	text, err := answerText(result)
+	if err != nil {
+		return nil, &Error{Code: CodeInternal, Message: err.Error()}
+	}
+	return textResult(text), nil
+}
+
+// checkArguments holds an operation's arguments to what it says it takes:
+// the names in Args and no others, each of the type Types gives it, text
+// when Types says nothing.
+//
+// Every handler read an argument as name, _ := a["page"].(string), which
+// makes anything that is not a string an empty one: read_page given the
+// page as a number, or under another name, told an agent there is no page
+// "", and it concluded the page was missing. An operation that names no
+// arguments reads none, and is held to nothing.
+func (op Operation) checkArguments(args map[string]any) error {
+	if len(op.Args) == 0 {
+		return nil
+	}
+	props := make(map[string]any, len(op.Args))
+	for name := range op.Args {
+		switch t := op.Types[name]; t {
+		case "any":
+			props[name] = map[string]any{}
+		case "":
+			props[name] = map[string]any{"type": "string"}
+		default:
+			props[name] = map[string]any{"type": t}
+		}
+	}
+	return fits(map[string]any{"type": "object", "properties": props}, args)
+}
+
+// fits checks arguments against a schema, by internal/jsonschema's rules:
+// an object schema that lists its properties takes only those. A null is
+// an argument left out, which is how clients that fill every optional
+// field send one they are not giving.
+func fits(schema map[string]any, args map[string]any) error {
+	if schema == nil {
+		return nil
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	given := make(map[string]any, len(args))
+	for k, v := range args {
+		if v != nil {
+			given[k] = v
+		}
+	}
+	return jsonschema.CheckNamed(b, given, "arguments")
+}
+
+// Fits is how a tool call's arguments do not fit the tool's input schema,
+// as invalid params, or nil: the check this server makes of its own tools,
+// exported for a server that answers tools/call without it, the public
+// site's /mcp. That one read its arguments as they came, as the handlers
+// here did, so a query that was a number was no query and its agent was
+// told a query is required.
+func Fits(schema map[string]any, args map[string]any) *Error {
+	if err := fits(schema, args); err != nil {
+		return &Error{Code: CodeInvalidParams, Message: err.Error()}
+	}
+	return nil
+}
+
+// answerText is an operation's answer as the text an agent reads: a string
+// as it is, and anything else as JSON.
+//
+// It was fmt's %v of whatever came back, so an operation that answered with
+// a map or a struct, as shield_status and eval_results do, gave Go's own
+// notation for it, "map[active:[] held:false ...]", which no client can
+// parse. Without HTML escaping, since nobody renders it as a page and a
+// "<" written as \u003c is one more thing for an agent to undo.
+func answerText(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case fmt.Stringer:
+		return t.String(), nil
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	// An empty list is [], as the command line writes it (out.EmptyLists):
+	// shield_status on a store with nothing in force answered "active":
+	// null, and an agent iterating it failed where it had nothing to do.
+	if err := enc.Encode(out.EmptyLists(v)); err != nil {
+		return "", fmt.Errorf("the answer could not be written as JSON: %w", err)
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
 
 // callDirect performs one of another server's tools, through the host.
 func (s *Server) callDirect(p callParams) (any, *Error) {
-	known := false
+	var tool *Tool
 	for _, t := range s.Direct.Tools {
 		if t.Name == p.Name {
-			known = true
+			tool = &t
 		}
 	}
-	if !known {
-		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
+	if tool == nil {
+		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %s here", quoteName(p.Name))}
 	}
 	if s.Direct.Call == nil {
 		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
@@ -566,22 +741,42 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	// As the schema the tool is offered with says, nulls and all, since
+	// they are sent on as they came. A gateway forwarded whatever it was
+	// given: a field the tool does not name was held for a person as an
+	// ordinary call, and once approved went out with it.
+	if b, err := json.Marshal(tool.InputSchema); err == nil && tool.InputSchema != nil {
+		if err := jsonschema.CheckNamed(b, args, "arguments"); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		}
+	}
 	out, err := s.Direct.Call(p.Name, args)
 	if err != nil {
 		var se *ScopeError
 		var ref *Refusal
+		var failed *ToolFailed
 		switch {
+		case errors.As(err, &failed):
+			res := textResult(failed.Text)
+			res["isError"] = true
+			return res, nil
 		case errors.As(err, &se):
 			return nil, &Error{Code: CodeRefused, Message: se.Reason,
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
 		case errors.As(err, &ref):
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(out), nil
 }
+
+// quoteName is a name a caller sent, as an answer quotes it: enough to say
+// which, and no more. The name is whatever the request held, up to the whole
+// body, and an answer that quoted it whole sent it back and, through the
+// host's record of the call, into the audit log.
+func quoteName(s string) string { return strconv.Quote(plaintext.Clip(s, 80, "…")) }
 
 func asRefusal(err error, out **Refusal) bool {
 	if r, ok := err.(*Refusal); ok {
@@ -589,6 +784,59 @@ func asRefusal(err error, out **Refusal) bool {
 		return true
 	}
 	return false
+}
+
+// findStop are words any request or description may have, which say
+// nothing about which operation is meant.
+var findStop = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "was": true, "not": true,
+	"with": true, "this": true, "that": true, "these": true, "those": true,
+	"what": true, "which": true, "who": true, "how": true, "when": true,
+	"where": true, "there": true, "here": true, "from": true, "into": true,
+	"have": true, "has": true, "been": true, "does": true, "can": true,
+	"its": true, "any": true, "all": true, "some": true, "about": true,
+	"one": true, "our": true, "your": true, "you": true, "please": true,
+	"am": true, "an": true, "as": true, "at": true, "be": true, "by": true,
+	"do": true, "if": true, "in": true, "is": true, "it": true, "me": true,
+	"my": true, "no": true, "of": true, "on": true, "or": true, "so": true,
+	"to": true, "up": true, "us": true, "we": true,
+}
+
+// findWords are the words of a text that find compares.
+//
+// Two letters are a word, and a letter either side of a slash is one. With
+// three letters the least, the "A/B" of "A/B testing" was nothing, so the
+// chatbots' operation, which mentions testing one, came before the A/B
+// tests' own.
+func findWords(s string) []string {
+	var out []string
+	s = findLetterPair.ReplaceAllString(strings.ToLower(s), "$1$2")
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len(w) >= 2 && !findStop[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// findLetterPair is a letter either side of a slash, as in "a/b".
+var findLetterPair = regexp.MustCompile(`\b([a-z])/([a-z])\b`)
+
+// findMatch is how well a query word matches a list of words: 2 for the
+// same word, 1 for one that starts with the other, four letters at least.
+func findMatch(w string, in []string) int {
+	best := 0
+	for _, h := range in {
+		switch {
+		case h == w:
+			return 2
+		case len(w) >= 4 && len(h) >= 4 && (strings.HasPrefix(h, w) || strings.HasPrefix(w, h)):
+			best = 1
+		}
+	}
+	return best
 }
 
 // describe renders operations for an agent that asked for them.
@@ -617,10 +865,20 @@ func (s *Server) describe(ops []Operation) string {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				switch t := op.Types[k]; t {
+				case "", "any":
+					fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				default:
+					fmt.Fprintf(&b, "    %s (%s): %s\n", k, t, op.Args[k])
+				}
 			}
 		}
-		if op.NeedsRole != "" {
+		// The area too, when it is one of the admin's: "reader" alone told
+		// an agent that any reader may, where the role is asked of the
+		// security or compliance area, which a reader of the site is not.
+		if op.NeedsRole != "" && strings.HasPrefix(op.Area, "/@") {
+			fmt.Fprintf(&b, "    needs role: %s on %s\n", op.NeedsRole, op.Area)
+		} else if op.NeedsRole != "" {
 			fmt.Fprintf(&b, "    needs role: %s\n", op.NeedsRole)
 		}
 		if op.Detail != "" {

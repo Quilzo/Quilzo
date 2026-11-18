@@ -6,6 +6,7 @@ package webimport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -340,6 +341,63 @@ func TestAnOldAddressNeverHidesANewPage(t *testing.T) {
 	}
 }
 
+// A link to the home with a query of its own (?utm_source=, ?ref=) went to
+// the new home, as the crawl takes an address with a query for the same page
+// again. Once plain WordPress links were told apart by their query, it was
+// left pointing at the old site, and the menu lost its Home: a query on the
+// home's address was never the home. It is not the home only on a site that
+// knows its own pages by a query, where ?page_id=99 is a page that was not
+// brought rather than the home.
+func TestALinkHomeWithAQueryGoesHomeUnlessTheSiteNamesPagesByOne(t *testing.T) {
+	bk := bakery()
+	bk.pages["/"] = strings.Replace(bk.pages["/"], `<nav><a href="/">Home</a>`, `<nav><a href="/?ref=nav">Home</a>`, 1)
+	bk.pages["/menu/"] = strings.Replace(bk.pages["/menu/"], "<p>Country sourdough, £4.20.</p>",
+		`<p>Country sourdough, £4.20. Back <a href="https://hartsbakery.example/?utm_source=menu">home</a>.</p>`, 1)
+	b, err := Package(crawlOf(t, bk, 10), "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	menu, home := "", false
+	for _, pg := range b.Package.Pages {
+		if pg.Name == "menu" {
+			menu = fmt.Sprint(pg.Body)
+		}
+	}
+	for _, m := range b.Package.Menus {
+		for _, it := range m.Items {
+			home = home || (m.Name == "main" && it.Label == "Home" && it.Target == "index")
+		}
+	}
+	if !strings.Contains(menu, "[home](/)") {
+		t.Errorf("a link home with a query does not go home: %s", menu)
+	}
+	if !home {
+		t.Errorf("the menu lost its Home, linked with a query: %v", b.Package.Menus)
+	}
+
+	// On plain links a query names a page, so one that was not brought is
+	// not taken for the home: at the host's root, or in the folder WordPress
+	// was installed in, which is the home's address too.
+	for _, at := range []string{"https://old.example.org", "https://old.example.org/hall"} {
+		plain := strings.ReplaceAll(plainLinks, "https://old.example.org", at)
+		plain = strings.Replace(plain, `<a href="`+at+`/?page_id=12">café</a>`,
+			`<a href="`+at+`/?page_id=12">café</a> or <a href="`+at+`/?page_id=99">a draft</a>`, 1)
+		s, err := FromWordPress([]byte(plain), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, err = Package(s, "", "dana", nil, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		for _, pg := range b.Package.Pages {
+			if body := fmt.Sprint(pg.Body); pg.Name == "qa-night" &&
+				!strings.Contains(body, "[a draft]("+at+"/?page_id=99)") {
+				t.Errorf("%s: a link to a page that was not brought went elsewhere: %s", at, body)
+			}
+		}
+	}
+}
+
 // What a page links and emphasises is kept in the prose subset, and words
 // that look like markers stay words.
 func TestAPagesWordsKeepTheirLinksAndEmphasis(t *testing.T) {
@@ -423,5 +481,94 @@ func TestAPageIsReadInTimeInProportionToIt(t *testing.T) {
 		case <-time.After(8 * time.Second):
 			t.Errorf("%s: a %d-byte page was not read in %v", name, len(page), time.Since(start))
 		}
+	}
+}
+
+// A site none of whose pages could be read is refused with why, as the
+// fetcher said it: a private address, the server itself, plain http, or
+// robots.txt asking readers not to. It was refused with only "no page of
+// HOST could be read", so an agent could not tell a refusal by policy
+// from a site that is down, and kept trying or reported the site broken.
+func TestASiteNothingOfWhichCouldBeReadSaysWhy(t *testing.T) {
+	refusing := func(_ context.Context, raw string) (*Fetched, error) {
+		return nil, fmt.Errorf("refusing to fetch: 127.0.0.1 is loopback — the server itself")
+	}
+	_, err := Crawl(context.Background(), "https://127.0.0.1:19044/", Options{Delay: -1, Get: refusing})
+	if err == nil || !strings.Contains(err.Error(), "no page of 127.0.0.1:19044 could be read") ||
+		!strings.Contains(err.Error(), "127.0.0.1 is loopback") {
+		t.Fatalf("%v", err)
+	}
+
+	s := bakery()
+	s.pages["/robots.txt"] = "User-agent: *\nDisallow: /\n"
+	_, err = Crawl(context.Background(), "https://hartsbakery.example/", Options{Delay: -1, Get: s.get})
+	if err == nil || !strings.Contains(err.Error(), "robots.txt") {
+		t.Fatalf("%v", err)
+	}
+}
+
+// What a package's notes tell somebody to do is said in words every door
+// can follow. "read more with --pages" sent an agent over MCP looking for
+// a flag its call does not have, where the argument is pages, and
+// "quilzo media add FILE --alt" a command it cannot run.
+func TestAPackagesNotesNameNoFlag(t *testing.T) {
+	s := bakery()
+	s.pages["/"] = strings.Replace(s.pages["/"], `<img src="/img/deco.png">`, `<img src="/img/deco.png"><img src="/img/other.png">`, 1)
+	got := crawlOf(t, s, 2)
+	if !got.Capped {
+		t.Fatal("the crawl was not capped")
+	}
+	b, err := Package(got, "", "dana", func(*url.URL, string) (string, error) { return "/media/x", nil }, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(b.Notes, "\n")
+	if !strings.Contains(notes, "more pages") || !strings.Contains(notes, "no description") {
+		t.Fatalf("the notes this is about are not there: %s", notes)
+	}
+	if strings.Contains(notes, "--") {
+		t.Errorf("a note names a flag: %s", notes)
+	}
+}
+
+// A site read to the most an import reads is not told to ask for more.
+//
+// The note for a site with more pages than were read said to ask for more,
+// up to MaxPages, whatever had been read: somebody who had asked for all
+// four hundred, or brought in a file of more, was told to ask for up to
+// four hundred, and asking again read the same pages and said the same.
+func TestASiteReadToTheMostIsNotToldToAskForMore(t *testing.T) {
+	s := bakery()
+	var links strings.Builder
+	for i := 0; i < MaxPages+5; i++ {
+		path := fmt.Sprintf("/loaf-%d", i)
+		links.WriteString(`<a href="` + path + `">Loaf</a> `)
+		s.pages[path] = head + `<title>Loaf</title></head><body><main><h1>A loaf</h1><p>Baked today.</p></main></body></html>`
+	}
+	s.pages["/"] = strings.Replace(s.pages["/"], "</main>", links.String()+"</main>", 1)
+	note := func(max int) string {
+		t.Helper()
+		got := crawlOf(t, s, max)
+		if !got.Capped || len(got.Pages) != max {
+			t.Fatalf("asked for %d: read %d, capped %v", max, len(got.Pages), got.Capped)
+		}
+		b, err := Package(got, "", "dana", nil, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range b.Notes {
+			if strings.HasPrefix(n, NoteMorePages) {
+				return n
+			}
+		}
+		t.Fatalf("no note about the pages left unread: %v", b.Notes)
+		return ""
+	}
+	most := fmt.Sprint(MaxPages)
+	if n := note(3); !strings.Contains(n, "ask for more pages") || !strings.Contains(n, most) {
+		t.Errorf("after reading 3: %s", n)
+	}
+	if n := note(MaxPages); strings.Contains(n, "ask for") || strings.Contains(n, "up to") || !strings.Contains(n, most) {
+		t.Errorf("after reading the most: %s", n)
 	}
 }

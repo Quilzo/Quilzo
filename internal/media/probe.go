@@ -75,6 +75,10 @@ type Shape struct {
 	// is different from a recording of no length and is why this is not an
 	// int.
 	Seconds float64
+	// Sound is whether any stream is audio. It is known whenever the probe
+	// read the streams at all: a container that lists a picture and nothing
+	// else has no sound, and that is an answer rather than a gap.
+	Sound bool
 }
 
 // HaveFFmpeg reports whether a poster frame can be extracted, so an interface
@@ -116,7 +120,7 @@ func Probe(format string, body []byte) (Shape, bool, error) {
 		// open.
 		"-protocol_whitelist", "file",
 		"-print_format", "json",
-		"-show_entries", "stream=width,height:format=duration",
+		"-show_entries", "stream=codec_type,width,height:format=duration",
 		path)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
@@ -127,8 +131,9 @@ func Probe(format string, body []byte) (Shape, bool, error) {
 
 	var parsed struct {
 		Streams []struct {
-			Width  int `json:"width"`
-			Height int `json:"height"`
+			CodecType string `json:"codec_type"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
 		} `json:"streams"`
 		Format struct {
 			Duration string `json:"duration"`
@@ -143,9 +148,11 @@ func Probe(format string, body []byte) (Shape, bool, error) {
 	// none, and a recording with several video streams is one where the first
 	// is what a player shows.
 	for _, s := range parsed.Streams {
-		if s.Width > 0 && s.Height > 0 {
+		if s.Width > 0 && s.Height > 0 && sh.Width == 0 {
 			sh.Width, sh.Height = s.Width, s.Height
-			break
+		}
+		if s.CodecType == "audio" {
+			sh.Sound = true
 		}
 	}
 	if d, err := strconv.ParseFloat(parsed.Format.Duration, 64); err == nil && d > 0 {
@@ -159,7 +166,7 @@ func Probe(format string, body []byte) (Shape, bool, error) {
 			"it claims %dx%d, which is not a recording anybody made",
 			sh.Width, sh.Height)
 	}
-	return sh, sh.Width > 0 || sh.Seconds > 0, nil
+	return sh, sh.Width > 0 || sh.Seconds > 0 || sh.Sound, nil
 }
 
 // PosterFrom extracts one still, as PNG.

@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/theme"
 )
 
@@ -174,6 +175,7 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
+	data["SiteSchemes"] = theme.SchemeChoices
 	data["CanSite"] = s.Features.Site != nil
 	data["CanImport"] = s.Features.Import != nil
 	data["CanImportFile"] = s.Features.ImportFile != nil
@@ -203,7 +205,8 @@ func (s *Server) handleMakeSite(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	b := feature.SiteBrief{Description: r.FormValue("description"), Name: r.FormValue("name"),
-		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style")}
+		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style"),
+		Scheme: r.FormValue("scheme")}
 	body, notes, err := s.Features.Site(b, r.FormValue("use_model") == "1", p.actor())
 	if err != nil {
 		makeBack(w, r, "", err)
@@ -265,6 +268,9 @@ func (s *Server) handleMakeImportFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	// And its own time, as the media library's upload has, given now that
+	// the sender is known to be somebody who may install (internal/listen).
+	listen.Receive(r)
 	// A file, not a form: its own limit, as an upload to the media library
 	// has (the middleware leaves this path to it).
 	r.Body = http.MaxBytesReader(w, r.Body, MaxExportUpload+1<<20)
@@ -673,39 +679,4 @@ func makeBack(w http.ResponseWriter, r *http.Request, msg string, err error) {
 		v = "e=" + url.QueryEscape(err.Error())
 	}
 	http.Redirect(w, r, "/make?"+v, http.StatusSeeOther)
-}
-
-// featureApprovals are installs waiting for a second person, for the
-// approvals screen.
-func (s *Server) featureApprovals(p principal) []approvalItem {
-	if s.Features == nil || s.Features.Pending == nil || !s.Policy.Evaluate(p.Name, auth.ActInstall, "/").Allowed {
-		return nil
-	}
-	pend, err := s.Features.Pending()
-	if err != nil {
-		return nil
-	}
-	var out []approvalItem
-	for _, pd := range pend {
-		if strings.EqualFold(pd.RequestedBy, p.Name) {
-			continue
-		}
-		title := "Install " + pd.Card.Title + " " + pd.Version
-		if pd.Rollback {
-			title = "Roll " + pd.Card.Title + " back to " + pd.Version
-		}
-		out = append(out, approvalItem{Source: "feature", Agent: "feature " + pd.Name, Title: title,
-			Detail:  "risk " + pd.Card.Risk + ": " + strings.Join(pd.Card.Because, "; ") + "; asked by " + pd.RequestedBy,
-			Commits: "installs", Href: "/make", Since: pd.At})
-	}
-	if s.Features.Proposals != nil {
-		if list, err := s.Features.Proposals(); err == nil {
-			for _, pr := range list {
-				out = append(out, approvalItem{Source: "feature", Agent: pr.By, Title: "Read " + pr.Title + " " + pr.Version,
-					Detail:  pr.What + ", proposed by an agent for " + pr.For + "; nothing is installed until you install it",
-					Commits: "installs", Href: "/make/proposal?id=" + pr.ID, Since: pr.At})
-			}
-		}
-	}
-	return out
 }

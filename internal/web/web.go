@@ -28,6 +28,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/webimport"
 	"github.com/quilzo/quilzo/internal/websearch"
 )
@@ -260,7 +261,7 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return strings.ToValidUTF8(s[:n], "") + fmt.Sprintf("\n… and %d bytes more, not shown", len(s)-n)
+	return plaintext.Clip(s, n, fmt.Sprintf("\n… and %d bytes more, not shown", len(s)-n))
 }
 
 func (d *Driver) search(ctx context.Context, query string, count int) (string, error) {

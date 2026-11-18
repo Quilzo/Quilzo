@@ -237,6 +237,9 @@ func CommitOnto(s *store.Store, pages map[string]any, message, author,
 }
 
 // PagesAt reads every page at a ref or commit.
+//
+// Decoded once per commit and copied for each caller, who may change what
+// it is given (pagememo.go).
 func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 	cid := s.GetRef(refOrCommit)
 	if cid == "" {
@@ -255,6 +258,15 @@ func PagesAt(s *store.Store, refOrCommit string) (map[string]any, error) {
 		}
 		cid = refOrCommit
 	}
+	pages, err := memo.at(s, cid, func() (map[string]any, error) { return readPages(s, cid) })
+	if err != nil {
+		return nil, err
+	}
+	return copyPages(pages), nil
+}
+
+// readPages decodes every page of one commit.
+func readPages(s *store.Store, cid string) (map[string]any, error) {
 	c, err := s.GetCommit(cid)
 	if err != nil {
 		return nil, err

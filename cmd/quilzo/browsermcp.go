@@ -321,7 +321,7 @@ func adoptGrantRuns(root string, now time.Time) {
 		if err != nil || rec.State != agent.Running || rec.Model != "mcp" {
 			continue
 		}
-		if now.Sub(rec.Beat) <= agent.StaleAfter {
+		if !rec.Ended(now) {
 			continue
 		}
 		rec.State = ""
@@ -416,7 +416,16 @@ func grantOperations(g browserGrant) []mcp.Operation {
 			o.Args = map[string]string{"ref": "the field's reference from the outline", "text": "the text to type"}
 		case "browser_choose":
 			o.Args = map[string]string{"ref": "the list's reference from the outline", "option": "the option's label"}
-		case "browser_click", "browser_hover":
+		case "browser_click":
+			// By a point too, which is how an agent that aims at pixels says
+			// what it presses: the driver resolves it to the outline's
+			// element there, and weighs the press as that element's. Left
+			// out of what the action names, a press that had always worked
+			// was refused as an argument it does not take.
+			o.Args = map[string]string{"ref": "the element's reference from the outline",
+				"at": "instead, a point on the page as [x, y] in its own pixels; it presses the outline's element there"}
+			o.Types = map[string]string{"at": "array"}
+		case "browser_hover":
 			o.Args = map[string]string{"ref": "the element's reference from the outline"}
 		case "browser_key":
 			o.Args = map[string]string{"key": "Enter, Tab, Escape, Backspace, Delete, Space, an arrow, PageUp, PageDown, Home or End"}
@@ -429,9 +438,21 @@ func grantOperations(g browserGrant) []mcp.Operation {
 			o.Args = map[string]string{"text": "text to wait for the page to show", "seconds": "how long, at most 30"}
 		case "browser_emulate":
 			o.Args = map[string]string{"device": "phone, tablet, laptop, desktop or reset", "width": "pixels", "height": "pixels",
+				"mobile":       "true for a phone's screen and touch at that size, false for a desktop's; the device's when not given",
 				"color_scheme": "light or dark", "reduced_motion": "true to ask for less motion", "media": "print to see it printed"}
 		case "browser_check":
 			o.Args = map[string]string{"what": "performance, accessibility, seo or all"}
+		}
+		// What the driver reads as a number, or as true or false, it also
+		// reads from text (internal/browser num and yes), so these take
+		// either; every other argument is text.
+		for _, k := range []string{"amount", "seconds", "width", "height", "mobile", "reduced_motion"} {
+			if _, ok := o.Args[k]; ok {
+				if o.Types == nil {
+					o.Types = map[string]string{}
+				}
+				o.Types[k] = "any"
+			}
 		}
 		out = append(out, o)
 	}
@@ -453,6 +474,7 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 		if tok.Grant != "" {
 			d["connection"] = tok.Grant
 		}
+		noteCredential(d, tok)
 		if decidedBy != "" {
 			d["decided_by"] = decidedBy
 		}
@@ -471,12 +493,9 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 				outcome = audit.Failure
 			}
 		}
-		who, kind, model := tok.Principal, audit.KindHuman, ""
-		if tok.Client != "" {
-			who, kind, model = "app:"+tok.Client, audit.KindAI, tok.Client
-		}
+		who, model := interfaceClient(tok.Principal, tok.Client)
 		record(root, audit.Record{Action: "mcp.browser", Resource: "/mcp/browser/" + grant, Outcome: outcome,
-			Principal: who, Kind: kind, Model: model, Verified: true, Detail: d})
+			Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
 	}()
 
 	if err := authorise(root, caller, auth.ActView, "/mcp/browser/"+grant); err != nil {

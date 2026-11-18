@@ -83,9 +83,12 @@ func BlogPackage() *Package {
 				Sort: "published", Descending: true, Rows: 20},
 		},
 		Pages: []Page{
-			{Name: "blog", Body: map[string]any{"title": "Blog",
+			// Headed by the page's own h1, as head_title, with the list under
+			// it. The list's h2 was the only heading, so every publish of a
+			// site with a blog said the page had headings and no h1.
+			{Name: "blog", Body: map[string]any{"title": "Blog", "head_title": "Blog",
 				"description": "Everything written here, newest first.",
-				"sections": []any{map[string]any{"posts": map[string]any{"title": "Blog", "rows": float64(10),
+				"sections": []any{map[string]any{"posts": map[string]any{"title": "Latest posts", "rows": float64(10),
 					"intro": ""}}}}},
 			// No title of its own: it stands for whichever post is being
 			// read, and the heading comes from the record.

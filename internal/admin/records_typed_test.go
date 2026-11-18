@@ -81,9 +81,11 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 	}
 	form.Set("id", recs[0].ID)
 	form.Set("time", "25:00")
+	// Refused on the screen it was typed on, with what was typed.
 	w := postForm(t, srv, "/records/save", token, form.Encode())
-	if !strings.Contains(w.Header().Get("Location"), "time") {
-		t.Fatalf("a bad time was saved: %s", w.Header().Get("Location"))
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `value="25:00"`) ||
+		!strings.Contains(w.Body.String(), "time") {
+		t.Fatalf("a bad time was saved: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }
 

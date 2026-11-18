@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/board"
 	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/member"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
 )
@@ -154,17 +155,13 @@ func (st *Site) recovering(r *http.Request) (member.Member, bool) {
 // sameSite reports whether a request came from this site's own pages.
 //
 // Sec-Fetch-Site where the browser sends it, which every current one does;
-// Origin otherwise. A request with neither is refused: it did not come from
-// a page of this site, whatever else it is.
+// Origin otherwise (sameorigin.Check). A request with neither is refused,
+// and so is one a person started by typing the address: it did not come
+// from a page of this site, whatever else it is, and a member's form is
+// only ever sent from one. Origin was compared with the site's origin as a
+// string, so the site's own host in capitals was another site.
 func (st *Site) sameSite(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin":
-		return true
-	case "":
-		o := r.Header.Get("Origin")
-		return o != "" && o == st.Members.Party.Origin
-	}
-	return false
+	return sameorigin.Check(r, st.Members.Party.Origin, sameorigin.Policy{})
 }
 
 func (st *Site) audit(action, id string, r *http.Request, ok bool) {
