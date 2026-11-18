@@ -502,7 +502,6 @@
         {% end %}
       </video>
       {% end %}
-      {% if s.video.no_src %}<p class="muted">No video chosen yet. Send one to the bot and pick it here.</p>{% end %}
       {% if s.video.caption %}<figcaption>{{ s.video.caption }}</figcaption>{% end %}
       {% if s.video.transcript_href %}<p><a href="{{ s.video.transcript_href }}">{{ s.video.transcript_label }}</a></p>{% end %}
     </figure>

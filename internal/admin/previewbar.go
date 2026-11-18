@@ -134,6 +134,14 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	// disagreed with the sections screen about what is on a page would be the
 	// more confusing of the two.
 	if placed := section.On(body); len(placed) > 0 {
+		// What each section still waits for, such as the video a video
+		// section has not been given, which the publish lists as well. Said
+		// here rather than in the page: the layout told every reader "No
+		// video chosen yet. Send one to the bot and pick it here".
+		waits := map[int][]string{}
+		for _, p := range section.Waiting(body) {
+			waits[p.At] = append(waits[p.At], p.Detail)
+		}
 		b.WriteString(`<p class="qz-what">Sections</p><ol class="qz-list">`)
 		for _, sec := range placed {
 			fmt.Fprintf(&b,
@@ -144,6 +152,9 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 					`knows, so it renders as nothing</span>`)
 			} else if sec.Label != "" {
 				fmt.Fprintf(&b, ` <span class="qz-peek">%s</span>`, esc(sec.Label))
+			}
+			for _, w := range waits[sec.Index] {
+				fmt.Fprintf(&b, ` <span class="qz-peek">%s</span>`, esc(w))
 			}
 			b.WriteString(`</li>`)
 		}

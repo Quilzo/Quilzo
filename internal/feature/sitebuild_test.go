@@ -5,6 +5,7 @@ package feature
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,14 @@ func TestEveryKindOfSiteBuildsIntoAPackageThatInstalls(t *testing.T) {
 			}
 			for name, body := range pages {
 				bad, advice := section.Validate(body)
+				// Except the pictures a portfolio's gallery waits for, which
+				// only the person whose work it is can add, and which the
+				// publish lists until they do.
+				waits := map[section.Problem]bool{}
+				for _, p := range section.Waiting(body) {
+					waits[p] = true
+				}
+				advice = slices.DeleteFunc(advice, func(p section.Problem) bool { return waits[p] })
 				if len(bad)+len(advice) > 0 {
 					t.Errorf("page %s: %v %v", name, bad, advice)
 				}

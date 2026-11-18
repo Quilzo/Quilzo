@@ -152,15 +152,35 @@ const (
 `
 )
 
-// titleNow and titleBefore are the one deliberate change to the layouts'
-// markup: a page's title goes before the site's name only when it is not
-// the name (TestAHomePageTitledWithTheSiteNameSaysItOnce). A sample
-// rendered as it is written has no renderer to say so, so it is rendered
-// through the layout as it was.
+// titleNow and titleBefore, and videoWaitNow and videoWaitBefore, are the
+// deliberate changes to the layouts' markup: a page's title goes before the
+// site's name only when it is not the name
+// (TestAHomePageTitledWithTheSiteNameSaysItOnce), and a video section with
+// no video says nothing to its readers about choosing one
+// (TestAReaderIsNotGivenTheEditorsInstructions). Each is put back as it was
+// before the hash is compared.
 const (
-	titleNow    = "{% if page.title_before_name %}{{ page.title }} — {% end %}{{ site.name }}</title>"
-	titleBefore = "{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	titleNow        = "{% if page.title_before_name %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	titleBefore     = "{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	videoWaitNow    = "      {% if s.video.caption %}"
+	videoWaitBefore = "      {% if s.video.no_src %}<p class=\"muted\">No video chosen yet. Send one to the bot and pick it here.</p>{% end %}\n" + videoWaitNow
 )
+
+// asTheyWere is a layout with the deliberate changes put back.
+func asTheyWere(t *testing.T, name, src string) string {
+	t.Helper()
+	if strings.Count(src, titleNow) != 1 {
+		t.Fatalf("%s's title is not where this test expects it", name)
+	}
+	src = strings.Replace(src, titleNow, titleBefore, 1)
+	if strings.Contains(src, "{% if s.video %}") {
+		if strings.Count(src, videoWaitNow) != 1 {
+			t.Fatalf("%s's video caption is not where this test expects it", name)
+		}
+		src = strings.Replace(src, videoWaitNow, videoWaitBefore, 1)
+	}
+	return src
+}
 
 func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	got := map[string]string{}
@@ -169,10 +189,8 @@ func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Count(src, titleNow) != 1 {
-			t.Fatalf("%s's title is not where this test expects it", st.Name)
-		}
-		raw, err := tmpl.Render(strings.Replace(src, titleNow, titleBefore, 1), map[string]any{"page": st.Sample})
+		src = asTheyWere(t, st.Name, src)
+		raw, err := tmpl.Render(src, map[string]any{"page": st.Sample})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,6 +203,7 @@ func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	}
 	st, _ := Get("sections")
 	layout, _ := st.HTML()
+	layout = asTheyWere(t, "sections", layout)
 	for _, k := range section.Kinds() {
 		body, err := section.Insert(map[string]any{"title": "A page"}, k.Name, 0)
 		if err != nil {

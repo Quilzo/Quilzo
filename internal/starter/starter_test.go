@@ -349,3 +349,28 @@ func TestTheStarterStylesheetDeclaresAColourScheme(t *testing.T) {
 			"site built from it renders native controls with the wrong palette")
 	}
 }
+
+// A reader is not told what the editor has still to do. A video section with
+// no video said "No video chosen yet. Send one to the bot and pick it here"
+// to everybody who opened the page, naming a bot no reader had heard of. The
+// admin's preview and the publish say it now (internal/section.Waiting).
+func TestAReaderIsNotGivenTheEditorsInstructions(t *testing.T) {
+	st, _ := Get("sections")
+	src, err := st.HTML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"title": "Home", "sections": []any{
+		map[string]any{"video": map[string]any{"title": "Watch this", "src": "", "caption": "A talk."}},
+	}}
+	out, err := tmpl.Render(src, served(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "No video chosen yet") || strings.Contains(out, "the bot") {
+		t.Error("a reader is told to send a video to the bot")
+	}
+	if !strings.Contains(out, "Watch this") || !strings.Contains(out, "A talk.") {
+		t.Error("the video section's heading and caption are gone")
+	}
+}

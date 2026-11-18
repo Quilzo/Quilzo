@@ -330,3 +330,38 @@ func TestAReuseOfABlockIsNoUnknownKind(t *testing.T) {
 		t.Fatal("a reuse naming no block was passed")
 	}
 }
+
+// A section waiting for its media is listed as unfinished. A video section
+// with no video and a gallery item with no picture published without a word,
+// and the layout told every reader "No video chosen yet. Send one to the
+// bot and pick it here", an instruction for the person editing the page.
+// The page is not refused, as a page whose split section leaves its picture
+// out is prose at full width; the publish says what is still to choose.
+func TestASectionWaitingForItsMediaIsListed(t *testing.T) {
+	body := map[string]any{"title": "A page", Field: []any{
+		map[string]any{"video": map[string]any{"title": "Watch", "src": "", "caption": "A talk."}},
+		map[string]any{"gallery": map[string]any{"title": "Work", "items": []any{
+			map[string]any{"image": "/media/" + strings.Repeat("a", 64), "alt": "A chair"},
+			map[string]any{"image": "", "alt": "A table", "caption": "Add a picture"},
+		}}},
+		map[string]any{"video": map[string]any{"title": "Watched", "src": "/media/" + strings.Repeat("b", 64)}},
+	}}
+	bad, advice := Validate(body)
+	if len(bad) > 0 {
+		t.Fatalf("a page waiting for its media was refused: %v", bad)
+	}
+	var said []string
+	for _, p := range advice {
+		said = append(said, p.String())
+	}
+	all := strings.Join(said, "\n")
+	if !strings.Contains(all, "section 1: ") || !strings.Contains(all, "no video") {
+		t.Errorf("a video section with no video is not listed: %q", all)
+	}
+	if !strings.Contains(all, "section 2: ") || !strings.Contains(all, "picture 2") {
+		t.Errorf("a gallery picture with no image is not listed: %q", all)
+	}
+	if strings.Contains(all, "section 3: ") || strings.Contains(all, "picture 1 ") {
+		t.Errorf("media that is there is listed as missing: %q", all)
+	}
+}
