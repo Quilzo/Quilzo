@@ -1239,9 +1239,21 @@ func cmdServe(root string, args []string) error {
 		fmt.Printf("  %s%s%s\n", dim, line, reset)
 	}
 	// A passkey belongs to a name, and a browser refuses an address as one,
-	// so the loopback default is opened as localhost.
-	if host, port, err := net.SplitHostPort(*addr); err == nil && (host == "127.0.0.1" || host == "::1") {
-		fmt.Printf("  %sopen it as http://localhost:%s: passkeys need a name, not an address%s\n", dim, port, reset)
+	// so the loopback default is opened as localhost (adminAddress).
+	//
+	// Where admin.base_url says the admin is, it is opened there, as the
+	// links that add a passkey are (enrolURL). The compose stack's admin
+	// listens on 0.0.0.0:8080 inside its container and is reached through
+	// its proxy at its admin.base_url, https://localhost:8443, and once an
+	// admin on every interface was opened by name its log said to open
+	// http://localhost:8080, which nothing publishes.
+	browse, renamed := adminAddress(*addr)
+	if base := strings.TrimSuffix(cfg.Raw("admin.base_url"), "/"); base != "" {
+		browse, renamed = base, false
+		fmt.Printf("  %sopen it as %s, its admin.base_url%s\n", dim, browse, reset)
+	}
+	if renamed {
+		fmt.Printf("  %sopen it as %s: passkeys need a name, not an address%s\n", dim, browse, reset)
 	}
 	// People sign in with a passkey, two factors at once; somebody without
 	// one is given a link that adds it. A token alone is one factor and
@@ -1256,7 +1268,7 @@ func cmdServe(root string, args []string) error {
 		// Not an error if it fails. Refusing to serve because a desktop could
 		// not be found would break exactly the deployments that matter most —
 		// a container, a machine over SSH, CI — none of which has one.
-		if !admin.Open("http://" + *addr) {
+		if !admin.Open(browse) {
 			fmt.Printf("  %snothing here knows how to open a browser; the "+
 				"address is above%s\n", dim, reset)
 		}
@@ -1274,6 +1286,33 @@ func cmdServe(root string, args []string) error {
 	lim.Files = admin.FileBody
 	lim.Shared = sharedPeers(root, "admin.trusted_proxy")
 	return lim.Serve(httpSrv)
+}
+
+// adminAddress is the address to open the admin at when it listens on addr,
+// and whether that is not addr itself.
+//
+// A passkey belongs to a name, and a browser refuses an address as one: at
+// http://127.0.0.1:8080 the admin answers every passkey ceremony with
+// "passkeys need a domain name", and people sign in to it with a passkey.
+// `serve --open` opened http://127.0.0.1:8080 all the same, on the line
+// after the one that said to open it as localhost, and the README's
+// Quickstart ended there. The same holds for ::1, and for an admin on every
+// interface, seen from this machine, where the browser --open starts is.
+//
+// Only the addresses localhost is, though, and not every loopback address:
+// a browser takes localhost to be 127.0.0.1 or ::1, so an admin on
+// 127.0.0.2 opened as localhost was opened where nothing listens. That one
+// is opened at its address, which answers, and refuses only the passkey.
+func adminAddress(addr string) (string, bool) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr, false
+	}
+	ip := net.ParseIP(host)
+	if host == "" || (ip != nil && (ip.IsUnspecified() || ip.Equal(net.IPv4(127, 0, 0, 1)) || ip.Equal(net.IPv6loopback))) {
+		return "http://localhost:" + port, true
+	}
+	return "http://" + addr, false
 }
 
 // sessionCaller is a person signed in to the admin, verified, with the

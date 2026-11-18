@@ -23,7 +23,8 @@ import (
 //
 // This reads the store instead. Every step is a question about *this*
 // installation answered at request time: is there a page, is a type bound to
-// it, has anything been published, does anybody besides you hold a role. A step
+// it, has anything been published, is an agent declared, does anybody besides
+// you hold a role. A step
 // that is done says so and stays visible, because "what did I already do" is
 // the question somebody coming back after a week actually has.
 //
@@ -81,6 +82,17 @@ func (s *Server) startState(p principal) []step {
 		}
 	}
 
+	// The agents this store declares. The screen introduced a content store
+	// and its four steps never named an agent, on the first screen of what is
+	// an agent platform, whose README declares and runs one before anything
+	// else.
+	agents := 0
+	if s.Agents != nil && s.Agents.Load != nil {
+		if declared, err := s.Agents.Load(); err == nil {
+			agents = len(declared)
+		}
+	}
+
 	// People other than whoever is looking, because "you have an account" is
 	// not a step and counting yourself would tick it on a fresh store.
 	others := 0
@@ -118,6 +130,16 @@ func (s *Server) startState(p principal) []step {
 				"pointer moving again rather than a restore from a backup.",
 			Where: "/review", What: "Review and publish",
 			Done: published, DoneNote: "live",
+		},
+		{
+			Title: "Declare an agent",
+			Body: "An agent is a declaration: what it may do, over what, on " +
+				"what budget, and who answers for it. One gate enforces it on " +
+				"every action and a person approves the actions that matter, " +
+				"so an agent that reads somebody else's words still does only " +
+				"what it declared.",
+			Where: "/agents", What: "Agents", Who: "an administrator",
+			Done: agents > 0, DoneNote: counted(agents, "agent", "agents"),
 		},
 		{
 			Title: "Decide who else may do what",

@@ -289,7 +289,7 @@ Reach it over SSH instead:
 
 ```bash
 ssh -N -L 8080:127.0.0.1:8080 you@your-server
-# then open http://127.0.0.1:8080
+# then open http://localhost:8080: a passkey needs a name, not an address
 ```
 
 ### Except what the identity provider calls

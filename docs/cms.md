@@ -7,11 +7,18 @@ described in the [README](../README.md) work on exactly this: an immutable
 store, a publish that moves a pointer, and gates that refuse.
 
 ```bash
-quilzo init          # a store in the current directory
-quilzo demo          # install Marginalia, a complete shop
-quilzo site          # serve it on 127.0.0.1:8081
-quilzo serve --open  # the admin on 127.0.0.1:8080, opened in a browser
+quilzo init               # a store in the current directory
+quilzo demo               # install Marginalia, a complete shop
+quilzo init --admin you   # you, its administrator: prints a link that adds your passkey
+quilzo site               # serve it on 127.0.0.1:8081
+quilzo serve --open       # the admin, opened in a browser at localhost:8080: open that link there
 ```
+
+From `init --admin` on, the command line asks who is running it, and the two
+servers do not. `quilzo token issue first --principal you`, run before you
+sign in, is your token for it, as in the [README](../README.md#quickstart):
+a store issues one without being shown one only while it holds none, and
+signing in to the admin makes one.
 
 Linux, macOS and Windows, amd64 and arm64.
 
@@ -2903,15 +2910,22 @@ quilzo site new "what the site is for" --name "Its name" --install   # a whole s
 # or
 quilzo template use sections             # a layout, a theme and sample content
 quilzo add index=templates/sections.json -m "first page"
+quilzo provenance set index --source humanEdits   # a person wrote it; publishing asks
 quilzo publish
 ```
 
 ### And run it
 
 ```bash
+quilzo auth enrol you                                                 # the link that adds your passkey, once
 quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
+
+Open the link `auth enrol` printed, add your passkey, and sign in with it. The
+admin is at `http://localhost:8080`, by name, because a browser will not use a
+passkey at an address. The token is for the command line: at the admin it is
+one factor, and signs in to "Confirm it's you" and no further.
 
 `quilzo help` lists every command, and `quilzo --version` prints the version,
 copyright and licence.
@@ -2947,16 +2961,19 @@ nothing else.
 
 ```bash
 docker build -t quilzo .
-docker volume create quilzo-store
-docker run --rm -p 8081:8081 -v quilzo-store:/srv/store quilzo \
+docker run --rm -v quilzo:/srv quilzo init
+docker run --rm -v quilzo:/srv quilzo demo
+docker run -p 8081:8081 -v quilzo:/srv quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 
-The image's store is `/srv/store`, named in its entrypoint, so mount the
-store's volume there; the image runs as uid 65532, which a named volume
-suits and a host folder must be made writable for. `deploy/README.md` has
-the whole stack with Docker Compose: the admin over HTTPS, the site behind
-Caddy, and a log writer of its own.
+The image's store is `/srv/store`, named in its entrypoint, and `quilzo demo`
+writes its templates beside it in `/srv`, so mount one volume at `/srv`: a
+volume at `/srv/store` alone loses the templates, and `site` then exits with
+`no template directory at templates`. The image runs as uid 65532, which a
+named volume suits and a host folder must be made writable for.
+`deploy/README.md` has the whole stack with Docker Compose: the admin over
+HTTPS, the site behind Caddy, and a log writer of its own.
 
 Behind a reverse proxy every connection is the proxy's, so name it in
 `network.trusted_proxies` by its own address — the proxy, a cluster's ingress

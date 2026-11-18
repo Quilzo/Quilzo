@@ -71,8 +71,15 @@ go build -o quilzo ./cmd/quilzo      # Go 1.27 or later, nothing to fetch
 ./quilzo demo                        # something for agents to work on
 ./quilzo agent new helper --kind retrieval
 ./quilzo agent run helper            # walks its declaration; needs no model
-./quilzo serve --open                # the admin, in your browser
+./quilzo init --admin you            # you, its administrator: prints a link that adds your passkey
+./quilzo token issue first --principal you   # and your token for the command line, shown once
+./quilzo serve --open                # the admin, at localhost: open that link there
 ```
+
+From then on the command line asks who is running it: keep the token in
+`~/.quilzo/token`, readable only by you, or in `QUILZO_TOKEN`. It is issued
+before you sign in because a store issues a token without being shown one
+only while it holds none, and signing in to the admin makes one.
 
 Point it at a model and let the model choose:
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 )
 
@@ -166,5 +167,43 @@ func TestGetStartedLinksOnlyWhereItsReaderMayGo(t *testing.T) {
 		if role == auth.RoleAdmin && !strings.Contains(steps[1], `href="/people"`) {
 			t.Error("an administrator is not linked to People")
 		}
+	}
+}
+
+// Get started says what Quilzo is, and its steps reach an agent.
+//
+// It is the first screen of a first sign-in, and it introduced a content
+// store: immutable content and a template language, then four steps that
+// wrote, typed and published a page and shared the store, and never named
+// an agent. What it opens is the self-hosted AI agent platform, and the
+// README's Quickstart declares and runs an agent before anything else.
+func TestGetStartedSaysWhatQuilzoIsAndReachesAnAgent(t *testing.T) {
+	srv, token := setup(t)
+	declared := map[string]agent.Manifest{}
+	srv.Agents = &Agents{Load: func() (map[string]agent.Manifest, error) { return declared, nil }}
+
+	body := get(t, srv, "/start", token).Body.String()
+	if !strings.Contains(body, "The self-hosted AI agent platform") {
+		t.Error("Get started does not say what Quilzo is")
+	}
+	step := regexp.MustCompile(`(?s)<li class="step[^"]*">\s*<div class="step-head">\s*<h3>Declare an agent</h3>(.*?)</li>`)
+	m := step.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("no step of Get started declares an agent")
+	}
+	if !strings.Contains(m[1], `href="/agents"`) || !strings.Contains(m[1], "not yet") {
+		t.Errorf("the agent step does not link the studio, or is done with none declared:\n%s", m[1])
+	}
+	steps := regexp.MustCompile(`<li class="step`).FindAllString(body, -1)
+	if counted := regexp.MustCompile(`<h2>(\w+) things, in order</h2>`).FindStringSubmatch(body); counted == nil ||
+		counted[1] != map[int]string{4: "Four", 5: "Five", 6: "Six"}[len(steps)] {
+		t.Errorf("the checklist says %v and lists %d steps", counted, len(steps))
+	}
+
+	// Done is read from the agents this store declares.
+	declared["helper"] = agent.Manifest{Name: "helper", Kind: agent.KindRetrieval}
+	m = step.FindStringSubmatch(get(t, srv, "/start", token).Body.String())
+	if m == nil || !strings.Contains(m[1], "1 agent") {
+		t.Errorf("the agent step does not read the declared agent: %v", m)
 	}
 }

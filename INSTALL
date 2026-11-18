@@ -120,8 +120,14 @@ A first site
      quilzo init
      quilzo template use sections
      quilzo add index=templates/sections.json -m "first page"
+     quilzo provenance set index --source humanEdits
      quilzo publish
      quilzo site --addr 127.0.0.1:8081
+
+Then http://127.0.0.1:8081.  `provenance set` says that a person wrote the
+page: publishing refuses a page nobody has said that of, because what a
+model wrote has to carry a mark that says so, and a page with no record
+could be either.
 
 
 Licence
