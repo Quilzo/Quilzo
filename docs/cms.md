@@ -2903,6 +2903,7 @@ quilzo site new "what the site is for" --name "Its name" --install   # a whole s
 # or
 quilzo template use sections             # a layout, a theme and sample content
 quilzo add index=templates/sections.json -m "first page"
+quilzo provenance set index --source humanEdits   # a person wrote it; publishing asks
 quilzo publish
 ```
 

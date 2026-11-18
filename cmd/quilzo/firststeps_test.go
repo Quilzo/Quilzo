@@ -737,6 +737,44 @@ func TestTheReadmeQuickstartReachesASignedInAdmin(t *testing.T) {
 	f.run("./quilzo agent runs")
 }
 
+// INSTALL's first site publishes, and is served.
+//
+// It added a page and published it, and the publish was refused: nothing
+// had said who or what wrote the page, and a page nobody has is a gap the
+// EU AI Act's mark cannot be decided on.
+func TestInstallsFirstSiteIsServed(t *testing.T) {
+	f := newWalk(t)
+	f.runAll(textBlocks(t, readDoc(t, "INSTALL"), "A first site"))
+	if body := f.siteHome(); !strings.Contains(body, "<html") {
+		t.Errorf("the first site's home page is not a page: %.300s", body)
+	}
+}
+
+// What `template use` says to do next publishes the page it wrote, and
+// serves it.
+//
+// It said add, publish and `site --open`: the publish was refused for the
+// same reason as INSTALL's, and the site has no --open, so the last step
+// was refused too.
+func TestWhatTemplateUseSaysNextPublishesThePage(t *testing.T) {
+	f := newWalk(t)
+	f.run("quilzo init")
+	f.run("quilzo template use sections")
+	said := f.log.String()
+	at := strings.Index(said, "next:")
+	if at < 0 {
+		t.Fatalf("template use says nothing of what comes next:\n%s", said)
+	}
+	for _, l := range strings.Split(said[at+len("next:"):], "\n") {
+		if strings.HasPrefix(l, "    quilzo ") {
+			f.run(strings.TrimSpace(l))
+		} else if strings.TrimSpace(l) != "" {
+			break
+		}
+	}
+	f.siteHome()
+}
+
 // image reads what a container of the image starts as from the Dockerfile:
 // the entrypoint, the command, the working directory, and the directories
 // it is seeded with.
@@ -874,6 +912,64 @@ func (f *walk) volume(name string) string {
 	}
 	f.volumes[name] = d
 	return d
+}
+
+// A document that adds a page and publishes it says who or what wrote the
+// page between the two, because the publish refuses a page nobody has.
+//
+// docs/cms.md's first steps added a page from a template and published it,
+// as INSTALL's did, and were refused as INSTALL's were.
+func TestEveryDocumentThatAddsAndPublishesSaysWhoWroteIt(t *testing.T) {
+	docs := []string{"README.md", "CONTRIBUTING.md", "deploy/README.md"}
+	mds, _ := filepath.Glob("../../docs/*.md")
+	for _, m := range mds {
+		docs = append(docs, strings.TrimPrefix(filepath.ToSlash(m), "../../"))
+	}
+	check := func(name string, block []string) {
+		added := false
+		for _, l := range block {
+			words := shellWords(l)
+			if len(words) < 2 || !(words[0] == "quilzo" || strings.HasSuffix(words[0], "/quilzo")) {
+				continue
+			}
+			switch sub, _ := subcommand(words[1:]); sub {
+			case "add":
+				added = true
+			case "provenance":
+				added = false
+			case "publish":
+				if added {
+					t.Errorf("%s adds a page and publishes it without saying who wrote it: `%s`", name, l)
+				}
+			}
+		}
+	}
+	for _, name := range docs {
+		lines := strings.Split(readDoc(t, name), "\n")
+		var cur []string
+		in := false
+		for _, l := range lines {
+			if strings.HasPrefix(l, "```") {
+				if in {
+					check(name, joinContinued(cur))
+					cur = nil
+				}
+				in = !in
+			} else if in {
+				cur = append(cur, l)
+			}
+		}
+	}
+	install := readDoc(t, "INSTALL")
+	var cur []string
+	for _, l := range append(strings.Split(install, "\n"), "") {
+		if strings.HasPrefix(l, "     ") {
+			cur = append(cur, strings.TrimSpace(l))
+		} else if len(cur) > 0 {
+			check("INSTALL", joinContinued(cur))
+			cur = nil
+		}
+	}
 }
 
 // `serve --open` opens the admin where a passkey works: by name, for an
