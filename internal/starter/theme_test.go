@@ -493,3 +493,33 @@ func TestALayoutCanRenderSearch(t *testing.T) {
 			"fetching JSON needs a script the site's own CSP blocks")
 	}
 }
+
+// A home page titled with the site's name says the name once. Every layout
+// writes a page's title and then the site's name, and every site the
+// builder makes titles its home page with the site's name, so each one was
+// "Crumb & Co — Crumb & Co" in a browser's tab and a search result. Another
+// page, and a home page titled otherwise, keep both.
+func TestAHomePageTitledWithTheSiteNameSaysItOnce(t *testing.T) {
+	title := regexp.MustCompile(`<title>([^<]*)</title>`)
+	for _, st := range All() {
+		layout, err := st.HTML()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for page, want := range map[string]string{"Crumb &amp; Co": "Crumb &amp; Co", "crumb &amp; co": "Crumb &amp; Co",
+			"About": "About — Crumb &amp; Co", "": "Crumb &amp; Co"} {
+			body := map[string]any{"title": strings.ReplaceAll(page, "&amp;", "&")}
+			ctx, err := renderpkg.Sources{Name: "Crumb & Co"}.For("index", body, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := tmpl.Render(layout, ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := title.FindStringSubmatch(out); got == nil || got[1] != want {
+				t.Errorf("%s titled %q: %v, want %q", st.Name, page, got, want)
+			}
+		}
+	}
+}

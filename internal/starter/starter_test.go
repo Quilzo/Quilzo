@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	renderpkg "github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -34,6 +35,16 @@ func TestEveryStarterTemplatePassesTheAccessibilityGate(t *testing.T) {
 	}
 }
 
+// served is the context the renderer gives a page body, for a site with no
+// name and nothing else.
+func served(body map[string]any) map[string]any {
+	ctx, err := renderpkg.Sources{}.For("index", body, nil)
+	if err != nil {
+		return map[string]any{"page": body}
+	}
+	return ctx
+}
+
 func render(t *testing.T, st Template) string {
 	t.Helper()
 	src, err := st.HTML()
@@ -43,9 +54,10 @@ func render(t *testing.T, st Template) string {
 	if _, err := tmpl.Parse(src); err != nil {
 		t.Fatalf("%s does not parse: %v", st.Name, err)
 	}
-	// The sample is the page body; the renderer namespaces it under "page",
-	// which is what every template reads.
-	out, err := tmpl.Render(src, map[string]any{"page": st.Sample})
+	// Through the renderer, as every page is served: it namespaces the sample
+	// under "page" and adds what a layout cannot work out for itself, such
+	// as whether the title goes before the site's name.
+	out, err := tmpl.Render(src, served(st.Sample))
 	if err != nil {
 		t.Fatalf("%s does not render with its own sample content: %v", st.Name, err)
 	}
@@ -294,7 +306,7 @@ func TestStartersDegradeWhenContentIsMissing(t *testing.T) {
 			{"title": "Only a title"},             // the bare minimum
 			{"title": "T", "body": "Some prose."}, // a page from another template
 		} {
-			out, err := tmpl.Render(src, map[string]any{"page": content})
+			out, err := tmpl.Render(src, served(content))
 			if err != nil {
 				t.Errorf("%s failed to render sparse content: %v", st.Name, err)
 				continue

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="{{ site.color_scheme | default:light dark }}">
-<title>{% if record.name %}{{ record.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
+<title>{% if record.name %}{{ record.name }} — {% end %}{% if page.title_before_name %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
 <meta property="og:site_name" content="{{ site.name }}">
 <meta property="og:title" content="{{ page.title }}">

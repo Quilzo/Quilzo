@@ -53,6 +53,12 @@ import (
 //	no_slug    true when it has no slug
 //	no_src     true when it has no media source
 //
+// And for the page itself:
+//
+//	title_before_name   true when it has a title that is not the site's
+//	                    name, for a <title> that would otherwise say the
+//	                    name twice (see Sources.titled)
+//
 // And for every field naming an asset in this library — image, src, poster,
 // share_image, or any other value that is a /media/ path:
 //

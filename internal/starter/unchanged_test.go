@@ -152,14 +152,31 @@ const (
 `
 )
 
+// titleNow and titleBefore are the one deliberate change to the layouts'
+// markup: a page's title goes before the site's name only when it is not
+// the name (TestAHomePageTitledWithTheSiteNameSaysItOnce). A sample
+// rendered as it is written has no renderer to say so, so it is rendered
+// through the layout as it was.
+const (
+	titleNow    = "{% if page.title_before_name %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	titleBefore = "{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+)
+
 func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	got := map[string]string{}
 	for _, st := range All() {
-		got["starter "+st.Name] = sum(render(t, st))
 		src, err := st.HTML()
 		if err != nil {
 			t.Fatal(err)
 		}
+		if strings.Count(src, titleNow) != 1 {
+			t.Fatalf("%s's title is not where this test expects it", st.Name)
+		}
+		raw, err := tmpl.Render(strings.Replace(src, titleNow, titleBefore, 1), map[string]any{"page": st.Sample})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got["starter "+st.Name] = sum(raw)
 		out, err := tmpl.Render(src, map[string]any{"page": decorated(st.Sample), "site": siteContext()})
 		if err != nil {
 			t.Fatal(err)

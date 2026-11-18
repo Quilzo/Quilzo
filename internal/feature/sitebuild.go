@@ -683,6 +683,26 @@ func finishSite(p *Package) {
 		}
 	}
 	p.Menus = append(menus, foot)
+	describePages(p)
+}
+
+// describePages gives every page that has none a description: the sentence
+// its hero opens with, which is what the page is. The layouts write a
+// page's description as its meta description and og:description, and no
+// built page had one, so a search result and a link preview had nothing to
+// say about any of them. The home page's sentence is the blank somebody
+// fills in with what the site is for, so filling it in once fills both, and
+// a page with that blank still in its description is not published either.
+func describePages(p *Package) {
+	for _, pg := range p.Pages {
+		if d, _ := pg.Body["description"].(string); strings.TrimSpace(d) != "" {
+			continue
+		}
+		hero, _ := pg.Body["hero"].(map[string]any)
+		if lead, _ := hero["lead"].(string); strings.TrimSpace(lead) != "" {
+			pg.Body["description"] = lead
+		}
+	}
 }
 
 // privacyPage says what the site collects, from the package itself: so it
