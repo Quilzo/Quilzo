@@ -1691,6 +1691,12 @@ func cmdAdd(root string, args []string) error {
 	if merged.Pages != nil {
 		written = len(merged.Pages)
 	}
+	// The commit under --json, which is what a script adding pages needs
+	// next, for --based-on and for review. It answered nothing, exit 0.
+	if w.JSON(map[string]any{"commit": cid, "pages": changed, "draft_pages": written,
+		"kept_theirs": merged.TookTheirs, "kept_mine": merged.TookMine}) {
+		return nil
+	}
 	w.Human("draft %s  %d page(s)\n", short(cid), written)
 	sayClaims(claimsByOthers(root, caller.Name, append(changed, strings.Split(*remove, ",")...)))
 	if message != *msg {
@@ -2260,6 +2266,9 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		return err
 	}
 	if len(pub.Changes) == 0 && pub.Previous == pub.Published {
+		if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": []string{}, "already_live": true}) {
+			return nil
+		}
 		w.Human("already live\n")
 		return nil
 	}
@@ -2279,6 +2288,12 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		changed = append(changed, c.Path)
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
+	// What is live now under --json, which a deployment script needs to
+	// record and to roll back to. It answered nothing, exit 0.
+	if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": changed}) {
+		syncPayAfterLive(root, caller)
+		return nil
+	}
 	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
 	syncPayAfterLive(root, caller)
 	if pub.Previous != "" {
@@ -2322,10 +2337,15 @@ func cmdRollback(root string, args []string) error {
 		reverted = append(reverted, c.Path)
 	}
 	fireWebhooks(root, "rolled-back", pub.Published, reverted)
-	fmt.Printf("live is now %s  (%d change(s) reverted)\n",
+	// As publish answers: this printed its prose under --json too.
+	if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "reverted": reverted}) {
+		syncPayAfterLive(root, caller)
+		return nil
+	}
+	w.Human("live is now %s  (%d change(s) reverted)\n",
 		short(pub.Published), len(pub.Changes))
 	syncPayAfterLive(root, caller)
-	fmt.Printf("  %srolled back from %s, which is still stored and can be "+
+	w.Human("  %srolled back from %s, which is still stored and can be "+
 		"published again%s\n", dim, short(pub.Previous), reset)
 	return nil
 }

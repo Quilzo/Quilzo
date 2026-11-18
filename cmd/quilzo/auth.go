@@ -444,33 +444,41 @@ func authGrantAs(root string, args []string, denying bool) (err error) {
 		},
 	})
 
-	if job, ok := auth.JobNamed(rest[1]); ok {
-		fmt.Printf("%s %s to %s: %s\n", verb, job.Name, rest[0], job.Summary)
-		for _, b := range bindings {
-			fmt.Printf("  %s%s on %s%s\n", dim, b.Role, b.Resource, reset)
-		}
-		if expires != 0 {
-			fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
-		}
-		return nil
-	}
-	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
-	if expires != 0 {
-		fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
-	}
-	// Show the consequence immediately. A grant whose effect you have to work
-	// out later is one nobody checks.
-	fmt.Printf("  %s%s can now: ", dim, rest[0])
+	// One document under --json, the same for a role, a permission and a
+	// job: the binding made and what it lets the principal do. This was a
+	// document for a job and prose for a role, which a script parsing the
+	// answer met as a different format for the same command.
 	var can []string
 	for _, a := range auth.Actions() {
 		if p.Evaluate(rest[0], a, *on).Allowed {
 			can = append(can, string(a))
 		}
 	}
+	if w.JSON(map[string]any{"principal": rest[0], "role": rest[1], "on": *on, "deny": *deny,
+		"expires": expiryText(expires), "bindings": bindings, "can": can}) {
+		return nil
+	}
+	if job, ok := auth.JobNamed(rest[1]); ok {
+		w.Human("%s %s to %s: %s\n", verb, job.Name, rest[0], job.Summary)
+		for _, b := range bindings {
+			w.Human("  %s%s on %s%s\n", dim, b.Role, b.Resource, reset)
+		}
+		if expires != 0 {
+			w.Human("  %suntil %s%s\n", dim, expiryText(expires), reset)
+		}
+		return nil
+	}
+	w.Human("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
+	if expires != 0 {
+		w.Human("  %suntil %s%s\n", dim, expiryText(expires), reset)
+	}
+	// Show the consequence immediately. A grant whose effect you have to work
+	// out later is one nobody checks.
+	w.Human("  %s%s can now: ", dim, rest[0])
 	if len(can) == 0 {
-		fmt.Printf("nothing on %s%s\n", *on, reset)
+		w.Human("nothing on %s%s\n", *on, reset)
 	} else {
-		fmt.Printf("%s on %s%s\n", strings.Join(can, ", "), *on, reset)
+		w.Human("%s on %s%s\n", strings.Join(can, ", "), *on, reset)
 	}
 	return nil
 }
@@ -556,19 +564,29 @@ func authRevoke(root string, args []string) error {
 		},
 	})
 
-	fmt.Printf("removed %d binding(s)\n", n)
 	// Inherited access survives revoking a narrow binding, and someone who does
 	// not notice will think they removed access they did not.
 	//
 	// Where it comes from only when that is somewhere else: from a binding
 	// on the same place the reason restated the line ("theo still has admin
 	// on / — theo is admin on /, granted at /").
-	if d := p.Evaluate(rest[0], auth.ActView, *on); d.Allowed {
+	d := p.Evaluate(rest[0], auth.ActView, *on)
+	// Under --json, what was removed and what is left, as a document; it was
+	// this prose.
+	still := ""
+	if d.Allowed {
+		still = string(d.Role)
+	}
+	if w.JSON(map[string]any{"principal": rest[0], "role": rest[1], "on": *on, "removed": n, "still": still}) {
+		return nil
+	}
+	w.Human("removed %d binding(s)\n", n)
+	if d.Allowed {
 		why := ""
 		if d.Binding == nil || strings.Trim(d.Binding.Resource, "/") != strings.Trim(*on, "/") {
 			why = " — " + d.Reason
 		}
-		fmt.Printf("  %s%s still has %s on %s%s%s\n",
+		w.Human("  %s%s still has %s on %s%s%s\n",
 			yellow, rest[0], d.Role, *on, why, reset)
 	}
 	return nil
@@ -721,12 +739,17 @@ func grantAppRole(root, who, name, on string, deny bool, base auth.Binding) erro
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"subject": who, "role": name, "deny": "false", "expires": expiryText(base.Expires)},
 	})
-	fmt.Printf("granted %s to %s: %s\n", name, who, r.Title)
+	// The document `auth grant` answers for any other role.
+	if w.JSON(map[string]any{"principal": who, "role": name, "on": "/", "deny": false,
+		"expires": expiryText(base.Expires), "grants": r.Grants}) {
+		return nil
+	}
+	w.Human("granted %s to %s: %s\n", name, who, r.Title)
 	for _, g := range r.Grants {
-		fmt.Printf("  %s%s%s\n", dim, g, reset)
+		w.Human("  %s%s%s\n", dim, g, reset)
 	}
 	if base.Expires != 0 {
-		fmt.Printf("  %suntil %s%s\n", dim, expiryText(base.Expires), reset)
+		w.Human("  %suntil %s%s\n", dim, expiryText(base.Expires), reset)
 	}
 	return nil
 }
@@ -1279,13 +1302,17 @@ func tokenRevoke(root string, args []string) error {
 		},
 	})
 
-	fmt.Printf("revoked %s\n", args[0])
+	// A document under --json; it was this prose.
+	if w.JSON(map[string]any{"id": args[0], "revoked": true, "sessions": sessions}) {
+		return nil
+	}
+	w.Human("revoked %s\n", args[0])
 	if sessions > 0 {
 		// Said out loud, because a cascade that happens quietly is one nobody
 		// relies on.
-		fmt.Printf("  %sand %d live session(s) minted from it%s\n", yellow, sessions, reset)
+		w.Human("  %sand %d live session(s) minted from it%s\n", yellow, sessions, reset)
 	}
-	fmt.Printf("  %sthe record is kept, so what it was and when it last worked "+
+	w.Human("  %sthe record is kept, so what it was and when it last worked "+
 		"survives the revocation%s\n", dim, reset)
 	return nil
 }

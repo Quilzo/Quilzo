@@ -310,6 +310,11 @@ func configSet(root string, args []string) error {
 	// why the field is called "setting".
 	record(root, caller.auditRecord("config.set", "/", outcome, detail))
 
+	// The setting under --json, as it was and as it is; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"key": key, "from": before, "to": value, "accepted_risk": reason}) {
+		return nil
+	}
 	w.Human("%s = %s\n", key, value)
 	approvalApplies(root, key)
 	if reason != "" {
@@ -352,6 +357,9 @@ func configUnset(root string, args []string) error {
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))
 	// As show, list and explain say the default, not as the file holds it.
+	if w.JSON(map[string]any{"key": args[0], "from": before, "to": c.Shown(args[0]), "default": true}) {
+		return nil
+	}
 	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
 	approvalApplies(root, args[0])
 	return nil

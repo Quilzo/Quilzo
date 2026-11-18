@@ -185,6 +185,10 @@ func cmdRedirect(root string, args []string) error {
 			return err
 		}
 		record(root, caller.auditRecord("redirect.added", r.From, audit.Success, map[string]string{"to": r.To}))
+		// The redirect under --json, which answered nothing.
+		if w.JSON(r) {
+			return nil
+		}
 		w.Human("  %s%s now goes to %s%s\n", green, r.From, r.To, reset)
 		return nil
 	case "remove", "rm":
@@ -198,6 +202,9 @@ func cmdRedirect(root string, args []string) error {
 			return err
 		}
 		record(root, caller.auditRecord("redirect.removed", args[1], audit.Success, nil))
+		if w.JSON(map[string]any{"from": args[1], "removed": true}) {
+			return nil
+		}
 		w.Human("  %sremoved%s\n", green, reset)
 		return nil
 	}

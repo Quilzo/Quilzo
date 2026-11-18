@@ -428,15 +428,20 @@ func agentNew(root string, args []string) error {
 			"capabilities": strings.Join(m.Capabilities, " "),
 		}))
 
-	fmt.Printf("declared %s%s%s (%s)\n", bold, name, reset, m.Kind)
-	fmt.Printf("  %s%s%s\n", dim, m.Purpose, reset)
-	fmt.Printf("  capabilities  %s\n", strings.Join(m.Capabilities, ", "))
-	fmt.Printf("  autonomy      %s\n", m.Autonomy)
+	// The declaration under --json, as `agent show` answers it; this
+	// printed its prose whatever was asked for.
+	if w.JSON(m) {
+		return nil
+	}
+	w.Human("declared %s%s%s (%s)\n", bold, name, reset, m.Kind)
+	w.Human("  %s%s%s\n", dim, m.Purpose, reset)
+	w.Human("  capabilities  %s\n", strings.Join(m.Capabilities, ", "))
+	w.Human("  autonomy      %s\n", m.Autonomy)
 	if m.HumanApproval {
-		fmt.Printf("  %sa person approves before anything it did becomes public%s\n",
+		w.Human("  %sa person approves before anything it did becomes public%s\n",
 			dim, reset)
 	}
-	fmt.Printf("  %sedit %s to widen it; `quilzo agent check` re-validates%s\n",
+	w.Human("  %sedit %s to widen it; `quilzo agent check` re-validates%s\n",
 		dim, agentsPath(root), reset)
 	return nil
 }

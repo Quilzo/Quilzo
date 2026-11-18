@@ -71,6 +71,10 @@ func langInit(root string, args []string) error {
 	if err := saveJSON(localesPath(root), c); err != nil {
 		return err
 	}
+	// The languages under --json; it answered nothing, exit 0.
+	if w.JSON(map[string]any{"default": l, "locales": c}) {
+		return nil
+	}
 	w.Human("default language is %s%s%s\n", bold, l, reset)
 	w.Human("  %spages stay where they are; a second language is added under a "+
 		"prefix%s\n", dim, reset)
@@ -107,6 +111,9 @@ func langAdd(root string, args []string) error {
 		Detail: map[string]string{"locale": string(l)},
 	})
 
+	if w.JSON(map[string]any{"added": l, "dir": l.Dir(), "locales": c}) {
+		return nil
+	}
 	w.Human("added %s%s%s\n", bold, l, reset)
 	w.Human("  %spages go under %s/, and %s is %s%s\n",
 		dim, l, l, l.Dir(), reset)

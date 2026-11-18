@@ -356,3 +356,81 @@ func TestASetterSaysWhatItSet(t *testing.T) {
 		}
 	}
 }
+
+// Under --json a write answers one document, saying what it did.
+//
+// The help says stdout carries one document under --json, and writes
+// answered three ways: a document, prose a parser chokes on (`auth grant
+// jj author`, `auth revoke`, `auth deny`, `token revoke`, `provenance set`,
+// `menu add`, `agent new`), or nothing at all with exit 0 (`add`,
+// `publish`, `redirect add`, `config set`, `env add`, `theme unset`,
+// `memory forget`, `schedule add`, `lang init`, `fediverse block`,
+// `newsletter export`). `auth grant` was a document for a job and prose for
+// a role, and a deployment script could not learn the commit `add` and
+// `publish` made. Each is run here, in order, on one store, as a script
+// setting a site up runs them.
+func TestAWriteAnswersOneDocument(t *testing.T) {
+	root, owner := accessStore(t)
+	page := filepath.Join(t.TempDir(), "home.json")
+	if err := os.WriteFile(page, []byte(`{"title":"Home","body":"b"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tok := map[string]any{}
+	for _, c := range []struct {
+		line []string
+		// has is a field the document must carry: what the write did.
+		has string
+	}{
+		{[]string{"add", "index=" + page, "-m", "j1"}, "commit"},
+		{[]string{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"}, "page"},
+		{[]string{"publish", "--no-a11y-check"}, "commit"},
+		{[]string{"auth", "grant", "jj", "author"}, "role"},
+		{[]string{"auth", "grant", "kk", "analyst", "--for", "720h"}, ""},
+		{[]string{"auth", "revoke", "jj", "author"}, "removed"},
+		{[]string{"auth", "deny", "jj", "publisher"}, "role"},
+		{[]string{"token", "issue", "ci", "--principal", "owner", "--role", "reader", "--ttl", "1h"}, "id"},
+		{[]string{"token", "revoke", "TOKEN-ID"}, "id"},
+		{[]string{"menu", "add", "foot", "--label", "Home", "--target", "index"}, "item"},
+		{[]string{"redirect", "add", "/old", "/index"}, "from"},
+		{[]string{"config", "set", "site.name", "Hello"}, "key"},
+		{[]string{"env", "add", "staging"}, "name"},
+		{[]string{"theme", "unset", "color.accent"}, "removed"},
+		{[]string{"memory", "forget"}, "removed"},
+		{[]string{"schedule", "add", "48h"}, "commit"},
+		{[]string{"agent", "new", "b1", "--kind", "operator"}, "name"},
+		{[]string{"lang", "init", "en"}, "default"},
+		{[]string{"fediverse", "block", "bad.example"}, "blocked"},
+		{[]string{"newsletter", "export"}, ""},
+	} {
+		line := append([]string{}, c.line...)
+		for i, a := range line {
+			if a == "TOKEN-ID" {
+				line[i], _ = tok["id"].(string)
+			}
+		}
+		name := strings.Join(c.line, " ")
+		o, e, code := cliRun(t, root, owner, append([]string{"--json"}, line...)...)
+		if code != 0 {
+			t.Errorf("`quilzo --json %s` exited %d: %s", name, code, firstLines(e, 3))
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(o))
+		var doc any
+		if err := dec.Decode(&doc); err != nil {
+			t.Errorf("`quilzo --json %s` did not answer a JSON document: %q", name, firstLines(o, 2))
+			continue
+		}
+		if dec.More() {
+			t.Errorf("`quilzo --json %s` answered more than one document: %q", name, firstLines(o, 4))
+		}
+		fields, _ := doc.(map[string]any)
+		if c.has != "" {
+			if _, ok := fields[c.has]; !ok {
+				t.Errorf("`quilzo --json %s` answered %.160s, without %q", name, o, c.has)
+			}
+		}
+		if c.line[0] == "token" && c.line[1] == "issue" {
+			tok = fields
+		}
+	}
+}

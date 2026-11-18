@@ -197,6 +197,11 @@ func envAdd(root string, args []string) error {
 		audit.Success, map[string]string{"environment": name,
 			"order": strconv.Itoa(order)}))
 
+	// The environment and the order it is in, under --json; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"name": name, "ref": "env-" + name, "order": order, "environments": e.Sorted()}) {
+		return nil
+	}
 	w.Human("added %s%s%s\n", bold, name, reset)
 	for _, env := range e.Sorted() {
 		arrow := "  "
@@ -242,6 +247,9 @@ func envRemove(root string, args []string) error {
 	// name from a list; deleting the ref would discard the record of what that
 	// environment was serving, which is the thing somebody asks about
 	// afterwards.
+	if w.JSON(map[string]any{"name": args[0], "removed": true, "ref_kept": true}) {
+		return nil
+	}
 	w.Human("removed %s\n", args[0])
 	w.Human("  %sits ref is left in place, so what it was serving is still "+
 		"recoverable%s\n", dim, reset)

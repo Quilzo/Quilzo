@@ -298,7 +298,12 @@ func menuItemSet(root string, args []string) error {
 	if replaced {
 		verb = "updated"
 	}
-	fmt.Printf("%s %s in %s  %sorder %d%s\n", verb, it.ID, name, dim, it.Order, reset)
+	// The entry under --json, with the id a later `menu remove` names; it
+	// was this prose.
+	if w.JSON(map[string]any{"menu": name, "item": it, "replaced": replaced}) {
+		return nil
+	}
+	w.Human("%s %s in %s  %sorder %d%s\n", verb, it.ID, name, dim, it.Order, reset)
 	return nil
 }
 
@@ -350,7 +355,10 @@ func menuItemRemove(root string, args []string) error {
 	}
 	record(root, caller.auditRecord("menu.save", name, audit.Success,
 		map[string]string{"removed": id}))
-	fmt.Printf("removed %s from %s\n", id, name)
+	if w.JSON(map[string]any{"menu": name, "removed": id}) {
+		return nil
+	}
+	w.Human("removed %s from %s\n", id, name)
 	return nil
 }
 

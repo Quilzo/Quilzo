@@ -119,11 +119,17 @@ func provSet(root string, args []string) error {
 		return err
 	}
 
-	fmt.Printf("%s: %s\n", page, rec.SourceType.Describe())
-	if d := rec.Disclosure(); d != "" {
-		fmt.Printf("  %sreaders will see: %s%s\n", dim, d, reset)
+	// A document under --json: the record and what it is bound to. This
+	// printed its prose whatever was asked for.
+	if w.JSON(map[string]any{"page": page, "source": rec.SourceType, "described": rec.SourceType.Describe(),
+		"disclosure": rec.Disclosure(), "sha256": hash}) {
+		return nil
 	}
-	fmt.Printf("  %sbound to sha256:%s%s\n", dim, short(hash), reset)
+	w.Human("%s: %s\n", page, rec.SourceType.Describe())
+	if d := rec.Disclosure(); d != "" {
+		w.Human("  %sreaders will see: %s%s\n", dim, d, reset)
+	}
+	w.Human("  %sbound to sha256:%s%s\n", dim, short(hash), reset)
 	return nil
 }
 

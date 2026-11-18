@@ -368,22 +368,28 @@ func themeUnset(root string, args []string) error {
 		if err := writeThemeFile(*dir, nil); err != nil {
 			return err
 		}
-		w.Human("removed every override; the shipped palette is in effect\n")
 		record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 			audit.Success, map[string]string{"removed": "all"}))
+		if w.JSON(map[string]any{"removed": "all", "not_set": []string{}}) {
+			return nil
+		}
+		w.Human("removed every override; the shipped palette is in effect\n")
 		sayWhenReadersSeeIt()
 		return nil
 	}
 	if len(pos) == 0 {
 		return errMisused{fmt.Errorf("usage: quilzo theme unset TOKEN [TOKEN …] | --all")}
 	}
+	var removed, notSet []string
 	for _, name := range pos {
 		name = strings.TrimSpace(name)
 		if _, present := existing[name]; !present {
 			w.Human("  %s%s was not set%s\n", dim, name, reset)
+			notSet = append(notSet, name)
 			continue
 		}
 		delete(existing, name)
+		removed = append(removed, name)
 		w.Human("unset %s%s%s\n", bold, name, reset)
 	}
 	if err := writeThemeFile(*dir, existing); err != nil {
@@ -391,6 +397,11 @@ func themeUnset(root string, args []string) error {
 	}
 	record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 		audit.Success, map[string]string{"removed": strings.Join(pos, ",")}))
+	// What was unset and what was not set to begin with, under --json; it
+	// answered nothing, exit 0.
+	if w.JSON(map[string]any{"removed": removed, "not_set": notSet}) {
+		return nil
+	}
 	sayWhenReadersSeeIt()
 	return nil
 }

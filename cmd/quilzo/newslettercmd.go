@@ -669,12 +669,22 @@ func newsletterExport(root string, args []string, caller *Caller) error {
 	if err != nil {
 		return err
 	}
+	// Under --json, one document: the file written and how many, or with
+	// no file the CSV itself, as a field. The CSV went to stdout as it is,
+	// which is not the one document the help promises, and with a file the
+	// answer was nothing, exit 0.
 	if len(args) == 0 {
+		if w.JSON(map[string]any{"addresses": n, "csv": buf.String()}) {
+			return nil
+		}
 		_, err := os.Stdout.Write(buf.Bytes())
 		return err
 	}
 	if err := os.WriteFile(args[0], buf.Bytes(), 0o600); err != nil {
 		return err
+	}
+	if w.JSON(map[string]any{"addresses": n, "file": args[0]}) {
+		return nil
 	}
 	w.Human("wrote %d addresses to %s, as a file other newsletter services import\n", n, args[0])
 	return nil

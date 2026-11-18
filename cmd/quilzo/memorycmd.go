@@ -307,6 +307,10 @@ func cmdMemory(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// How many under --json; it answered nothing, exit 0.
+		if w.JSON(map[string]any{"about": *about, "removed": n}) {
+			return nil
+		}
 		w.Human("every agent has forgotten %s: %s removed\n", *about, count(n, "memory"))
 		return nil
 	}
