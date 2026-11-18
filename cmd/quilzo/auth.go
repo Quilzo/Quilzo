@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -491,19 +490,12 @@ func grantExpiry(until, forDur string, now time.Time) (int64, error) {
 		}
 		return t.Unix(), nil
 	case forDur != "":
-		var d time.Duration
-		if n, ok := strings.CutSuffix(forDur, "d"); ok {
-			days, err := strconv.Atoi(n)
-			if err != nil || days <= 0 {
-				return 0, fmt.Errorf("--for %s is not a number of days", forDur)
-			}
-			d = time.Duration(days) * 24 * time.Hour
-		} else {
-			parsed, err := time.ParseDuration(forDur)
-			if err != nil || parsed <= 0 {
-				return 0, fmt.Errorf("--for is a length of time, like 30d or 72h")
-			}
-			d = parsed
+		// The parser every other length of time on the command line uses
+		// (durationFlag). This one had its own, which took 30d and refused
+		// 2w, while the rest took neither.
+		d, err := config.ParseDuration(forDur)
+		if err != nil || d <= 0 {
+			return 0, fmt.Errorf("--for is a length of time, like 30d, 2w or 72h")
 		}
 		return now.Add(d).Unix(), nil
 	}
@@ -883,7 +875,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	principal := fs.String("principal", "", "who the token acts as")
 	role := fs.String("role", string(auth.RoleReader), "role the token carries")
 	on := fs.String("on", "/", "resource path the token is scoped to")
-	ttl := fs.Duration("ttl", 0, "how long it lasts (default from config)")
+	ttl := flagDuration(fs, "ttl", 0, "how long it lasts (default from config)")
 	as := fs.String("as", string(auth.RoleAdmin), "role of whoever is issuing")
 	types := fs.String("types", "",
 		"comma-separated content types this token may touch; all if unset")
@@ -1124,7 +1116,7 @@ func tokenExchange(root string, args []string) error {
 	fs := flag.NewFlagSet("exchange", flag.ContinueOnError)
 	role := fs.String("role", "", "narrow to this role (default: the parent's)")
 	on := fs.String("on", "", "narrow to this path (default: the parent's)")
-	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
+	ttl := flagDuration(fs, "ttl", auth.DefaultSessionTTL, "how long the session lasts")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
@@ -1297,7 +1289,7 @@ func tokenRevoke(root string, args []string) error {
 
 func tokenStale(root string, args []string) error {
 	fs := flag.NewFlagSet("stale", flag.ContinueOnError)
-	idle := fs.Duration("idle", 720*time.Hour, "unused for at least this long")
+	idle := flagDuration(fs, "idle", 720*time.Hour, "unused for at least this long")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}

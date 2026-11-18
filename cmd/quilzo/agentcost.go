@@ -30,7 +30,7 @@ func formatCost(micros int64, currency string) string { return agent.MoneyText(m
 func agentCost(root string, args []string) error {
 	fs := flag.NewFlagSet("agent cost", flag.ContinueOnError)
 	by := fs.String("by", "agent", "group by agent, person, goal or day")
-	since := fs.Duration("since", 30*24*time.Hour, "how far back to look")
+	since := flagDuration(fs, "since", 30*24*time.Hour, "how far back to look")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err

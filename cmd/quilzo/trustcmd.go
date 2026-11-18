@@ -104,7 +104,7 @@ func trustAdd(root string, args []string) error {
 	as := fs.String("as", "", "the principal the job acts as, such as ci:docs")
 	role := fs.String("role", "", "reader, author or publisher")
 	on := fs.String("on", "/", "the part of the store it reaches")
-	life := fs.Duration("for", 15*time.Minute, "how long its token lasts, at most an hour")
+	life := flagDuration(fs, "for", 15*time.Minute, "how long its token lasts, at most an hour")
 	readOnly := fs.Bool("read-only", false, "its token refuses every write")
 	claims := claimFlags{}
 	fs.Var(claims, "claim", "a claim the token must carry, NAME=VALUE; repeat for more")

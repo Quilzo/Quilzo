@@ -105,3 +105,35 @@ func TestAShortTokenSaysTheHourItEnds(t *testing.T) {
 		}
 	}
 }
+
+// `auth grant --for 30d`, as the help writes it, was taken, and every other
+// length of time on the command line refused a day: `token issue --ttl 1d`
+// was "invalid value "1d" for flag -ttl: parse error", `agent sponsor --for
+// 90d` the same, and `schedule add 2d` "neither a time nor a duration". One
+// syntax now reads them all: Go's, and a whole number of days or weeks.
+func TestEveryLengthOfTimeTakesDays(t *testing.T) {
+	root, token := accessStore(t)
+	if _, e, code := cliRun(t, root, token, "add", "about="+fileOf(t, "about.json", `{"title":"About"}`), "-m", "a draft to schedule"); code != 0 {
+		t.Fatalf("add: %s", e)
+	}
+	refused := regexp.MustCompile(`invalid value|parse error|neither a time|not a number of days|is a length of time|not a length of time`)
+	for _, line := range [][]string{
+		{"token", "issue", "y", "--principal", "owner", "--ttl", "1d"},
+		{"token", "stale", "--idle", "4w"},
+		{"auth", "enrol", "ann", "--for", "1d"},
+		{"auth", "grant", "ann", "author", "--for", "2w"},
+		{"agent", "sponsor", "x", "owner", "--for", "90d"},
+		{"agent", "renew", "x", "--for", "90d"},
+		{"agent", "cost", "--since", "7d"},
+		{"agent", "credential", "issue", "x", "--for", "1d"},
+		{"shield", "pause", "x", "--for", "1d", "--reason", "r"},
+		{"trust", "add", "x", "--for", "1d"},
+		{"schedule", "add", "2d"},
+		{"checked", "set", "about", "--every", "1w"},
+	} {
+		o, e, _ := cliRun(t, root, token, line...)
+		if m := refused.FindString(o + e); m != "" {
+			t.Errorf("`quilzo %s` refused its length of time (%s):\n%s", strings.Join(line, " "), m, firstLines(o+e, 4))
+		}
+	}
+}

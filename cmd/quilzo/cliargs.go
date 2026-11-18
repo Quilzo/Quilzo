@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // One rule for the words on a command line: a word a command does not take
@@ -242,4 +245,40 @@ func positionals(args []string, n int) ([]string, error) {
 func noArguments(args []string) error {
 	_, err := positionals(args, 0)
 	return err
+}
+
+// durationFlag is a length of time on the command line: Go's own (90m,
+// 72h, 1h30m) or a whole number of days or weeks (30d, 2w), read by
+// config.ParseDuration, which the settings already read theirs with.
+//
+// The help teaches `auth grant WHO JOB --for 30d`, and that one flag read
+// days with a parser of its own; every other length of time was Go's
+// flag.Duration, which stops at hours. So an administrator who granted a
+// job for 30d and issued its token --ttl 30d was told "invalid value "30d"
+// for flag -ttl: parse error", and `agent sponsor --for 90d` and `shield
+// pause --for 1d` the same. One syntax for every length of time, so the
+// second flag takes what the first taught.
+type durationFlag struct{ d *time.Duration }
+
+func (f durationFlag) String() string {
+	if f.d == nil {
+		return ""
+	}
+	return config.FormatDuration(*f.d)
+}
+
+func (f durationFlag) Set(s string) error {
+	d, err := config.ParseDuration(strings.TrimSpace(s))
+	if err != nil {
+		return errors.New("a length of time, like 90m, 72h, 30d or 2w")
+	}
+	*f.d = d
+	return nil
+}
+
+// flagDuration declares a durationFlag on fs, as fs.Duration would.
+func flagDuration(fs *flag.FlagSet, name string, value time.Duration, usage string) *time.Duration {
+	d := value
+	fs.Var(durationFlag{&d}, name, usage)
+	return &d
 }
