@@ -317,7 +317,9 @@ func sayOldAddresses(renames map[string]string) {
 //
 // Copied to the new name, and not taken off the old one: the live site serves
 // the old name until the move is published, and its mark goes with it until
-// then. A record is carried only where it was bound to the bytes the move
+// then. A page that keeps its name and had only a reference rewritten has its
+// record rebound to its new bytes, as any write to a page rebinds it, with a
+// note saying what changed them. A record is carried only where it was bound to the bytes the move
 // read, so a record that was already stale stays a gap rather than being
 // laundered into a fresh one; and only where the page now holds exactly what
 // the move wrote, since a field somebody else changed meanwhile was merged

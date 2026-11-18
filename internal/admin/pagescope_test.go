@@ -517,3 +517,25 @@ func TestARefusalDoesNotNameAPageOutOfReach(t *testing.T) {
 		t.Errorf("an export refused by a page out of reach: %d %s", w.Code, loc)
 	}
 }
+
+// Review's list of changes counts a change to a page the session may not
+// read and does not name it, as a refused publish does. The refusals now
+// show the list Review shows, and Review named the page.
+func TestReviewCountsAChangeOutOfReachAndDoesNotNameIt(t *testing.T) {
+	srv, token := setup(t)
+	pages := map[string]any{
+		"index":           map[string]any{"title": "Home", "body": "Welcome."},
+		"redundancy-plan": map[string]any{"title": "Who goes", "body": "Not yet announced."},
+	}
+	if _, err := site.SaveDraft(srv.Store, pages, "second", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "editor", Role: auth.RoleReader,
+		Resource: "/redundancy-plan", Deny: true}); err != nil {
+		t.Fatal(err)
+	}
+	body := getPage(t, srv, "/review", token)
+	if strings.Contains(body, "redundancy") || !strings.Contains(body, "1 change to pages you may not read") {
+		t.Errorf("Review names a page out of reach, or does not count it:\n%s", body)
+	}
+}

@@ -104,7 +104,8 @@
   </tbody>
 </table>
 </div>
-{{else}}<p>No content differences.</p>{{end}}
+{{else if not .HiddenChanges}}<p>No content differences.</p>{{end}}
+{{if .HiddenChanges}}<p class="hint">And {{plural .HiddenChanges "change" "changes"}} to pages you may not read.</p>{{end}}
 
 <h2>Accessibility</h2>
 {{if .Reports}}

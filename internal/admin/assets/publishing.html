@@ -106,7 +106,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
         nobody has looked at since</span>
       {{else if le .Entry.At $.Now}}<span class="warn">overdue — not published{{if $.CannotPublish}}:
         this server cannot publish it{{if $.CanPromote}} ({{$.CannotPublish}}){{end}}{{else if not $.InServer}}:
-        nothing publishes it until <code>quilzo schedule run</code> runs{{end}}</span>
+        nothing publishes it until <code class="cmd">quilzo schedule run</code> runs{{end}}</span>
       {{else}}<span class="ok">pending</span>{{end}}
     </td>
     {{if $.CanPromote}}

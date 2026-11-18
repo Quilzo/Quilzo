@@ -3521,7 +3521,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	changes := s.changesTo(draft)
+	changes, hidden := s.changesTo(p, draft)
 
 	reports, a11yErr := s.checkAll(draft)
 	a11yUnavailable := ""
@@ -3536,7 +3536,8 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		"Message":                  r.URL.Query().Get("m"),
 		"Nav":                      "review",
 		"Title":                    "Review", "Principal": p, "Changes": changes,
-		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
+		"HiddenChanges": hidden,
+		"Reports":       reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
 		"Nothing":    draft == "" || draft == live,
@@ -3544,18 +3545,35 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // changesTo is what publishing commit would change on the live site, as
-// Review lists it.
+// Review lists it to p: the changes to pages p may read, and how many more
+// there are.
 //
 // One function for Review and for every refusal drawn on the same screen.
 // The refusals were rendered without it, so the one asking for a reason to
 // publish pages with no provenance said "No content differences" at the
-// moment the person was asked to write that reason against them.
-func (s *Server) changesTo(commit string) []site.Change {
+// moment the person was asked to write that reason against them. A page p
+// may not read is counted and not named, as deniedChanges counts it: the
+// list named it, and told a session confined away from a page what the
+// page was called.
+func (s *Server) changesTo(p principal, commit string) ([]site.Change, int) {
 	if commit == "" {
-		return nil
+		return nil, 0
 	}
 	changes, _ := site.Diff(s.Store, s.Store.GetRef(site.RefLive), commit)
-	return changes
+	shown := changes[:0:0]
+	hidden := 0
+	for _, c := range changes {
+		id := c.After
+		if id == "" {
+			id = c.Before
+		}
+		if s.Policy != nil && !s.Store.IsTree(id) && !s.allows(p, auth.ActView, pageResource(c.Path)) {
+			hidden++
+			continue
+		}
+		shown = append(shown, c)
+	}
+	return shown, hidden
 }
 
 // checkAll renders every page and runs the accessibility checks.
@@ -3714,10 +3732,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Frozen != nil {
 		if ferr := s.Frozen(); ferr != nil {
+			frozenChanges, frozenHidden := s.changesTo(p, s.Store.GetRef(site.RefDraft))
 			s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": ferr.Error()})
 			s.render(w, r, "review.html", map[string]any{"Status": http.StatusConflict,
 				"Nav": "review", "Title": "Review", "Principal": p,
-				"Changes":    s.changesTo(s.Store.GetRef(site.RefDraft)),
+				"Changes": frozenChanges, "HiddenChanges": frozenHidden,
 				"CanPublish": false, "Error": ferr.Error()})
 			return
 		}
@@ -3795,7 +3814,7 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	// refusals below, which had all left it out.
 	defer func() {
 		if refusal != nil && refusal.page == "review.html" && refusal.data["Changes"] == nil {
-			refusal.data["Changes"] = s.changesTo(draft)
+			refusal.data["Changes"], refusal.data["HiddenChanges"] = s.changesTo(p, draft)
 		}
 	}()
 	// Each page the publish would change, asked about its own path: a deny
