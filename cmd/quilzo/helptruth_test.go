@@ -118,6 +118,38 @@ func TestTheHelpTextAndTheProgramAgree(t *testing.T) {
 	}
 }
 
+// The help opens by saying what the program is, in the README's words.
+//
+// It opened "content is immutable, publishing moves a pointer, and
+// templates cannot execute anything", the line from when Quilzo was a CMS
+// and nothing more, while the README and this package's own doc called it
+// the self-hosted AI agent platform. `quilzo help` is the first thing a
+// person or an agent asks the binary about itself, and it described a
+// product that is now one part of this one.
+func TestTheHelpSaysWhatQuilzoIs(t *testing.T) {
+	want := whatQuilzoIs(t)
+	opening, _, _ := strings.Cut(usageText, "\n\n")
+	said := strings.ToLower(strings.Join(strings.Fields(opening), " "))
+	if !strings.Contains(said, strings.ToLower(want)) {
+		t.Errorf("the help opens\n%s\nand the README says Quilzo is %q", opening, want)
+	}
+}
+
+// whatQuilzoIs is the README's sentence about what Quilzo is, the bold
+// line under the wordmark, without its full stop.
+func whatQuilzoIs(t *testing.T) string {
+	t.Helper()
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`<strong>([^<]+)</strong>`).FindSubmatch(readme)
+	if m == nil {
+		t.Fatal("README.md has no line in bold saying what Quilzo is")
+	}
+	return strings.TrimSuffix(strings.TrimSpace(string(m[1])), ".")
+}
+
 // inAnyGroup reports whether sub is one of the spellings the code accepts.
 func inAnyGroup(groups [][]string, sub string) bool {
 	for _, g := range groups {

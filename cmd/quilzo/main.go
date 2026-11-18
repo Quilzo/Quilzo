@@ -121,11 +121,15 @@ func lockPatience(v string) (time.Duration, error) {
 //
 // A constant rather than a literal inside usage(), so that `quilzo CMD
 // --help` can answer with the lines about CMD (commandhelp.go).
-const usageText = `quilzo — content is immutable, publishing moves a pointer, and
-          templates cannot execute anything.
+//
+// It opens with the README's sentence about what Quilzo is, and a test
+// holds it there: it went on opening with the content store's tagline
+// after the product had become an agent platform with a CMS in it.
+const usageText = `quilzo — the self-hosted AI agent platform: a control plane, an agent studio,
+          a CMS and chatbots in one Go binary.
 
-content
-  quilzo init [--admin NAME]               create a content store, and its first administrator
+content (immutable, and publishing moves a pointer; templates cannot execute anything)
+  quilzo init [--admin NAME]              create a content store, and its first administrator
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
   quilzo find WORDS                        a page, screen, setting, type or file
