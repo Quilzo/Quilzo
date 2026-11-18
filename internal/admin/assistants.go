@@ -111,7 +111,7 @@ func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Nav": "assistants", "Title": "Chatbots", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanSave":  s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanSave":  s.allows(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 		"CanBuild": s.mayBuild(p),
 	}
 	if s.Assistants == nil || s.Assistants.Load == nil {
@@ -177,10 +177,13 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		"Collections": strings.Join(a.Collections, ", "),
 		"Exclude":     strings.Join(a.Exclude, ", "),
 		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanSave": s.allows(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
 	// An author builds one that is not public, and is shown the rest of
-	// its settings switched off (Locked): they are a publisher's.
+	// its settings switched off (Locked): they are a publisher's. Whether
+	// somebody publishes is asked of their session (allows), as the save
+	// asks it, so a publisher signed in with an author's credential is not
+	// shown a setting the save would keep as it is.
 	data["CanBuild"] = !a.Public && s.mayBuild(p)
 	data["Locked"] = !data["CanSave"].(bool)
 	if s.Assistants.Documents != nil {
