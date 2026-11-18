@@ -254,11 +254,15 @@ func initAdmin(root string, args []string, created bool) error {
 	}
 	// New is a store nobody has had access to, not only one this run made
 	// the folders of. `quilzo demo`, `quilzo log`, or `init --admni` with a
-	// typo, make the folders, and the `init --admin` after them took the
-	// store for an upgraded installation: the first `quilzo serve` then
-	// wrote the grace, and for two weeks a token alone opened the admin of
-	// a store a day old. Nobody here yet means nobody signing in with a
-	// token to be locked out, so a grace already written is ended too.
+	// typo, made the folders, before only init made a store (needStore) and
+	// before a mistyped flag was refused ahead of anything being made
+	// (initFlags), and the `init --admin` after them took the store for an
+	// upgraded installation: the first `quilzo serve` then wrote the grace,
+	// and for two weeks a token alone opened the admin of a store a day old.
+	// A store they made then, or one from before two factors were the rule,
+	// still comes here with nobody in it. Nobody here yet means nobody
+	// signing in with a token to be locked out, so a grace already written
+	// is ended too.
 	if created || nobodyHasBeenHere(root) {
 		if err := twoFactorsFromNow(root); err != nil {
 			return err

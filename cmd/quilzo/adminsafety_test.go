@@ -116,14 +116,18 @@ func TestARecoveryIsNotRefusedOverATokenThatCanNoLongerAdminister(t *testing.T) 
 	}
 }
 
-// A store nobody has ever had access to is new, whichever command made
-// its folders, so `init --admin` on it gives two factors from now, not the
+// A store nobody has ever had access to is new, however it came to be
+// there, so `init --admin` on it gives two factors from now, not the
 // fortnight's grace an upgraded installation gets.
 //
 // `quilzo demo`, or `quilzo init --admni owner` with a typo, made the store,
 // and the `init --admin owner` after it found one there and wrote nothing:
 // the first `quilzo serve` then wrote the grace, and for two weeks a token
-// alone opened the admin of a store that was a day old.
+// alone opened the admin of a store that was a day old. Only init makes a
+// store now, and a mistyped flag is refused before anything is made, which
+// this holds too; the store demoStore leaves, made without a date as one
+// from an earlier release was, is the kind that still reaches init with
+// nobody in it.
 func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
@@ -169,11 +173,13 @@ func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 // then, whichever command gives it them: `quilzo auth grant` on a store
 // nobody has entered is the same moment as `init --admin` on one.
 //
-// A store made by `quilzo demo`, or by any command but init, and given its
-// administrator with `quilzo auth grant owner admin` and a token, never ran
-// init at all. The first `quilzo serve` took it for an upgraded
-// installation and wrote the grace, and for two weeks the token alone
-// opened the admin of a store a day old.
+// A store made by `quilzo demo`, or by any command but init, as they made
+// one before only init could, and given its administrator with `quilzo auth
+// grant owner admin` and a token, never ran init at all. The first `quilzo
+// serve` took it for an upgraded installation and wrote the grace, and for
+// two weeks the token alone opened the admin of a store a day old. A store
+// made then, or from before two factors were the rule, still comes to its
+// first grant with no date: the store demoStore leaves is one.
 func TestAStoreNobodyHasEnteredGetsTwoFactorsFromItsFirstGrant(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
