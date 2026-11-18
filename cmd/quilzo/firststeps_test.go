@@ -836,6 +836,44 @@ func TestTheSignInPagesInstructionsEndSignedIn(t *testing.T) {
 	f.enrolAndSignIn(f.links[0])
 }
 
+// The container recipes serve a site, on an image run as its Dockerfile
+// runs it.
+//
+// The reference's Deployment created an empty volume, mounted it at the
+// store and started the site on it: nothing had made a store there, so the
+// site exited saying so, and a volume at /srv/store alone would have lost
+// the templates `demo` writes beside it, which INSTALL says to keep by
+// mounting the volume at /srv.
+//
+// Docker is not here, so each `docker run` is this binary run as the image
+// would run it: its entrypoint and working directory, read from the
+// Dockerfile, a filesystem of its own that starts as the image's, and the
+// named volumes kept from one run to the next, seeded from the image the
+// first time they are mounted.
+func TestTheContainerRecipesServeASite(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		blocks func(t *testing.T) [][]string
+	}{
+		{"INSTALL", func(t *testing.T) [][]string {
+			return textBlocks(t, readDoc(t, "INSTALL"), "A container from source")
+		}},
+		{"docs/cms.md With Docker", func(t *testing.T) [][]string {
+			return mdBlocks(t, readDoc(t, "docs/cms.md"), "With Docker")
+		}},
+		{"docs/cms.md Deployment", func(t *testing.T) [][]string {
+			return mdBlocks(t, readDoc(t, "docs/cms.md"), "Deployment")[:1]
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newWalk(t)
+			f.image()
+			f.runAll(c.blocks(t))
+			f.siteHome()
+		})
+	}
+}
+
 // image reads what a container of the image starts as from the Dockerfile:
 // the entrypoint, the command, the working directory, and the directories
 // it is seeded with.

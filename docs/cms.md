@@ -2948,16 +2948,19 @@ nothing else.
 
 ```bash
 docker build -t quilzo .
-docker volume create quilzo-store
-docker run --rm -p 8081:8081 -v quilzo-store:/srv/store quilzo \
+docker run --rm -v quilzo:/srv quilzo init
+docker run --rm -v quilzo:/srv quilzo demo
+docker run -p 8081:8081 -v quilzo:/srv quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 
-The image's store is `/srv/store`, named in its entrypoint, so mount the
-store's volume there; the image runs as uid 65532, which a named volume
-suits and a host folder must be made writable for. `deploy/README.md` has
-the whole stack with Docker Compose: the admin over HTTPS, the site behind
-Caddy, and a log writer of its own.
+The image's store is `/srv/store`, named in its entrypoint, and `quilzo demo`
+writes its templates beside it in `/srv`, so mount one volume at `/srv`: a
+volume at `/srv/store` alone loses the templates, and `site` then exits with
+`no template directory at templates`. The image runs as uid 65532, which a
+named volume suits and a host folder must be made writable for.
+`deploy/README.md` has the whole stack with Docker Compose: the admin over
+HTTPS, the site behind Caddy, and a log writer of its own.
 
 Behind a reverse proxy every connection is the proxy's, so name it in
 `network.trusted_proxies` by its own address — the proxy, a cluster's ingress
