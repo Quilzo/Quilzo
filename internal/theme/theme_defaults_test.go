@@ -83,3 +83,21 @@ func TestASizeNobodyCanReadIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// Every modular scale a designer picks a heading scale from is accepted, the
+// golden ratio among them.
+//
+// The range for scale stopped at 1.6, so 1.618, the golden ratio and the
+// largest of the scales a type-scale tool offers, was refused, and a site
+// that had set it lost it, set aside with a note, the next time its design
+// was read.
+func TestEveryNamedTypeScaleIsAccepted(t *testing.T) {
+	for _, v := range []string{"1.067", "1.125", "1.2", "1.25", "1.333", "1.414", "1.5", "1.6", "1.618"} {
+		if _, problems := New(map[string]string{"scale": v}, nil); Blocks(problems) {
+			t.Errorf("a heading scale of %s was refused: %v", v, problems)
+		}
+	}
+	if _, problems := New(map[string]string{"scale": "1.7"}, nil); !Blocks(problems) {
+		t.Error("a heading scale past the golden ratio was accepted")
+	}
+}

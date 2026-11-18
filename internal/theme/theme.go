@@ -513,13 +513,15 @@ func (t *Theme) validate(tok Token, value string) error {
 // line on top of the one before, a heading scale of 0.1 drew the headings a
 // tenth of a pixel tall and the small print as large as a heading, and a
 // density of 0.1 took the space out of every card and button. The ranges
-// hold what any style or starter here sets and what a designer would choose.
+// hold what any style or starter here sets and what a designer would choose:
+// the scale reaches the golden ratio, 1.618, the largest of the modular
+// scales a type-scale tool offers, which a range that stopped at 1.6 refused.
 var ratioBounds = map[string]struct {
 	why      string
 	min, max float64
 }{
 	"line":    {"would set the lines of body text on top of each other, or drift them apart", 1.3, 3},
-	"scale":   {"would draw the headings smaller than the text under them, or the small print too small to read", 1, 1.6},
+	"scale":   {"would draw the headings smaller than the text under them, or the small print too small to read", 1, 1.618},
 	"density": {"would take the space from round every block of text, or spread it past reading", 0.5, 2},
 }
 
