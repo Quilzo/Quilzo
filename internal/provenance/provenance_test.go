@@ -220,3 +220,33 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// An approval marks as reviewed the model-written pages it puts live, and
+// nothing else: not a page it leaves as it is, not a record describing other
+// bytes, not a person's page, and not one somebody already reviewed.
+func TestAnApprovalMarksTheModelsPagesItPutsLive(t *testing.T) {
+	idx := NewIndex()
+	for page, r := range map[string]Record{
+		"new":      {ContentHash: "h-new", SourceType: TrainedAlgorithmicMedia, Author: "op"},
+		"same":     {ContentHash: "h-same", SourceType: TrainedAlgorithmicMedia, Author: "op"},
+		"stale":    {ContentHash: "h-old", SourceType: TrainedAlgorithmicMedia, Author: "op"},
+		"person":   {ContentHash: "h-person", SourceType: HumanEdits, Author: "op"},
+		"reviewed": {ContentHash: "h-rev", SourceType: CompositeWithTrainedAlgorithmicMedia, Author: "op", ReviewedBy: "kim"},
+	} {
+		if err := idx.Set(page, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proposed := map[string]string{"new": "h-new", "same": "h-same", "stale": "h-stale",
+		"person": "h-person", "reviewed": "h-rev"}
+	live := map[string]string{"same": "h-same"}
+	if got := idx.Reviewed(proposed, live, "pat"); len(got) != 1 || got[0] != "new" {
+		t.Errorf("marked %v, want only new", got)
+	}
+	if r, _ := idx.Get("new"); r.ReviewedBy != "pat" || !strings.Contains(r.MetaTags(), `"ai-human-reviewed" content="true"`) {
+		t.Errorf("the approved page reads %+v", r)
+	}
+	if r, _ := idx.Get("reviewed"); r.ReviewedBy != "kim" {
+		t.Errorf("an earlier reviewer was replaced: %+v", r)
+	}
+}

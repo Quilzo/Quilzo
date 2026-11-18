@@ -866,8 +866,11 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 			// showing it unpublishable — the accessibility gate refuses a
 			// <video> with no captions at Level A. So this is not a tidying
 			// operation somebody reaches for in a list; it is the deliberate
-			// undoing of the thing that lets the video be published, and the
-			// refusal at the next publish is what tells them so.
+			// undoing of the thing that lets the video be published. While a
+			// live page shows the video it is refused outright (the site reads
+			// tracks off the video, outside the commit, so it took the
+			// captions off the published page at once); otherwise the refusal
+			// at the next publish is what tells them so.
 			//
 			// A screen for attaching captions belongs in the admin and is
 			// worth building. A button for removing them, beside a video, with

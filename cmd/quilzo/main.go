@@ -1954,9 +1954,10 @@ func publishLine(root string, args []string, answer bool) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	force := fs.Bool("force-inaccessible", false,
 		"publish despite blocking accessibility failures, and record that you did")
-	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible)")
+	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible, "+
+		"--force-unmarked and --no-a11y-check)")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
+	skip := fs.Bool("no-a11y-check", false, "skip the check entirely (needs --reason, and is recorded)")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
 	// One commit, and the flags on either side of it. Parsing stopped at the
@@ -2137,6 +2138,14 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 				"an override with no reason records only that somebody wanted " +
 				"one")}
 	}
+	// What this publish waived, for its record, as the browser's names it.
+	// The command line recorded the accessibility override and nothing
+	// else, so a publish of pages with no provenance, let through on a
+	// stated reason, read in the log the same as one of marked pages.
+	var waived []string
+	if len(unmarked) > 0 && *forceUnmarked {
+		waived = append(waived, "unmarked-ai")
+	}
 
 	// The gate runs before the pointer moves. ATAG Part B asks that the tool
 	// help authors produce accessible content, and a report printed after
@@ -2155,11 +2164,14 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if cfg, cerr := loadConfig(root); cerr == nil && cfg != nil {
 		required = cfg.Bool("publish.require_a11y")
 	}
-	if !required && !*skip {
+	if !required {
 		// Recorded, because a configured skip is still a skip and the audit
 		// log is where "this publication was not checked" has to be legible.
 		// --no-a11y-check records the same thing per command; this records it
-		// per publication, which is the point of moving the decision.
+		// per publication, which is the point of moving the decision. With
+		// the flag as well, too: this was written only without it, and the
+		// publish record named only a skip the setting had not already made,
+		// so the two together left no trace that nothing was checked.
 		record(root, caller.auditRecord("publish", "/", audit.Success,
 			map[string]string{
 				"a11y": "not checked",
@@ -2167,6 +2179,24 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 			}))
 		w.Human("  %saccessibility not checked: publish.require_a11y is "+
 			"off%s\n", yellow, reset)
+	}
+	// --no-a11y-check is a waiver of a blocking gate like the others, so it
+	// takes a reason and is recorded with it. It needed nothing: one flag
+	// put a video with sound and no captions live, a page the gate calls
+	// unusable for someone, while --force-inaccessible beside it asked for a
+	// written reason, and afterwards the publish read in the log the same
+	// as one that had been checked.
+	if required && *skip {
+		if strings.TrimSpace(*reason) == "" {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "accessibility check skipped with no reason"}))
+			return errBlocked{fmt.Errorf(
+				"--no-a11y-check needs --reason: skipping the check is recorded, " +
+					"and a skip with no reason is indistinguishable from not " +
+					"knowing the check exists")}
+		}
+		waived = append(waived, "a11y-check")
+		w.Human("  %saccessibility not checked: %s%s\n", yellow, *reason, reset)
 	}
 	// The design the gate judged, which is the one this publish records as
 	// passed; nil when no gate looked at it.
@@ -2198,8 +2228,8 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 				"the accessibility check could not run, so publishing would "+
 					"claim a check that did not happen: %v\n"+
 					"  create the template, point --templates at it, or pass "+
-					"--no-a11y-check if this store is not what renders the "+
-					"pages", cerr)}
+					"--no-a11y-check --reason \"...\" if this store is not what "+
+					"renders the pages", cerr)}
 		} else if n := a11y.BlockingCount(reports); n > 0 {
 			if w.Mode != out.JSON {
 				printA11y(reports)
@@ -2223,6 +2253,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 					"--force-inaccessible needs --reason. An override without a stated " +
 						"justification is indistinguishable from not checking")
 			}
+			waived = append(waived, "accessibility")
 			w.Human("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
 		}
@@ -2318,6 +2349,13 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	}
 	if designChanged {
 		detail["design"] = "changed"
+	}
+	if len(waived) > 0 {
+		detail["waived"] = strings.Join(waived, ",")
+		detail["reason"] = *reason
+	}
+	if !required || *skip {
+		detail["a11y"] = "not checked"
 	}
 	record(root, caller.auditRecord("publish", "/", audit.Success, detail))
 	if !pagesMoved {

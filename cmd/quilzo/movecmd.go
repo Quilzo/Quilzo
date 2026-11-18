@@ -4,6 +4,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Moving a page, and everything under it.
@@ -200,6 +203,18 @@ func cmdMove(root string, args []string) error {
 		}
 	}
 
+	// The provenance follows the names too, as the type bindings do. A
+	// record is keyed by a page's name and bound to its bytes, and a move
+	// changes the one and, where it rewrites a reference, the other: left
+	// behind, a page a model wrote read as "unrecorded" under its new name,
+	// the publish gate offered the waiver it offers for hand-written pages,
+	// and once somebody used it the model's words went out with no mark.
+	carried, perr := carryProvenance(root, s, base, commit, renames, written, next)
+	if perr != nil {
+		return fmt.Errorf("the pages moved and their provenance did not: %w\n"+
+			"  quilzo provenance check — the moved pages read as unrecorded", perr)
+	}
+
 	// The menus, which live outside the content store and so are a second
 	// write. Done after the content because a menu pointing at a page that is
 	// not there yet is the state menu.Broken refuses; the other order would be
@@ -225,6 +240,7 @@ func cmdMove(root string, args []string) error {
 			"references": fmt.Sprint(changedRefs),
 			"menus":      fmt.Sprint(changedMenus),
 			"reuses":     fmt.Sprint(len(reuses)),
+			"provenance": fmt.Sprint(carried),
 			"commit":     short(commit),
 		}))
 
@@ -237,6 +253,7 @@ func cmdMove(root string, args []string) error {
 		"from": from, "to": to, "pages": len(moving),
 		"references": changedRefs, "menus": changedMenus,
 		"reuses": reuses, "commit": commit, "claimed": claims,
+		"provenance": carried,
 	}) {
 		return nil
 	}
@@ -254,12 +271,132 @@ func cmdMove(root string, args []string) error {
 		w.Human("  %sthe block now shows on %s under its new name%s\n",
 			dim, strings.Join(reuses, ", "), reset)
 	}
-	// The one thing a move leaves behind. Said here rather than left to be
-	// discovered by a reader following a link somebody sent them last month.
-	w.Human("  %sthe old addresses now answer 404. `quilzo site "+
-		"--redirects redirects.json` keeps them working%s\n", dim, reset)
+	if carried > 0 {
+		w.Human("  %swho or what wrote %s goes with it%s\n",
+			dim, count(carried, "page"), reset)
+	}
+	sayOldAddresses(renames)
 	sayClaims(claims)
 	return nil
+}
+
+// sayOldAddresses is the one thing a move leaves behind: the addresses the
+// pages had. Said here rather than left to be discovered by a reader
+// following a link somebody sent them last month.
+//
+// As the command that keeps each working, to run once the move is live. It
+// pointed at `quilzo site --redirects redirects.json`, a file the move never
+// wrote, while the store keeps a redirect list of its own that the running
+// site serves at once; so every moved address answered 404 until somebody
+// wrote the redirects by hand. Not added by the move itself: a redirect
+// changes the live site the moment it is stored, and takes what publishing
+// takes, so one added now would send the old address, still live, to a page
+// that is not live yet.
+func sayOldAddresses(renames map[string]string) {
+	olds := make([]string, 0, len(renames))
+	for was := range renames {
+		olds = append(olds, was)
+	}
+	sort.Strings(olds)
+	w.Human("  %sonce this is published the old addresses answer 404; after "+
+		"publishing, a redirect keeps each working:%s\n", dim, reset)
+	const shown = 10
+	for i, was := range olds {
+		if i == shown {
+			w.Human("  %s  and %d more, one for each page that moved%s\n",
+				dim, len(olds)-shown, reset)
+			break
+		}
+		w.Human("  %s  quilzo redirect add /%s /%s%s\n", dim, was, renames[was], reset)
+	}
+}
+
+// carryProvenance gives each page the move wrote the provenance record it had
+// under the name it had, bound to the bytes it has now, and says how many it
+// carried.
+//
+// Copied to the new name, and not taken off the old one: the live site serves
+// the old name until the move is published, and its mark goes with it until
+// then. A page that keeps its name and had only a reference rewritten has its
+// record rebound to its new bytes, as any write to a page rebinds it, with a
+// note saying what changed them. A record is carried only where it was bound to the bytes the move
+// read, so a record that was already stale stays a gap rather than being
+// laundered into a fresh one; and only where the page now holds exactly what
+// the move wrote, since a field somebody else changed meanwhile was merged
+// into it (site.SaveDraftOver) and the record does not describe their words.
+func carryProvenance(root string, s *store.Store, base, commit string,
+	renames map[string]string, written []string, next map[string]any) (int, error) {
+
+	idx, err := loadProvenance(root)
+	if err != nil {
+		return 0, err
+	}
+	before, err := site.PageIDsAt(s, base)
+	if err != nil {
+		return 0, err
+	}
+	after, err := site.PageIDsAt(s, commit)
+	if err != nil {
+		return 0, err
+	}
+	landed, err := site.PagesAt(s, commit)
+	if err != nil {
+		return 0, err
+	}
+	// Each page written, under the name it has now and the one it had.
+	// written holds the moved pages under their old names and the pages a
+	// reference or a reuse was rewritten in under their new ones.
+	olds := map[string]string{}
+	for was, now := range renames {
+		olds[now] = was
+	}
+	touched := map[string]string{}
+	for _, name := range written {
+		switch now, moved := renames[name]; {
+		case moved:
+			touched[now] = name
+		case olds[name] != "":
+			touched[name] = olds[name]
+		default:
+			touched[name] = name
+		}
+	}
+	carried := 0
+	for now, was := range touched {
+		rec, ok := idx.Get(was)
+		if !ok || before[was] == "" || rec.ContentHash != before[was] || after[now] == "" {
+			continue
+		}
+		if !sameBody(landed[now], next[now]) {
+			continue
+		}
+		if now == was && after[now] == rec.ContentHash {
+			continue
+		}
+		if after[now] != rec.ContentHash {
+			rec.Note = strings.TrimSpace(rec.Note + " The move to " + now +
+				" rewrote only the names of pages it points at.")
+		}
+		rec.ContentHash = after[now]
+		if err := idx.Set(now, rec); err != nil {
+			return carried, err
+		}
+		carried++
+	}
+	if carried == 0 {
+		return 0, nil
+	}
+	return carried, saveJSON(provPath(root), idx)
+}
+
+// sameBody reports whether two page bodies hold the same thing.
+func sameBody(a, b any) bool {
+	x, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	y, err := json.Marshal(b)
+	return err == nil && bytes.Equal(x, y)
 }
 
 // sayWhatWouldMove is the dry run.

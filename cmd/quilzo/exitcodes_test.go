@@ -387,7 +387,7 @@ func TestAWriteAnswersOneDocument(t *testing.T) {
 	}{
 		{[]string{"add", "index=" + page, "-m", "j1"}, "commit"},
 		{[]string{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"}, "page"},
-		{[]string{"publish", "--no-a11y-check"}, "commit"},
+		{[]string{"publish", "--no-a11y-check", "--reason", "no templates in this store"}, "commit"},
 		{[]string{"auth", "grant", "jj", "author"}, "role"},
 		{[]string{"auth", "grant", "kk", "analyst", "--for", "720h"}, ""},
 		{[]string{"auth", "revoke", "jj", "author"}, "removed"},

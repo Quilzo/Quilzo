@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1140,5 +1141,29 @@ func TestAPageThatExpiredWhileLiveIsNotAWaiverForTheNextPublish(t *testing.T) {
 		m["oldoffer"] = map[string]any{"title": "Old offer", "body": "Fifteen per cent off.", "expires": "2026-01-01T00:00:00Z"}
 	}); !slices.Contains(waived, "expired-pages") {
 		t.Fatalf("a changed page already past its date was not caught: %v", waived)
+	}
+}
+
+// A publish refused on Review shows what would go live, as Review did
+// before the button was pressed. The refusal for pages with no provenance,
+// the one that asks for a reason to publish anyway, was rendered without
+// the changes and said "No content differences" at the moment the person
+// was asked to write a reason against them; so did every other refusal
+// drawn on the same screen, and the one made while publishing is frozen.
+func TestARefusedPublishShowsTheChanges(t *testing.T) {
+	srv, token := setup(t)
+	w := postForm(t, srv, "/publish", token, "")
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "without provenance") {
+		t.Fatalf("not the provenance refusal: %d %s", w.Code, body)
+	}
+	if strings.Contains(body, "No content differences") || !strings.Contains(body, "2 changes between live and draft") {
+		t.Errorf("the refusal does not show the two changes waiting to go live:\n%s", body)
+	}
+
+	srv.Frozen = func() error { return errors.New("publishing is frozen") }
+	body = postForm(t, srv, "/publish", token, "").Body.String()
+	if strings.Contains(body, "No content differences") || !strings.Contains(body, "2 changes between live and draft") {
+		t.Errorf("the refusal while frozen does not show the changes:\n%s", body)
 	}
 }

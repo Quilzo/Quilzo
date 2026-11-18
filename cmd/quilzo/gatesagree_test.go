@@ -181,7 +181,7 @@ func TestAPageThatExpiresWhileLiveDoesNotStopTheNextPublish(t *testing.T) {
 	}
 
 	put("post", `{"title":"A new post","body":"Something unrelated."}`)
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a page that expired on schedule stopped an unrelated publish: %v", err)
 	}
 
@@ -194,7 +194,7 @@ func TestAPageThatExpiresWhileLiveDoesNotStopTheNextPublish(t *testing.T) {
 		var buf bytes.Buffer
 		w = out.New(false)
 		w.Out = &buf
-		if err := runPublish(t, root, "--no-a11y-check"); err == nil || !strings.Contains(err.Error(), "already past the date") {
+		if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err == nil || !strings.Contains(err.Error(), "already past the date") {
 			t.Fatalf("published a page already past its date: %v\n%s", err, buf.String())
 		}
 		return buf.String()

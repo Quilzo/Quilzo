@@ -13,6 +13,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -426,5 +427,39 @@ func TestPublishingFromTheBrowserTakesTheDesign(t *testing.T) {
 	}
 	if body := w.Body.String(); !strings.Contains(body, "The design is live now") {
 		t.Errorf("a publish of the design alone said:\n%s", body)
+	}
+}
+
+// A person's approval in the browser of a page a model wrote is the review
+// its mark says happened, as on the command line. The publish gate asked
+// for a person to approve it, Review recorded the approval, and the page
+// was served with ai-human-reviewed false.
+func TestApprovingAModelsPageInTheBrowserMarksItReviewed(t *testing.T) {
+	srv, token := setup(t)
+	draft := draftWrittenBy(t, srv, collab.AgentPrefix+"rewrote the homepage")
+	ids, err := site.PageIDsAt(srv.Store, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := provenance.NewIndex()
+	if err := idx.Set("index", provenance.Record{ContentHash: ids["index"],
+		SourceType: provenance.TrainedAlgorithmicMedia, Author: "writer"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.LoadProvenance = func() (*provenance.Index, error) { return idx, nil }
+	srv.SaveProvenance = func(i *provenance.Index) error { idx = i; return nil }
+	prop := &collab.Proposal{Content: draft, Author: "writer", AuthorKind: "ai",
+		CreatedAt: time.Now().Unix(), Message: collab.AgentPrefix + "rewrote the homepage"}
+	srv.Approvals = &Approvals{
+		Policy:  defaultStorePolicy,
+		Current: func() (*collab.Proposal, error) { return prop, nil },
+		Save:    func(p *collab.Proposal) error { prop = p; return nil },
+		KindOf:  func(string) string { return "human" },
+	}
+	if w := postForm(t, srv, "/review/approve", token, "note=read+it"); w.Code >= 400 {
+		t.Fatalf("approving answered %d", w.Code)
+	}
+	if rec, _ := idx.Get("index"); rec.ReviewedBy != "editor" {
+		t.Errorf("approved by editor, the model's page is marked %+v", rec)
 	}
 }
