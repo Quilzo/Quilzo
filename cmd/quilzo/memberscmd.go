@@ -106,8 +106,19 @@ func cmdMember(root string, args []string) error {
 			"enable":  "it can sign in again"}[args[0]])
 		return done("member."+args[0]+"d", args[1])
 	case "remove":
-		if len(args) != 2 {
+		fs := flag.NewFlagSet("member remove", flag.ContinueOnError)
+		yes := fs.Bool("yes", false, "erase it; at a terminal, without this, only say what would go")
+		var pos []string
+		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
 			return memberUsage()
+		}
+		args = []string{args[0], pos[0]}
+		if erasureHeld(*yes, fmt.Sprintf("this would erase %s, with its passkeys, recovery codes, sessions and posts",
+			onOneLine(args[1]))) {
+			return nil
 		}
 		if posts, perr := openPosts(root); perr == nil {
 			posts.RemoveAuthor(args[1])

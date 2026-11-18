@@ -34,9 +34,11 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -93,6 +95,25 @@ func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
 func usage() { fmt.Print(usageText) }
 
+// lockPatience is how long a command waits for a lock another process
+// holds: QUILZO_LOCK_WAIT when it is set, a length of time as every other
+// is written (config.ParseDuration), and half a minute when it is not.
+// Zero waits for as long as it takes, as every command did before.
+func lockPatience(v string) (time.Duration, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 30 * time.Second, nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := config.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, errMisused{fmt.Errorf("QUILZO_LOCK_WAIT is %q; it is a length of time, like 30s or 5m, or 0 to wait for as long as it takes", v)}
+	}
+	return d, nil
+}
+
 // usageText is the whole surface, because `--help` is how an agent discovers
 // a CLI. The measured advantage of a CLI over a tool-schema protocol is that
 // nothing is loaded until it is needed — which only works if asking is
@@ -140,7 +161,7 @@ importing
   quilzo media speak "text" --voice V --author WHO  read aloud; marked as a synthetic voice
   quilzo media film "prompt" --author WHO [--aspect 9:16]  a video from a prompt; marked as generated
   quilzo media verify [ID]                check every manifest, ours and theirs
-  quilzo form list | expire | erase VALUE  forms, retention and erasure
+  quilzo form list | expire | erase VALUE [--yes]   forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
   quilzo terms list | check                the controlled vocabularies
   quilzo menu list | check                 navigation, and whether it resolves
@@ -278,7 +299,7 @@ bookings (appointments on the site: one calendar, its hours, its services; who b
   quilzo booking setup [FILE]              show how the site takes bookings, or set it; a page offers times with
                                            a booking section naming a service
   quilzo booking list [--days N] [--past N]   who booked what, when
-  quilzo booking cancel ID [--erase]       cancel for the site; --erase forgets who booked as well
+  quilzo booking cancel ID [--erase] [--yes]   cancel for the site; --erase forgets who booked as well
   quilzo booking pause | resume            stop and start taking new bookings
   quilzo booking feed [--off]              a calendar address for your phone: times and services, never names
 
@@ -301,7 +322,7 @@ newsletter (a mailing list: each address confirms by mail first, and leaves with
   quilzo newsletter [status]               how many are subscribed, waiting and gone, and what stops sending
   quilzo newsletter list [--all]           the confirmed addresses; --all adds those waiting to confirm
   quilzo newsletter add ADDRESS            mail an address the link a sign-up gets; it joins when it says yes
-  quilzo newsletter remove ADDRESS|ID      take it off and delete it; it is kept from being imported back
+  quilzo newsletter remove ADDRESS|ID [--yes]   take it off and delete it; it is kept from being imported back
   quilzo newsletter import FILE --agreed "…"   a list exported from Mailchimp, Substack, Ghost and others
   quilzo newsletter export [FILE]          the confirmed list as CSV, for any other newsletter service
   quilzo newsletter test PAGE --to ADDRESS [--subject S]   one copy of a published page as an issue
@@ -402,7 +423,7 @@ the assistant
   quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
   quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
   quilzo member list | show ID              the site's accounts (site.members turns them on)
-  quilzo member disable | enable | remove ID   stop one signing in, or erase it
+  quilzo member disable | enable | remove ID [--yes]   stop one signing in, or erase it
   quilzo member invite [--note T] | invites | revoke-invite HASH   sign-up by invitation
   quilzo board list | add NAME --title T --moderation pre|post | remove NAME   where members may write
   quilzo board held | recent | approve ID | delete ID    moderate what they wrote
@@ -426,7 +447,7 @@ the assistant
   quilzo gateway currency USD              the currency prices and money budgets are in
   quilzo fediverse init                    a signing key, so the site can federate
   quilzo fediverse status | followers      whether it federates, and who follows
-  quilzo fediverse block HOST              refuse an instance, and drop its follows
+  quilzo fediverse block HOST [--yes]      refuse an instance, and drop its follows
   quilzo fediverse unblock | blocked       take one back, or see the list
   quilzo provenance backfill [--dry-run]   mark content published before records existed
   quilzo provenance check [--ref REF]      who or what wrote each page
@@ -556,7 +577,7 @@ agents and integrations
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
   quilzo memory edit ID TEXT               rewrite what is remembered about you, as you say it
   quilzo memory history AGENT KEY [--about P]   what a fact was, and when it changed
-  quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
+  quilzo memory forget [--about P] [--yes]   every agent forgets you (or P, for an administrator)
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
   quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is,
                                           pinned to the file as it is now
@@ -585,7 +606,7 @@ agents and integrations
   quilzo agent answer RUN STEP NAME=VALUE  answer the decider's question a run is waiting on
   quilzo agent decline RUN STEP            refuse it; the run carries on without
   quilzo agent stop RUN                    stop a run that is going on, wherever it is
-  quilzo agent workspace NAME [--clear]    where an agent's workspace is and how big; --clear empties it
+  quilzo agent workspace NAME [--clear] [--yes]   where an agent's workspace is and how big; --clear empties it
   quilzo agent resume RUN                  continue a run that was cut off
   quilzo agent replay RUN STEP             run it again from after a step, as a new run
   quilzo agent probe < question.json       ask the gate: would this agent be
@@ -611,7 +632,7 @@ agents and integrations
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
   quilzo webhook add https://...           tell another system when you
                                             publish, or when a form arrives
-  quilzo webhook list | remove ID | test   signed, timestamped, replay-proof
+  quilzo webhook list | remove URL | test  signed, timestamped, replay-proof
 
 security posture
   quilzo config show | list                everything settable, and its default
@@ -694,7 +715,18 @@ log transparency
 global
   --root DIR    store location (default .quilzo)
   --json        machine-readable output; stdout carries one document
+  --token TOKEN who you are, for this command; else ~/.quilzo/token (kept
+                0600), else QUILZO_TOKEN, read in that order
   NO_COLOR      suppress colour (also off automatically when not a terminal)
+  QUILZO_LOCK_WAIT  how long a command waits for a store another command is
+                writing, saying so after a second (default 30s; 0 waits on)
+  -             standard output, as the FILE or -o FILE of a command that
+                prints when given none; standard input, as the page of add
+                NAME=- and the FILE of records import, records add --from
+                and newsletter import
+  --yes         go ahead with an erasure that cannot be undone; at a terminal,
+                one asked without it only says what it would erase, and from
+                a script (standard input not a terminal) it goes ahead
 
 exit codes
   0 success · 1 failed · 2 misused · 3 refused by a gate · 4 not found
@@ -772,11 +804,28 @@ func main() {
 	// --root /data` looked for the agent in /data, and the program's own
 	// `--token X` became the caller's credential and was gone from the
 	// program's line. helpAsked stops there too.
+	//
+	// Either flag with nothing after it is a command line that is wrong,
+	// and said to be: `quilzo --root` was "there is no "--root" command",
+	// `quilzo log --root` went on in .quilzo, and `quilzo --root=` printed
+	// the help and nothing else.
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--" {
 			rest = append(rest, args[i:]...)
 			break
+		}
+		switch args[i] {
+		case "--root", "--root=":
+			if args[i] == "--root=" || i+1 == len(args) {
+				w.Error(fmt.Errorf("--root needs a directory: quilzo --root DIR COMMAND"))
+				os.Exit(out.ExitUsage)
+			}
+		case "--token", "--token=":
+			if args[i] == "--token=" || i+1 == len(args) {
+				w.Error(fmt.Errorf("--token needs a token: quilzo --token TOKEN COMMAND"))
+				os.Exit(out.ExitUsage)
+			}
 		}
 		if args[i] == "--root" && i+1 < len(args) {
 			root = args[i+1]
@@ -804,7 +853,29 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
-	invoked.cmd, invoked.args = cmd, cmdArgs
+	// Every spelling a command's flag set answers as help (isHelpFlag) is
+	// help here too: `quilzo log -help` was the help and `quilzo -help` was
+	// "there is no "-help" command".
+	if isHelpFlag(cmd) {
+		cmd = "--help"
+	}
+	invoked.cmd, invoked.args, invoked.root = cmd, cmdArgs, root
+
+	// A command waiting for a lock another process holds says so, and gives
+	// up after QUILZO_LOCK_WAIT (atomicfile.WaitPolicy). Not a server: its
+	// dispatchers hold their locks for as long as they run, and a second
+	// server on the store waiting its turn is how they take turns.
+	if n, _ := lookupNeed(cmd, cmdArgs); !n.server {
+		patience, err := lockPatience(os.Getenv("QUILZO_LOCK_WAIT"))
+		if err != nil {
+			w.Error(err)
+			os.Exit(out.ExitUsage)
+		}
+		atomicfile.SetWaitPolicy(atomicfile.WaitPolicy{Patience: patience, Notice: func(path string) {
+			fmt.Fprintf(os.Stderr, "waiting for %s, which another process using this store holds "+
+				"(one still running, stopped with Ctrl-Z, or stuck)...\n", path)
+		}})
+	}
 
 	// A command that has left Quilzo is said to have left, before help, the
 	// store or authorisation is asked anything about it (movedout.go).
@@ -1184,6 +1255,11 @@ func main() {
 			return
 		}
 		fmt.Printf("quilzo %s\n", version)
+		// -V is "the same, shorter", as the help says: the version alone,
+		// for a script that reads one line. It printed all four.
+		if cmd == "-V" {
+			break
+		}
 		fmt.Println("Copyright (C) 2026 Rashik Adhikari")
 		fmt.Println("Licensed under the Apache License, Version 2.0 " +
 			"<https://www.apache.org/licenses/LICENSE-2.0>.")
@@ -1196,7 +1272,14 @@ func main() {
 			w.Error(errMovedOut(cmdArgs[0]))
 			os.Exit(out.ExitUsage)
 		}
+		// A word that is no command is said to be none, as it is without
+		// help in front of it: `quilzo help zzz` printed every command and
+		// exited 0, as though zzz were one of them.
 		if len(cmdArgs) > 0 {
+			if _, known := lookupNeed(cmdArgs[0], cmdArgs[1:]); !known {
+				err = unknownCommand(cmdArgs[0])
+				break
+			}
 			commandHelp(cmdArgs[0], cmdArgs[1:])
 		} else {
 			usage()
@@ -1218,6 +1301,7 @@ func main() {
 		err = nil
 	}
 	if err != nil {
+		err = nearestSubcommand(err)
 		w.Error(err)
 		// A gate refusing is a different outcome from the command breaking, and
 		// a caller branching on exit status should be able to tell which.
@@ -1581,12 +1665,21 @@ func cmdAdd(root string, args []string) error {
 		}
 	}
 
+	piped := false
 	for _, spec := range fs.Args() {
 		name, path, ok := strings.Cut(spec, "=")
 		if !ok {
 			return fmt.Errorf("expected NAME=FILE.json, got %q", spec)
 		}
-		body, err := os.ReadFile(path)
+		// NAME=- is the page piped in. Standard input is read once, so a
+		// second would be an empty page.
+		if path == stdio {
+			if piped {
+				return errMisused{fmt.Errorf("only one page can be read from standard input (%s)", spec)}
+			}
+			piped = true
+		}
+		body, err := readInput(path, 64<<20)
 		if err != nil {
 			return fmt.Errorf("cannot read %s: %w", path, err)
 		}
@@ -2542,7 +2635,7 @@ func cmdRender(root string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("template: %w", err)
 	}
-	if *out != "" {
+	if !toStdout(*out) {
 		if err := os.WriteFile(*out, []byte(html), 0o644); err != nil {
 			return err
 		}

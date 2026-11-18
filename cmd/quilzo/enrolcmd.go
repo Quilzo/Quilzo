@@ -59,7 +59,7 @@ func authEnrol(root string, args []string) error {
 	}
 	name := args[0]
 	fs := flag.NewFlagSet("auth enrol", flag.ContinueOnError)
-	life := fs.Duration("for", enrol.MaxLife, "how long the link waits to be used, at most a day")
+	life := flagDuration(fs, "for", enrol.MaxLife, "how long the link waits to be used, at most a day")
 	revoke := fs.Bool("revoke", false, "end the link waiting for this person")
 	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return err

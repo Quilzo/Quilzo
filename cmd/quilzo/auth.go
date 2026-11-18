@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -501,19 +500,12 @@ func grantExpiry(until, forDur string, now time.Time) (int64, error) {
 		}
 		return t.Unix(), nil
 	case forDur != "":
-		var d time.Duration
-		if n, ok := strings.CutSuffix(forDur, "d"); ok {
-			days, err := strconv.Atoi(n)
-			if err != nil || days <= 0 {
-				return 0, fmt.Errorf("--for %s is not a number of days", forDur)
-			}
-			d = time.Duration(days) * 24 * time.Hour
-		} else {
-			parsed, err := time.ParseDuration(forDur)
-			if err != nil || parsed <= 0 {
-				return 0, fmt.Errorf("--for is a length of time, like 30d or 72h")
-			}
-			d = parsed
+		// The parser every other length of time on the command line uses
+		// (durationFlag). This one had its own, which took 30d and refused
+		// 2w, while the rest took neither.
+		d, err := config.ParseDuration(forDur)
+		if err != nil || d <= 0 {
+			return 0, fmt.Errorf("--for is a length of time, like 30d, 2w or 72h")
 		}
 		return now.Add(d).Unix(), nil
 	}
@@ -908,7 +900,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	principal := fs.String("principal", "", "who the token acts as")
 	role := fs.String("role", string(auth.RoleReader), "role the token carries")
 	on := fs.String("on", "/", "resource path the token is scoped to")
-	ttl := fs.Duration("ttl", 0, "how long it lasts (default from config)")
+	ttl := flagDuration(fs, "ttl", 0, "how long it lasts (default from config)")
 	as := fs.String("as", string(auth.RoleAdmin), "role of whoever is issuing")
 	types := fs.String("types", "",
 		"comma-separated content types this token may touch; all if unset")
@@ -1117,7 +1109,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	n := w.Notes()
 	dim, yellow, reset := n.Dim(), n.Yellow(), n.Reset()
 	n.Human("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
-		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+		tok.Resource, tokenExpiry(tok), reset)
 	// Whose it is goes with the rest of what is said of the token, on
 	// stderr, so stdout still holds the token alone.
 	if tok.Kind == auth.KindPerson {
@@ -1183,7 +1175,7 @@ func tokenExchange(root string, args []string) error {
 	fs := flag.NewFlagSet("exchange", flag.ContinueOnError)
 	role := fs.String("role", "", "narrow to this role (default: the parent's)")
 	on := fs.String("on", "", "narrow to this path (default: the parent's)")
-	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
+	ttl := flagDuration(fs, "ttl", auth.DefaultSessionTTL, "how long the session lasts")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
@@ -1284,11 +1276,12 @@ func tokenList(root string) error {
 	// As wide as the longest name, as `auth list` is as wide as its longest
 	// principal: a name is the operator's own words, "ci-deploy-production"
 	// is twenty characters, and a fixed sixteen pushed its row out of line.
-	nw := 16
+	nw, ew := 16, 12
 	for _, t := range tokens {
 		nw = max(nw, utf8.RuneCountInString(t.Name))
+		ew = max(ew, len(tokenExpiry(t))+2)
 	}
-	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
+	fmt.Printf("  %-14s %-*s %-10s %-*s %s\n", "id", nw, "name", "role", ew, "expires", "last used")
 	for _, t := range tokens {
 		state := ""
 		switch {
@@ -1301,10 +1294,22 @@ func tokenList(root string) error {
 		if t.LastUsed > 0 {
 			last = time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %-14s %-*s %-10s %-12s %-10s %s\n", t.ID, nw, t.Name, t.Role,
-			time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02"), last, state)
+		fmt.Printf("  %-14s %-*s %-10s %-*s %-10s %s\n", t.ID, nw, t.Name, t.Role,
+			ew, tokenExpiry(t), last, state)
 	}
 	return nil
+}
+
+// tokenExpiry is when a token ends, as a person reads it: the day, and for
+// a token issued for less than a day the hour and the zone as well
+// (auth.Token.LastsUnderADay). An hour's token said "expires 2026-11-12",
+// the same as a month's.
+func tokenExpiry(t auth.Token) string {
+	at := time.Unix(t.ExpiresAt, 0).UTC()
+	if t.LastsUnderADay() {
+		return at.Format("2006-01-02 15:04 UTC")
+	}
+	return at.Format("2006-01-02")
 }
 
 func tokenRevoke(root string, args []string) error {
@@ -1349,7 +1354,7 @@ func tokenRevoke(root string, args []string) error {
 
 func tokenStale(root string, args []string) error {
 	fs := flag.NewFlagSet("stale", flag.ContinueOnError)
-	idle := fs.Duration("idle", 720*time.Hour, "unused for at least this long")
+	idle := flagDuration(fs, "idle", 720*time.Hour, "unused for at least this long")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}

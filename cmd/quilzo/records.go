@@ -177,8 +177,12 @@ func recordsList(root string, args []string) error {
 		w.Human("no records match\n")
 		return nil
 	}
+	// The whole id, which is what `records get` and `records delete` take.
+	// The first twelve characters were shown, and both refused them as not
+	// a record id, so the list could not be followed by either without
+	// --json.
 	for _, r := range recs {
-		w.Human("  %s%s%s\n", bold, r.ID[:12], reset)
+		w.Human("  %s%s%s\n", bold, r.ID, reset)
 		for _, k := range sortedKeys(r.Fields) {
 			w.Human("    %-16s %v\n", k, r.Fields[k])
 		}
@@ -253,7 +257,7 @@ func recordsAdd(root string, args []string) error {
 
 	fields := map[string]any{}
 	if *fromFile != "" {
-		body, err := os.ReadFile(*fromFile)
+		body, err := readInput(*fromFile, 16<<20)
 		if err != nil {
 			return err
 		}
@@ -347,7 +351,7 @@ func recordsImport(root string, args []string) error {
 	if *dates != "" && *dates != "dmy" && *dates != "mdy" {
 		return fmt.Errorf("--dates is dmy (day first) or mdy (month first), not %q", *dates)
 	}
-	body, err := readBounded(rest[1], sheet.MaxBytes)
+	body, err := readInput(rest[1], sheet.MaxBytes)
 	if err != nil {
 		return err
 	}
@@ -391,7 +395,7 @@ func recordsExport(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	record(root, caller.auditRecord("records.export", "/"+rest[0], audit.Success,
 		map[string]string{"collection": rest[0], "records": fmt.Sprint(n), "format": *format}))
-	if *outPath == "" {
+	if toStdout(*outPath) {
 		_, err := os.Stdout.Write(body)
 		return err
 	}

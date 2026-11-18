@@ -107,7 +107,7 @@ func complianceAI(root, which string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if len(pos) == 1 {
+		if len(pos) == 1 && !toStdout(pos[0]) {
 			if err := os.WriteFile(pos[0], append(body, '\n'), 0o644); err != nil {
 				return err
 			}

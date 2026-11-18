@@ -565,7 +565,7 @@ func TestAStdoutColourIsWrittenOnlyToStdout(t *testing.T) {
 			case fn.Sel.Name == "Errorf":
 				args = call.Args
 			case strings.HasPrefix(fn.Sel.Name, "Fprint"):
-				if toStdout(call.Args[0]) {
+				if isStdoutWriter(call.Args[0]) {
 					return true
 				}
 				args = call.Args[1:]
@@ -584,8 +584,9 @@ func TestAStdoutColourIsWrittenOnlyToStdout(t *testing.T) {
 	}
 }
 
-// toStdout is whether a writer is the process's stdout, os.Stdout or w.Out.
-func toStdout(e ast.Expr) bool {
+// isStdoutWriter is whether a writer is the process's stdout, os.Stdout or w.Out
+// (toStdout is whether a path a command was given means stdout).
+func isStdoutWriter(e ast.Expr) bool {
 	sel, ok := e.(*ast.SelectorExpr)
 	if !ok {
 		return false

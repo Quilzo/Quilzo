@@ -63,6 +63,9 @@ func agentImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := notStdio(*outDir, "-o"); err != nil {
+		return err
+	}
 	if len(pos) != 1 {
 		return usage
 	}
@@ -223,6 +226,10 @@ func agentExport(root string, args []string) error {
 	e, err := agentport.Write(m, *to)
 	if err != nil {
 		return err
+	}
+	// "-" is standard output, as no -o is.
+	if *dest == stdio {
+		*dest = ""
 	}
 	if *dest == "" && len(e.Files) != 1 && w.Mode != out.JSON {
 		return fmt.Errorf("%s writes %d files; give a directory with -o", *to, len(e.Files))

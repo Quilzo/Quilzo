@@ -173,7 +173,7 @@
       <td>{{.Role}}</td>
       <td>{{if .Never}}<span class="hint">never used</span>
           {{else}}{{.LastUsed.Format "2 Jan, 15:04"}}{{end}}</td>
-      <td>{{.Expires.Format "2 Jan 2006"}}</td>
+      <td>{{.Ends}}</td>
       <td class="right">
         <form method="post" action="/sessions/revoke" class="inline">
           <input type="hidden" name="id" value="{{.ID}}">

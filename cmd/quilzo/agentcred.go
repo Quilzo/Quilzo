@@ -256,7 +256,7 @@ func issueCredential(root string, caller *Caller, args []string) (string, error)
 	act := fs.Bool("act", false, "it may act on pages, not only read them")
 	holderDID := fs.String("holder", "", "the agent's own public key, as a did:key")
 	generate := fs.String("generate", "", "make the agent's key here instead, written to this file")
-	lifetime := fs.Duration("for", 24*time.Hour, "how long it is valid, up to 720h")
+	lifetime := flagDuration(fs, "for", 24*time.Hour, "how long it is valid, up to 720h")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return "", err

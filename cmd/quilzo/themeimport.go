@@ -541,7 +541,8 @@ func themeExport(args []string) error {
 			"on another Quilzo site:%s\n    quilzo theme set %s\n",
 			dim, strings.Join(choices, ", "), reset, strings.Join(set, " "))
 	}
-	if *out == "" {
+	// "-" is standard output, as no --out is: it wrote a file called -.
+	if toStdout(*out) {
 		_, werr := os.Stdout.Write(b)
 		notChoices(w.Notes().Human)
 		return werr

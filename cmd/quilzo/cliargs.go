@@ -4,11 +4,17 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // One rule for the words on a command line: a word a command does not take
@@ -44,9 +50,13 @@ func (e badFlag) Unwrap() error { return e.error }
 // invoked is the command and the arguments main dispatched, so that a
 // refusal can quote the lines of the help about the command rather than a
 // flag set's bare name. Empty in a test that calls a command directly.
+//
+// root is the store the line was given (--root), so that a refusal that
+// prints the line to type next names the same store.
 var invoked struct {
 	cmd  string
 	args []string
+	root string
 }
 
 // parseFlags parses fs's flags wherever they stand among args, adds the
@@ -80,18 +90,6 @@ func parseFlags(fs *flag.FlagSet, args []string, pos *[]string, n int) error {
 	return nil
 }
 
-// parseOnce is fs.Parse, with what the flag package could not read said to
-// be a misused command line (badFlag), for the few commands that parse their
-// flags themselves as well as for the loop below. A flag that asked for help
-// is left as it is, for main to answer.
-func parseOnce(fs *flag.FlagSet, args []string) error {
-	err := fs.Parse(args)
-	if err == nil || errors.Is(err, flag.ErrHelp) {
-		return err
-	}
-	return errMisused{badFlag{err}}
-}
-
 // parseInterspersed is the loop under parseFlags and parseAnywhere: each
 // positional argument and where it stood in args.
 func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int, err error) {
@@ -117,6 +115,61 @@ func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int,
 		off = next + 1
 	}
 	return pos, at, nil
+}
+
+// parseOnce is fs.Parse, with what the flag package could not read said to
+// be a misused command line (badFlag), for the few commands that parse their
+// flags themselves as well as for the loop above. A flag that asked for help
+// is left as it is, for main to answer.
+//
+// And without the flag package's own answer to a flag it could not read,
+// which was every flag of the set under "Usage of move:", each written with
+// one dash where the help writes two, and then the error again from main:
+// `quilzo move about x --dryrun` was eight lines, none of them saying that
+// --dry-run was meant. What it could not read is said instead by
+// flagRefusal. Asked for help, the set still lists its flags: that list is
+// the answer then (answersOwnHelp).
+func parseOnce(fs *flag.FlagSet, args []string) error {
+	var said bytes.Buffer
+	output := fs.Output()
+	fs.SetOutput(&said)
+	err := fs.Parse(args)
+	fs.SetOutput(output)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, flag.ErrHelp):
+		_, _ = output.Write(said.Bytes())
+		return err
+	}
+	return flagRefusal(fs, err)
+}
+
+// flagRefusal is the refusal of a flag the set could not read: the flag
+// package's line, the flag most likely meant, written as the help writes
+// it, and the help's lines for the command. A set with no flags (positionals)
+// is left to name the word itself, as strayWord does. Either way it is a
+// misused command line (badFlag), exit 2.
+func flagRefusal(fs *flag.FlagSet, err error) error {
+	var names []string
+	fs.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
+	if len(names) == 0 {
+		return errMisused{badFlag{err}}
+	}
+	msg := err.Error()
+	if typed, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		typed, _, _ = strings.Cut(strings.TrimLeft(typed, "-"), "=")
+		if near := nearestWords(typed, names); len(near) > 0 {
+			for i := range near {
+				near[i] = "--" + near[i]
+			}
+			msg += "\n  did you mean " + strings.Join(near, ", or ") + "?"
+		}
+	}
+	if help := helpFor(invoked.cmd, invoked.args); invoked.cmd != "" && help != "" {
+		msg += "\n" + strings.TrimRight(help, "\n")
+	}
+	return errMisused{badFlag{errors.New(msg)}}
 }
 
 // endsTheFlags reports whether the "--" that read ends with, the words Parse
@@ -266,4 +319,104 @@ func positionals(args []string, n int) ([]string, error) {
 func noArguments(args []string) error {
 	_, err := positionals(args, 0)
 	return err
+}
+
+// durationFlag is a length of time on the command line: Go's own (90m,
+// 72h, 1h30m) or a whole number of days or weeks (30d, 2w), read by
+// config.ParseDuration, which the settings already read theirs with.
+//
+// The help teaches `auth grant WHO JOB --for 30d`, and that one flag read
+// days with a parser of its own; every other length of time was Go's
+// flag.Duration, which stops at hours. So an administrator who granted a
+// job for 30d and issued its token --ttl 30d was told "invalid value "30d"
+// for flag -ttl: parse error", and `agent sponsor --for 90d` and `shield
+// pause --for 1d` the same. One syntax for every length of time, so the
+// second flag takes what the first taught.
+type durationFlag struct{ d *time.Duration }
+
+func (f durationFlag) String() string {
+	if f.d == nil {
+		return ""
+	}
+	return config.FormatDuration(*f.d)
+}
+
+func (f durationFlag) Set(s string) error {
+	d, err := config.ParseDuration(strings.TrimSpace(s))
+	if err != nil {
+		return errors.New("a length of time, like 90m, 72h, 30d or 2w")
+	}
+	*f.d = d
+	return nil
+}
+
+// flagDuration declares a durationFlag on fs, as fs.Duration would.
+func flagDuration(fs *flag.FlagSet, name string, value time.Duration, usage string) *time.Duration {
+	d := value
+	fs.Var(durationFlag{&d}, name, usage)
+	return &d
+}
+
+// stdinIsTerminal reports whether a person is at the keyboard: standard
+// input is a terminal. A variable, so a test can be the person.
+//
+// Not /dev/null, which is a character device as a terminal is, and what
+// cron and a service manager give a job for its input: read as a terminal,
+// every unattended erasure would have waited for a --yes nobody can type.
+//
+// Asked of the terminal itself, as whether stdout and stderr are read at
+// one is (out.IsTerminal). It was a question of its own, a character
+// device other than the null device's file: so a script reading from any
+// other device that is not a terminal was held, and on Windows, where a
+// console and NUL read as the same file, an erasure typed at the console
+// never was.
+var stdinIsTerminal = func() bool { return out.IsTerminal(os.Stdin) }
+
+// erasureHeld holds back an erasure that cannot be undone, asked at a
+// terminal without --yes: it says what would be erased and how to go
+// ahead, erases nothing, and reports that it held it.
+//
+// `quilzo demo remove` run bare says what taking the demonstration out
+// would remove, and somebody who learnt the program that way ran `quilzo
+// memory forget` the same way and every agent forgot them at once, and
+// `fediverse block` dropped the instance's follows. A person at a
+// terminal is asked for --yes. A script, whose standard input is not a
+// terminal, goes ahead as it always has, which the help says, so nothing
+// that runs these unattended stops working.
+func erasureHeld(yes bool, would string) bool {
+	if yes || !stdinIsTerminal() {
+		return false
+	}
+	// The line as it was typed, against the store it was typed against: it
+	// left --root out, so the line printed for `quilzo --root /srv/site
+	// memory forget` made the agents of whatever store was in the working
+	// directory forget. Each word as a shell reads it back, so a value with
+	// a space is one word when pasted. Never --token, which is a secret.
+	again := "the same command with --yes"
+	if invoked.cmd != "" {
+		line := []string{"quilzo"}
+		if invoked.root != "" && invoked.root != defaultRoot {
+			line = append(line, "--root", invoked.root)
+		}
+		line = append(append(append(line, invoked.cmd), invoked.args...), "--yes")
+		for i := range line {
+			line[i] = shellWord(line[i])
+		}
+		again = onOneLine(strings.Join(line, " "))
+	}
+	if w.JSON(map[string]any{"erased": false, "would": would, "to_erase": again}) {
+		return true
+	}
+	w.Human("%s\n\n  nothing has been erased, and it cannot be undone. To erase it:\n    %s\n", would, again)
+	return true
+}
+
+// shellWord is s as a shell reads it back as one word: bare when it is made
+// of letters, digits and the punctuation a shell leaves alone, and in
+// single quotes otherwise.
+func shellWord(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./_-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
