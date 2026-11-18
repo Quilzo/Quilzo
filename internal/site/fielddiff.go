@@ -183,7 +183,12 @@ func lineDiff(before, after string) []LineChange {
 			}
 		}
 	}
-	out := make([]LineChange, 0, len(same)+len(a)+len(b)+len(rest))
+	// Grown by append rather than sized up front: the lines before and
+	// after the change are as many as the text holds, so a capacity summed
+	// from them is a size nothing has bounded, and only the changed middle
+	// is held to maxLineDiff. Empty rather than nil, so an answer that
+	// lists no lines still says so as an empty list.
+	out := []LineChange{}
 	for _, l := range same {
 		out = append(out, LineChange{" ", l})
 	}
