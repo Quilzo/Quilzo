@@ -206,7 +206,12 @@ var templates = map[string]Template{
 				"secondary_label": "See the sections", "secondary_href": "#features",
 			},
 			"header_cta_label": "Get started", "header_cta_href": "/start",
-			"share_image":     "https://example.com/share.png",
+			// No address. This was https://example.com/share.png, so a link to
+			// the home page of every site started from this sample was
+			// previewed with a picture from example.com; the layout omits the
+			// share card when there is no picture, and one from the library
+			// goes here.
+			"share_image":     "",
 			"share_image_alt": "The words Quilzo over a tinted panel",
 			"breadcrumbs": []any{
 				map[string]any{"label": "Home", "href": "/"},

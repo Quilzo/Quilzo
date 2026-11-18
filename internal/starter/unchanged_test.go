@@ -166,6 +166,24 @@ const (
 	videoWaitBefore = "      {% if s.video.no_src %}<p class=\"muted\">No video chosen yet. Send one to the bot and pick it here.</p>{% end %}\n" + videoWaitNow
 )
 
+// shareBefore is the sections sample's share image as it was, a picture on
+// example.com (TestNoSampleSharesAPictureFromElsewhere), put back in the
+// sample before its hash is compared.
+const shareBefore = "https://example.com/share.png"
+
+// sampleAsItWas is a starter's sample with the deliberate changes put back.
+func sampleAsItWas(st Template) map[string]any {
+	if st.Name != "sections" {
+		return st.Sample
+	}
+	out := map[string]any{}
+	for k, v := range st.Sample {
+		out[k] = v
+	}
+	out["share_image"] = shareBefore
+	return out
+}
+
 // asTheyWere is a layout with the deliberate changes put back.
 func asTheyWere(t *testing.T, name, src string) string {
 	t.Helper()
@@ -190,12 +208,12 @@ func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 			t.Fatal(err)
 		}
 		src = asTheyWere(t, st.Name, src)
-		raw, err := tmpl.Render(src, map[string]any{"page": st.Sample})
+		raw, err := tmpl.Render(src, map[string]any{"page": sampleAsItWas(st)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		got["starter "+st.Name] = sum(raw)
-		out, err := tmpl.Render(src, map[string]any{"page": decorated(st.Sample), "site": siteContext()})
+		out, err := tmpl.Render(src, map[string]any{"page": decorated(sampleAsItWas(st)), "site": siteContext()})
 		if err != nil {
 			t.Fatal(err)
 		}

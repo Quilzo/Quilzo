@@ -304,6 +304,23 @@ func TestNoSampleReferencesAFileTheStoreWillNotHave(t *testing.T) {
 	}
 }
 
+// Nor a picture on somebody else's site. The sections sample's share image
+// was https://example.com/share.png, so every link to the home page of a
+// site started from it was previewed with a picture from example.com, or
+// with none, and no check reads a share image's address.
+func TestNoSampleSharesAPictureFromElsewhere(t *testing.T) {
+	for _, st := range All() {
+		encoded, err := json.Marshal(st.Sample)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range regexp.MustCompile(`"[a-z_]*image[a-z_]*":"(https?:)?//[^"]+"`).
+			FindAllString(string(encoded), -1) {
+			t.Errorf("the %s sample shows %s, a picture on another site", st.Name, ref)
+		}
+	}
+}
+
 // The arrangement queries have to have something to measure.
 //
 // The breakpoint rules are @container queries — deliberately, so a split inside
