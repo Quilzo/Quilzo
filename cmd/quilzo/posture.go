@@ -724,7 +724,7 @@ func postureSuppress(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("suppress", flag.ContinueOnError)
 	reason := fs.String("reason", "", "why this is being accepted")
-	by := fs.String("by", "", "who is accepting it")
+	by := fs.String("by", "", "who to credit with accepting it; it is recorded as the signed-in principal's")
 	daysFor := fs.Int("days", 30, "how long, at most 90")
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
@@ -737,9 +737,17 @@ func postureSuppress(root string, args []string) error {
 		return fmt.Errorf("a suppression needs a reason. An exception nobody " +
 			"wrote down is indistinguishable from an oversight")
 	}
-	if strings.TrimSpace(*by) == "" {
+	// Recorded as the verified caller's, with a name typed after --by
+	// credited beside them (Caller.namedBy). Only a store that knows nobody
+	// needs the name typed.
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
+	if who == "" {
 		return fmt.Errorf("a suppression needs a name. Somebody is accepting " +
 			"this risk and the record should say who")
+	}
+	if credited != "" {
+		who += " (" + credit(credited) + ")"
 	}
 	limit := int(posture.MaxSuppression.Hours() / 24)
 	if *daysFor > limit {
@@ -757,28 +765,32 @@ func postureSuppress(root string, args []string) error {
 	replaced := false
 	for i, s := range next {
 		if s.ID == pos[0] {
-			next[i] = posture.Suppression{ID: pos[0], Reason: *reason, By: *by,
+			next[i] = posture.Suppression{ID: pos[0], Reason: *reason, By: who,
 				Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()}
 			replaced = true
 		}
 	}
 	if !replaced {
 		next = append(next, posture.Suppression{ID: pos[0], Reason: *reason,
-			By: *by, Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()})
+			By: who, Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()})
 	}
 	f.Suppressions = next
 	if err := saveJSON(suppressPath(root), f); err != nil {
 		return err
 	}
 
-	record(root, audit.Record{
-		Action: "posture.suppress", Resource: pos[0], Outcome: audit.Success,
-		Principal: *by, Kind: audit.KindHuman,
-		Detail: map[string]string{
-			"reason": truncate(*reason, 120),
-			"until":  now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"),
-		},
-	})
+	detail := map[string]string{
+		"reason": truncate(*reason, 120),
+		"until":  now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"),
+	}
+	// The name typed is kept in the record wherever it is not the one the
+	// entry is under. On a store with no access control the entry is the
+	// account at the keyboard's, unverified, and the name typed is who the
+	// suppression is by: left out, the log named nobody who accepted it.
+	if typed := strings.TrimSpace(*by); typed != "" && typed != caller.Name {
+		detail["credited"] = typed
+	}
+	record(root, caller.auditRecord("posture.suppress", pos[0], audit.Success, detail))
 
 	w.Human("%s is silenced until %s\n", pos[0],
 		now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"))

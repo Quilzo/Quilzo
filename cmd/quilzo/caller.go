@@ -260,6 +260,40 @@ func (c *Caller) recordedAs(named, message string) (author, msg string) {
 	return author, message + " (" + credit(named) + ")"
 }
 
+// namedBy is who a record of an act names, for a command that takes a
+// typed --by: the verified caller, always, and a different name typed kept
+// beside them as a credit, which no rule reads. Only where nobody is
+// verified, on a store with no access control, is the name typed the one
+// there is.
+//
+// The name typed was the record. `posture suppress --by 'Dana (CISO)'`
+// wrote the risk acceptance to the audit log under Dana and left out the
+// administrator who ran it, `auth grant --by` set "granted by" to whatever
+// was typed, `checked set --by` let an author record a confirmation as
+// somebody else's, and `lang translated --by` a translation: the evidence
+// an auditor reads named whoever the person at the keyboard chose.
+func (c *Caller) namedBy(typed string) (who, credited string) {
+	typed = strings.TrimSpace(typed)
+	if c != nil && c.Verified && strings.TrimSpace(c.Name) != "" {
+		if typed == "" || typed == c.Name {
+			return c.Name, ""
+		}
+		return c.Name, typed
+	}
+	return typed, ""
+}
+
+// withCredit is a note with a credit for a name typed added (credit).
+func withCredit(note, credited string) string {
+	if credited == "" {
+		return note
+	}
+	if note = strings.TrimSpace(note); note == "" {
+		return credit(credited)
+	}
+	return note + " (" + credit(credited) + ")"
+}
+
 // credit is how a name somebody gave for the words is kept beside what they
 // were recorded under (recordedAs): said in the message, or in a provenance
 // record's note, and believed by nothing.

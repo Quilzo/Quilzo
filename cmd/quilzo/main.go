@@ -1430,14 +1430,8 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 // takes a directory, made ./.quilzo and said so, and the store was not where
 // the next command, `quilzo --root mysite serve`, looked for it.
 func runInit(root string, args []string) error {
-	fs, _ := initFlags()
-	var pos []string
-	if err := parseFlags(fs, args, &pos, 1); err != nil {
+	if _, err := initFlags(args); err != nil {
 		return err
-	}
-	if len(pos) > 0 {
-		return errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
-			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
 	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {

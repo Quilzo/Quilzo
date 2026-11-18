@@ -282,7 +282,24 @@ func authGrant(root string, args []string) error { return authGrantAs(root, args
 
 // authGrantAs is `auth grant`, and `auth deny` when denying is set: then the
 // binding denies whatever the line says, --deny=false included.
-func authGrantAs(root string, args []string, denying bool) error {
+//
+// The first binding a store nobody has entered is given, a grant or a deny,
+// makes it a store with people, and one with two factors from then
+// (twoFactorsFromNow), as `quilzo init --admin` makes it. Only init asked. A
+// store whose folders another command made, `quilzo demo` or `quilzo log`,
+// and whose first administrator came from `quilzo auth grant owner admin`
+// and a token, never ran init: the first `quilzo serve` took it for an
+// upgraded installation and wrote the grace, and for two weeks a token alone
+// opened the admin of a store a day old. A store that already has people
+// keeps whatever it was given.
+func authGrantAs(root string, args []string, denying bool) (err error) {
+	if nobodyHasBeenHere(root) {
+		defer func() {
+			if err == nil && !nobodyHasBeenHere(root) {
+				err = twoFactorsFromNow(root)
+			}
+		}()
+	}
 	fs := flag.NewFlagSet("grant", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covers")
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
@@ -294,7 +311,7 @@ func authGrantAs(root string, args []string, denying bool) error {
 	// GrantedBy exists to answer "who gave this principal admin?", and "cli"
 	// is not an answer; it is the same non-answer for every operator who has
 	// ever run the command.
-	by := fs.String("by", "", "who granted it; the signed-in principal by default")
+	by := fs.String("by", "", "who to credit for the decision; the grant is recorded as the signed-in principal's")
 	// Withdrawn rather than quietly dropped, so a script that passes it stops
 	// with a reason instead of silently granting something wider than it asked
 	// for — which is what it had been doing all along.
@@ -353,9 +370,15 @@ func authGrantAs(root string, args []string, denying bool) error {
 	if perm, ok := auth.PermissionNamed(rest[1]); ok {
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
 	}
+	// Granted by the verified caller, with a name typed after --by kept in
+	// the note as a credit (Caller.namedBy).
+	by2 := grantedBy(root, *by)
+	if _, credited := resolveCaller(root, "").namedBy(*by); credited != "" {
+		*note = withCredit(*note, credited)
+	}
 	if auth.IsAppRoleName(rest[1]) {
 		return grantAppRole(root, rest[0], rest[1], *on, *deny, auth.Binding{
-			GrantedBy: grantedBy(root, *by), Note: *note, Expires: expires})
+			GrantedBy: by2, Note: *note, Expires: expires})
 	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
 		if *on != "/" || *deny {
@@ -370,7 +393,6 @@ func authGrantAs(root string, args []string, denying bool) error {
 			bindings = append(bindings, jb)
 		}
 	}
-	by2 := grantedBy(root, *by)
 	// Making somebody an administrator of anything waits for a second
 	// administrator, who applies it on approving.
 	if !*deny && dual.Privileged(bindings) {
@@ -537,9 +559,17 @@ func authRevoke(root string, args []string) error {
 	fmt.Printf("removed %d binding(s)\n", n)
 	// Inherited access survives revoking a narrow binding, and someone who does
 	// not notice will think they removed access they did not.
+	//
+	// Where it comes from only when that is somewhere else: from a binding
+	// on the same place the reason restated the line ("theo still has admin
+	// on / — theo is admin on /, granted at /").
 	if d := p.Evaluate(rest[0], auth.ActView, *on); d.Allowed {
-		fmt.Printf("  %s%s still has %s on %s — %s%s\n",
-			yellow, rest[0], d.Role, *on, d.Reason, reset)
+		why := ""
+		if d.Binding == nil || strings.Trim(d.Binding.Resource, "/") != strings.Trim(*on, "/") {
+			why = " — " + d.Reason
+		}
+		fmt.Printf("  %s%s still has %s on %s%s%s\n",
+			yellow, rest[0], d.Role, *on, why, reset)
 	}
 	return nil
 }
@@ -840,20 +870,7 @@ recovered from this machine.
 // denials — which Evaluate applies at decision time and which do not change
 // what the credential should be able to attempt.
 func strongestRole(pol *auth.Policy, principal, resource string) auth.Role {
-	best := auth.RoleNone
-	for _, b := range pol.Snapshot() {
-		if b.Principal != principal || b.Deny {
-			continue
-		}
-		if b.Resource != "/" && b.Resource != resource &&
-			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
-			continue
-		}
-		if b.Role.AtLeast(best) {
-			best = b.Role
-		}
-	}
-	return best
+	return pol.StrongestRole(principal, resource)
 }
 
 func tokenIssue(root string, args []string) error { return tokenIssueAs(root, args, false) }
@@ -907,6 +924,26 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 			explicitRole = true
 		}
 	})
+	// A role named wider than the principal holds is refused, as a token
+	// carries at most its holder's: one for jun the author, issued and
+	// listed as publisher, was refused at everything it was for ("jun is
+	// author on /; publish needs publisher"). Somebody who holds no role yet
+	// is told so below, where the grant they need is named.
+	//
+	// What they hold on the token's path or anywhere inside it
+	// (auth.Policy.StrongestWithin): a token over the whole site for
+	// somebody who is an author there and a publisher on /blog is how they
+	// publish /blog with it, and one for an analyst is how they administer
+	// /@security.
+	if explicitRole {
+		if pol, perr := loadPolicy(root); perr == nil {
+			if held := pol.StrongestWithin(*principal, *on); held != auth.RoleNone && !held.AtLeast(auth.Role(*role)) {
+				return fmt.Errorf("%s holds %s at most on %s and what is inside it, and a token carries no more "+
+					"than its holder: issue it with --role %s, or grant %s %s first",
+					*principal, held, *on, held, *principal, *role)
+			}
+		}
+	}
 	fromPolicy := false
 	if !explicitRole {
 		if pol, perr := loadPolicy(root); perr == nil {
@@ -979,7 +1016,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 				return err
 			}
 		} else {
-			apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
+			apply, err := proposeSecondFor(root, resolveCaller(root, ""), *principal, dual.Token,
 				fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
 				dual.TokenChange{Args: args}, "")
 			if err != nil || !apply {
@@ -1152,7 +1189,16 @@ func tokenList(root string) error {
 	if !everybody {
 		tokens = slices.DeleteFunc(tokens, func(t auth.Token) bool { return !mine(t.Principal, who) })
 	}
-	// What each token is, and never the hash it is checked against.
+	// What each token is, and never the hash it is checked against. Its
+	// role as it can be used, which is no more than its holder's
+	// (auth.Policy.Carries).
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
+	for i := range tokens {
+		tokens[i].Role = pol.Carries(tokens[i].Principal, tokens[i].Role, tokens[i].Resource)
+	}
 	rows := make([]map[string]any, 0, len(tokens))
 	for _, t := range tokens {
 		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,
@@ -1301,21 +1347,25 @@ func splitList(s string) []string {
 
 // grantedBy is who to record as having made a grant.
 //
-// The flag wins, because an operator scripting a migration may legitimately
-// be recording somebody else's decision. Otherwise the caller, if this store
-// knows who they are.
+// The caller, if this store knows who they are: a name typed after --by is
+// credited in the note (Caller.namedBy), and no longer recorded as the
+// granter in their place, because "who gave this person access?" is the
+// question the field exists to answer. Where nobody is verified, on a
+// store with no access control, the flag is the only name there is, kept
+// for an operator scripting a migration who records somebody else's
+// decision.
 //
 // The last resort is "cli", which is what the flag used to default to for
 // everybody. It is kept only for a store with no access control at all, where
 // there is genuinely no identity to record — and it is the honest answer
 // there, rather than a made-up name.
 func grantedBy(root, flag string) string {
-	if strings.TrimSpace(flag) != "" {
-		return flag
-	}
 	if c := resolveCaller(root, ""); c != nil && c.Verified &&
 		strings.TrimSpace(c.Name) != "" {
 		return c.Name
+	}
+	if strings.TrimSpace(flag) != "" {
+		return flag
 	}
 	return "cli"
 }

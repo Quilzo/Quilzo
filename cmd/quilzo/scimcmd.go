@@ -198,6 +198,13 @@ func scimMap(root, group, to string) error {
 	if err := validMapping(root, to); err != nil {
 		return err
 	}
+	// A group that made administrators and is mapped to less takes the
+	// role from its members, as unmapping it does.
+	if what, _, _ := scim.SplitMapping(to); what != string(auth.RoleAdmin) {
+		if err := mappingKeepsAnAdministrator(root, group); err != nil {
+			return err
+		}
+	}
 	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping[group] = to; return nil }); err != nil {
 		return err
 	}
@@ -209,10 +216,41 @@ func scimMap(root, group, to string) error {
 // everybody in it. The command, the Provisioning screen and an access
 // review that revokes a mapping all come through here.
 func scimUnmap(root, group string) error {
+	if err := mappingKeepsAnAdministrator(root, group); err != nil {
+		return err
+	}
 	if err := scimStore(root).Update(func(st *scim.State) error { delete(st.Mapping, group); return nil }); err != nil {
 		return err
 	}
 	scimHandler(root).SyncAll()
+	return nil
+}
+
+// mappingKeepsAnAdministrator refuses to take the administrator's role a
+// group gives from its members when that would leave nobody able to
+// administer the store (errLastAdministrator), as `quilzo auth revoke`
+// refuses it and an access review that revokes the mapping does.
+//
+// `quilzo scim unmap Admins`, run by the administrator the group made one,
+// said "Admins no longer grants anything here" and left the policy empty,
+// and so did mapping the group to reader. Judged as the review judges it,
+// on everything provisioning gave the group's members: refusing a removal
+// another group would have covered is the safe way to be wrong.
+func mappingKeepsAnAdministrator(root, group string) error {
+	means, members, err := groupNow(root, group)
+	if err != nil {
+		return err
+	}
+	if what, _, _ := scim.SplitMapping(means); what != string(auth.RoleAdmin) {
+		return nil
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
+	if !nobodyAdministers(pol) && nobodyAdministers(withoutWhatTheyWereProvisioned(pol, members)) {
+		return errLastAdministrator
+	}
 	return nil
 }
 
@@ -266,6 +304,20 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 					if m := st.Mapping[g]; m != "" && !slices.Contains(meant, m) {
 						meant = append(meant, m)
 					}
+				}
+			}
+		})
+	}
+	// A rename takes what provisioning gave from the old name and gives it
+	// to the new one next (scim.Handler): it is the one sync sent nothing
+	// for somebody not suspended whose groups still give them something.
+	// What it takes is on its way to the new name, and is let go (below).
+	moving := false
+	if !suspended && len(grants) == 0 {
+		_ = scimStore(root).Read(func(st *scim.State) {
+			if u, ok := st.UserNamed(name); ok {
+				for _, g := range st.GroupsOf(u.ID) {
+					moving = moving || st.Mapping[g] != ""
 				}
 			}
 		})
@@ -365,10 +417,21 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// who can grant, of somebody what their groups give would make able to,
 	// gives them that and no deny, and their access moves with the name. An
 	// app's role is not read for a suspension, and does not count here.
-	var granted, revoked []auth.Binding
+	//
+	// A group that stops making the last administrator one is the same
+	// moment again, with nobody suspended: the identity provider took them
+	// out of the group or deleted it, or the group was unmapped or mapped
+	// to less. Their role was taken back, nobody could administer the
+	// store, and a policy with no other binding was left empty, which
+	// switches access control off. So a sync that would leave nobody able
+	// to administer a store somebody did changes nothing, and what it would
+	// have taken is recorded as a revocation that failed (refused). Only a
+	// rename's is let through, since the new name is given it next.
+	var granted, revoked, refused []auth.Binding
 	last := false
-	p, err = updatePolicy(root, func(p *auth.Policy) error {
-		granted, revoked, last = nil, nil, false
+	p, err = provisionPolicy(root, func(p *auth.Policy) error {
+		granted, revoked, refused, last = nil, nil, nil, false
+		was, before := dual.Administered(p), p.Snapshot()
 		want := want
 		if suspended && slices.ContainsFunc(p.Principals(), func(who string) bool {
 			return strings.EqualFold(who, name) && lastGranter(p, who)
@@ -433,24 +496,40 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		if !changed {
 			return atomicfile.ErrUnchanged
 		}
+		if !suspended && !moving && was && nobodyAdministers(p) {
+			p.Bindings = before
+			granted, revoked, refused = nil, nil, revoked
+			return atomicfile.ErrUnchanged
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 	for _, set := range []struct {
-		action string
-		list   []auth.Binding
-	}{{"scim.granted", granted}, {"scim.revoked", revoked}} {
+		action  string
+		outcome audit.Outcome
+		list    []auth.Binding
+	}{{"scim.granted", audit.Success, granted}, {"scim.revoked", audit.Success, revoked},
+		{"scim.revoked", audit.Failure, refused}} {
 		for _, b := range set.list {
 			role := string(b.Role)
 			if b.Permission != "" {
 				role = string(b.Permission)
 			}
-			record(root, audit.Record{Action: set.action, Resource: b.Resource, Outcome: audit.Success,
+			record(root, audit.Record{Action: set.action, Resource: b.Resource, Outcome: set.outcome,
 				Principal: scimBy, Kind: audit.KindService, Verified: true,
 				Detail: map[string]string{"subject": name, "role": role, "deny": fmt.Sprintf("%t", b.Deny)}})
 		}
+	}
+	if len(refused) > 0 {
+		// Left as they were, sessions and tokens too, and a person decides
+		// the rest, as for a suspension that was not made (below).
+		scimTell(root, name, fmt.Sprintf("Provisioning no longer makes %s an administrator: their group changed, "+
+			"or what it is mapped to. %s is the only person who can grant access here, so nothing was taken "+
+			"from them and they keep what provisioning gave them. Check with them; if it is right, make "+
+			"somebody else an administrator, and their access follows the groups again.", name, name))
+		return nil
 	}
 
 	if !suspended && (p.Anywhere(name, auth.ActView) || holdsArea(p, name)) {

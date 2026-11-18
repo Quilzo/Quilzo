@@ -137,7 +137,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			byName[t.Principal] = who
 		}
 		sess := session{
-			ID: t.ID, Name: t.Name, Role: t.Role,
+			ID: t.ID, Name: t.Name, Role: s.carries(t),
 			Scope:     t.Scope.String(),
 			Created:   time.Unix(t.CreatedAt, 0),
 			Expires:   time.Unix(t.ExpiresAt, 0),
@@ -399,7 +399,7 @@ func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
 	// themselves a link for the other administrator, opened it with their
 	// own authenticator and approved their request as her.
 	if dual.Privileged(held) {
-		apply, msg, err := s.proposeSecond(p, dual.Enrol, "a passkey enrolment link for "+who,
+		apply, msg, err := s.proposeSecondFor(p, who, dual.Enrol, "a passkey enrolment link for "+who,
 			dual.EnrolChange{Principal: who}, "")
 		if err != nil {
 			s.peopleProblem(w, r, err.Error())
@@ -599,6 +599,16 @@ func (s *Server) peopleProblem(w http.ResponseWriter, r *http.Request, msg strin
 	http.Redirect(w, r, "/people?e="+urlQueryEscape(msg), http.StatusSeeOther)
 }
 
+// carries is the role a token is shown with: as it can be used, which is no
+// more than its holder's role (auth.Policy.Carries), as `quilzo token list`
+// shows it.
+func (s *Server) carries(t auth.Token) auth.Role {
+	if s.Policy == nil {
+		return t.Role
+	}
+	return s.Policy.Carries(t.Principal, t.Role, t.Resource)
+}
+
 // lastAdmin reports whether this principal is the only one who can grant.
 func (s *Server) lastAdmin(who string) bool { return lastAdminIn(s.Policy, who) }
 
@@ -661,10 +671,19 @@ func (s *Server) save() error {
 // takes the result as this server's policy.
 func (s *Server) changePolicy(change func(*auth.Policy) error) error {
 	if s.UpdatePolicy == nil {
+		// Made on a copy, so a change that would leave nobody able to
+		// administer the store is refused before anybody is shut out
+		// (dual.ErrLastAdministrator), as UpdatePolicy refuses it on disk.
 		before := dual.Administrators(s.Policy)
-		if err := change(s.Policy); err != nil {
+		was := dual.Administered(s.Policy)
+		trial := &auth.Policy{Bindings: s.Policy.Snapshot()}
+		if err := change(trial); err != nil {
 			return err
 		}
+		if err := dual.KeepsAnAdministrator(was, trial); err != nil {
+			return err
+		}
+		s.Policy.Replace(trial.Bindings)
 		return s.noteAdministrators(before)
 	}
 	pol, err := s.UpdatePolicy(change)

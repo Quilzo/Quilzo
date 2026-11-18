@@ -97,7 +97,7 @@ func authEnrol(root string, args []string) error {
 		return fmt.Errorf("an enrolment link lasts more than nothing and at most %s", enrol.MaxLife)
 	}
 	if dual.Privileged(heldBy(pol, name)) {
-		apply, err := proposeSecond(root, caller, dual.Enrol, "a passkey enrolment link for "+name,
+		apply, err := proposeSecondFor(root, caller, name, dual.Enrol, "a passkey enrolment link for "+name,
 			dual.EnrolChange{Principal: name, For: *life}, "")
 		if err != nil || !apply {
 			return err
@@ -160,6 +160,53 @@ func enteredBefore(root string) bool {
 	return len(pk.Credentials) > 0
 }
 
+// initFlags reads `quilzo init`'s line, one declaration for runInit, which
+// reads it before it makes anything, and initAdmin, which acts on it: a
+// flag mistyped was refused only after the store's folders had been, and
+// the store was then taken for one already in use. A word after init is
+// refused, with where a store goes (runInit).
+func initFlags(args []string) (*string, error) {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return nil, err
+	}
+	if len(pos) > 0 {
+		return nil, errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
+			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
+	}
+	return admin, nil
+}
+
+// nobodyHasBeenHere reports whether a store has never had a person: no
+// binding in its policy, so nobody the admin would let in. Unreadable is
+// taken as somebody, which keeps whatever grace was given.
+//
+// A credential does not make somebody a person here. It also asked that
+// none had ever been held (enteredBefore), and a token issued before any
+// grant, which signs in to nothing and is answered with "grant one: quilzo
+// auth grant owner admin", made the store it was issued on one already in
+// use: the grant, or `init --admin`, that followed left it the grace.
+func nobodyHasBeenHere(root string) bool {
+	pol, err := loadPolicy(root)
+	return err == nil && len(pol.Bindings) == 0
+}
+
+// twoFactorsFromNow makes two factors compulsory at root from now, for a
+// store nobody has had access to. A date that has passed is kept; a grace
+// still running is ended, since nobody is there to need it.
+func twoFactorsFromNow(root string) error {
+	now := time.Now()
+	return atomicfile.Update(mfaPath(root), func(st *mfaState) error {
+		if !st.EnforcedFrom.IsZero() && !st.EnforcedFrom.After(now) {
+			return atomicfile.ErrUnchanged
+		}
+		st.EnforcedFrom = now.UTC()
+		return nil
+	})
+}
+
 // holdsAny reports whether name holds anything that is not a deny.
 func holdsAny(pol *auth.Policy, name string) bool {
 	for _, b := range pol.Bindings {
@@ -196,32 +243,24 @@ func issueEnrolment(root, name, by string, life time.Duration, caller *Caller) e
 	return nil
 }
 
-// initFlags is init's flag set, one declaration for runInit, which reads the
-// line before it makes anything, and initAdmin, which acts on it.
-func initFlags() (*flag.FlagSet, *string) {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
-	return fs, admin
-}
-
 // initAdmin is `quilzo init --admin NAME`: the first administrator, and the
 // link that gives them their passkey. A new store has two factors from its
 // first day; the grace an upgraded installation gets is for people who were
 // already signing in with a token.
 func initAdmin(root string, args []string, created bool) error {
-	fs, admin := initFlags()
-	if err := parseFlags(fs, args, nil, 0); err != nil {
+	admin, err := initFlags(args)
+	if err != nil {
 		return err
 	}
-	if created {
-		now := time.Now()
-		if err := atomicfile.Update(mfaPath(root), func(st *mfaState) error {
-			if !st.EnforcedFrom.IsZero() {
-				return atomicfile.ErrUnchanged
-			}
-			st.EnforcedFrom = now.UTC()
-			return nil
-		}); err != nil {
+	// New is a store nobody has had access to, not only one this run made
+	// the folders of. `quilzo demo`, `quilzo log`, or `init --admni` with a
+	// typo, make the folders, and the `init --admin` after them took the
+	// store for an upgraded installation: the first `quilzo serve` then
+	// wrote the grace, and for two weeks a token alone opened the admin of
+	// a store a day old. Nobody here yet means nobody signing in with a
+	// token to be locked out, so a grace already written is ended too.
+	if created || nobodyHasBeenHere(root) {
+		if err := twoFactorsFromNow(root); err != nil {
 			return err
 		}
 	}

@@ -99,11 +99,21 @@ func (s *Server) noteAdministrators(before map[string]bool) error {
 // whether to make it now, because the proposer is the only administrator,
 // and otherwise what to tell them.
 func (s *Server) proposeSecond(p principal, kind, what string, payload any, why string) (bool, string, error) {
+	return s.proposeSecondFor(p, "", kind, what, payload, why)
+}
+
+// proposeSecondFor is proposeSecond for a way in for subject, approved
+// alone also when subject is an administrator with no way in yet and the
+// proposer the only other one (dual.FirstWayIn), as `quilzo auth enrol`
+// approves it.
+func (s *Server) proposeSecondFor(p principal, subject, kind, what string, payload any, why string) (bool, string, error) {
 	if s.Dual == nil || s.Dual.Store == nil {
 		return false, "", errors.New("this server keeps no requests for a second administrator, so this change cannot be made here")
 	}
 	now := time.Now()
 	alone := s.onlyAdministrator(p.Name)
+	first := !alone && subject != "" && s.firstWayIn(p.Name, subject, now)
+	alone = alone || first
 	r, err := s.Dual.Store.Propose(kind, what, payload, why, p.Name, alone, now)
 	if err != nil {
 		return false, "", err
@@ -112,6 +122,9 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
+		if first {
+			detail["first_way_in"] = "true"
+		}
 		s.audit("dual.approved", "/", detail)
 		return true, "", nil
 	}
@@ -123,6 +136,47 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 		msg += " " + s.refuseAlone(p, rm, map[string]string{"request": r.ID, "kind": kind})
 	}
 	return false, msg, nil
+}
+
+// firstWayIn is dual.FirstWayIn for this server at now: subject has never
+// been an administrator who could sign in, by a token or session
+// (dual.WayIn), a passkey or single sign-on, and no administrator stopped
+// being one in the last day.
+func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
+	if rm, err := s.Dual.Store.Settling(now); err != nil || rm != nil {
+		return false
+	}
+	held := s.Tokens != nil && dual.WayIn(s.Policy, s.Tokens.Snapshot(), subject, now)
+	if s.Passkeys != nil {
+		for _, c := range s.Passkeys.list() {
+			if strings.EqualFold(c.Principal, subject) {
+				held = true
+			}
+		}
+	}
+	if !dual.FirstWayIn(s.Policy, asker, subject, held || s.signsInBySSO(subject)) {
+		return false
+	}
+	open, err := s.Dual.Store.OpenBy(asker, subject, now)
+	return err == nil && len(open) == 0
+}
+
+// signsInBySSO reports whether an identity provider this server signs
+// people in through could sign who in (dual.SingleSignOn). Providers that
+// cannot be read are taken to.
+func (s *Server) signsInBySSO(who string) bool {
+	if s.SAML != nil && s.SAML.Providers != nil {
+		all, err := s.SAML.Providers()
+		if err != nil {
+			return true
+		}
+		for _, c := range all {
+			if dual.SAML(c.Domains).Covers(who) {
+				return true
+			}
+		}
+	}
+	return s.OIDC != nil && dual.OpenIDConnect(s.OIDC.Claim, s.OIDC.Domains).Covers(who)
 }
 
 // applyDual makes an approved change, as by, and says what Dual.Apply

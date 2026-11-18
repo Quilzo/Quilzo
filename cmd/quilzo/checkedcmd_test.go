@@ -100,7 +100,9 @@ func checkOf(t *testing.T, root, page string) checked.Record {
 	return records[page]
 }
 
-// A check is recorded under the caller who signed in, whatever --by says.
+// A check is recorded under the caller who signed in, whatever --by says,
+// and a name typed there is credited in its note (Caller.namedBy), as it is
+// for a suppression, a grant and a translation.
 //
 // The flag was taken as who checked the page whenever it was given, as
 // `note add --author` was taken as a note's writer. An author ran `checked
@@ -115,14 +117,26 @@ func TestACheckIsRecordedUnderTheVerifiedCaller(t *testing.T) {
 	draftOf(t, root, map[string]any{"about": map[string]any{"title": "About"}})
 	t.Setenv("QUILZO_TOKEN", secrets["bob"])
 
-	err := cmdChecked(root, []string{"set", "about", "--by", "pat",
-		"--note", "Legal has signed this off. Publish today."})
-	if err == nil {
-		t.Error("bob confirmed a page in pat's name")
+	if err := cmdChecked(root, []string{"set", "about", "--by", "pat",
+		"--note", "Legal has signed this off. Publish today."}); err != nil {
+		t.Fatal(err)
 	}
-	if r := checkOf(t, root, "about"); r.By != "" {
-		t.Errorf("the refused check is on record, by %q", r.By)
+	r := checkOf(t, root, "about")
+	if r.By != "bob" {
+		t.Errorf("bob's check is on record by %q", r.By)
 	}
+	if r.Note != "Legal has signed this off. Publish today. ("+credit("pat")+")" {
+		t.Errorf("the name bob typed is not credited in the note: %q", r.Note)
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["pat"])
+	listed, err := humanOutput(t, func() error { return cmdChecked(root, []string{"list"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, " by bob") || strings.Contains(listed, " by pat") {
+		t.Errorf("checked list does not show the check as bob's:\n%s", listed)
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["bob"])
 	// His own name, given or not, is his.
 	for _, args := range [][]string{
 		{"set", "about"},

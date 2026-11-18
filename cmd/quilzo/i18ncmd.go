@@ -198,7 +198,7 @@ func langCheck(root string) error {
 func langTranslated(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("translated", flag.ContinueOnError)
-	by := fs.String("by", "", "who made the translation")
+	by := fs.String("by", "", "who to credit for the translation; it is recorded as the signed-in principal's")
 	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
@@ -241,9 +241,16 @@ func langTranslated(root string, args []string) error {
 			c.Path(pos[0], l))
 	}
 
-	who := *by
+	// Recorded as the verified caller's, with a name typed after --by
+	// credited beside them (Caller.namedBy): the name typed was the whole
+	// record, and whoever recorded the translation was not in it.
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
 	if who == "" {
-		who = resolveCaller(root, "").Name
+		who = caller.Name
+	}
+	if credited != "" {
+		who += " (" + credit(credited) + ")"
 	}
 	c.Record(pos[0], l, sourceHash, who, time.Now())
 	if err := saveJSON(localesPath(root), c); err != nil {

@@ -90,7 +90,7 @@ func checkedSet(root string, args []string) error {
 		"how long until this page is wanted again, e.g. 168h; "+
 			"omit for the site's own answer")
 	note := fs.String("note", "", "what the next person should know")
-	by := fs.String("by", "", "who checked it, at a console nobody signs in to")
+	by := fs.String("by", "", "who to credit for the check; it is recorded as the signed-in principal's")
 	rest, flags := leadingArgs(args, 1)
 	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
@@ -101,27 +101,20 @@ func checkedSet(root string, args []string) error {
 	}
 	page := rest[0]
 
-	who := strings.TrimSpace(*by)
+	// Recorded as the verified caller's, whatever the flag says, as a note
+	// is its signed-in writer's (noteAdd), with a name typed after --by
+	// credited in the note (Caller.namedBy). The flag was taken as who
+	// checked the page whenever it was given, so an author confirmed a page
+	// in the publisher's name with "Legal has signed this off" for its note,
+	// and `checked list` and the admin showed both as hers; the admin's own
+	// button records whoever is signed in. At a console nobody signs in to,
+	// the name typed is the one there is.
 	caller := resolveCaller(root, "")
-	switch {
-	case caller.Verified:
-		// The signed-in caller, whatever the flag says, as a note is its
-		// signed-in writer's (noteAdd). The flag was taken as who checked
-		// the page whenever it was given, so an author confirmed a page in
-		// the publisher's name with "Legal has signed this off" for its
-		// note, and `checked list` and the admin showed both as hers; the
-		// admin's own button records whoever is signed in. Refused rather
-		// than overridden, so the person who typed another name is told it
-		// was not used.
-		if who != "" && !strings.EqualFold(who, caller.Name) {
-			return fmt.Errorf("you are signed in as %s, so a check you record is %s's; "+
-				"--by names who checked it only at a console nobody signs in to",
-				onOneLine(caller.Name), onOneLine(caller.Name))
-		}
-		who = caller.Name
-	case who == "":
+	who, credited := caller.namedBy(*by)
+	if who == "" {
 		who = caller.Name
 	}
+	*note = withCredit(*note, credited)
 	if who == "" {
 		return fmt.Errorf("who checked it? Pass --by, or sign in")
 	}
