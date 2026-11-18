@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -329,7 +330,10 @@ var unknownSubcommand = regexp.MustCompile(`^unknown [a-z][a-z -]* command "([^"
 // exit 2.
 func nearestSubcommand(err error) error {
 	m := unknownSubcommand.FindStringSubmatch(err.Error())
-	if m == nil || invoked.cmd == "" {
+	if m == nil {
+		return nearestInUsage(err)
+	}
+	if invoked.cmd == "" {
 		return err
 	}
 	at := slices.Index(invoked.args, m[1])
@@ -353,6 +357,55 @@ func nearestSubcommand(err error) error {
 	}
 	return errMisused{errors.New(msg)}
 }
+
+// nearestInUsage is nearestSubcommand for a command that refuses a word
+// it has no subcommand for with its usage, not as "unknown X command":
+// `member idsable`, `agent naswer`, `inbox ilst`, `board ehld` and `demo
+// ermove` were each their usage and nothing nearer, while `token lsit` was
+// offered list. Only for the word after the command, and only where it is
+// no subcommand the help offers: `member show` given no id is not offered
+// another. A usage that names some other word as the one it does not take
+// is about that word.
+//
+// The refusal is the command's still, under the nearest: its exit is the
+// one the command gave it.
+func nearestInUsage(err error) error {
+	if invoked.cmd == "" || len(invoked.args) == 0 ||
+		!strings.HasPrefix(err.Error(), "usage: quilzo "+invoked.cmd+" ") {
+		return err
+	}
+	word := invoked.args[0]
+	if strings.HasPrefix(word, "-") {
+		return err
+	}
+	if _, stray, ok := strings.Cut(err.Error(), " does not take "); ok &&
+		!strings.HasPrefix(stray, strconv.Quote(word)) {
+		return err
+	}
+	subs := helpSubcommandsOf([]string{invoked.cmd})
+	if slices.Contains(subs, word) {
+		return err
+	}
+	near := nearestWords(word, subs)
+	if len(near) == 0 {
+		return err
+	}
+	for i := range near {
+		near[i] = "quilzo " + invoked.cmd + " " + near[i]
+	}
+	return withNearest{err, err.Error() + "\n  did you mean " + strings.Join(near, ", or ") + "?"}
+}
+
+// withNearest is a refusal with the nearest word added to what it says,
+// and otherwise the refusal it was.
+type withNearest struct {
+	error
+	said string
+}
+
+func (e withNearest) Error() string { return e.said }
+
+func (e withNearest) Unwrap() error { return e.error }
 
 // helpSubcommand is how a subcommand is written in the help, a lowercase
 // word, and helpName how a name a command takes is: in capitals, or quoted.

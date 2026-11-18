@@ -474,3 +474,36 @@ func TestAHeldErasureSaysHowToGoOnAgainstTheSameStore(t *testing.T) {
 		t.Errorf("a held erasure on the default store does not say %s:\n%s", want, buf.String())
 	}
 }
+
+// The nearest subcommand was offered only where a command refused the word
+// as "unknown X command". Others answer a word they have no case for with
+// their usage, and offered nothing: `member idsable`, `agent naswer`,
+// `inbox ilst`, `board ehld` and `demo ermove` were each the usage alone.
+// And a setting longer than twenty-four letters was near nothing, so
+// `config set review.requird_approvals 2` was pointed at all of them.
+func TestAMistypedWordAnsweredWithAUsageIsOfferedTheNearestToo(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	for _, c := range []struct {
+		line []string
+		want string
+	}{
+		{[]string{"member", "idsable", "m1"}, "did you mean quilzo member disable?"},
+		{[]string{"agent", "naswer"}, "did you mean quilzo agent answer?"},
+		{[]string{"inbox", "ilst"}, "did you mean quilzo inbox list?"},
+		{[]string{"board", "ehld"}, "did you mean quilzo board held?"},
+		{[]string{"demo", "ermove"}, "did you mean quilzo demo remove?"},
+		{[]string{"config", "set", "review.requird_approvals", "2"}, "did you mean review.required_approvals?"},
+	} {
+		o, e, code := cliRun(t, root, "", c.line...)
+		if code == 0 || !strings.Contains(e, c.want) {
+			t.Errorf("`quilzo %s` exited %d without %q:\n%s", strings.Join(c.line, " "), code, c.want, firstLines(o+e, 4))
+		}
+	}
+	// A subcommand that is one, given too little, is not offered another.
+	if _, e, code := cliRun(t, root, "", "member", "show"); code == 0 || strings.Contains(e, "did you mean") {
+		t.Errorf("`quilzo member show` exited %d, offering another:\n%s", code, firstLines(e, 4))
+	}
+}

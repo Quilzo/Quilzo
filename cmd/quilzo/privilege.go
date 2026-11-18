@@ -1306,8 +1306,13 @@ func nearestWords(word string, known []string) []string {
 // Three rows rather than a full matrix: the words are command names, so
 // this is never the expensive part, and the small version is easier to be
 // sure of.
+//
+// Words up to sixty-four letters, which a setting's key is too: the bound
+// was twenty-four, for command names, so a mistyped
+// review.required_approvals, twenty-five, was near nothing and offered
+// nothing. Sixty-four squared is still nothing to compute.
 func editDistance(a, b string) int {
-	if len(a) > 24 || len(b) > 24 {
+	if len(a) > 64 || len(b) > 64 {
 		return 99
 	}
 	before := make([]int, len(b)+1)
