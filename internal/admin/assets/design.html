@@ -139,18 +139,24 @@
   <code>page.html</code>.</p>
 {{end}}
 
-{{if .CanInstall}}
+{{if or .CanInstall .InstallNeedsPublish}}
 <h2>Install a design</h2>
 <p class="hint">
   Replaces the layout and palette in <code>{{.Dir}}</code>. The preview here
   shows it at once; the site serves it from its next publish, when the
   publish checks have read it, or when it is told to reload.
 </p>
+{{if .InstallNeedsPublish}}
+<p class="hint">Installing a design takes the authority to publish: it changes
+  how every page is drawn at once, including pages you may not edit. Somebody
+  who publishes can install one of these here, or with
+  <code>quilzo template use NAME</code>.</p>
+{{end}}
 <div class="table-wrap">
 <table>
   <thead><tr>
     <th scope="col">Design</th><th scope="col">What it is for</th>
-    <th scope="col">How it looks</th><th scope="col"><span class="visually-hidden">Actions</span></th>
+    <th scope="col">How it looks</th>{{if .CanInstall}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Starters}}
@@ -159,12 +165,12 @@
       <div class="hint">layout {{.LayoutName}}</div></th>
     <td>{{.Summary}}</td>
     <td class="hint">{{.Look}}</td>
-    <td>
+    {{if $.CanInstall}}<td>
       <form method="post" action="/design/install" class="inline">
         <input type="hidden" name="starter" value="{{.Name}}">
         <button type="submit">Install {{.Name}}</button>
       </form>
-    </td>
+    </td>{{end}}
   </tr>
   {{end}}
   </tbody>

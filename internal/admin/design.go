@@ -327,7 +327,11 @@ func (s *Server) showDesign(w http.ResponseWriter, r *http.Request, p principal,
 	}
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
-	data["CanInstall"] = s.DesignSet.InstallLayout != nil
+	// The Install buttons likewise. An author was shown one for every
+	// starter and each answered with a page saying the credential could not
+	// do that, so the screen says who can, and lists the designs to ask for.
+	data["CanInstall"] = s.DesignSet.InstallLayout != nil && s.allows(p, auth.ActPublish, "/")
+	data["InstallNeedsPublish"] = s.DesignSet.InstallLayout != nil && !s.allows(p, auth.ActPublish, "/")
 	// The typeface form only for somebody who may use it. An author was
 	// shown it, chose a file, sent it, and was answered with a page saying
 	// the credential could not do that; the screen now says who can before

@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/starter"
 )
 
 // postFont sends a typeface to the Design screen as its form does.
@@ -207,6 +208,56 @@ func TestAnAuthorCannotAddATypeface(t *testing.T) {
 	if page := get(t, srv, "/design", publisher).Body.String(); !strings.Contains(page, form) ||
 		strings.Contains(page, "Somebody who publishes can add one here") {
 		t.Error("a publisher is not offered the typeface form")
+	}
+}
+
+// The Install buttons only for somebody who may install. An author was
+// shown one for every starter, with no word that installing a design takes
+// the authority to publish, and each answered with a page saying the
+// credential could not do that — as the typeface form did before it was
+// put right.
+func TestAnAuthorIsNotOfferedInstallButtonsTheServerRefuses(t *testing.T) {
+	srv, _ := setup(t)
+	designFake(srv, map[string]string{})
+	installed := ""
+	srv.DesignSet.InstallLayout = func(name string) ([]string, error) {
+		installed = name
+		return []string{"page.html"}, nil
+	}
+	for _, who := range []struct {
+		name string
+		role auth.Role
+	}{{"kit", auth.RoleAuthor}, {"pat", auth.RolePublisher}} {
+		if err := srv.Policy.Grant(auth.Binding{Principal: who.name, Role: who.role, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	author, _, err := srv.Tokens.IssueSession("a", "kit", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher, _, err := srv.Tokens.IssueSession("p", "pat", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form, said := `action="/design/install"`, "Installing a design takes the authority to publish"
+	authorPage := get(t, srv, "/design", author).Body.String()
+	if strings.Contains(authorPage, form) {
+		t.Error("an author is offered Install buttons the server will refuse")
+	}
+	if !strings.Contains(authorPage, said) {
+		t.Error("an author is not told who may install a design")
+	}
+	whole(t, authorPage)
+	if w := postForm(t, srv, "/design/install", author, "starter="+starter.Names()[0]); w.Code < 400 || installed != "" {
+		t.Fatalf("an author installed a design: %d, %q", w.Code, installed)
+	}
+	page := get(t, srv, "/design", publisher).Body.String()
+	if !strings.Contains(page, form) || strings.Contains(page, said) {
+		t.Error("a publisher is not offered the Install buttons")
+	}
+	if w := postForm(t, srv, "/design/install", publisher, "starter="+starter.Names()[0]); w.Code >= 400 || installed == "" {
+		t.Fatalf("a publisher could not install a design: %d", w.Code)
 	}
 }
 
