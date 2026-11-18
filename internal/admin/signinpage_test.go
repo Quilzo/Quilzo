@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,6 +17,45 @@ import (
 // pageText is a page as somebody reads it: its words, without the markup.
 func pageText(page string) string {
 	return strings.Join(strings.Fields(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(page, " ")), " ")
+}
+
+// The sign-in page says what Quilzo is, and what it says of itself is true.
+//
+// It is the first thing anybody sees of the admin, and its "What this is"
+// was the content store alone, from before Quilzo was the agent platform
+// it is. Two of its three claims were false as well: "no JavaScript in this
+// interface", of an interface that serves /admin.js to every screen and
+// signs people in with passkeys from a script, and "an image built from
+// scratch", of an image built on distroless. The README is held to the
+// image it describes (docs_claims_test.go); this page was not.
+func TestTheSignInPageSaysWhatQuilzoIsAndOnlyWhatIsTrue(t *testing.T) {
+	srv, token := setup(t)
+	text := pageText(get(t, srv, "/signin", "").Body.String())
+
+	if !strings.Contains(text, "The self-hosted AI agent platform") {
+		t.Errorf("the sign-in page does not say what Quilzo is: %.400q", text)
+	}
+	if w := get(t, srv, "/admin.js", token); w.Code == http.StatusOK &&
+		regexp.MustCompile(`(?i)no JavaScript`).MatchString(text) {
+		t.Error("the sign-in page says there is no JavaScript here, and /admin.js is served")
+	}
+
+	df, err := os.ReadFile("../../Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := regexp.MustCompile(`(?m)^FROM\s+(\S+)`).FindAllStringSubmatch(string(df), -1)
+	if len(from) == 0 {
+		t.Fatal("no FROM in the Dockerfile; this test cannot check anything")
+	}
+	if base := from[len(from)-1][1]; !strings.EqualFold(base, "scratch") {
+		if regexp.MustCompile(`(?i)from scratch`).MatchString(text) {
+			t.Errorf("the sign-in page says the image is built from scratch; it is built on %s", base)
+		}
+		if strings.Contains(text, "image") && !strings.Contains(text, "distroless") {
+			t.Errorf("the sign-in page describes the image without naming what it is built on, %s", base)
+		}
+	}
 }
 
 // The sign-in page says where a passkey comes from.

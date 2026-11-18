@@ -117,12 +117,17 @@
 
     <h2>What this is</h2>
     <ul>
+      <li>The self-hosted AI agent platform: a control plane, an agent
+        studio, a CMS and chatbots in one Go binary. Every agent has an
+        identity, a policy, a budget and a signed record, and a person
+        approves the actions that matter.</li>
       <li>Content addressed by the hash of its own bytes, so history is free
-        and rollback is a pointer move.</li>
-      <li>Nothing executes: no plugin runtime, no scripting in templates, no
-        expressions in queries, no JavaScript in this interface.</li>
-      <li>No third-party dependencies at all, in an image built from scratch
-        with no shell, no package manager and no libc in it.</li>
+        and rollback is a pointer move. What people write does not execute:
+        no plugin runtime, no scripting in templates, no expressions in
+        queries.</li>
+      <li>No third-party dependencies, and a distroless image with no shell,
+        no package manager and no libc in it. The scripts this interface
+        runs are its own, served from here; passkeys need them.</li>
     </ul>
     <p class="help">
       Repeated failures here are slowed rather than locked out — a hard lockout
