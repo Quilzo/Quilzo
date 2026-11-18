@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,20 @@ func TestCountSpellsThePluralOfEveryWordItIsGiven(t *testing.T) {
 		if got := count(c.n, c.noun); got != c.want {
 			t.Errorf("count(%d, %q) = %q, want %q", c.n, c.noun, got, c.want)
 		}
+	}
+}
+
+// The help said `quilzo webhook list | remove ID | test`, but an endpoint has
+// no id: neither the list nor its JSON shows one, and `webhook remove` takes
+// the address it was added with. An administrator following the help looked
+// for an id that is not there.
+func TestWebhookRemoveIsHelpedByTheAddressItTakes(t *testing.T) {
+	help := helpFor("webhook", []string{"remove"})
+	if !strings.Contains(help, "remove URL") || strings.Contains(help, "remove ID") {
+		t.Errorf("the help for webhook remove does not name the address it takes:\n%s", help)
+	}
+	err := hookRemove(t.TempDir(), nil)
+	if err == nil || !strings.Contains(err.Error(), "webhook remove URL") {
+		t.Errorf("webhook remove's own usage does not agree with the help: %v", err)
 	}
 }

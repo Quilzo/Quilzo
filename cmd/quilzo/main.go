@@ -605,7 +605,7 @@ agents and integrations
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
   quilzo webhook add https://...           tell another system when you
                                             publish, or when a form arrives
-  quilzo webhook list | remove ID | test   signed, timestamped, replay-proof
+  quilzo webhook list | remove URL | test  signed, timestamped, replay-proof
 
 security posture
   quilzo config show | list                everything settable, and its default
