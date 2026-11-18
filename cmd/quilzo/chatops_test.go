@@ -179,6 +179,19 @@ func TestDeclaringAChatbotOverTheInterfaceKeepsWhatItIsNotGiven(t *testing.T) {
 		a.Refusal != "Ask us" {
 		t.Errorf("what it was not given was cleared: %+v", a)
 	}
+	// Sent as null, an argument is not given either, as the schema check
+	// reads it: a client that fills in every argument it leaves out with
+	// null cleared the pages the chatbot must never read.
+	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "help", "title": "Help, again", "greeting": nil, "instructions": nil,
+			"pages": nil, "exclude": nil, "refusal": nil}); merr != nil {
+		t.Fatal(merr.Message)
+	}
+	a, _ = loadAssistant(root, "help")
+	if a.Title != "Help, again" || strings.Join(a.Exclude, ",") != "returns" || a.Instructions != "Be brief." ||
+		a.Greeting != "Hello" || a.Refusal != "Ask us" {
+		t.Errorf("what it was sent as null was cleared: %+v", a)
+	}
 	// A new one still needs its title, as everywhere.
 	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_write", "declare_assistant",
 		map[string]any{"name": "other"}); merr == nil {

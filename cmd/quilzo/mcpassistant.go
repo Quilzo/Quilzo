@@ -197,10 +197,13 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		// must never read, and its instructions, and it then answered from
 		// the pages it had been kept from. Given empty, a setting is
 		// cleared, as asked. What it may be given is what an author may
-		// build on every surface (assistant.Building).
+		// build on every surface (assistant.Building). Sent as null, an
+		// argument is not given, as the schema check reads it: a client
+		// that fills every argument it leaves out with null cleared the
+		// pages the chatbot must never read all the same.
 		bot.Name = name
 		for _, k := range assistant.Building {
-			if _, ok := a[k]; ok {
+			if v, ok := a[k]; ok && v != nil {
 				bot.Build(k, str(k))
 			}
 		}
