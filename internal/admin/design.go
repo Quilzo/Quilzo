@@ -507,6 +507,12 @@ func (s *Server) handleDesignGenerate(w http.ResponseWriter, r *http.Request) {
 		next[k] = v
 	}
 	for k, v := range generated {
+		// The veil over a backdrop comes with a palette whose words need a
+		// stronger one than the shipped, and a stronger one the site chose
+		// is kept, as `quilzo theme generate` keeps it.
+		if k == "scrim-strength" {
+			v = theme.StrongerVeil(overrides[k], v)
+		}
 		next[k] = v
 	}
 	th, problems := theme.New(next, s.siteFamilies())
@@ -519,7 +525,11 @@ func (s *Server) handleDesignGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditPub(p, "theme.generate", "/", map[string]string{"seed": seed, "scheme": r.FormValue("scheme"), "contrast": r.FormValue("contrast")})
-	s.designRedirect(w, r, "A new palette from "+seed+" is in place", "")
+	said := "A new palette from " + seed + " is in place"
+	if _, veiled := generated["scrim-strength"]; veiled {
+		said += ", with a veil of " + next["scrim-strength"] + " over a backdrop, as strong as the words on it need"
+	}
+	s.designRedirect(w, r, said, "")
 }
 
 // handleDesignInstall writes a starter's markup and its palette.
