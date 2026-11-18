@@ -3521,10 +3521,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	var changes []site.Change
-	if draft != "" {
-		changes, _ = site.Diff(s.Store, live, draft)
-	}
+	changes := s.changesTo(draft)
 
 	reports, a11yErr := s.checkAll(draft)
 	a11yUnavailable := ""
@@ -3544,6 +3541,21 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
 		"Nothing":    draft == "" || draft == live,
 	})
+}
+
+// changesTo is what publishing commit would change on the live site, as
+// Review lists it.
+//
+// One function for Review and for every refusal drawn on the same screen.
+// The refusals were rendered without it, so the one asking for a reason to
+// publish pages with no provenance said "No content differences" at the
+// moment the person was asked to write that reason against them.
+func (s *Server) changesTo(commit string) []site.Change {
+	if commit == "" {
+		return nil
+	}
+	changes, _ := site.Diff(s.Store, s.Store.GetRef(site.RefLive), commit)
+	return changes
 }
 
 // checkAll renders every page and runs the accessibility checks.
@@ -3705,6 +3717,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": ferr.Error()})
 			s.render(w, r, "review.html", map[string]any{"Status": http.StatusConflict,
 				"Nav": "review", "Title": "Review", "Principal": p,
+				"Changes":    s.changesTo(s.Store.GetRef(site.RefDraft)),
 				"CanPublish": false, "Error": ferr.Error()})
 			return
 		}
@@ -3777,6 +3790,14 @@ func (s *Server) showRefusal(w http.ResponseWriter, r *http.Request, ref *publis
 // the live ref with none of these, so a draft Publish refused went live
 // from there, straight from the draft or by way of staging.
 func (s *Server) publishChecks(p principal, draft, reason string) (waived []string, refusal *publishRefusal) {
+	// Every refusal drawn on Review shows what would go live, as Review did
+	// before the button was pressed: here once rather than at each of the
+	// refusals below, which had all left it out.
+	defer func() {
+		if refusal != nil && refusal.page == "review.html" && refusal.data["Changes"] == nil {
+			refusal.data["Changes"] = s.changesTo(draft)
+		}
+	}()
 	// Each page the publish would change, asked about its own path: a deny
 	// of publishing on /legal is not seen by the caller's check on "/".
 	if denied := s.deniedChanges(p, draft); len(denied) > 0 {
