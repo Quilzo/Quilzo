@@ -249,3 +249,32 @@ func TestOneAdministratorCannotEnrolAPasskeyForAnother(t *testing.T) {
 		t.Error("an approved link was received twice")
 	}
 }
+
+// The sign-in page an enrolment sends somebody to says their passkey was
+// added, which the enrolment page said for the moment before it left.
+//
+// The enrolment page said "Added. Sign in with it now." and went to the
+// sign-in page at once, which said nothing of it: whoever had just added a
+// passkey saw the message flash and a page that could have been the one
+// they had before.
+func TestTheSignInPageAfterEnrollingSaysThePasskeyWasAdded(t *testing.T) {
+	srv := enrolling(t)
+	secret, _, err := srv.Enrol.Issue("dana", "editor", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := newFake(t, "dana-key").enrol(t, srv, secret)
+	if w.Code != http.StatusOK {
+		t.Fatalf("enrolling: %d %s", w.Code, w.Body)
+	}
+	next, _ := decodeBody(t, w)["next"].(string)
+	if !strings.HasPrefix(next, "/signin/passkey") {
+		t.Fatalf("control: an enrolment goes on to %q", next)
+	}
+	if page := get(t, srv, next, "").Body.String(); !strings.Contains(page, "Your passkey was added") {
+		t.Errorf("the sign-in page an enrolment goes on to does not say the passkey was added:\n%s", page)
+	}
+	if page := get(t, srv, "/signin/passkey", "").Body.String(); strings.Contains(page, "Your passkey was added") {
+		t.Error("the sign-in page says a passkey was added when nobody has just added one")
+	}
+}
