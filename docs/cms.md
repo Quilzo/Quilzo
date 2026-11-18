@@ -1372,7 +1372,11 @@ since does not have their launch published for them — and of the identity the
 server runs as, and it carries the publisher role and nothing more. A server
 started with no token that may publish fires nothing, and the Publishing screen
 says so where the entry is added and beside each one past its time. Every gate
-runs then, against the content as it stands. A deployment that would rather
+runs then, against the content as it stands; pages with no provenance, which
+is every page saved by hand until somebody marks it, are said when the entry is
+added, and a publish of them is scheduled as it is made by hand, on a reason
+(`quilzo schedule add 9h --force-unmarked --reason "..."`, or the Schedule
+form's) that is applied when it fires and recorded with it. A deployment that would rather
 publish from a timer of its own turns off `schedule.in_server` and runs
 `quilzo schedule run`; the two take the same lock, so an entry is never
 published twice. The Publishing screen lists what fired in the last thirty

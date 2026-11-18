@@ -66,11 +66,28 @@ func (r *Refused) Unwrap() error { return r.Err }
 // command line did not, so one note was kept two ways.
 func Queue(update func(func(*Schedule) error) error, commit string, at time.Time, by Who,
 	note string, now time.Time) error {
+	return QueueWaiving(update, commit, at, by, note, "", now)
+}
+
+// QueueWaiving is Queue for an entry that publishes pages with no
+// provenance on the reason given (Entry.UnmarkedReason), set in the same
+// change to the schedule as the entry, so no timer can fire it in between
+// without the waiver it was scheduled with. An empty reason is no waiver.
+func QueueWaiving(update func(func(*Schedule) error) error, commit string, at time.Time, by Who,
+	note, unmarkedReason string, now time.Time) error {
 
 	note = strings.TrimSpace(note)
+	unmarkedReason = strings.TrimSpace(unmarkedReason)
 	var refused error
 	if err := update(func(s *Schedule) error {
 		refused = s.Add(commit, at, by, note, now)
+		if refused == nil && unmarkedReason != "" {
+			for i := range s.Entries {
+				if !s.Entries[i].Done && s.Entries[i].Commit == commit {
+					s.Entries[i].UnmarkedReason = unmarkedReason
+				}
+			}
+		}
 		return refused
 	}); err != nil {
 		if refused != nil {
@@ -102,6 +119,18 @@ func Detail(commit string, at time.Time, note, by string) map[string]string {
 		"note": plaintext.Clip(strings.Join(strings.Fields(note), " "), MaxNote, "…"),
 		"by":   by,
 	}
+}
+
+// DetailWaiving is Detail for an entry that publishes pages with no
+// provenance on a stated reason, which the record names beside the rest,
+// clipped as the note is.
+func DetailWaiving(commit string, at time.Time, note, by, unmarkedReason string) map[string]string {
+	d := Detail(commit, at, note, by)
+	if r := strings.TrimSpace(unmarkedReason); r != "" {
+		d["waives"] = "unmarked-ai"
+		d["reason"] = plaintext.Clip(strings.Join(strings.Fields(r), " "), MaxNote, "…")
+	}
+	return d
 }
 
 // CancelDetail is what the audit record of cancelling one says.

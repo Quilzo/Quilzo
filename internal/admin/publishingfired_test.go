@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/schedule"
 )
 
@@ -123,5 +124,44 @@ func TestTheScheduleSaysWhenThisServerCannotPublishIt(t *testing.T) {
 	}
 	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, why) {
 		t.Errorf("scheduling on a server that cannot publish it says %q", loc)
+	}
+}
+
+// The Schedule form takes the reason a hand-written launch needs, as Review
+// → Publish does, and says when an entry will be refused for pages with no
+// provenance: it had only a note, so a scheduled publish of pages edited in
+// the browser was refused at its time with advice nobody could act on.
+func TestTheScheduleFormTakesTheReasonForPagesWithNoProvenance(t *testing.T) {
+	srv, tok := scoped(t, auth.Binding{Principal: "editor", Role: auth.RoleAdmin, Resource: "/"})
+	sch := &schedule.Schedule{}
+	srv.Publishing.Schedule = func() (*schedule.Schedule, error) { return sch, nil }
+	srv.Publishing.UpdateSchedule = func(fn func(*schedule.Schedule) error) error { return fn(sch) }
+	srv.LoadProvenance = func() (*provenance.Index, error) { return provenance.NewIndex(), nil }
+	var detail map[string]string
+	srv.Audit = func(action, _ string, d map[string]string) {
+		if action == "schedule.add" {
+			detail = d
+		}
+	}
+
+	w := postForm(t, srv, "/publishing/schedule", tok["editor"], url.Values{"when": {"1h"}}.Encode())
+	if len(sch.Entries) != 1 {
+		t.Fatalf("not scheduled: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "no provenance") {
+		t.Errorf("scheduling pages with no provenance does not say it will be refused: %q", loc)
+	}
+
+	sch.Entries = nil
+	w = postForm(t, srv, "/publishing/schedule", tok["editor"],
+		url.Values{"when": {"1h"}, "reason": {"written by hand, marking pending"}}.Encode())
+	if len(sch.Entries) != 1 || sch.Entries[0].UnmarkedReason != "written by hand, marking pending" {
+		t.Fatalf("the reason was not kept with the entry: %+v", sch.Entries)
+	}
+	if detail["waives"] != "unmarked-ai" || detail["reason"] != "written by hand, marking pending" {
+		t.Errorf("the record of scheduling does not name the waiver: %v", detail)
+	}
+	if body := getPage(t, srv, "/publishing", tok["editor"]); !strings.Contains(body, "written by hand, marking pending") {
+		t.Error("the pending entry does not show the reason it will publish on")
 	}
 }

@@ -99,7 +99,7 @@ what production serves is the bytes that were checked — not a copy of them.</p
   <tr>
     <th scope="row">{{when .Entry.At}}</th>
     <td data-label="Commit"><code>{{short .Entry.Commit}}</code></td>
-    <td data-label="By">{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}</td>
+    <td data-label="By">{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}{{if .Entry.UnmarkedReason}}<div class="hint">publishes pages with no provenance, because: {{.Entry.UnmarkedReason}}</div>{{end}}</td>
     <td>
       {{if .Stale}}<span class="warn">stale — the draft has moved to
         {{short .Current}} since this was scheduled, so it describes content
@@ -154,6 +154,8 @@ what production serves is the bytes that were checked — not a copy of them.</p
          placeholder="48h or 2026-09-01T09:00:00Z"></span>
   <span class="pair"><label for="s-note">Note</label>
   <input id="s-note" name="note" placeholder="why, for whoever finds this next week"></span>
+  <span class="pair"><label for="s-reason">Reason to publish pages with no provenance</label>
+  <input id="s-reason" name="reason" placeholder="recorded with the publish"></span>
   <button type="submit">Schedule</button>
 </form>
 <p class="hint">
