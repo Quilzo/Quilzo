@@ -87,7 +87,7 @@ type HeldError struct {
 }
 
 func (e *HeldError) Error() string {
-	return fmt.Sprintf("another process has held %s for %s; if a quilzo is stopped (Ctrl-Z) or stuck, "+
+	return fmt.Sprintf("another process has held %s for %s; if it is stopped (Ctrl-Z) or stuck, "+
 		"end it and try again, or wait longer with QUILZO_LOCK_WAIT", e.Path, e.Waited)
 }
 
