@@ -28,8 +28,8 @@
 </table>
 </div>
 {{else}}
-<p class="notice">No chatbots yet. Create one below; it starts private, so you
-  can try it here before anybody else can.</p>
+<p class="notice">No chatbots yet.{{if .CanSave}} Create one below; it starts private, so you
+  can try it here before anybody else can.{{end}}</p>
 {{end}}
 
 {{if .CanSave}}

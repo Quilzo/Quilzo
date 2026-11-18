@@ -331,6 +331,11 @@ var commandNeeds = map[string]need{
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
+	// What visitors could not get answered is their words, masked, for
+	// whoever may read the Inbox, as on the Chatbots screen and over the
+	// agent interface (list_chatbot_gaps). It took the row above, so an
+	// author was refused here what the browser let them read and close.
+	"assistant gaps": {action: auth.ActEditDraft},
 	// What a visitor said to a person is personal data, and answering it is
 	// speaking for the business. Edit-draft, like the chatbots themselves.
 	"inbox": {action: auth.ActEditDraft},

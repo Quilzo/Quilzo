@@ -70,18 +70,41 @@ type Assistants struct {
 }
 
 func (s *Server) assistantsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantsGate(w, r, auth.ActEditDraft)
+}
+
+// chatbotsReady gates the list of chatbots and a chatbot's own screen,
+// where it is tried: a reader's, as `assistant list` and `assistant ask`
+// are on the command line and list_assistants and ask_assistant over the
+// agent interface. They asked for edit-draft, so a reader was refused here
+// every chatbot those two let them list and try. What visitors could not
+// get answered stays an author's (gapsReadable), and changing a chatbot a
+// publisher's (assistantWrite).
+func (s *Server) chatbotsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantsGate(w, r, auth.ActView)
+}
+
+// assistantsGate is a chatbot screen for somebody who may act.
+func (s *Server) assistantsGate(w http.ResponseWriter, r *http.Request, act auth.Action) (principal, bool) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	return p, true
 }
 
+// gapsReadable is whether p reads what a chatbot's visitors could not get
+// answered, and how they rated its answers: visitors' words, masked, for
+// whoever may read the Inbox, as `assistant gaps` and list_chatbot_gaps ask.
+func (s *Server) gapsReadable(p principal) bool {
+	return s.allows(p, auth.ActEditDraft, "/")
+}
+
 func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantsReady(w, r)
+	p, ok := s.chatbotsReady(w, r)
 	if !ok {
 		return
 	}
@@ -128,7 +151,7 @@ func measuredBy(measured func(string) string, names []string) map[string]string 
 // handleAssistant shows one assistant: its settings, its actions, and the
 // test console.
 func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantsReady(w, r)
+	p, ok := s.chatbotsReady(w, r)
 	if !ok {
 		return
 	}
@@ -185,7 +208,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// What it could not answer, for whoever may read the Inbox.
-	if s.Assistants.Gaps != nil {
+	if s.Assistants.Gaps != nil && s.gapsReadable(p) {
 		if groups, on, gerr := s.Assistants.Gaps(a.Name); gerr == nil {
 			var rows []gapRow
 			for _, g := range groups {
@@ -196,7 +219,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 			data["Gaps"], data["GapsOn"] = rows, on
 		}
 	}
-	if s.Assistants.Ratings != nil {
+	if s.Assistants.Ratings != nil && s.gapsReadable(p) {
 		if h, d := s.Assistants.Ratings(a.Name); h+d > 0 {
 			data["Helped"], data["DidNot"] = h, d
 			data["HelpedShare"] = (100*h + (h+d)/2) / (h + d)

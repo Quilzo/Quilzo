@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/mcp"
 )
@@ -348,5 +349,57 @@ func TestTryingAChatbotIsChargedToWhoeverTriesIt(t *testing.T) {
 		if strings.Join(who, ",") != "person:sam" {
 			t.Errorf("trying the chatbot on a screen was charged to %v", who)
 		}
+	}
+}
+
+// chatbotPeople is a published shop with a private chatbot, desk, and a
+// person on each rung: dana the administrator, pat a publisher, ed an author
+// and rita a reader, each with their own token.
+func chatbotPeople(t *testing.T) (root string, tokens map[string]string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root = publishedShop(t)
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	if err := cmdAssistant(root, []string{"add", "desk", "--title", "Desk", "--exclude", "returns"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "dana", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	tokens = map[string]string{"dana": personToken(t, root, "dana", auth.RoleAdmin)}
+	flagToken = tokens["dana"]
+	for who, role := range map[string]auth.Role{"pat": auth.RolePublisher, "ed": auth.RoleAuthor, "rita": auth.RoleReader} {
+		if err := cmdAuth(root, []string{"grant", who, string(role)}); err != nil {
+			t.Fatal(err)
+		}
+		tokens[who] = personToken(t, root, who, role)
+	}
+	return root, tokens
+}
+
+// chatbotAs runs `quilzo assistant ARGS` as who: through the gate in front
+// of every command, as the binary does, and then the command.
+func chatbotAs(t *testing.T, root string, tokens map[string]string, who string, args ...string) error {
+	t.Helper()
+	flagToken = tokens[who]
+	if err := authoriseCommand(root, "assistant", args); err != nil {
+		return err
+	}
+	return cmdAssistant(root, args)
+}
+
+// Reading and closing what a chatbot could not answer is an author's on
+// the command line, as it is on the Chatbots screen and over the agent
+// interface: the gaps are visitors' words, for whoever may read the Inbox.
+// The command's gate took the row for declaring a chatbot, which is a
+// publisher's, so an author was refused here what the browser let them do.
+func TestAnAuthorReadsAndClosesAChatbotsGapsOnTheCommandLine(t *testing.T) {
+	root, tokens := chatbotPeople(t)
+	if err := chatbotAs(t, root, tokens, "ed", "gaps", "desk"); err != nil {
+		t.Errorf("an author was refused the gaps: %v", err)
+	}
+	if err := chatbotAs(t, root, tokens, "rita", "gaps", "desk"); err == nil {
+		t.Error("a reader read visitors' unanswered questions")
 	}
 }

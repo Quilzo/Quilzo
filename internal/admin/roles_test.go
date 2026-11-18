@@ -37,8 +37,11 @@ func TestEachRoleReachesItsOwnWorkAndNoMore(t *testing.T) {
 			"/", "/records", "/types", "/media", "/languages",
 			"/review", "/publishing", "/history", "/transfer",
 			"/provenance", "/playground", "/profile",
+			// Listing the chatbots and trying one, as `assistant list`
+			// and `assistant ask` let a reader.
+			"/assistants",
 		},
-		auth.RoleAuthor:    {"/assist", "/settings", "/assistants", "/decisions", "/analytics", "/experiments", "/personalise"},
+		auth.RoleAuthor:    {"/assist", "/settings", "/decisions", "/analytics", "/experiments", "/personalise"},
 		auth.RolePublisher: {},
 		auth.RoleAdmin: {
 			"/security", "/security/scan", "/security/policy",

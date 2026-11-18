@@ -4,11 +4,15 @@
 package admin
 
 import (
+	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gaps"
 	"github.com/quilzo/quilzo/internal/gateway"
 )
 
@@ -68,5 +72,53 @@ func TestTheConsoleAsksAsThePersonTryingIt(t *testing.T) {
 	get(t, srv, "/assistants/help?q="+url.QueryEscape("can I return opened ink"), token)
 	if len(fa.triedBy) != 1 || fa.triedBy[0] == "" {
 		t.Fatalf("the console asked for the model for %q", fa.triedBy)
+	}
+}
+
+// A reader may list the chatbots and try one on the Chatbots screen, as on
+// the command line and over the agent interface, and what visitors could
+// not get answered stays an author's, as it is on those two. The screen
+// refused a reader every chatbot while `assistant list` and `assistant ask`
+// answered them, so who could try a chatbot depended on where they asked.
+func TestAReaderTriesAChatbotOnTheScreenAndReadsNoVisitorsWords(t *testing.T) {
+	fa := &fakeAssistants{set: &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help"}}}}
+	closed := 0
+	wire := func(srv *Server) {
+		srv.Assistants = fa.wire()
+		srv.Assistants.Gaps = func(string) ([]gaps.Group, bool, error) {
+			return []gaps.Group{{Key: "zqbarra", Count: 2, Questions: []string{"Do you ship to Zqbarra island?"}}}, true, nil
+		}
+		srv.Assistants.Ratings = func(string) (int, int) { return 3, 1 }
+		srv.Assistants.CheckGaps = func(context.Context, string, string) (int, int, error) { return 0, 0, nil }
+		srv.Assistants.CloseGap = func(string, string, string) error { closed++; return nil }
+	}
+	reader, token := asRole(t, auth.RoleReader)
+	wire(reader)
+	if w := get(t, reader, "/assistants", token); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "/assistants/help") {
+		t.Errorf("a reader was refused the list of chatbots (%d)", w.Code)
+	}
+	w := get(t, reader, "/assistants/help?q="+url.QueryEscape("can I return opened ink"), token)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "cannot be returned") {
+		t.Fatalf("a reader could not try the chatbot (%d)", w.Code)
+	}
+	body := w.Body.String()
+	for _, words := range []string{"Zqbarra", "Whether its answers helped", "/assistants/save", "/assistants/action"} {
+		if strings.Contains(body, words) {
+			t.Errorf("a reader is shown %q", words)
+		}
+	}
+	decideForm(t, reader, "/assistants/gaps", token, url.Values{"name": {"help"}, "do": {"close"}, "key": {"zqbarra"}})
+	if closed != 0 {
+		t.Error("a reader closed a group of visitors' questions")
+	}
+
+	author, token := asRole(t, auth.RoleAuthor)
+	wire(author)
+	if body := get(t, author, "/assistants/help", token).Body.String(); !strings.Contains(body, "Zqbarra") {
+		t.Error("an author is not shown what the chatbot could not answer")
+	}
+	decideForm(t, author, "/assistants/gaps", token, url.Values{"name": {"help"}, "do": {"close"}, "key": {"zqbarra"}})
+	if closed != 1 {
+		t.Error("an author could not close a group")
 	}
 }

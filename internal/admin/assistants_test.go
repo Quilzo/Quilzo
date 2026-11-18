@@ -149,10 +149,17 @@ func TestOnlyAPublisherChangesAChatbot(t *testing.T) {
 	if a, _ := fa.set.Get("help"); a.Public {
 		t.Fatal("an author made a chatbot public")
 	}
+	// A reader lists and tries them, as on the command line, and changes
+	// nothing.
 	reader, rtoken := asRole(t, auth.RoleReader)
 	reader.Assistants = fa.wire()
-	if w := get(t, reader, "/assistants", rtoken); w.Code == http.StatusOK {
-		t.Fatal("a reader opened the chatbots screen")
+	if w := get(t, reader, "/assistants", rtoken); w.Code != http.StatusOK {
+		t.Fatalf("a reader could not list the chatbots: %d", w.Code)
+	}
+	decideForm(t, reader, "/assistants/save", rtoken, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Mine now"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Help" {
+		t.Fatal("a reader changed a chatbot")
 	}
 }
 
