@@ -1118,10 +1118,12 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	dim, yellow, reset := n.Dim(), n.Yellow(), n.Reset()
 	n.Human("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	// Whose it is goes with the rest of what is said of the token, on
+	// stderr, so stdout still holds the token alone.
 	if tok.Kind == auth.KindPerson {
-		fmt.Printf("  %s%s's own, for them to use themselves%s\n", dim, tok.Principal, reset)
+		n.Human("  %s%s's own, for them to use themselves%s\n", dim, tok.Principal, reset)
 	} else {
-		fmt.Printf("  %sa program's; issue it with --person if it is %s's own, to use themselves%s\n",
+		n.Human("  %sa program's; issue it with --person if it is %s's own, to use themselves%s\n",
 			dim, tok.Principal, reset)
 	}
 	if tok.Key != "" {
