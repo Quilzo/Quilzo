@@ -6,6 +6,8 @@ package medialib
 import (
 	"os"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/media"
 )
 
 // A record whose bytes are gone is not a file the library holds. Arriving
@@ -33,5 +35,21 @@ func TestAnUploadIsNotAlreadyHereWhenItsBytesAreGone(t *testing.T) {
 	}
 	if arriving.Alt != upload.Alt {
 		t.Errorf("what arrives is %q, not the upload", arriving.Alt)
+	}
+}
+
+// A recording's still is named as its still. It was RECORDING-poster.png,
+// which is what somebody names the poster they upload for it, so the
+// library listed two pictures of one name at two sizes and nothing said
+// which was which.
+func TestAStillIsNamedAsTheRecordingsStill(t *testing.T) {
+	for name, want := range map[string]string{
+		"loop.mp4":           "loop-still.png",
+		"loop-1280x720.webm": "loop-1280x720-still.png",
+		"talk":               "talk-still.png",
+	} {
+		if got := posterName(media.File{Name: name}); got != want {
+			t.Errorf("the still of %s is named %s, not %s", name, got, want)
+		}
 	}
 }

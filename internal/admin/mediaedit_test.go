@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -278,5 +279,59 @@ func TestTheUploadFormStatesTheLimitItEnforces(t *testing.T) {
 	// the form will carry.
 	if !strings.Contains(html, "quilzo media add") {
 		t.Error("the form does not say what to do with a longer recording")
+	}
+}
+
+// The library lists what was put in it. Every picture's narrower copies were
+// cards of their own, each with "rights: undeclared", so three uploads read
+// as twelve files; and a recording's still was a picture like any other,
+// whose name could be the name of a poster somebody uploaded. The copies are
+// listed with the picture they were made from, and shown as cards when
+// asked for, as `quilzo media list --all` shows them; a still says whose it
+// is.
+func TestTheLibraryListsPicturesNotTheirNarrowerCopies(t *testing.T) {
+	srv, token := setup(t)
+	id := withPicture(t, srv)
+	lib := libraryOf(t, srv)
+	still, err := media.Accept("loop-still.png", pixelPNG(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	still.Alt, still.PosterOf = "The first frame of the loop", id
+	if err := lib.Put(still, pixelPNG()); err != nil {
+		t.Fatal(err)
+	}
+	files, err := lib.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies := 0
+	for _, f := range files {
+		if f.RenditionOf != "" {
+			copies++
+		}
+	}
+	if copies == 0 {
+		t.Fatal("the picture has no narrower copies, so this tests nothing")
+	}
+	html := get(t, srv, "/media", token).Body.String()
+	if n := strings.Count(html, `class="media-card"`); n != 2 {
+		t.Errorf("%d cards for two pictures and %d narrower copies", n, copies)
+	}
+	if !strings.Contains(html, "2 files") {
+		t.Error("the library does not count two files")
+	}
+	if strings.Count(html, "rights: undeclared") > 1 {
+		t.Error("a narrower copy is listed with rights of its own")
+	}
+	if !strings.Contains(html, "still from shot.png") {
+		t.Error("the still does not say whose it is")
+	}
+	if !strings.Contains(html, fmt.Sprintf("%d narrower cop", copies)) || !strings.Contains(html, `href="/media?all=1"`) {
+		t.Error("the copies are not said, or there is no way to see them")
+	}
+	all := get(t, srv, "/media?all=1", token).Body.String()
+	if n := strings.Count(all, `class="media-card"`); n != 2+copies {
+		t.Errorf("asked for everything, %d cards for %d files", n, 2+copies)
 	}
 }
