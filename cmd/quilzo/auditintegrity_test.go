@@ -642,3 +642,28 @@ func TestVerifySaysARewriteOfTheWholeChainWouldVerifyToo(t *testing.T) {
 		t.Errorf("verify does not say this account could rewrite the whole chain:\n%s", human)
 	}
 }
+
+// verify of a store whose log is not made yet says this account would
+// write it, not that it is another account's.
+//
+// It asked whether this account could append to the log, which it cannot
+// to a file that is not there, so verify straight after `quilzo init`
+// said "the log is another account's, which this one cannot rewrite" of
+// the log this process makes and writes itself on its first record.
+func TestVerifyOfALogNotMadeYetDoesNotCallItAnotherAccounts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "objects"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(auditPath(root)) {
+		t.Fatal("control: the store already has a log")
+	}
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	said := strings.Join(strings.Fields(human), " ")
+	if err != nil {
+		t.Fatalf("verify: %v\n%s", err, human)
+	}
+	if strings.Contains(said, "another account's") || !strings.Contains(said, "this account can write the log itself") {
+		t.Errorf("verify of a log this account would make:\n%s", human)
+	}
+}

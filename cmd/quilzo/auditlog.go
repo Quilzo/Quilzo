@@ -519,10 +519,16 @@ func auditVerify(root string) error {
 		// unaltered. So the line says what a re-hash shows, and whether
 		// this account could have rewritten the lot, as the audit log
 		// screen says it beside its own "chain intact".
+		//
+		// Whether it could write the log as `logd status` asks it
+		// (mayWriteLog), and not whether it can append to the file: there
+		// is no file to append to before the first record, and verify
+		// straight after `quilzo init` called the log this process makes
+		// another account's.
 		w.Human("  %schain intact%s\n", green, reset)
 		w.Human("  %severy entry re-hashes and links to the one before it, so none was\n"+
 			"  altered, inserted or removed without every entry after it rewritten too%s\n", dim, reset)
-		if canAppend(auditPath(root)) {
+		if mayWriteLog(auditPath(root)) {
 			w.Human("  %sthis account can write the log itself, so a rewrite of the whole chain\n"+
 				"  would verify as well: a head kept off this machine is what shows otherwise%s\n", yellow, reset)
 		} else {
