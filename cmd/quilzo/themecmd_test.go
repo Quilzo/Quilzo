@@ -265,3 +265,33 @@ func TestGenerateBringsTheVeilItsWordsNeed(t *testing.T) {
 		t.Errorf("after generating over a 99%% veil the file holds %v", v)
 	}
 }
+
+// A generated palette does not say its words are readable over a backdrop
+// when the veil the site chose for them leaves them below their ratio.
+//
+// `theme generate` keeps a veil colour the site set, and works out the
+// veil's strength against the page colour the palette brings. With a veil
+// of its own, black under a light page's dark words, the command said every
+// contrast pair was checked "over a backdrop too" and then, two lines down,
+// that words over a backdrop were below their ratio.
+func TestGenerateDoesNotPromiseABackdropItsVeilFails(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	if err := writeThemeFile(dir, map[string]string{"scrim": "#000000"}); err != nil {
+		t.Fatal(err)
+	}
+	said, err := humanOutput(t, func() error {
+		return cmdTheme(root, []string{"generate", "#3b6ea5", "--dir", dir})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !theme.Blocks(savedTheme(t, dir).CheckBackdrop()) {
+		t.Fatal("dark words over a black veil passed over a backdrop, so this test no longer asks what it says")
+	}
+	if strings.Contains(said, "over a backdrop too") || strings.Contains(said, "as strong as the words on it need") {
+		t.Errorf("a palette whose words fail over the site's veil was said to pass there:\n%s", said)
+	}
+	if !strings.Contains(said, "words over a backdrop picture or video are now below their ratio") {
+		t.Errorf("the failure over a backdrop is not said:\n%s", said)
+	}
+}

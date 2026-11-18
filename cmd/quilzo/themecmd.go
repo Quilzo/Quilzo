@@ -1037,10 +1037,18 @@ func themeGenerate(root string, args []string) error {
 	}
 	w.Human("%s%d colour(s) generated from %s%s\n",
 		bold, len(colours), pos[0], reset)
-	w.Human("  %slight and dark, and every contrast pair checked, over a backdrop too%s\n", dim, reset)
-	if veil != "" {
-		w.Human("  %sthe veil over a backdrop picture or video is %s, as strong as the "+
-			"words on it need%s\n", dim, next["scrim-strength"], reset)
+	// Over a backdrop only when it is so. The strength is worked out against
+	// the page colour the palette brings, and a veil colour the site set is
+	// kept: black under a light page's dark words, and this said every pair
+	// passed over a backdrop and then, two lines down, that they did not.
+	if theme.Blocks(th.CheckBackdrop()) {
+		w.Human("  %slight and dark, and every contrast pair checked on the page%s\n", dim, reset)
+	} else {
+		w.Human("  %slight and dark, and every contrast pair checked, over a backdrop too%s\n", dim, reset)
+		if veil != "" {
+			w.Human("  %sthe veil over a backdrop picture or video is %s, as strong as the "+
+				"words on it need%s\n", dim, next["scrim-strength"], reset)
+		}
 	}
 	sayBackdrop(th)
 	w.Human("\n  %ssee it:      quilzo theme show%s\n", dim, reset)
