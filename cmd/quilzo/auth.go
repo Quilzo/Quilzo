@@ -285,13 +285,15 @@ func authGrant(root string, args []string) error { return authGrantAs(root, args
 //
 // The first binding a store nobody has entered is given, a grant or a deny,
 // makes it a store with people, and one with two factors from then
-// (twoFactorsFromNow), as `quilzo init --admin` makes it. Only init asked. A
-// store whose folders another command made, `quilzo demo` or `quilzo log`,
-// and whose first administrator came from `quilzo auth grant owner admin`
-// and a token, never ran init: the first `quilzo serve` took it for an
-// upgraded installation and wrote the grace, and for two weeks a token alone
-// opened the admin of a store a day old. A store that already has people
-// keeps whatever it was given.
+// (twoFactorsFromNow), as `quilzo init` makes it. Only init asked. A store
+// that `quilzo demo` or `quilzo log` made, as they did before only init made
+// one (needStore), and whose first administrator came from `quilzo auth
+// grant owner admin` and a token, never ran init: the first `quilzo serve`
+// took it for an upgraded installation and wrote the grace, and for two
+// weeks a token alone opened the admin of a store a day old. Such a store,
+// or one from before two factors were the rule, can still come to its first
+// grant with nobody in it and no date, or with a grace nobody needs. A store
+// that already has people keeps whatever it was given.
 func authGrantAs(root string, args []string, denying bool) (err error) {
 	if nobodyHasBeenHere(root) {
 		defer func() {

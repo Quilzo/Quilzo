@@ -1106,6 +1106,11 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// alternative — asking "may this caller do that?" at each step — is the
 	// arrangement that put the content-type gate in the CLI and not in the
 	// API. See agentnarrow.go.
+	//
+	// As far as the access policy lets them go now, and not only as far as
+	// their token says (Caller.carried): for a run, and for what `agent
+	// could` and the model door say of one, which build it here too.
+	caller = caller.carried(root)
 	before := m
 	m = narrowedBy(m, caller)
 	withheld := withholdWrites(root, &m, caller)
@@ -1201,6 +1206,11 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if from == nil {
 		from = &agentResume{}
 	}
+	// As far as the access policy lets whoever runs it go now, and not only
+	// as far as their token says (Caller.carried): before what bounded the
+	// run's starter is applied, so a taker the policy gives nothing in the
+	// starter's part of the site is refused rather than lent the token's.
+	caller = caller.carried(root)
 	// A run whoever started it could only read for goes on reading only,
 	// whoever takes it on (agent.Record's ReadOnly): letting one step go
 	// ahead decides that step, and lends the run nothing more.

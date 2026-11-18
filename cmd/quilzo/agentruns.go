@@ -214,7 +214,7 @@ func runAgentKeptFor(ctx context.Context, root, name, goal string, withModel, pr
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name,
 		Goal: goal, By: caller.Name, Started: started, Trigger: trigger, ReadOnly: caller.Limits.ReadOnly,
-		Bound: caller.bound()}}
+		Bound: caller.bound(root)}}
 	if withModel {
 		if m, _ := agentRunModel(root, name); m != nil {
 			k.rec.Model = m.Name()
@@ -513,14 +513,17 @@ func prepareReplay(root, id string, n int, caller *Caller) (*keptRun, agent.Reco
 	// record kept neither, so a run dana started confined to /about and
 	// ran again, or one a read-only token ran again, was bounded by nobody
 	// once it waited: sam answered it, and it wrote wherever sam may.
-	held, err := caller.within(prior.Bound)
+	// Whoever runs it again is held first to what the access policy lets
+	// them do now (Caller.carried), as the run itself is (executeAgentFrom),
+	// so a refusal here is the one the run would give.
+	held, err := caller.carried(root).within(prior.Bound)
 	if err != nil {
 		return nil, prior, err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
 		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
 		From:     fmt.Sprintf("%s@%d", id, n),
-		ReadOnly: prior.ReadOnly || caller.Limits.ReadOnly, Bound: held.bound()}}
+		ReadOnly: prior.ReadOnly || caller.Limits.ReadOnly, Bound: held.bound(root)}}
 	return k, from, nil
 }
 
@@ -921,7 +924,7 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 		return "", err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal, By: caller.Name,
-		Started: started, State: agent.Running, ReadOnly: caller.Limits.ReadOnly, Bound: caller.bound()}}
+		Started: started, State: agent.Running, ReadOnly: caller.Limits.ReadOnly, Bound: caller.bound(root)}}
 	if mm, _ := agentRunModel(root, name); mm != nil {
 		k.rec.Model = mm.Name()
 	}
