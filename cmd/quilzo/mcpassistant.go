@@ -63,7 +63,9 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			Questions []string `json:"questions"`
 			Last      string   `json:"last"`
 		}
-		var out []row
+		// None open is an empty list, as list_assistants gives for no
+		// chatbots: a nil slice marshalled to null.
+		out := []row{}
 		for _, g := range groups {
 			if g.Open() {
 				out = append(out, row{Key: g.Key, Asked: g.Count, Questions: g.Questions, Last: g.Last.Format("2006-01-02")})

@@ -33,6 +33,32 @@ func TestNoChatbotsListAsAnEmptyListOverTheInterface(t *testing.T) {
 	}
 }
 
+// A chatbot with nothing left unanswered lists no groups over the agent
+// interface as an empty list too. The groups were gathered into a nil
+// slice, so an agent asking which pages to write was answered null, as
+// list_assistants was on a site with no chatbots.
+func TestNothingUnansweredListsAsAnEmptyListOverTheInterface(t *testing.T) {
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help"}); err != nil {
+		t.Fatal(err)
+	}
+	keepGaps(t, root)
+	cfg, _ := loadConfig(root)
+	if err := cfg.Set("chatbot.gaps_agents", "true", "a gardener drafts the missing pages", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	text, merr := callTool(t, assistantMCP(t, root), "quilzo_read", "list_chatbot_gaps", map[string]any{"name": "help"})
+	if merr != nil {
+		t.Fatal(merr.Message)
+	}
+	if text != "[]" {
+		t.Fatalf("a chatbot with nothing unanswered listed %q", text)
+	}
+}
+
 // An evaluation given a file that is not there says so. A missing file
 // read as an empty one, so a mistyped path in a CI job was reported as a
 // file that "holds no cases", and a decider's evaluation went on with
