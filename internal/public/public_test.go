@@ -4,12 +4,14 @@
 package public
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
@@ -184,6 +186,37 @@ func TestManifestMakesTheSiteInstallable(t *testing.T) {
 	}
 	if !strings.Contains(get(st, "/", nil).Body.String(), `rel="manifest"`) {
 		t.Error("pages should link the manifest, or nothing offers to install")
+	}
+}
+
+// The short name is what an installed site is labelled under its icon, so it
+// is whole words of the name, or whole characters of it. It was the name's
+// first twelve bytes: "Brasserie Léon" was labelled "Brasserie L" and the
+// first half of an é, which reads as U+FFFD, and "Sample restaurant" was
+// labelled "Sample resta".
+func TestTheManifestShortNameIsWholeWords(t *testing.T) {
+	for name, want := range map[string]string{
+		"Brasserie Léon":               "Brasserie",
+		"Sample restaurant":            "Sample",
+		"Crumb & Co":                   "Crumb & Co",
+		"Café Lumière":                 "Café Lumière",
+		"Smith & Jones Ltd":            "Smith",
+		"Wunderbarkeitsladen":          "Wunderbarkei",
+		"Ölmühlenbetriebsgesellschaft": "Ölmühlenbe",
+	} {
+		st, _ := setup(t)
+		st.Name = name
+		var doc map[string]any
+		if err := json.Unmarshal(get(st, "/manifest.webmanifest", nil).Body.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := doc["short_name"].(string)
+		if got != want || !utf8.ValidString(got) {
+			t.Errorf("%q has the short name %q, not %q", name, got, want)
+		}
+		if doc["name"] != name {
+			t.Errorf("the name became %q", doc["name"])
+		}
 	}
 }
 
