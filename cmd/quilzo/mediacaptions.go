@@ -184,6 +184,33 @@ func removeTrack(root, videoID, trackID string) error {
 		return fmt.Errorf("%s carries no track %s",
 			shortID(video.ID), shortID(trackID))
 	}
+	// The last captions of a video the live site shows stay on. Tracks are
+	// on the video, which the running site reads for every page outside the
+	// content commit, so taking the last one off took the captions off the
+	// published page at once: no publish, no review, no accessibility gate,
+	// and the live commit unchanged, so neither history nor rollback could
+	// put them back. The refusal at the next publish, which this used to
+	// rely on, comes after the page is already being served without them.
+	// A silent video needs no captions, and one no live page shows is the
+	// draft's, which the publish gate checks.
+	after := video
+	after.Tracks = kept
+	if video.Captions() && !after.Captions() && !video.Silent() {
+		used, uerr := mediaInUse(root, video.ID)
+		if uerr != nil {
+			return fmt.Errorf("whether the live site shows %s could not be "+
+				"checked, so its last captions track stays on: %w", shortID(video.ID), uerr)
+		}
+		if used {
+			return errBlocked{fmt.Errorf(
+				"%s is shown on the live site and this is its last captions "+
+					"track: taking it off would take the captions off the "+
+					"published page now, with no publish.\n"+
+					"  attach its replacement first (quilzo media captions %s "+
+					"FILE --lang TAG), or publish pages that do not show it",
+				video.Name, shortID(video.ID))}
+		}
+	}
 	video.Tracks = kept
 	if err := putSameBytes(lib, video); err != nil {
 		return err

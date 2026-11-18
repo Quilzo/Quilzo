@@ -458,6 +458,11 @@ func mediaInUse(root, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Nothing published uses nothing, rather than being a question that
+	// could not be answered.
+	if s.GetRef(site.RefLive) == "" {
+		return false, nil
+	}
 	lib, err := openMedia(root)
 	if err != nil {
 		return false, err
@@ -472,9 +477,23 @@ func mediaInUse(root, id string) (bool, error) {
 	// A narrower copy is used when its parent is: no page names it, the
 	// browser chooses it from a srcset, and removing it would leave a
 	// candidate the browser may pick and fail to fetch.
-	if f, serr := lib.Stat(id); serr == nil && f.RenditionOf != "" {
+	f, serr := lib.Stat(id)
+	if serr == nil && f.RenditionOf != "" {
 		_, used := uses[f.RenditionOf]
 		return used, nil
+	}
+	// And a caption file is used when a video the live site shows carries
+	// it. No page names it either, the site reads it off the video; removed,
+	// it took the captions off the published page with no publish, which
+	// is the WCAG 1.2.2 failure the gate exists to refuse.
+	if serr == nil && f.Kind == media.Caption {
+		for _, u := range uses {
+			for _, t := range u.File.Tracks {
+				if t.ID == id {
+					return true, nil
+				}
+			}
+		}
 	}
 	return false, nil
 }

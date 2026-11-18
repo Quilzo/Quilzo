@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Attaching and taking off captions is recorded as whoever the command
@@ -239,5 +240,81 @@ func TestEveryMediaCommandTakesItsFlagsFirst(t *testing.T) {
 					c.name, heldFirst, heldAfter)
 			}
 		})
+	}
+}
+
+// Taking the last captions track off a video the live site shows is
+// refused, and so is removing that track's file from the library. A video's
+// tracks are read by the running site for every page, outside the content
+// commit, so either took the captions off the published page at once: no
+// publish, no review and no accessibility gate, the live content commit
+// unchanged so neither history nor rollback could bring them back, and the
+// command said the page "will not publish" while it stayed live without
+// them.
+func TestTheLastCaptionsOfALiveVideoStayOn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := append([]byte{0, 0, 0, 0x18}, []byte("ftypisom")...)
+	clip = append(clip, bytes.Repeat([]byte{0}, 64)...)
+	video, err := media.Accept("returns-explained.mp4", clip, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	vtt := []byte("WEBVTT\n\n00:00.000 --> 00:02.000\nOpened ink cannot be returned.\n")
+	track, err := media.Accept("returns-explained.vtt", vtt, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Put(video, clip); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Put(track, vtt); err != nil {
+		t.Fatal(err)
+	}
+	if err := mediaCaptions(root, []string{video.ID, track.ID, "--lang", "tr"}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	showing := map[string]any{"index": map[string]any{"title": "Returns", "sections": []any{
+		map[string]any{"type": "video", "video": "/media/" + video.ID}}}}
+	if _, err := site.SaveDraft(s, showing, "the video", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mediaCaptions(root, []string{video.ID, "--remove", track.ID}); err == nil {
+		t.Error("the last captions track of a video on the live site came off with no publish")
+	}
+	if got, _ := lib.Stat(video.ID); !got.Captions() {
+		t.Fatalf("the live video lost its captions: %+v", got.Tracks)
+	}
+	if err := mediaRemove(root, []string{track.ID}); err == nil {
+		t.Error("the captions file of a video on the live site was removed from the library")
+	}
+	if _, err := lib.Stat(track.ID); err != nil {
+		t.Fatalf("the captions file is gone: %v", err)
+	}
+
+	// Once no live page shows it, it is the draft's business again, and the
+	// publish gate's.
+	if _, err := site.SaveDraft(s, map[string]any{"index": map[string]any{"title": "Returns"}},
+		"no video", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := mediaCaptions(root, []string{video.ID, "--remove", track.ID}); err != nil {
+		t.Errorf("a video no live page shows could not have its captions taken off: %v", err)
 	}
 }
