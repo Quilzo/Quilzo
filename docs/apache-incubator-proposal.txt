@@ -8,11 +8,13 @@ LICENSING
 Quilzo is licensed under Apache-2.0, so there is nothing to relicense. IP
 clearance is short:
 
-  - Every commit in the repository was authored either by the proposer or by
-    Dependabot bumping a version string in a workflow file. There is one
-    human contributor and he is the sole copyright holder. That is a
-    property of the history rather than a count that goes stale: git log
-    --format='%ae' | sort -u returns two addresses, one of which is a bot.
+  - Every commit in the repository was authored by the proposer, by an AI
+    coding assistant working at his direction, or by Dependabot bumping a
+    version string in a workflow file. There is one human contributor and he
+    is the sole copyright holder. That is a property of the history rather
+    than a count that goes stale: git log --format='%ae' | sort -u returns
+    no address AUTHORS does not list (the proposer's, the assistant's and
+    Dependabot's), and a test holds the file to the history.
   - Contribution is under the Apache License with a DCO sign-off, not a CLA.
     No third party's copyright has been aggregated, so nobody else's
     permission is needed.
@@ -528,7 +530,9 @@ INITIAL SOURCE
 --------------
 
 https://github.com/Quilzo/Quilzo -- active since 14 August 2026. Single
-copyright holder; DCO sign-off throughout.
+copyright holder. CONTRIBUTING.md asks for a DCO sign-off on every commit in
+a pull request; the history so far, written by the proposer and at his
+direction, has rarely carried one.
 
 
 SOURCE AND INTELLECTUAL PROPERTY SUBMISSION PLAN
@@ -544,10 +548,10 @@ AI assistance, disclosed
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Quilzo has been developed with substantial LLM assistance, and the git
-history says so: 71 of 174 commits carry a Co-Authored-By: trailer naming
-the model. Anyone reading the log will see it, and anyone setting the size
-of the code against its age will ask, so it is stated here rather than left
-to be discovered.
+history says so: a commit written with the assistant names it, as the
+commit's author or in a Co-Authored-By: trailer. Anyone reading the log will
+see it, and anyone setting the size of the code against its age will ask, so
+it is stated here rather than left to be discovered.
 
 The relevant facts, against the ASF's generative tooling guidance
 <https://www.apache.org/legal/generative-tooling.html>:

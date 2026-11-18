@@ -334,6 +334,70 @@ func TestTheProposalsFiguresAreTrueOfTheTree(t *testing.T) {
 	}
 }
 
+// AUTHORS lists every address the history has a commit authored by.
+//
+// It said every commit was by the maintainer or by Dependabot, "checkable
+// rather than asserted" with `git log --format='%ae' | sort -u`, and the
+// proposal said the same check "returns two addresses, one of which is a
+// bot". On the branch a release is cut from, most commits had a third
+// author: the AI coding assistant the maintainer works with, committing
+// under its own address. The statement failed the check it named, so the
+// check is made here.
+//
+// Merges are left out. A merge is authored by whoever merged it, and the one
+// a pull request's CI checks out is made by GitHub for the test; the commits
+// under it are the ones somebody wrote.
+func TestAUTHORSListsEveryAuthorInTheHistory(t *testing.T) {
+	out, err := exec.Command("git", "log", "--no-merges", "--format=%ae").Output()
+	if err != nil {
+		t.Skipf("git log: %v", err)
+	}
+	authors := read(t, "AUTHORS")
+	seen := map[string]bool{}
+	for _, addr := range strings.Fields(string(out)) {
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		if !strings.Contains(authors, "<"+addr+">") {
+			t.Errorf("%s authored commits here, and AUTHORS, which says every commit is "+
+				"by somebody it lists, does not list it", addr)
+		}
+	}
+	if len(seen) == 0 {
+		t.Skip("this checkout has no commit that is not a merge")
+	}
+}
+
+// The proposal says the history is signed off throughout only if it is.
+//
+// Its Initial Source said "Single copyright holder; DCO sign-off
+// throughout", of a history in which one commit in more than a thousand
+// carried a Signed-off-by line. The sign-off is what CONTRIBUTING.md asks of
+// a contribution; it is not what the history so far has.
+func TestTheProposalSaysTheHistoryIsSignedOffOnlyIfItIs(t *testing.T) {
+	out, err := exec.Command("git", "log", "--no-merges",
+		"--format=%h %(trailers:key=Signed-off-by,valueonly,separator=;)").Output()
+	if err != nil {
+		t.Skipf("git log: %v", err)
+	}
+	unsigned := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if f := strings.Fields(line); len(f) == 1 {
+			unsigned++
+		}
+	}
+	if unsigned == 0 {
+		return
+	}
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		if strings.Contains(flatText(read(t, name)), "sign-off throughout") {
+			t.Errorf("%s says the history carries a DCO sign-off throughout, and %d of "+
+				"its commits carry no Signed-off-by line", name, unsigned)
+		}
+	}
+}
+
 // Every source file says its licence, and says the same one.
 //
 // A file vendored into another codebase carries only its header, so the
