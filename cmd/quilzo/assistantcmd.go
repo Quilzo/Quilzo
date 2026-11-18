@@ -12,10 +12,12 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -37,7 +39,7 @@ func assistantsPath(root string) string { return filepath.Join(root, "assistants
 
 func cmdAssistant(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["assistant"]}
 	}
 	switch args[0] {
 	case "list":
@@ -101,7 +103,16 @@ func saveAssistant(root string, caller *Caller, action, name string,
 
 	// Publish, not edit: a public assistant is a new way for anybody on the
 	// internet to reach what this site says, and what it may offer to do.
-	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+	return saveAssistantAt(root, caller, auth.ActPublish, action, name, change)
+}
+
+// saveAssistantAt is saveAssistant for a caller who may act: edit-draft
+// for building a chatbot that is not public (assistant.Building), which
+// change asks publish of again when the chatbot it finds is public.
+func saveAssistantAt(root string, caller *Caller, act auth.Action, action, name string,
+	change func(*assistant.Set) error) error {
+
+	if err := authorise(root, caller, act, "/"); err != nil {
 		return err
 	}
 	path := assistantsPath(root)
@@ -155,6 +166,7 @@ func assistantAdd(root string, args []string) error {
 	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
 	route := fs.String("route", "", "the gateway route, or the model a route serves, that answers first")
 	routeOnly := fs.Bool("route-only", false, "keep it to that route alone: no other route answers for it")
+	keepInstr := fs.Bool("keep-instructions", false, "read passages that address an AI reading them, as other passages")
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
@@ -169,31 +181,106 @@ func assistantAdd(root string, args []string) error {
 		}
 		instr = string(b)
 	}
-	a := assistant.Assistant{
-		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
-		Pages: splitList(*pages), Exclude: splitList(*exclude), Collections: splitList(*collections),
-		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
-		Route: strings.TrimSpace(*route), RouteOnly: *routeOnly,
-		Handoff: *handoffOn, HandoffDays: *handoffDays, Voice: *voice, Translate: *translate,
-		Documents: splitList(*documents), Embed: splitList(*embed),
+	// What the command names is what changes; a chatbot already declared
+	// keeps the rest. It was built again from the flags alone, with its
+	// actions carried over: what this command has no flag for (the
+	// credential an identity action is signed with, set by assistant
+	// action) went, so a chatbot with an identity action was refused the
+	// moment its title changed, and so did whatever was not typed again,
+	// an exclusion or the instructions among them. A setting is turned off
+	// by naming it, --public=false, as it is turned on.
+	named := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { named[f.Name] = true })
+	// Building a chatbot that is not public, what it is called and says
+	// and which pages it reads, is an author's, as declare_assistant lets
+	// an author's agent; anything else this command names is a
+	// publisher's, and so is any change to a public chatbot. The whole
+	// command asked for publish, so an author was refused here what their
+	// agent did over the agent interface.
+	act := auth.ActEditDraft
+	for f := range named {
+		if !slices.Contains(assistant.Building, f) {
+			act = auth.ActPublish
+		}
 	}
-	if *launcher {
-		var qs []string
-		for _, q := range strings.Split(*suggest, "|") {
-			if q = strings.TrimSpace(q); q != "" {
-				qs = append(qs, q)
+	var qs []string
+	for _, q := range strings.Split(*suggest, "|") {
+		if q = strings.TrimSpace(q); q != "" {
+			qs = append(qs, q)
+		}
+	}
+	declare := func(a *assistant.Assistant, all bool) {
+		set := func(name string, apply func()) {
+			if all || named[name] {
+				apply()
 			}
 		}
-		a.Launcher = &assistant.Launcher{Style: *lStyle, Side: *lSide, Label: *lLabel, Panel: *lPanel,
-			Pages: splitList(*lPages), Suggestions: qs, Nudge: *nudge, NudgeAfter: *nudgeAfter,
-			NudgePages: splitList(*nudgePages)}
-	}
-	caller := resolveCaller(root, flagToken)
-	err := saveAssistant(root, caller, "declare", a.Name, func(s *assistant.Set) error {
-		if old, ok := s.Get(a.Name); ok {
-			a.Actions = old.Actions
+		set("title", func() { a.Title = *title })
+		set("greeting", func() { a.Greeting = *greeting })
+		set("instructions", func() { a.Instructions = instr })
+		set("pages", func() { a.Pages = splitList(*pages) })
+		set("exclude", func() { a.Exclude = splitList(*exclude) })
+		set("collections", func() { a.Collections = splitList(*collections) })
+		set("refusal", func() { a.Refusal = *refusal })
+		set("public", func() { a.Public = *public })
+		set("static", func() { a.Static = *static })
+		set("model", func() { a.UseModel = *model })
+		set("passages", func() { a.Passages = *passages })
+		set("route", func() { a.Route = strings.TrimSpace(*route) })
+		set("route-only", func() { a.RouteOnly = *routeOnly })
+		set("handoff", func() { a.Handoff = *handoffOn })
+		set("handoff-days", func() { a.HandoffDays = *handoffDays })
+		set("voice", func() { a.Voice = *voice })
+		set("translate", func() { a.Translate = *translate })
+		set("documents", func() { a.Documents = splitList(*documents) })
+		set("embed", func() { a.Embed = splitList(*embed) })
+		set("keep-instructions", func() { a.KeepInstructions = *keepInstr })
+		set("launcher", func() {
+			if !*launcher {
+				a.Launcher = nil
+			} else if a.Launcher == nil || all {
+				a.Launcher = &assistant.Launcher{}
+			}
+		})
+		// The launcher's own settings, on a chatbot that has it.
+		if l := a.Launcher; l != nil {
+			set("launcher-style", func() { l.Style = *lStyle })
+			set("launcher-side", func() { l.Side = *lSide })
+			set("launcher-label", func() { l.Label = *lLabel })
+			set("panel", func() { l.Panel = *lPanel })
+			set("launcher-pages", func() { l.Pages = splitList(*lPages) })
+			set("suggest", func() { l.Suggestions = qs })
+			set("nudge", func() { l.Nudge = *nudge })
+			set("nudge-after", func() { l.NudgeAfter = *nudgeAfter })
+			set("nudge-pages", func() { l.NudgePages = splitList(*nudgePages) })
 		}
-		return s.Put(a)
+	}
+	a := assistant.Assistant{Name: pos[0]}
+	caller := resolveCaller(root, flagToken)
+	err := saveAssistantAt(root, caller, act, "declare", a.Name, func(s *assistant.Set) error {
+		if old, ok := s.Get(a.Name); ok {
+			if old.Public && act != auth.ActPublish {
+				if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+					return err
+				}
+			}
+			a = old
+			if a.Launcher != nil {
+				l := *a.Launcher
+				a.Launcher = &l
+			}
+			declare(&a, false)
+		} else {
+			declare(&a, true)
+		}
+		if err := s.Put(a); err != nil {
+			return err
+		}
+		// What is said below is what was kept, which Put may have
+		// tidied: a launcher's page named "delivery" is kept as
+		// /delivery, and --json printed it as it was typed.
+		a, _ = s.Get(a.Name)
+		return nil
 	})
 	if err != nil {
 		return err
@@ -234,6 +321,15 @@ func assistantAction(root string, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form|agent --target T --description D " +
 			"[--fields a,b] [--writes] [--identity --identity-secret NAME]")
+	}
+	// The credential named is one there is. Named before it was sealed,
+	// or mistyped, it was saved, and the identity action was then never
+	// offered to anybody (visitorKey), with nothing to say why. Only
+	// whether it can be read is asked; its value goes nowhere.
+	if *signer != "" {
+		if _, err := readSecret(root, *signer); err != nil {
+			return fmt.Errorf("--identity-secret %s: %w", *signer, err)
+		}
 	}
 	caller := resolveCaller(root, flagToken)
 	return saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
@@ -288,10 +384,11 @@ func assistantIndex(root string, a assistant.Assistant) (*assistant.Index, error
 	return assistantIndexAs(root, a, nil)
 }
 
-// assistantIndexAs is assistantIndex for a caller who may be acting in an
-// agent's run (agentplatform.go). The question the index embeds to rank its
-// passages by meaning is a model call, and in a run it is charged to the run
-// and its person, as the chatbot's answer is.
+// assistantIndexAs is assistantIndex for somebody trying the chatbot rather
+// than a visitor, who may be acting in an agent's run (agentplatform.go).
+// The question the index embeds to rank its passages by meaning is a model
+// call, and it is charged to them (chatbotConsumers), and to the run they
+// act in, as the chatbot's answer is.
 func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant.Index, error) {
 	idx, _, err := assistantKnowledge(root, a, c)
 	return idx, err
@@ -299,7 +396,7 @@ func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant
 
 // assistantKnowledge is assistantIndex with the reasons any document could
 // not be used, for the owner's console. c is as in assistantIndexAs, and nil
-// when the index is asked in no run.
+// for a visitor's question.
 func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
 	return assistantKnowledgeOf(root, a, c, true)
 }
@@ -450,6 +547,44 @@ func assistantModel(a assistant.Assistant) (assistant.Model, string) {
 // from its pages instead. Each of payers is charged as well, each against
 // its own budget: the person whose agent run asked the chatbot.
 func assistantModelAt(root string, a assistant.Assistant, payers ...string) (assistant.Model, string) {
+	return chatbotModel(root, a, append([]string{"chatbot:" + a.Name}, payers...))
+}
+
+// assistantModelAs is the chatbot's model for somebody trying it, not a
+// visitor: charged to whoever tries it (chatbotConsumers), each against
+// their own budget, and not to chatbot:NAME, whose budget is what the
+// chatbot's visitors are answered within.
+func assistantModelAs(root string, a assistant.Assistant, by *Caller) (assistant.Model, string) {
+	return chatbotModel(root, a, chatbotConsumers(a, by))
+}
+
+// chatbotConsumers is who a chatbot's model call is charged to: the
+// chatbot for a visitor's question, and for its own upkeep such as asking
+// its unanswered questions again after a publish (by nil); and the person
+// trying it otherwise, as everything else they set off is, an agent run
+// charged to the person who started it and an agent acting under its own
+// identity charged as the agent.
+//
+// Every ask was charged to chatbot:NAME: a reader's thirty-question
+// evaluation used up a public chatbot's day, every visitor after it was
+// answered from the pages without the model, and the gateway's status did
+// not say who had spent it.
+func chatbotConsumers(a assistant.Assistant, by *Caller) []string {
+	switch {
+	case by == nil || by.Name == "":
+		return []string{"chatbot:" + a.Name}
+	case by.run != nil && by.runFor != "":
+		return []string{"person:" + by.runFor}
+	case strings.HasPrefix(by.Name, agent.PrincipalPrefix):
+		return []string{"agent:" + strings.TrimPrefix(by.Name, agent.PrincipalPrefix)}
+	}
+	return []string{"person:" + by.Name}
+}
+
+// chatbotModel is assistantModelAt charged to consumers, the first of them
+// the caller the gateway knows the call by.
+func chatbotModel(root string, a assistant.Assistant, consumers []string) (assistant.Model, string) {
+	payers := consumers[1:]
 	if !a.UseModel {
 		return nil, "extractive by declaration"
 	}
@@ -467,11 +602,11 @@ func assistantModelAt(root string, a assistant.Assistant, payers ...string) (ass
 				if r == "" {
 					return nil, "kept to " + a.Route + ", which no route serves"
 				}
-				return gw.ForRoute(r, "chatbot:"+a.Name, payers...), ""
+				return gw.ForRoute(r, consumers[0], payers...), ""
 			case a.Route != "":
-				return gw.ForModel(a.Route, "chatbot:"+a.Name, payers...), ""
+				return gw.ForModel(a.Route, consumers[0], payers...), ""
 			}
-			return gw.For("chatbot:"+a.Name, payers...), ""
+			return gw.For(consumers[0], payers...), ""
 		}
 	}
 	if a.RouteOnly {
@@ -512,11 +647,12 @@ func assistantAsk(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	idx, err := assistantIndex(root, a)
+	// Charged to whoever asks, not to the visitors' budget.
+	idx, err := assistantIndexAs(root, a, caller)
 	if err != nil {
 		return err
 	}
-	m, why := assistantModelAt(root, a)
+	m, why := assistantModelAs(root, a, caller)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	ans, err := assistant.Respond(ctx, a, idx, m, pos[1])
@@ -566,7 +702,7 @@ func assistantEval(root string, args []string) error {
 		return err
 	}
 	var cases []assistant.Case
-	if err := loadJSONL(pos[1], func(b []byte) error {
+	if err := loadGivenJSONL(pos[1], func(b []byte) error {
 		var c assistant.Case
 		if err := json.Unmarshal(b, &c); err != nil {
 			return err
@@ -579,16 +715,18 @@ func assistantEval(root string, args []string) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("%s holds no cases", pos[1])
 	}
-	idx, err := assistantIndex(root, a)
+	// Charged to whoever measures it, not to the visitors' budget.
+	idx, err := assistantIndexAs(root, a, caller)
 	if err != nil {
 		return err
 	}
-	m, _ := assistantModelAt(root, a)
+	m, _ := assistantModelAs(root, a, caller)
 	// Named before it is measured, and measured through that route alone
 	// (onlyThrough). Named after, the route a failed call had left resting
 	// was passed over and the next one named instead.
 	served := servedBy(m)
-	if only := onlyThrough(root, served.Route, "chatbot:"+a.Name); only != nil {
+	payers := chatbotConsumers(a, caller)
+	if only := onlyThrough(root, served.Route, payers[0], payers[1:]...); only != nil {
 		m = only
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -662,8 +800,8 @@ func assistantsCapability(root string) *admin.Assistants {
 			})
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
-			return assistantKnowledge(root, a, nil)
+		Index: func(a assistant.Assistant, by string) (*assistant.Index, []string, error) {
+			return assistantKnowledge(root, a, &Caller{Name: by})
 		},
 		Documents: func() ([]admin.DocumentChoice, error) {
 			lib, err := openMedia(root)
@@ -684,8 +822,8 @@ func assistantsCapability(root string) *admin.Assistants {
 			}
 			return out, nil
 		},
-		Model: func(a assistant.Assistant) (assistant.Model, string) {
-			return assistantModelAt(root, a)
+		Model: func(a assistant.Assistant, by string) (assistant.Model, string) {
+			return assistantModelAs(root, a, &Caller{Name: by})
 		},
 		Forms: func() ([]string, error) {
 			set, err := loadForms(root)

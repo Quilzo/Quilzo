@@ -56,7 +56,9 @@ func recordHandoff(root, action, name, id, who string, kind audit.Kind) {
 
 // suggestReply asks an assistant the visitor's last message, from the same
 // knowledge it answers visitors with, and returns its answer as a draft.
-func suggestReply(root, name, question string) (string, []string, error) {
+// It is by's asking, charged to them and not to the chatbot's visitors'
+// budget (chatbotConsumers).
+func suggestReply(root, name, question, by string) (string, []string, error) {
 	if strings.TrimSpace(question) == "" {
 		return "", nil, fmt.Errorf("the visitor has not asked anything yet")
 	}
@@ -68,13 +70,13 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("the chatbot %s no longer exists", name)
 	}
-	idx, _, err := assistantKnowledge(root, a, nil)
+	idx, _, err := assistantKnowledge(root, a, &Caller{Name: by})
 	if err != nil {
 		return "", nil, err
 	}
 	var m assistant.Model
 	if a.UseModel {
-		m, _ = assistantModelAt(root, a)
+		m, _ = assistantModelAs(root, a, &Caller{Name: by})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -135,8 +137,8 @@ func inboxHooks(root string) *admin.Inbox {
 		Close: func(name, id, by string) error {
 			return st.Close(name, id, by, time.Now())
 		},
-		Suggest: func(name, question string) (string, []string, error) {
-			return suggestReply(root, name, question)
+		Suggest: func(name, question, by string) (string, []string, error) {
+			return suggestReply(root, name, question, by)
 		},
 		Titles: func() map[string]string {
 			out := map[string]string{}

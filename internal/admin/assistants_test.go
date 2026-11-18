@@ -20,6 +20,8 @@ type fakeAssistants struct {
 	set      *assistant.Set
 	changes  []string
 	model    assistant.Model
+	// triedBy is who each model the test console asked for was for.
+	triedBy []string
 }
 
 func (f *fakeAssistants) wire() *Assistants {
@@ -34,7 +36,7 @@ func (f *fakeAssistants) wire() *Assistants {
 			f.changes = append(f.changes, by+" "+change+" "+name)
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
+		Index: func(a assistant.Assistant, _ string) (*assistant.Index, []string, error) {
 			return assistant.NewIndex(assistant.Chunk(map[string]any{
 				"returns": map[string]any{"title": "Returns",
 					"body": "Opened ink bottles cannot be returned. <b>bold</b>"},
@@ -43,7 +45,10 @@ func (f *fakeAssistants) wire() *Assistants {
 		Documents: func() ([]DocumentChoice, error) {
 			return []DocumentChoice{{ID: strings.Repeat("a", 64), Name: "care.pdf", Format: "pdf"}}, nil
 		},
-		Model: func(assistant.Assistant) (assistant.Model, string) { return f.model, "" },
+		Model: func(a assistant.Assistant, by string) (assistant.Model, string) {
+			f.triedBy = append(f.triedBy, by)
+			return f.model, ""
+		},
 		Forms: func() ([]string, error) { return []string{"returns_form"}, nil },
 	}
 }
@@ -144,10 +149,17 @@ func TestOnlyAPublisherChangesAChatbot(t *testing.T) {
 	if a, _ := fa.set.Get("help"); a.Public {
 		t.Fatal("an author made a chatbot public")
 	}
+	// A reader lists and tries them, as on the command line, and changes
+	// nothing.
 	reader, rtoken := asRole(t, auth.RoleReader)
 	reader.Assistants = fa.wire()
-	if w := get(t, reader, "/assistants", rtoken); w.Code == http.StatusOK {
-		t.Fatal("a reader opened the chatbots screen")
+	if w := get(t, reader, "/assistants", rtoken); w.Code != http.StatusOK {
+		t.Fatalf("a reader could not list the chatbots: %d", w.Code)
+	}
+	decideForm(t, reader, "/assistants/save", rtoken, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Mine now"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Help" {
+		t.Fatal("a reader changed a chatbot")
 	}
 }
 

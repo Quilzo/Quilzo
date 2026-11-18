@@ -49,6 +49,17 @@ func loadJSONL(path string, each func([]byte) error) error {
 	return sc.Err()
 }
 
+// loadGivenJSONL is loadJSONL for a file somebody named on the command
+// line, which is refused when it is not there. Read as an empty file, a
+// mistyped path to an evaluation's cases was reported as a file that
+// "holds no cases", and a decider's evaluation went on with none.
+func loadGivenJSONL(path string, each func([]byte) error) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("no such file: %s", path)
+	}
+	return loadJSONL(path, each)
+}
+
 // jsonNamesIn lists the .json files in a directory, without a suffix.
 func jsonNamesIn(dir, exclude string) ([]string, error) {
 	entries, err := os.ReadDir(dir)

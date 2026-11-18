@@ -106,8 +106,9 @@
 {{end}}
 {{end}}
 
-{{if .CanSave}}
+{{if or .CanSave .CanBuild}}
 <h2>Settings</h2>
+{{if .Locked}}<p class="hint">You change what it is called and says, and which pages it reads. The rest is a publisher's, who also makes it public.</p>{{end}}
 <form method="post" action="/assistants/save" class="card settings-form">
   <input type="hidden" name="name" value="{{.A.Name}}">
   <input type="hidden" name="full" value="1">
@@ -132,13 +133,13 @@
   <div class="field"><label for="exclude">Never reads pages under</label>
     <input id="exclude" name="exclude" value="{{.Exclude}}" placeholder="internal, legal/drafts"></div>
   <div class="field"><label for="collections">Answers from these records too</label>
-    <input id="collections" name="collections" value="{{.Collections}}" placeholder="products, events" aria-describedby="collections-help">
+    <input id="collections" name="collections" value="{{.Collections}}" placeholder="products, events" aria-describedby="collections-help"{{if $.Locked}} disabled{{end}}>
     <p id="collections-help" class="help">Comma-separated record collections: published records only. Fields
       named for a person (an email address, a telephone number, an address) are never read.</p></div>
   <fieldset class="field">
     <legend>Documents it may also read</legend>
     {{if .Docs}}{{range .Docs}}
-    <div><label><input type="checkbox" name="documents" value="{{.ID}}"{{if .On}} checked{{end}}>
+    <div><label><input type="checkbox" name="documents" value="{{.ID}}"{{if .On}} checked{{end}}{{if $.Locked}} disabled{{end}}>
       {{.Name}} <span class="hint">{{.Format}}</span></label></div>{{end}}
     <p class="help">Only the files ticked here. PDFs need to hold text:
       a scanned PDF is a picture, and the console will say so.</p>
@@ -146,22 +147,22 @@
       <a href="/media">Media</a> screen and it will appear here.</p>{{end}}
   </fieldset>
   <div class="field"><label for="passages">Passages per question</label>
-    <input id="passages" name="passages" type="number" min="1" max="12" value="{{if .A.Passages}}{{.A.Passages}}{{end}}" placeholder="5" aria-describedby="passages-help">
+    <input id="passages" name="passages" type="number" min="1" max="12" value="{{if .A.Passages}}{{.A.Passages}}{{end}}" placeholder="5" aria-describedby="passages-help"{{if $.Locked}} disabled{{end}}>
     <p id="passages-help" class="help">Up to 12. Leave empty for 5.</p></div>
-  <div class="field"><label><input type="checkbox" name="use_model" value="1"{{if .A.UseModel}} checked{{end}}>
+  <div class="field"><label><input type="checkbox" name="use_model" value="1"{{if .A.UseModel}} checked{{end}}{{if $.Locked}} disabled{{end}}>
     Write answers with the configured model</label>
     <p class="help">Off, it quotes your pages directly: no model, no cost,
       nothing sent anywhere. On, every sentence is still checked against the
       page it cites.</p></div>
   <div class="field"><label for="route">Model that answers first</label>
-    <input id="route" name="route" value="{{.A.Route}}" placeholder="the gateway's order" aria-describedby="route-help">
+    <input id="route" name="route" value="{{.A.Route}}" placeholder="the gateway's order" aria-describedby="route-help"{{if $.Locked}} disabled{{end}}>
     <p id="route-help" class="help">A route on the <a href="/models">Models</a> screen, or the model one
       serves. The others stand behind it.</p></div>
-  <div class="field"><label><input type="checkbox" name="route_only" value="1"{{if .A.RouteOnly}} checked{{end}} aria-describedby="routeonly-help">
+  <div class="field"><label><input type="checkbox" name="route_only" value="1"{{if .A.RouteOnly}} checked{{end}} aria-describedby="routeonly-help"{{if $.Locked}} disabled{{end}}>
     Only that one</label>
     <p id="routeonly-help" class="help">Visitors' words go to that route and no other. When it cannot answer,
       the chatbot quotes your pages instead.</p></div>
-  <div class="field"><label><input type="checkbox" name="keep_instructions" value="1"{{if .A.KeepInstructions}} checked{{end}} aria-describedby="keep-help">
+  <div class="field"><label><input type="checkbox" name="keep_instructions" value="1"{{if .A.KeepInstructions}} checked{{end}} aria-describedby="keep-help"{{if $.Locked}} disabled{{end}}>
     Read passages that address an AI</label>
     <p id="keep-help" class="help">Off, a passage that speaks to the AI reading it rather than to
       people ("ignore your previous instructions", "if you are an AI", "do not tell the user")
@@ -169,22 +170,22 @@
       for a chatbot whose pages discuss these attacks on purpose.</p></div>
 
   <h3>What visitors can do</h3>
-  <div class="field"><label><input type="checkbox" name="handoff" value="1"{{if .A.Handoff}} checked{{end}}>
+  <div class="field"><label><input type="checkbox" name="handoff" value="1"{{if .A.Handoff}} checked{{end}}{{if $.Locked}} disabled{{end}}>
     Let a visitor ask for a person</label>
     <p class="help">Under each answer, a visitor can choose to send their
       question to somebody here. It arrives in the <a href="/inbox">Inbox</a>
       and is kept, which nothing else a visitor asks is. They are told so,
       and for how long, before they send.</p></div>
   <div class="field"><label for="handoff_days">Keep those conversations for (days)</label>
-    <input id="handoff_days" name="handoff_days" type="number" min="1" max="90" value="{{if .A.HandoffDays}}{{.A.HandoffDays}}{{end}}" placeholder="30" aria-describedby="handoff-days-help">
+    <input id="handoff_days" name="handoff_days" type="number" min="1" max="90" value="{{if .A.HandoffDays}}{{.A.HandoffDays}}{{end}}" placeholder="30" aria-describedby="handoff-days-help"{{if $.Locked}} disabled{{end}}>
     <p id="handoff-days-help" class="help">Counted from the last message. Up to 90 days. Leave empty for 30.</p></div>
-  <div class="field"><label><input type="checkbox" name="voice" value="1"{{if .A.Voice}} checked{{end}} aria-describedby="voice-help">
+  <div class="field"><label><input type="checkbox" name="voice" value="1"{{if .A.Voice}} checked{{end}} aria-describedby="voice-help"{{if $.Locked}} disabled{{end}}>
     Let visitors speak and listen</label>
     <p id="voice-help" class="help">A microphone button, offered only where the
       visitor's browser recognises speech on their own device, and a button that
       reads the answer aloud with the device's own voices. Nothing they say leaves
       their device; what arrives here is the question as text.</p></div>
-  <div class="field"><label><input type="checkbox" name="translate" value="1"{{if .A.Translate}} checked{{end}} aria-describedby="translate-help">
+  <div class="field"><label><input type="checkbox" name="translate" value="1"{{if .A.Translate}} checked{{end}} aria-describedby="translate-help"{{if $.Locked}} disabled{{end}}>
     Answer in the visitor's language</label>
     <p id="translate-help" class="help">Where the browser can translate on the
       device, a question in another language is translated into the site's, and
@@ -192,54 +193,54 @@
       The answer is still checked against your pages.</p></div>
 
   <h3>Where it appears</h3>
-  <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}>
+  <div class="field"><label><input type="checkbox" name="public" value="1"{{if .A.Public}} checked{{end}}{{if $.Locked}} disabled{{end}}>
     Public — serve it on the site at <code>/ask/{{.A.Name}}</code></label></div>
   <div class="field"><label for="embed">Sites that may embed it</label>
-    <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help">{{.EmbedList}}</textarea>
+    <textarea id="embed" name="embed" rows="2" placeholder="https://shop.example" aria-describedby="embed-help"{{if $.Locked}} disabled{{end}}>{{.EmbedList}}</textarea>
     <p id="embed-help" class="help">One per line, as https://example.com.
       Nobody else can put it in a frame.</p></div>
-  <div class="field"><label><input type="checkbox" name="launcher" value="1"{{if .A.Launcher}} checked{{end}} aria-describedby="launcher-help">
+  <div class="field"><label><input type="checkbox" name="launcher" value="1"{{if .A.Launcher}} checked{{end}} aria-describedby="launcher-help"{{if $.Locked}} disabled{{end}}>
     Show a button on the site's pages that opens it beside the page</label>
     <p id="launcher-help" class="help">In a corner of every page, or of the pages below. With scripts off it is a link to the
       conversation, so it works for everybody. Needs Public, and a site shows one.</p></div>
   <div class="field"><label for="launcher_pages">Only on pages under</label>
-    <input id="launcher_pages" name="launcher_pages" value="{{.LPages}}" placeholder="/docs, /pricing" aria-describedby="launcher-pages-help">
+    <input id="launcher_pages" name="launcher_pages" value="{{.LPages}}" placeholder="/docs, /pricing" aria-describedby="launcher-pages-help"{{if $.Locked}} disabled{{end}}>
     <p id="launcher-pages-help" class="help">Comma-separated. Empty is every page.</p></div>
   <div class="field"><label for="suggestions">Questions to offer before the first one</label>
-    <textarea id="suggestions" name="suggestions" rows="3" aria-describedby="suggestions-help">{{.LSuggestions}}</textarea>
+    <textarea id="suggestions" name="suggestions" rows="3" aria-describedby="suggestions-help"{{if $.Locked}} disabled{{end}}>{{.LSuggestions}}</textarea>
     <p id="suggestions-help" class="help">One per line, up to four. Each is a link that asks it.</p></div>
 
   <details class="settings-more"><summary>How the button looks<span class="chev">{{icon "expand_more"}}</span></summary>
     <div class="field"><label for="launcher_label">What the button says</label>
-      <input id="launcher_label" class="short" name="launcher_label" maxlength="24" value="{{.L.Label}}"></div>
+      <input id="launcher_label" class="short" name="launcher_label" maxlength="24" value="{{.L.Label}}"{{if $.Locked}} disabled{{end}}></div>
     <fieldset><legend>Button</legend>
-      <p><label><input type="radio" name="launcher_style" value="bubble"{{if eq .L.Style "bubble"}} checked{{end}}> <strong>Round</strong> <span class="help">an icon on its own</span></label></p>
-      <p><label><input type="radio" name="launcher_style" value="pill"{{if eq .L.Style "pill"}} checked{{end}}> <strong>With a label</strong> <span class="help">an icon and a word, easier to understand</span></label></p>
-      <p><label><input type="radio" name="launcher_style" value="tab"{{if eq .L.Style "tab"}} checked{{end}}> <strong>Tab</strong> <span class="help">on the edge of the window, out of the content's way</span></label></p>
+      <p><label><input type="radio" name="launcher_style" value="bubble"{{if eq .L.Style "bubble"}} checked{{end}}{{if $.Locked}} disabled{{end}}> <strong>Round</strong> <span class="help">an icon on its own</span></label></p>
+      <p><label><input type="radio" name="launcher_style" value="pill"{{if eq .L.Style "pill"}} checked{{end}}{{if $.Locked}} disabled{{end}}> <strong>With a label</strong> <span class="help">an icon and a word, easier to understand</span></label></p>
+      <p><label><input type="radio" name="launcher_style" value="tab"{{if eq .L.Style "tab"}} checked{{end}}{{if $.Locked}} disabled{{end}}> <strong>Tab</strong> <span class="help">on the edge of the window, out of the content's way</span></label></p>
     </fieldset>
     <fieldset><legend>Side</legend>
-      <p><label><input type="radio" name="launcher_side" value="right"{{if eq .L.Side "right"}} checked{{end}}> Right</label></p>
-      <p><label><input type="radio" name="launcher_side" value="left"{{if eq .L.Side "left"}} checked{{end}}> Left</label></p>
+      <p><label><input type="radio" name="launcher_side" value="right"{{if eq .L.Side "right"}} checked{{end}}{{if $.Locked}} disabled{{end}}> Right</label></p>
+      <p><label><input type="radio" name="launcher_side" value="left"{{if eq .L.Side "left"}} checked{{end}}{{if $.Locked}} disabled{{end}}> Left</label></p>
     </fieldset>
     <fieldset><legend>Opens as</legend>
-      <p><label><input type="radio" name="panel" value="float"{{if eq .L.Panel "float"}} checked{{end}}> <strong>A panel over the corner</strong> <span class="help">for most sites</span></label></p>
-      <p><label><input type="radio" name="panel" value="side"{{if eq .L.Panel "side"}} checked{{end}}> <strong>A panel beside the page</strong> <span class="help">the page moves over to make room; for documentation and portals</span></label></p>
+      <p><label><input type="radio" name="panel" value="float"{{if eq .L.Panel "float"}} checked{{end}}{{if $.Locked}} disabled{{end}}> <strong>A panel over the corner</strong> <span class="help">for most sites</span></label></p>
+      <p><label><input type="radio" name="panel" value="side"{{if eq .L.Panel "side"}} checked{{end}}{{if $.Locked}} disabled{{end}}> <strong>A panel beside the page</strong> <span class="help">the page moves over to make room; for documentation and portals</span></label></p>
     </fieldset>
   </details>
 
   <details class="settings-more"><summary>A nudge beside the button{{if .A.Launcher}}{{if .A.Launcher.Nudge}} (on){{end}}{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
     <div class="field"><label for="nudge">What the nudge says</label>
-      <input id="nudge" name="nudge" maxlength="120" value="{{if .A.Launcher}}{{.A.Launcher.Nudge}}{{end}}" placeholder="Questions about pricing? Ask here." aria-describedby="nudge-help">
+      <input id="nudge" name="nudge" maxlength="120" value="{{if .A.Launcher}}{{.A.Launcher.Nudge}}{{end}}" placeholder="Questions about pricing? Ask here." aria-describedby="nudge-help"{{if $.Locked}} disabled{{end}}>
       <p id="nudge-help" class="help">Off unless you write one. Shown once a visit, beside the button and never over the page,
         not again for a month once dismissed, and on a phone only after the first screen has been scrolled past.</p></div>
     <div class="field"><label for="nudge_after">Seconds on a page before the nudge</label>
-      <input id="nudge_after" name="nudge_after" type="number" min="5" max="600" value="{{.L.NudgeAfter}}"></div>
+      <input id="nudge_after" name="nudge_after" type="number" min="5" max="600" value="{{.L.NudgeAfter}}"{{if $.Locked}} disabled{{end}}></div>
     <div class="field"><label for="nudge_pages">Nudge only on pages under</label>
-      <input id="nudge_pages" name="nudge_pages" value="{{.LNudgePages}}" placeholder="/pricing"></div>
+      <input id="nudge_pages" name="nudge_pages" value="{{.LNudgePages}}" placeholder="/pricing"{{if $.Locked}} disabled{{end}}></div>
   </details>
 
   <details class="settings-more"><summary>Static copies of the site{{if .A.Static}} (on){{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
-    <div class="field"><label><input type="checkbox" name="static" value="1"{{if .A.Static}} checked{{end}} aria-describedby="static-help">
+    <div class="field"><label><input type="checkbox" name="static" value="1"{{if .A.Static}} checked{{end}} aria-describedby="static-help"{{if $.Locked}} disabled{{end}}>
       Answer on static copies of the site too</label>
       <p id="static-help" class="help">For a copy made with <code>quilzo export</code>
         or <code>quilzo ipfs write</code>. The copy answers in the visitor's
@@ -249,7 +250,9 @@
 
   <div class="savebar"><button type="submit">Save</button></div>
 </form>
+{{end}}
 
+{{if .CanSave}}
 {{if and .A.Public .A.Embed}}
 <h2>Embed it</h2>
 <p>Paste this into a page on {{index .A.Embed 0}}{{if gt (len .A.Embed) 1}} or the other listed sites{{end}}. It needs no script.</p>

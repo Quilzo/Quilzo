@@ -40,12 +40,16 @@ type Assistants struct {
 	// Save writes the set, recording who changed which assistant and how.
 	Save func(set *assistant.Set, by, change, name string) error
 	// Index is what an assistant reads: the published site, filtered, and
-	// its documents — with the reason any document could not be used.
-	Index func(assistant.Assistant) (*assistant.Index, []string, error)
+	// its documents — with the reason any document could not be used. by
+	// is the person trying it, whom ranking a question by meaning is
+	// charged to, as Model's answer is.
+	Index func(a assistant.Assistant, by string) (*assistant.Index, []string, error)
 	// Documents lists the library files a chatbot could be given.
 	Documents func() ([]DocumentChoice, error)
-	// Model is the configured model, or nil with the reason there is none.
-	Model func(assistant.Assistant) (assistant.Model, string)
+	// Model is the configured model, or nil with the reason there is none,
+	// charged to by, the person trying it, against their own budget, and
+	// not to the chatbot's, which is what its visitors are answered within.
+	Model func(a assistant.Assistant, by string) (assistant.Model, string)
 	// Forms names the site's forms, for the action picker.
 	Forms func() ([]string, error)
 	// Gaps are what visitors asked a chatbot that it could not answer,
@@ -66,25 +70,49 @@ type Assistants struct {
 }
 
 func (s *Server) assistantsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantsGate(w, r, auth.ActEditDraft)
+}
+
+// chatbotsReady gates the list of chatbots and a chatbot's own screen,
+// where it is tried: a reader's, as `assistant list` and `assistant ask`
+// are on the command line and list_assistants and ask_assistant over the
+// agent interface. They asked for edit-draft, so a reader was refused here
+// every chatbot those two let them list and try. What visitors could not
+// get answered stays an author's (gapsReadable), and changing a chatbot a
+// publisher's (assistantWrite).
+func (s *Server) chatbotsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantsGate(w, r, auth.ActView)
+}
+
+// assistantsGate is a chatbot screen for somebody who may act.
+func (s *Server) assistantsGate(w http.ResponseWriter, r *http.Request, act auth.Action) (principal, bool) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	return p, true
 }
 
+// gapsReadable is whether p reads what a chatbot's visitors could not get
+// answered, and how they rated its answers: visitors' words, masked, for
+// whoever may read the Inbox, as `assistant gaps` and list_chatbot_gaps ask.
+func (s *Server) gapsReadable(p principal) bool {
+	return s.allows(p, auth.ActEditDraft, "/")
+}
+
 func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantsReady(w, r)
+	p, ok := s.chatbotsReady(w, r)
 	if !ok {
 		return
 	}
 	data := map[string]any{
 		"Nav": "assistants", "Title": "Chatbots", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanSave":  s.allows(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanBuild": s.mayBuild(p),
 	}
 	if s.Assistants == nil || s.Assistants.Load == nil {
 		data["Unavailable"] = "This build was started without assistant " +
@@ -124,7 +152,7 @@ func measuredBy(measured func(string) string, names []string) map[string]string 
 // handleAssistant shows one assistant: its settings, its actions, and the
 // test console.
 func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantsReady(w, r)
+	p, ok := s.chatbotsReady(w, r)
 	if !ok {
 		return
 	}
@@ -149,8 +177,15 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		"Collections": strings.Join(a.Collections, ", "),
 		"Exclude":     strings.Join(a.Exclude, ", "),
 		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanSave": s.allows(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
+	// An author builds one that is not public, and is shown the rest of
+	// its settings switched off (Locked): they are a publisher's. Whether
+	// somebody publishes is asked of their session (allows), as the save
+	// asks it, so a publisher signed in with an author's credential is not
+	// shown a setting the save would keep as it is.
+	data["CanBuild"] = !a.Public && s.mayBuild(p)
+	data["Locked"] = !data["CanSave"].(bool)
 	if s.Assistants.Documents != nil {
 		if docs, derr := s.Assistants.Documents(); derr == nil {
 			on := map[string]bool{}
@@ -181,7 +216,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// What it could not answer, for whoever may read the Inbox.
-	if s.Assistants.Gaps != nil {
+	if s.Assistants.Gaps != nil && s.gapsReadable(p) {
 		if groups, on, gerr := s.Assistants.Gaps(a.Name); gerr == nil {
 			var rows []gapRow
 			for _, g := range groups {
@@ -192,7 +227,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 			data["Gaps"], data["GapsOn"] = rows, on
 		}
 	}
-	if s.Assistants.Ratings != nil {
+	if s.Assistants.Ratings != nil && s.gapsReadable(p) {
 		if h, d := s.Assistants.Ratings(a.Name); h+d > 0 {
 			data["Helped"], data["DidNot"] = h, d
 			data["HelpedShare"] = (100*h + (h+d)/2) / (h + d)
@@ -202,7 +237,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	// The test console.
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" && s.Assistants.Index != nil {
 		data["Q"] = q
-		idx, warnings, ierr := s.Assistants.Index(a)
+		idx, warnings, ierr := s.Assistants.Index(a, p.Name)
 		data["DocWarnings"] = warnings
 		if ierr != nil {
 			data["TestError"] = ierr.Error()
@@ -210,7 +245,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 			var m assistant.Model
 			why := "extractive by declaration"
 			if a.UseModel && s.Assistants.Model != nil {
-				m, why = s.Assistants.Model(a)
+				m, why = s.Assistants.Model(a, p.Name)
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 			defer cancel()
@@ -285,15 +320,33 @@ func (s *Server) handleAssistantGaps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantWrite(w, r)
+	p, ok := s.assistantWriteAt(w, r, auth.ActEditDraft)
 	if !ok {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	back := "/assistants"
 	full := r.FormValue("full") == "1"
+	publisher := s.allows(p, auth.ActPublish, "/")
 	err := s.changeAssistants(p, "declare", name, func(set *assistant.Set) error {
 		a, existed := set.Get(name)
+		if !publisher && existed && a.Public {
+			back = "/assistants/" + url.PathEscape(name)
+			return fmt.Errorf("%s is public: a publisher changes it", name)
+		}
+		if !publisher && full {
+			// An author builds it (assistant.Building), and the rest is
+			// kept as it is, whatever the form says of it.
+			if !existed {
+				a = assistant.Assistant{Name: name}
+			}
+			for _, k := range assistant.Building {
+				if _, given := r.PostForm[k]; given {
+					a.Build(k, r.PostForm.Get(k))
+				}
+			}
+			return set.Put(a)
+		}
 		if existed && !full {
 			// The New chatbot form posts here without full=1, as an edit
 			// would; on a name in use it retitled that chatbot, a public
@@ -446,6 +499,22 @@ const errNoSuchAssistant = assistantError("there is no assistant by that name")
 // A public assistant is a new way for anybody on the internet to reach what
 // the site says and what it offers to do.
 func (s *Server) assistantWrite(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantWriteAt(w, r, auth.ActPublish)
+}
+
+// mayBuild is whether p builds a chatbot that is not public here: what it
+// is called and says and which pages it reads (assistant.Building), as
+// `assistant add` and declare_assistant let an author. Only a publisher
+// could save on this screen, while an author's agent changed the same
+// settings over the agent interface.
+func (s *Server) mayBuild(p principal) bool {
+	return s.allows(p, auth.ActEditDraft, "/") && !p.Limits.ReadOnly
+}
+
+// assistantWriteAt is assistantWrite for somebody who may act: edit-draft
+// for building a chatbot that is not public, which the save itself holds
+// to assistant.Building for anybody who may not publish.
+func (s *Server) assistantWriteAt(w http.ResponseWriter, r *http.Request, act auth.Action) (principal, bool) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "this changes an assistant and takes a POST",
@@ -456,7 +525,7 @@ func (s *Server) assistantWrite(w http.ResponseWriter, r *http.Request) (princip
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActPublish, "/") {
+	if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	if s.Assistants == nil || s.Assistants.Load == nil || s.Assistants.Save == nil {

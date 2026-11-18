@@ -344,10 +344,19 @@ var commandNeeds = map[string]need{
 	"templates layouts": {action: auth.ActView},
 	// Declaring a chatbot is a publish: a public one is a new way for anybody
 	// on the internet to reach what the site says and what it offers to do.
-	"assistant":      {action: auth.ActPublish},
+	"assistant": {action: auth.ActPublish},
+	// Building one that is not public, what it is called and says and
+	// which pages it reads, is an author's, as over the agent interface;
+	// the command asks publish itself for the rest, and of a public one.
+	"assistant add":  {action: auth.ActEditDraft},
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
+	// What visitors could not get answered is their words, masked, for
+	// whoever may read the Inbox, as on the Chatbots screen and over the
+	// agent interface (list_chatbot_gaps). It took the row above, so an
+	// author was refused here what the browser let them read and close.
+	"assistant gaps": {action: auth.ActEditDraft},
 	// What a visitor said to a person is personal data, and answering it is
 	// speaking for the business. Edit-draft, like the chatbots themselves.
 	"inbox": {action: auth.ActEditDraft},
@@ -1601,10 +1610,15 @@ func commandArea(cmd string, args []string) (string, bool) {
 // `checked`, `note` and `notes` list when run bare. Their lists were opened
 // to a reader and the bare commands still asked for authoring, so the same
 // list was refused a reader under its shortest spelling.
+//
+// `assistant` lists the chatbots when run bare, and took the row for
+// declaring one, a publisher's: a reader and an author were refused the
+// list that `assistant list`, list_assistants and the Chatbots screen give
+// them.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
 	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
-	"template": "list", "templates": "list"}
+	"template": "list", "templates": "list", "assistant": "list"}
 
 // layoutHint is said after a refusal to write a layout.
 const layoutHint = "a layout is the markup every page that names it renders through, " +

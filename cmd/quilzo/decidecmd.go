@@ -254,7 +254,7 @@ func decideEval(root string, args []string) error {
 		return err
 	}
 	var cases []decide.Case
-	if err := loadJSONL(args[1], func(b []byte) error {
+	if err := loadGivenJSONL(args[1], func(b []byte) error {
 		var c decide.Case
 		if err := json.Unmarshal(b, &c); err != nil {
 			return err

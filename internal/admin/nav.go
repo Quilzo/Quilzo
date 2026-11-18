@@ -106,7 +106,7 @@ var destinations = []destination{
 	// Beside Assistant, which drafts pages for the people editing them. This
 	// is the other side: chatbots the site offers its visitors, answering
 	// from what is published.
-	{"assistants", "Chatbots", "/assistants", "Content", "chatbots", auth.ActEditDraft},
+	{"assistants", "Chatbots", "/assistants", "Content", "chatbots", auth.ActView},
 	// Next to the chatbots it is fed by: what a visitor asked a person.
 	{"inbox", "Inbox", "/inbox", "Content", "chatbots", auth.ActEditDraft},
 	// What members wrote, beside what visitors asked a person.

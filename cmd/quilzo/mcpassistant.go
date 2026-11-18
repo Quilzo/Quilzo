@@ -63,7 +63,9 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			Questions []string `json:"questions"`
 			Last      string   `json:"last"`
 		}
-		var out []row
+		// None open is an empty list, as list_assistants gives for no
+		// chatbots: a nil slice marshalled to null.
+		out := []row{}
 		for _, g := range groups {
 			if g.Open() {
 				out = append(out, row{Key: g.Key, Asked: g.Count, Questions: g.Questions, Last: g.Last.Format("2006-01-02")})
@@ -87,7 +89,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Assistants)
+		// None is an empty list. A nil slice marshalled to null, which a
+		// client expecting a list had to special-case and which told the
+		// model nothing, where the command line says there are none.
+		list := set.Assistants
+		if list == nil {
+			list = []assistant.Assistant{}
+		}
+		b, err := json.Marshal(list)
 		return string(b), err
 	})
 
@@ -114,13 +123,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		// Inside an agent's run, the question it embeds and the answer it
-		// asks for are the run's spending and its person's.
+		// The question it embeds and the answer it asks for are the
+		// spending of whoever tries it, and of the run they act in, and
+		// not of the chatbot's visitors (chatbotConsumers).
 		idx, err := assistantIndexAs(root, bot, caller)
 		if err != nil {
 			return nil, err
 		}
-		m, _ := assistantModelAt(root, bot, caller.runPayers()...)
+		m, _ := assistantModelAs(root, bot, caller)
 		m = caller.chargedToRun(m)
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -157,7 +167,8 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Never public from here. A person makes a chatbot public, " +
 			"decides whether static copies of the site carry it, and decides " +
 			"what it may offer to do, on the Chatbots screen. A chatbot that " +
-			"is already public cannot be changed from here.",
+			"is already public cannot be changed from here. Changing one, an " +
+			"argument left out keeps what it has; given empty, it is cleared.",
 		Args: map[string]string{
 			"name": "lower-case, digits and hyphens", "title": "what visitors see",
 			"greeting": "optional", "instructions": "optional tone and focus",
@@ -182,10 +193,22 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, &mcp.Refusal{Reason: name + " is public; a person " +
 				"changes a public chatbot on the Chatbots screen"}
 		}
-		bot.Name, bot.Title = name, str("title")
-		bot.Greeting, bot.Instructions = str("greeting"), str("instructions")
-		bot.Pages, bot.Exclude = splitList(str("pages")), splitList(str("exclude"))
-		bot.Refusal = str("refusal")
+		// What it is given changes, and what it is not given is kept, as
+		// on the command line and the Chatbots screen. Every argument left
+		// out was cleared: an agent renaming a chatbot wiped the pages it
+		// must never read, and its instructions, and it then answered from
+		// the pages it had been kept from. Given empty, a setting is
+		// cleared, as asked. What it may be given is what an author may
+		// build on every surface (assistant.Building). Sent as null, an
+		// argument is not given, as the schema check reads it: a client
+		// that fills every argument it leaves out with null cleared the
+		// pages the chatbot must never read all the same.
+		bot.Name = name
+		for _, k := range assistant.Building {
+			if v, ok := a[k]; ok && v != nil {
+				bot.Build(k, str(k))
+			}
+		}
 		bot.Public = false
 		if err := set.Put(bot); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}

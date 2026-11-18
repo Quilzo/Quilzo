@@ -65,11 +65,12 @@ func embedText(p assistant.Passage) string {
 // chatbotMeaning is the ranker by meaning for a chatbot's passages, or
 // nil when it does not take part.
 //
-// c is who asks, when that may be an agent's run (assistantIndexAs). The
-// question's vector is a model call: in a run it is charged to the run and
-// to its person as well as to the chatbot. It was charged to the chatbot
-// alone, so the run's money budget did not see it and the person who
-// started the run was not charged for it.
+// c is who asks when it is not a visitor (assistantIndexAs), nil for a
+// visitor. The question's vector is a model call: a visitor's is charged
+// to the chatbot, and anybody else's to whoever is trying it
+// (chatbotConsumers) and to the run they act in, when they act in one. It
+// was charged to the chatbot alone, so the run's money budget did not see
+// it and the person who started the run was not charged for it.
 func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Passage, c *Caller) *assistant.Meaning {
 	if !meansWithModel(a) {
 		return nil
@@ -91,8 +92,7 @@ func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Pas
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			consumers := append([]string{"chatbot:" + a.Name}, c.runPayers()...)
-			out, used, cost, err := gw.EmbedCosted(ctx, route, consumers, []string{q})
+			out, used, cost, err := gw.EmbedCosted(ctx, route, chatbotConsumers(a, c), []string{q})
 			c.chargeRun(used, cost)
 			if err != nil {
 				return nil, err
