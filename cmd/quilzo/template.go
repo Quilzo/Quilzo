@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/starter"
@@ -21,7 +22,8 @@ import (
 
 func cmdTemplate(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		// The entry the privilege gate reads for a bare `quilzo template`.
+		args = []string{bareRuns["template"]}
 	}
 	switch args[0] {
 	case "list":
@@ -464,8 +466,21 @@ func templateAdopt(root string, args []string) error {
 		return err
 	}
 	path := filepath.Join(*dir, layoutName+".html")
-	if _, serr := os.Stat(path); serr == nil && !*force {
+	_, serr := os.Stat(path)
+	if serr == nil && !*force {
 		return fmt.Errorf("%s already exists; pass --force to replace it", path)
+	}
+	// Replacing a layout the site has is replacing the markup its pages may
+	// already render through, and page.html is every page that names none:
+	// what `template use` and the Design screen's install ask a publisher
+	// for. Asked here rather than in the privilege table, because a layout
+	// of the site's own that nothing renders through yet is an author's to
+	// write, and only the directory says which this is.
+	if serr == nil {
+		if err := authorise(root, resolveCaller(root, flagToken), auth.ActPublish, "/"); err != nil {
+			return fmt.Errorf("%s is a layout the site already has, and replacing it "+
+				"changes every page that renders through it, which needs whoever may publish: %w", path, err)
+		}
 	}
 	if err := os.WriteFile(path, []byte(result.Template), 0o600); err != nil {
 		return err

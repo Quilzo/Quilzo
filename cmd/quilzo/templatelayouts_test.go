@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/starter"
 )
@@ -121,5 +122,83 @@ func TestTemplateLayoutsNamesOneThatDoesNotParse(t *testing.T) {
 	}
 	if strings.Contains(lines["page"], "does not parse") {
 		t.Errorf("a layout that parses is listed as broken: %q", lines["page"])
+	}
+}
+
+// Writing a layout asks a publisher, on the command line as on the Design
+// screen.
+//
+// `quilzo template use NAME --force` replaced page.html, which every page
+// renders through, at an author's authority, while the Design screen's
+// install refused the same person the same act: replacing the markup changes
+// every page at once, including pages they may not edit. The help calls the
+// two the same operation. Reading the starters stays a reader's, and adopting
+// a layout of the site's own stays an author's until it would replace one a
+// page may already render through.
+func TestWritingALayoutAsksWhatTheDesignScreenAsks(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/"},
+		auth.Binding{Principal: "ann", Role: auth.RoleAuthor, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	for _, cmd := range []string{"template", "templates"} {
+		for who, may := range map[string]bool{"pat": true, "ann": false, "rae": false} {
+			t.Setenv("QUILZO_TOKEN", secrets[who])
+			for _, args := range [][]string{
+				{"use", "landing"}, {"use", "landing", "--force", "--dir", "templates"},
+				{"use", "sections", "--all-layouts"},
+				// One added later and not listed.
+				{"a-subcommand-added-later"},
+			} {
+				if err := authoriseCommand(root, cmd, args); (err == nil) != may {
+					t.Errorf("%s running %s %v: %v", who, cmd, args, err)
+				}
+			}
+		}
+		t.Setenv("QUILZO_TOKEN", secrets["rae"])
+		for _, args := range [][]string{nil, {"list"}, {"show", "landing"}, {"layouts"}} {
+			if err := authoriseCommand(root, cmd, args); err != nil {
+				t.Errorf("a reader running %s %v: %v", cmd, args, err)
+			}
+		}
+		t.Setenv("QUILZO_TOKEN", secrets["ann"])
+		if err := authoriseCommand(root, cmd, []string{"adopt", "theirs.html"}); err != nil {
+			t.Errorf("an author adopting a layout: %v", err)
+		}
+	}
+
+	// Adopting over a layout the site already has is replacing the markup
+	// its pages render through, and asks what template use asks.
+	tpl := filepath.Join(t.TempDir(), "templates")
+	if err := os.MkdirAll(tpl, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mine := `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>` +
+		`<body><main><h1>{{ page.title }}</h1></main></body></html>`
+	if err := os.WriteFile(filepath.Join(tpl, "page.html"), []byte(mine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	theirs := writeTemp(t, "theirs.html", []byte(`<!doctype html><html lang="en"><head><title>Theirs</title></head>`+
+		`<body><main><h1>Somebody else's markup</h1></main></body></html>`))
+	t.Setenv("QUILZO_TOKEN", secrets["ann"])
+	_, err := humanOutput(t, func() error {
+		return cmdTemplate(root, []string{"adopt", theirs, "--as", "page", "--force", "--dir", tpl})
+	})
+	if err == nil || !strings.Contains(err.Error(), "publish") {
+		t.Errorf("an author replaced page.html by adopting over it: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(tpl, "page.html")); string(b) != mine {
+		t.Error("page.html was replaced by an author")
+	}
+	// A layout of its own, which no page renders through yet, is theirs.
+	if _, err := humanOutput(t, func() error {
+		return cmdTemplate(root, []string{"adopt", theirs, "--as", "theirs", "--dir", tpl})
+	}); err != nil {
+		t.Errorf("an author adopting a new layout: %v", err)
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["pat"])
+	if _, err := humanOutput(t, func() error {
+		return cmdTemplate(root, []string{"adopt", theirs, "--as", "page", "--force", "--dir", tpl})
+	}); err != nil {
+		t.Errorf("a publisher replacing page.html: %v", err)
 	}
 }

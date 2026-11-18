@@ -322,9 +322,26 @@ var commandNeeds = map[string]need{
 	// Writes content, types, listings, menus and forms, and publishes. That is
 	// the whole store, so it needs the permission that covers the whole store —
 	// and it refuses outright on a store that already has anything in it.
-	"demo":      {action: auth.ActPublish},
-	"template":  {action: auth.ActEditDraft},
-	"templates": {action: auth.ActEditDraft},
+	"demo": {action: auth.ActPublish},
+	// Writing a starter's layout is installing a design: page.html is what
+	// every page renders through, so replacing it changes every page at
+	// once, including pages the person may not edit. The Design screen's
+	// install asks a publisher for that, and `template use` asked an
+	// author, so the same person was refused one and granted the other.
+	//
+	// A strict parent, as `theme` is, so a subcommand added later arrives
+	// guarded. Adopting a layout from another system writes a file of the
+	// site's own and steps down to edit-draft; replacing one a page may
+	// already render through asks for publish inside the command
+	// (templateAdopt). The reads step down to view (below), and a bare
+	// `quilzo template` is asked as the list it runs (bareRuns).
+	"template":        {action: auth.ActPublish, hint: layoutHint},
+	"templates":       {action: auth.ActPublish, hint: layoutHint},
+	"template adopt":  {action: auth.ActEditDraft},
+	"templates adopt": {action: auth.ActEditDraft},
+	// The second spelling's layouts are read as the first's are, below:
+	// under the strict parent alone a reader was refused them.
+	"templates layouts": {action: auth.ActView},
 	// Declaring a chatbot is a publish: a public one is a new way for anybody
 	// on the internet to reach what the site says and what it offers to do.
 	"assistant":      {action: auth.ActPublish},
@@ -1586,7 +1603,12 @@ func commandArea(cmd string, args []string) (string, bool) {
 // list was refused a reader under its shortest spelling.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
-	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list"}
+	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
+	"template": "list", "templates": "list"}
+
+// layoutHint is said after a refusal to write a layout.
+const layoutHint = "a layout is the markup every page that names it renders through, " +
+	"so writing one asks whoever may publish, as installing a design on the Design screen does"
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
