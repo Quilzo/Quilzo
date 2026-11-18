@@ -223,3 +223,48 @@ func TestATokenFileOthersCanReadIsSaidToBe(t *testing.T) {
 		t.Errorf("a token file only its owner can read was warned about:\n%s", said)
 	}
 }
+
+// A mistyped command is offered the nearest one, at every level. Only the
+// top level did it, and it offered rows of the privilege table as commands:
+// `schedul` was "Did you mean schedule, schedule list?". `token lsit` was
+// "unknown token command" and nothing else, `auth grnat` the whole usage
+// and no nearer word, a mistyped flag Go's own list of every flag, written
+// with one dash, and `config set site.nmae` a pointer to all 129 settings.
+func TestAMistypedWordIsOfferedTheNearestOne(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	if _, e, code := cliRun(t, root, "", "add", "about="+fileOf(t, "about.json", `{"title":"About"}`), "-m", "a page to move"); code != 0 {
+		t.Fatalf("add: %s", e)
+	}
+	for _, c := range []struct {
+		line []string
+		want string
+	}{
+		{[]string{"token", "lsit"}, "did you mean quilzo token list?"},
+		{[]string{"token", "isue", "x"}, "did you mean quilzo token issue?"},
+		{[]string{"auth", "grnat", "a", "b"}, "did you mean quilzo auth grant?"},
+		{[]string{"records", "lsit"}, "did you mean quilzo records list?"},
+		{[]string{"agent", "template", "lsit"}, "did you mean quilzo agent template list?"},
+		{[]string{"publish", "--no-a11y-chek"}, "did you mean --no-a11y-check?"},
+		{[]string{"move", "about", "x", "--dryrun"}, "did you mean --dry-run?"},
+		{[]string{"token", "issue", "z", "--principl", "owner"}, "did you mean --principal?"},
+		{[]string{"config", "set", "site.nmae", "Hello"}, "did you mean site.name?"},
+	} {
+		o, e, code := cliRun(t, root, "", c.line...)
+		line := strings.Join(c.line, " ")
+		if code == 0 || !strings.Contains(e, c.want) {
+			t.Errorf("`quilzo %s` exited %d without %q:\n%s", line, code, c.want, firstLines(o+e, 4))
+		}
+		// Go's own list of the flags, under a heading nobody wrote, with a
+		// dash the help does not use.
+		if strings.Contains(o+e, "Usage of ") {
+			t.Errorf("`quilzo %s` answered with the flag package's list:\n%s", line, firstLines(o+e, 4))
+		}
+	}
+	_, e, _ := cliRun(t, root, "", "schedul")
+	if !strings.Contains(e, "Did you mean schedule?") {
+		t.Errorf("`quilzo schedul` was not offered schedule, or was offered a row of the privilege table:\n%s", e)
+	}
+}

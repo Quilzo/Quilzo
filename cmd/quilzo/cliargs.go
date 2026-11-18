@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -79,7 +80,7 @@ func parseFlags(fs *flag.FlagSet, args []string, pos *[]string, n int) error {
 func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int, err error) {
 	off := 0
 	for off <= len(args) {
-		if err := fs.Parse(args[off:]); err != nil {
+		if err := parseQuietly(fs, args[off:]); err != nil {
 			return nil, nil, err
 		}
 		rest := fs.Args()
@@ -99,6 +100,55 @@ func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int,
 		off = next + 1
 	}
 	return pos, at, nil
+}
+
+// parseQuietly is fs.Parse without the flag package's own answer to a flag
+// it could not read, which was every flag of the set under "Usage of move:",
+// each written with one dash where the help writes two, and then the error
+// again from main: `quilzo move about x --dryrun` was eight lines, none of
+// them saying that --dry-run was meant. What it could not read is said
+// instead by flagRefusal. Asked for help, the set still lists its flags:
+// that list is the answer then (answersOwnHelp).
+func parseQuietly(fs *flag.FlagSet, args []string) error {
+	var said bytes.Buffer
+	output := fs.Output()
+	fs.SetOutput(&said)
+	err := fs.Parse(args)
+	fs.SetOutput(output)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, flag.ErrHelp):
+		_, _ = output.Write(said.Bytes())
+		return err
+	}
+	return flagRefusal(fs, err)
+}
+
+// flagRefusal is the refusal of a flag the set could not read: the flag
+// package's line, the flag most likely meant, written as the help writes
+// it, and the help's lines for the command. A set with no flags (positionals)
+// is left to name the word itself, as strayWord does.
+func flagRefusal(fs *flag.FlagSet, err error) error {
+	var names []string
+	fs.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
+	if len(names) == 0 {
+		return err
+	}
+	msg := err.Error()
+	if typed, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		typed, _, _ = strings.Cut(strings.TrimLeft(typed, "-"), "=")
+		if near := nearestWords(typed, names); len(near) > 0 {
+			for i := range near {
+				near[i] = "--" + near[i]
+			}
+			msg += "\n  did you mean " + strings.Join(near, ", or ") + "?"
+		}
+	}
+	if help := helpFor(invoked.cmd, invoked.args); invoked.cmd != "" && help != "" {
+		msg += "\n" + strings.TrimRight(help, "\n")
+	}
+	return errMisused{errors.New(msg)}
 }
 
 // endsTheFlags reports whether the "--" that read ends with, the words Parse

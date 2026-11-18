@@ -1246,6 +1246,7 @@ func main() {
 		err = nil
 	}
 	if err != nil {
+		err = nearestSubcommand(err)
 		w.Error(err)
 		// A gate refusing is a different outcome from the command breaking, and
 		// a caller branching on exit status should be able to tell which.
