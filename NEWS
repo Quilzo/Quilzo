@@ -11,16 +11,16 @@ Unreleased
 
 *** Rooms, calls, the AI note-taker and the frame encryption under calls
     have left Quilzo for a separate product.  The commands room, call,
-    huddle, scribe, errand and sframe are gone.  Typing one of them, with
-    or without a subcommand, or asking for its help (`quilzo help room`,
-    `quilzo room --help`), is answered in one line saying that it has
-    moved out of Quilzo, with exit status 2, the status of a usage error.
-    A slip of one (`quilzo calls`) is still an unknown command, exit 1,
-    and is told the same.  Scripts that run any of the six need changing:
-    the demonstrations (call, huddle, scribe, errand, sframe) used to
-    exit 0.  Everything else is as it was: notes and review, claims on a
-    page, the handoff inbox, boards, share links, `quilzo annotate` and
-    the rest.
+    huddle, scribe, errand and sframe are gone.  Typing one of them, with or
+    without a subcommand, or asking for its help (`quilzo help room`,
+    `quilzo room --help`), is answered in one line saying that it has moved
+    out of Quilzo, with exit status 2, the status of a usage error.  A
+    slip of one (`quilzo calls`) is still an unknown command, exit 2 like
+    any other, and is told the same.  Scripts that run any of the six need
+    changing: the demonstrations (call, huddle, scribe, errand, sframe)
+    used to exit 0.  Everything else is as it was: notes and review, claims
+    on a page, the handoff inbox, boards, share links, `quilzo annotate`
+    and the rest.
 
 *** What rooms kept in a store is left where it is, and nothing reads it.
     The store's rooms/ directory is not deleted, changed or migrated; the
@@ -33,6 +33,9 @@ Unreleased
     is the last that can read, expire or erase what is in it, and after
     that the files stay as they are until somebody deletes them.  Calls,
     the note-taker and errands were demonstrations and kept nothing.
+
+*** `quilzo posture scan` says when a store still holds rooms that Quilzo
+    no longer manages, and what to do with them.
 
 *** `quilzo screen cost` gives the codec's figures alone.  It used to add
     18 bytes a frame for frame encryption, which left with calls: at the
@@ -121,6 +124,82 @@ Unreleased
     command without a person, and a read-only run is offered no tool that
     writes.
 *** Go 1.27.4, for an HTTP/1 server crash every server here could reach.
+*** A word a command does not take is refused (security): `quilzo auth
+    deny` granted the role it was asked to deny whenever a word followed
+    its flags, and an unquoted word dropped the rest of the line, so a
+    grant meant for 30 days was permanent.  Every command now refuses a
+    word it does not take, with its usage; nothing after `--` is read as
+    --root or --token; only init runs where there is no store; `rollback
+    N` rolls back N versions and `init DIR` makes the store in DIR.
+*** A run goes no further than whoever started it may do now (security):
+    a run taken on by somebody else, or run again, keeps the bounds it
+    began with and no more than its starter may do today, whatever an
+    older token of theirs says, and a run somebody with no role started
+    goes on reading only.  A read-only run, a reader's run and a model
+    its evaluations hold to proposing read the desktop and do not type or
+    press on it.  In a run nobody started, a press that commits to
+    something and a research search wait for a person, and the
+    exfiltration breaker stops a research search as it stops a web
+    search.
+*** Every MCP call is recorded under who made it (security): each
+    person's client at the agent interface is an agent of its own in the
+    watch and the fleet map, `quilzo mcp` on standard input records every
+    call as /mcp does, and an operation over MCP is authorised against
+    the path its command touches.
+*** The idle timeout reaches `site --api` and the studio (security): a
+    sign-in session is taken by the admin alone, which keeps its idle
+    clock.
+*** A note is its signed-in writer's (security): `note add --author WHO`
+    left a remark in somebody else's name, and any author removed
+    anyone's note.  A note is now recorded under whoever is signed in and
+    taken down only by them or a publisher; --author and `checked set
+    --by` name somebody only at a console nobody signs in to.
+*** Nobody forges a line in a list (security): a visitor could forge a
+    staff reply in `quilzo inbox show` with a newline, and a note could
+    forge another in `note list`.  Text other people wrote is printed so
+    it cannot pass for somebody else's line or act on the terminal.
+*** The last administrator is never locked out (security): the only
+    administrator can no longer revoke or deny their own last admin
+    binding, a token is never issued with a higher role than its
+    holder's, a typed --by never replaces the verified caller, a new
+    store gets the 14-day MFA grace only from init, `gateway budget
+    CALLER` with no flags no longer wipes its limits, and a second
+    administrator granted before their passkey can still enrol.
+*** An import brings only what its source published (security): private
+    and draft WordPress posts, posts behind a password and Markdown
+    drafts are left out.  A page named in another language keeps a
+    readable name (Ürünler is no longer r-nler); a name the store cannot
+    hold is refused before anything is written.  A JSON export reads
+    back as it went out, a WordPress export is a site WordPress takes,
+    an unchanged spreadsheet changes nothing, and a percent-encoded
+    redirect matches its address.
+*** A design change can be published, and nobody can make words nobody
+    can see (security): writing a layout asks a publisher; a change to
+    the design alone publishes; a size, a focus ring or words nobody can
+    read are refused however they are written; every generated palette
+    is readable over its backdrops.
+*** One rule for who may use a chatbot, on every surface (security), and
+    changing one setting keeps the rest: one budget limit, a re-declared
+    chatbot, or a change over the agent interface.  Trying a chatbot is
+    charged to whoever tries it.
+*** What a model wrote stays marked wherever the page goes (security):
+    `quilzo move` keeps a page's AI-generated mark and its provenance,
+    and writes the redirect from its old address.  Skipping the
+    accessibility check needs --reason and is recorded.  A live video
+    keeps its captions.  Scheduled publishing works on a server started
+    without a token.
+*** Whether a token is a person's or a program's is recorded at issue
+    (security), and the token posture rules judge it by that record, not
+    by its name.  People shows who signed in with which passkey.
+    `quilzo pending` lists feature installs waiting for a second person,
+    and `auditlog verify` says what its check proves and what it cannot.
+*** One client cannot take every connection, and a slow body cannot hold
+    the admin (security): one address can no longer hold every
+    connection a server will take, and a form on the admin has a
+    deadline for its body again.  The admin screens and /sitemap.xml
+    stop re-reading the store on every request, a subtree the store
+    cannot read is an error rather than an empty page, and one damaged
+    record no longer makes every collection unreadable.
 
 ** Agents and connected accounts
 
@@ -143,6 +222,25 @@ Unreleased
     it runs; programs and the scripts their interpreters run are pinned by
     digest.  "No motion" stops page transitions too.  Currencies are checked
     against ISO 4217, so ETH or BTC are not taken as money in hundredths.
+*** A chatbot never shows as verified what the page does not say: figures
+    and periods are compared whole (£12 is not £120), negation and
+    opposites are read more widely, and an instruction planted for "AI
+    agents" is caught by the knowledge screen.  The owner's chatbot reads
+    only what a visitor's would, and a kept unanswered question loses
+    names and street addresses.
+*** A chatbot's actions and handoffs reach someone: a look-up action no
+    longer fails, a request held for a person opens a conversation in the
+    Inbox with a notice and an audit record, and a request cut off by a
+    restart is answered when the server starts again.  Turning handoff off
+    stops new conversations, not the open ones.  A conversation is never
+    written past what can be read.  On an encrypted store, ask, eval, the
+    gap check, the MCP tool and the test console read what is published.
+*** MCP answers by MCP's rules: an argument a tool does not take is
+    invalid params and is named, in at most 80 bytes; a tool that failed
+    through the gateway answers with isError; what a pinned tool is sent
+    fits its approved schema; read_page with no page says it needs one.
+    The gateway and a browser grant are OAuth resources of their own, and
+    one Quilzo connects to another's agent interface by discovery.
 
 ** The site and its design
 
@@ -173,6 +271,29 @@ Unreleased
     manifest link inside the title or stop a page with a panic.  Tags are
     now found in the page itself, which also makes a public page about a
     fifth faster to serve.
+*** The public site says only what is true of it: the agent card is read
+    rather than sent to, the site's agent interface answers 405 to every
+    method but POST, a page served elsewhere names its canonical page, a
+    page's Markdown copy has its listings and a record's page has a copy,
+    and a page reached with a trailing slash is counted as that page.
+*** Reusable blocks publish and move: a page that reuses a block can be
+    published, and `quilzo move` carries the pages that reuse a block.
+    `quilzo add --remove` keeps the browser's rule about what may be
+    deleted.  A claim on a page is shown wherever the page is written
+    (the command line, MCP and an agent's run), and opening an editor
+    leaves somebody else's claim in place.  Uploading a picture already
+    in the library keeps its description.
+*** A translated page is served in its own language and direction, with
+    hreflang links.  The browser editor saves only what the person
+    changed: numbers stay numbers and text keeps its line endings.
+    Review, `quilzo diff` and MCP diff show what changed inside a page.
+    A Turkish word is found in capitals and without its marks.  IndexNow
+    is told of the pages a record changed, never of /data.
+*** A built site says what it is, and a publish names its broken links:
+    a publish lists the links that go to no page; a built site's pages
+    say what they are and the blog and events pages have an h1; bands
+    keep their spacing; the Design screen offers Install only to
+    somebody who may install; the Media screen lists each picture once.
 
 ** Documents, installing and CI
 
@@ -239,6 +360,21 @@ Unreleased
     characters in logged fields are escaped on the terminal and on /logs,
     failures are shown and can be filtered, `auditlog show SEQ` and `export
     -o FILE` work as documented, and /logs reads only the page it shows.
+*** A reader of the audit log waits for a record still being written, so
+    a check made during a write no longer reports a broken log.
+*** A record's own field named id, or fields, goes out with an export
+    and comes back as itself.
+*** The studio refuses an upload from its first bytes: a 200 MB file that
+    was not a recording took it from 45 MB of memory to 461 MB.
+*** Every command exits with the code its help documents (misuse 2,
+    refused 3, not there 4); under --json a write answers one document,
+    an empty list is [], and a secret shown once is alone on stdout.
+*** The command line does what its help says and asks before it erases:
+    an irreversible erasure waits for --yes at a terminal; a command
+    waiting for the store's lock says so and gives up after a while; a
+    mistyped word is offered the nearest one at every level; "-" is
+    standard input or output; every length of time takes days and weeks;
+    `records list` shows the id `records get` takes.
 
 ** Governance
 
@@ -528,14 +664,17 @@ Unreleased
 ** Quilzo defends itself; a security team's own tools are no longer in it
 
 *** A security team's tools left Quilzo: collecting from other systems
-    (connect, collect, inbound, source, spool, telemetry and the Feeds and
-    Events screens), detections, Sigma, correlations and the trial ring
+    (the old connect for data sources, collect, inbound, source, spool,
+    telemetry and the Feeds and Events screens; `quilzo connect` is now
+    connected accounts), detections, Sigma, correlations and the trial ring
     (detect, sigma, correlate, proving, hunt, triage), the finding queue and
     risk (finding, analyst), cases and incidents with their regulatory
     clocks, actions on other platforms, automations, vulnerabilities (vuln,
     sca, sarif, appsec, feed, reachability), the estate and workforce risk,
-    vendors, access reviews, reminders, notices to customers, work tracking,
-    estate canaries, and the MCP tools over all of them.  Their screens are
+    vendors, the organisation-wide access reviews (Quilzo still reviews the
+    access it grants itself, with `quilzo access review`), reminders,
+    notices to customers, work tracking, estate canaries, and the MCP tools
+    over all of them.  Their screens are
     gone from the admin, and the Security operations menu is Protection:
     Shield and Sign-ins.  Quilzo keeps what it needs to defend itself, and
     hands its audit log to any SIEM that reads OCSF, as it is written
@@ -1571,11 +1710,11 @@ Unreleased
     with questions first, then what cannot be taken back, then the oldest;
     and a count for each part of the store you can open: pages changed in
     the draft and not published, agent runs going, finished and gone wrong
-    in the last day, visitors waiting for a reply, findings to triage and
-    cases open.  Each count links to the records it counts, and the same
-    grant check as the menu decides which are shown.  Signing in with a token, an identity provider or a passkey
-    lands on it; "Start on Pages after signing in instead" keeps the old
-    start, in your browser.
+    in the last day, and visitors waiting for a reply.  Each count links to
+    the records it counts, and the same grant check as the menu decides
+    which are shown.  Signing in with a token, an identity provider or a
+    passkey lands on it; "Start on Pages after signing in instead" keeps
+    the old start, in your browser.
 
 *** Roles for the people who work in an app.  A feature package can
     declare roles over its own collections, pages and agents: read or write
@@ -1710,8 +1849,8 @@ Unreleased
 
 *** Approvals (/approvals, `quilzo approvals`) lists everything waiting for
     the person looking: what agent runs ask, questions they need answered,
-    actions the reviewer stopped, tool calls held for a second person, acts
-    a case waits to have approved, a change waiting for review, memories
+    actions the reviewer stopped, tool calls held for a second person, a
+    change waiting for review, memories
     held until confirmed.  Each says what deciding commits to.  Several runs
     waiting on the same action that only reads or acts can be let through
     together; anything that writes, sends, pays, deletes or publishes, and
@@ -2145,11 +2284,11 @@ Unreleased
 *** "Confirm it's you" no longer sends a code by email.  NIST SP
     800-63B-4 forbids email for this (3.1.3.1: email shall not be used
     for out-of-band authentication), and whoever can read a person's mail
-    could pass it.  A session the automations hold back is confirmed with
+    could pass it.  A session signin.adaptive holds back is confirmed with
     the person's passkey, by signing in again through single sign-on, or
     by another administrator from Sign-ins.  Three failed passkey
-    confirmations from such a session raise verification-failing for the
-    automations, as three wrong codes did.
+    confirmations from such a session raise verification-failing, and the
+    security contact is told, as three wrong codes did.
 
 *** Agents do nothing while their actions cannot be recorded.  With the
     log writer down, the audit key unreadable, the log's disk nearly full
@@ -2261,23 +2400,8 @@ Unreleased
     a caller by the email address single sign-on gives them
     (door:dana@quilzo.io).
 
-*** Quilzo reads its own audit log on the server's timer.  The rules about
-    Quilzo itself, what agents did and the correlations across them ran
-    only when somebody ran `quilzo detect run`, a feed pushed events or a
-    scheduled collection brought some in, so an installation that collects
-    from nowhere ran none of them.  Every quarter of an hour in which the
-    log has grown, the rules run, and what they raise goes to the
-    automations.
-
-*** A new store starts with the shipped detection rules, and a server
-    whose store has no rules directory installs them when it starts.  They
-    are files in the store as before, the organisation's to tune or switch
-    off; a store that has its own rules keeps exactly those.
-
-*** Making somebody an administrator is detected on every path: the
-    People screen, `quilzo auth grant`, and provisioning from an identity
-    provider, which now records each role it gives and takes away
-    (scim.granted, scim.revoked).
+*** Provisioning from an identity provider records each role it gives and
+    takes away (scim.granted, scim.revoked).
 
 *** `quilzo token exchange --json` is recorded; the session a script asked
     for left no record.
@@ -2362,7 +2486,7 @@ Unreleased
     the policy still decides where it reaches.
 *** What an app did through the agent interface, and what an agent did
     under its own identity, is recorded in that act's own audit record:
-    granting, assistants, deciders, automations, findings and every other
+    granting, assistants, deciders and every other
     command an app can reach.  The record named no model, which the log
     refuses for an AI act, so only the interface's mcp.call record was
     kept.  It now names the app (mcp-client) or the agent as its model,
@@ -2375,22 +2499,16 @@ Unreleased
 v0.3.0 — 20 September 2026 (prepared; never tagged)
 ===================================================
 
-Ninety changes. Most came out of two sweeps: driving the running program
+Forty-two changes. Most came out of two sweeps: driving the running program
 through a browser and a terminal rather than reading it, and an audit for
 things this program declared and never executed. The second found more, and the
 reason is consistent -- in every case the code was correct about its own job
 and wrong about what another part was doing with it.
 
-The security fixes here also shipped as v0.2.2 on the v0.2.x line. That release
-notes what did not backport and why: three fixes are for code that does not
-exist in v0.2.x, and two checks were left out because their subject does not
-either.
-
-Eighty-two changes.  Most of them came out of two sweeps: driving the running
-program through a browser and a terminal rather than reading it, and an audit
-for things this program declared and never executed.  The second found more
-than the first, and the reason is consistent — in every case the code was
-correct about its own job and wrong about what another part was doing with it.
+The security fixes here were also prepared as v0.2.2 on the v0.2.x line. That
+release notes what did not backport and why: three fixes are for code that does
+not exist in v0.2.x, and two checks were left out because their subject does
+not either.
 
 ** Declared, and never executed
 
@@ -2938,7 +3056,7 @@ than by reading it, and each item was reproduced before it was fixed.
 v0.1.0 — 7 September 2026 (prepared; never tagged)
 ==================================================
 
-The first tagged release. Everything below is in it; there was no release
+The first release prepared. Everything below is in it; there was no release
 before this one, so nothing here is a change from something you were running.
 
 Why 0.1.0 and not 1.0.0.  A 1.0 in semantic versioning is a promise about
