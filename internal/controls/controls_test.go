@@ -5,6 +5,8 @@ package controls
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -235,4 +237,42 @@ func TestEveryHourlyCheckNamesTheServerThatRunsIt(t *testing.T) {
 	if n == 0 {
 		t.Fatal("nothing promises an hourly check; this test has stopped looking")
 	}
+}
+
+// The security plan says what Quilzo is, in the README's words.
+//
+// Its system description, the first thing an assessor reads about the
+// system, called a deployment "the self-hosted CMS for the organisation's
+// websites, chatbots and AI agents" and named "the security console", a
+// description the product had outgrown and a part it no longer has: a
+// security team's own tools left Quilzo, and what remains defends the
+// installation itself.
+func TestThePlanSaysWhatQuilzoIs(t *testing.T) {
+	want := strings.ToLower(whatQuilzoIs(t))
+	plan, err := SystemSecurityPlan(SSPInput{Impact: "low", SystemID: "x", At: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	said := plan.SystemSecurityPlan.SystemCharacteristics.Description
+	if !strings.Contains(strings.ToLower(said), want) {
+		t.Errorf("the security plan describes the system as %q, and the README says Quilzo is %q", said, want)
+	}
+	if strings.Contains(strings.ToLower(said), "security console") {
+		t.Errorf("the security plan names a security console Quilzo does not have: %q", said)
+	}
+}
+
+// whatQuilzoIs is the README's sentence about what Quilzo is, the bold
+// line under the wordmark, without its full stop.
+func whatQuilzoIs(t *testing.T) string {
+	t.Helper()
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`<strong>([^<]+)</strong>`).FindSubmatch(readme)
+	if m == nil {
+		t.Fatal("README.md has no line in bold saying what Quilzo is")
+	}
+	return strings.TrimSuffix(strings.TrimSpace(string(m[1])), ".")
 }
