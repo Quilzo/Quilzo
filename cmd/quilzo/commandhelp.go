@@ -152,11 +152,24 @@ func helpAfter(cmd string, args []string) bool {
 // operator, `quilzo fediverse init help` wrote a signing key, and `quilzo
 // review approve help` approved the draft for anybody but its author.
 //
+// Or where SUB takes a file or an id first (helpNeverNamed), since no id is
+// called help and a file called help is reached as ./help: `quilzo backup
+// create help` wrote a backup called help, and `token revoke help` said "no
+// token help". And a level further down, where SUB has subcommands of its
+// own: `quilzo shield decoy add help` was a usage error.
+//
 // Where SUB takes a name, "help" is left to be one: `quilzo decide ask
 // help` asks the decider called help.
 func helpAfterSub(cmd string, args []string) bool {
-	if len(args) < 2 || args[1] != "help" || !helpSubcommand.MatchString(args[0]) {
+	last := len(args) - 1
+	if last < 1 || args[last] != "help" {
 		return false
+	}
+	subs := args[:last]
+	for _, sub := range subs {
+		if !helpSubcommand.MatchString(sub) {
+			return false
+		}
 	}
 	if primary, ok := helpAliases[cmd]; ok {
 		cmd = primary
@@ -171,13 +184,20 @@ func helpAfterSub(cmd string, args []string) bool {
 		if i := helpDescription.FindStringIndex(synopsis); i != nil {
 			synopsis = synopsis[:i[0]]
 		}
+		// A quoted value is one word, however many it holds: the "CI
+		// variable" of `shield decoy add --where "CI variable"`.
+		synopsis = helpQuoted.ReplaceAllString(synopsis, `"…"`)
 		for _, alt := range strings.Split(synopsis, " | ") {
 			fields := strings.Fields(alt)
-			if len(fields) == 0 || !slices.Contains(strings.Split(fields[0], "|"), args[0]) {
+			if !helpLeads(fields, subs) {
 				continue
 			}
 			named = true
-			after := strings.Join(fields[1:], " ")
+			fields = fields[len(subs):]
+			if len(fields) > 0 && helpNeverNamed(fields[0]) {
+				continue
+			}
+			after := strings.Join(fields, " ")
 			for _, b := range helpBracketed.FindAllString(after, -1) {
 				if !strings.HasPrefix(b, "[-") {
 					return false
@@ -195,6 +215,36 @@ func helpAfterSub(cmd string, args []string) bool {
 		}
 	}
 	return named
+}
+
+// helpLeads reports whether a synopsis's words begin with the subcommands
+// given, each where the help offers it ("confirm|delete ID" offers both).
+func helpLeads(fields, subs []string) bool {
+	if len(fields) < len(subs) {
+		return false
+	}
+	for i, sub := range subs {
+		if !slices.Contains(strings.Split(fields[i], "|"), sub) {
+			return false
+		}
+	}
+	return true
+}
+
+// helpNeverNamed reports whether the help's word for what a command takes
+// is one "help" cannot be meant as: a file or a directory, which a person
+// who does mean one called help writes ./help, or an identifier the program
+// made, which is never a word. A name, a page or a person may be called
+// help, and is left to be.
+func helpNeverNamed(w string) bool {
+	for _, alt := range strings.Split(w, "|") {
+		alt, _, _ = strings.Cut(alt, ".")
+		switch alt {
+		case "FILE", "DIR", "ID", "RUN", "RUN-ID", "SEQ", "CID", "N":
+			return true
+		}
+	}
+	return false
 }
 
 // helpSubcommand is how a subcommand is written in the help, a lowercase
@@ -349,6 +399,7 @@ func helpFor(cmd string, args []string) string {
 var (
 	helpDescription = regexp.MustCompile(`\s{2,}`)
 	helpBracketed   = regexp.MustCompile(`\[[^\]]*\]`)
+	helpQuoted      = regexp.MustCompile(`"[^"]*"`)
 )
 
 // helpNames reports whether an entry's synopsis offers sub where a

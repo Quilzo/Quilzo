@@ -388,6 +388,57 @@ func TestHelpAfterASubcommandThatTakesOnlyFlagsIsItsHelp(t *testing.T) {
 	}
 }
 
+// Where a subcommand takes a file or an id, "help" in its place is a
+// question, as it is after one that takes only flags: no id is called help,
+// and a file called help in the working directory is reached as ./help.
+// `quilzo backup create help` wrote a 2 MB backup called help, `token revoke
+// help` said "no token help", `agent receipt help` that "help" is not a run
+// id and `agent declare help` "open help: no such file". A subcommand a level
+// further down was not asked at all: `shield decoy add help` was a usage
+// error, exit 2.
+//
+// Asked in a process of its own, in a store with a backup key to hand:
+// nothing may be written, the exit is 0, and the help shown is about the
+// subcommand asked.
+func TestHelpWhereAFileOrAnIDGoesIsItsHelp(t *testing.T) {
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if err := cmdInit(template); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(t.TempDir(), "backup.key")
+	if err := os.WriteFile(keyFile, []byte(strings.Repeat("A", 43)+"=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][]string{
+		{"backup", "create"}, {"token", "revoke"}, {"agent", "receipt"}, {"agent", "declare"},
+		{"media", "remove"}, {"review", "require"}, {"shield", "decoy", "add"},
+	} {
+		t.Run(strings.Join(c, " "), func(t *testing.T) {
+			t.Parallel()
+			dir, home := t.TempDir(), t.TempDir()
+			copyTree(t, template, filepath.Join(dir, ".quilzo"))
+			before := treeState(t, dir) + treeState(t, home)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], append(append([]string{"quilzo-main"}, c...), "help")...)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1",
+				"QUILZO_BACKUP_KEY_FILE="+keyFile)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			if err := cmd.Run(); err != nil {
+				t.Errorf("`quilzo %s help`: %v\n%s", strings.Join(c, " "), err, firstLines(stdout.String()+stderr.String(), 4))
+			}
+			if after := treeState(t, dir) + treeState(t, home); after != before {
+				t.Errorf("`quilzo %s help` wrote something:\n%s", strings.Join(c, " "), treeDiff(before, after))
+			}
+			if !strings.Contains(stdout.String(), "quilzo "+c[0]+" ") || !strings.Contains(stdout.String(), c[len(c)-1]) {
+				t.Errorf("`quilzo %s help` showed no line of the help about it:\n%s", strings.Join(c, " "), stdout.String())
+			}
+		})
+	}
+}
+
 // Where a subcommand takes a name, "help" is left to be one, and a
 // subcommand the help does not name is not answered for.
 func TestHelpAfterASubcommandThatTakesANameIsTheName(t *testing.T) {
@@ -395,6 +446,8 @@ func TestHelpAfterASubcommandThatTakesANameIsTheName(t *testing.T) {
 		{"decide", "ask", "help"}, {"lock", "release", "help"}, {"newsletter", "send", "help"},
 		{"records", "list", "help"}, {"memory", "history", "help"}, {"geo", "network", "help"},
 		{"decide", "nonsense", "help"}, {"vault", "enable", "x", "help"},
+		// A name, not a file or an id: the person, token or app called help.
+		{"auth", "enrol", "help"}, {"token", "issue", "help"}, {"apps", "register", "help"},
 	} {
 		if helpAfterSub(args[0], args[1:]) {
 			t.Errorf("`quilzo %s` is taken as asking for help", strings.Join(args, " "))
