@@ -43,7 +43,7 @@ func cmdImport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")
+		return errMisused{fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")}
 	}
 
 	body, err := os.ReadFile(pos[0])
@@ -259,9 +259,9 @@ func cmdMedia(root string, args []string) error {
 		}
 		return mediaFormats()
 	default:
-		return fmt.Errorf("unknown media command %q; try add, get, list, "+
+		return errMisused{fmt.Errorf("unknown media command %q; try add, get, list, "+
 			"remove, replace, renditions, origin, focus, edit, generate, "+
-			"captions, transcribe, speak, verify or formats", args[0])
+			"captions, transcribe, speak, verify or formats", args[0])}
 	}
 }
 
@@ -398,7 +398,7 @@ func mediaRemove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media remove <id> [--force]")
+		return errMisused{fmt.Errorf("usage: quilzo media remove <id> [--force]")}
 	}
 	id := pos[0]
 
@@ -623,7 +623,7 @@ func mediaAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")
+		return errMisused{fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")}
 	}
 	if *decorative && strings.TrimSpace(*alt) != "" {
 		return fmt.Errorf("--decorative says the image needs no description, " +
@@ -788,7 +788,7 @@ func mediaGet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")
+		return errMisused{fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")}
 	}
 
 	c := fetch.For("import")

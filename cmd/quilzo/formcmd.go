@@ -37,8 +37,8 @@ func cmdForms(root string, args []string) error {
 	case "erase":
 		return formsErase(root, args[1:])
 	default:
-		return fmt.Errorf("unknown form command %q; try list, expire or erase",
-			args[0])
+		return errMisused{fmt.Errorf("unknown form command %q; try list, expire or erase",
+			args[0])}
 	}
 }
 
@@ -124,9 +124,9 @@ func formsErase(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo form erase <value> [--dry-run]\n" +
-				"  the value is what the person gave you — usually an address")
+				"  the value is what the person gave you — usually an address")}
 	}
 
 	set, err := loadForms(root)

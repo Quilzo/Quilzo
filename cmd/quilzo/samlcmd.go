@@ -68,7 +68,7 @@ func saveSAML(root string, c saml.Config) error {
 
 func removeSAML(root, name string) error {
 	if _, err := os.Stat(samlFile(root, name)); err != nil {
-		return fmt.Errorf("there is no identity provider called %q", name)
+		return errNotFound{fmt.Errorf("there is no identity provider called %q", name)}
 	}
 	return os.Remove(samlFile(root, name))
 }
@@ -99,10 +99,10 @@ func samlFetch(root, addr string) ([]byte, error) {
 }
 
 func samlUsage() error {
-	return fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
+	return errMisused{fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
 		"add NAME --metadata FILE|URL --url https://YOUR-ADMIN [--preset okta] " +
 		"[--domain d] [--required] [--verified-attribute NAME | --allow-unverified-email] " +
-		"[--fingerprint SHA256] | remove NAME")
+		"[--fingerprint SHA256] | remove NAME")}
 }
 
 func cmdSAML(root string, args []string) error {
@@ -226,7 +226,7 @@ func findSAML(root, name string) (*saml.Config, error) {
 			return &all[i], nil
 		}
 	}
-	return nil, fmt.Errorf("there is no identity provider called %q", name)
+	return nil, errNotFound{fmt.Errorf("there is no identity provider called %q", name)}
 }
 
 func samlShow(c *saml.Config) error {

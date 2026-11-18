@@ -19,7 +19,7 @@ import (
 
 func cmdNetwork(root string, args []string) error {
 	if len(args) > 0 && args[0] != "show" {
-		return fmt.Errorf("usage: quilzo network [show]")
+		return errMisused{fmt.Errorf("usage: quilzo network [show]")}
 	}
 	// And nothing after show, which was not looked at.
 	if len(args) > 0 {

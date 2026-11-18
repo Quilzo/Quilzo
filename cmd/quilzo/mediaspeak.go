@@ -43,7 +43,7 @@ func mediaSpeak(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo media speak \"text\" | @FILE --voice VOICE --author WHO")
+		return errMisused{fmt.Errorf("usage: quilzo media speak \"text\" | @FILE --voice VOICE --author WHO")}
 	}
 	who := strings.TrimSpace(*author)
 	if who == "" {

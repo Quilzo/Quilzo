@@ -228,7 +228,7 @@ func integrationTemplateNames() []string {
 func integrationFromTemplate(tmpl, name, provider string, uses []string, c templateChoice) (agent.Integration, error) {
 	t, ok := integrationTemplates[tmpl]
 	if !ok {
-		return agent.Integration{}, fmt.Errorf("no template called %s; there are %s", tmpl, strings.Join(integrationTemplateNames(), ", "))
+		return agent.Integration{}, errNotFound{fmt.Errorf("no template called %s; there are %s", tmpl, strings.Join(integrationTemplateNames(), ", "))}
 	}
 	in := t.Integration
 	in.Operations = append([]agent.Operation(nil), t.Integration.Operations...)
@@ -327,9 +327,9 @@ func integrationsTemplate(root string, args []string) error {
 		return nil
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo integrations template [NAME [--as N] [--connection PROVIDER] [--uses A,B]]\n" +
+		return errMisused{errors.New("usage: quilzo integrations template [NAME [--as N] [--connection PROVIDER] [--uses A,B]]\n" +
 			"       quilzo integrations template social-aggregator --endpoint HOST --path PATH " +
-			"[--fields text=NAME,media=NAME,platforms=NAME] [--secret NAME] [--auth header:NAME]")
+			"[--fields text=NAME,media=NAME,platforms=NAME] [--secret NAME] [--auth header:NAME]")}
 	}
 	var only []string
 	for _, u := range strings.Split(*uses, ",") {

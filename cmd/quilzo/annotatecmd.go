@@ -32,7 +32,7 @@ func cmdAnnotate(args []string) error {
 	case "follow":
 		return annotateFollow(args[1:])
 	default:
-		return fmt.Errorf("unknown annotate command %q; try follow", args[0])
+		return errMisused{fmt.Errorf("unknown annotate command %q; try follow", args[0])}
 	}
 }
 

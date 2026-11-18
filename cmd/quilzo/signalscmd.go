@@ -265,15 +265,15 @@ func samlNamed(root, name string) (*saml.Config, error) {
 			return &all[i], nil
 		}
 	}
-	return nil, fmt.Errorf("there is no SAML provider %q (quilzo saml list)", name)
+	return nil, errNotFound{fmt.Errorf("there is no SAML provider %q (quilzo saml list)", name)}
 }
 
 // signalsUsage names one of --client-id and --jwks as needed, which the
 // brackets of the first spelling hid: both looked optional, and connecting
 // with neither was refused.
 func signalsUsage() error {
-	return errors.New("usage: quilzo signals connect --provider oidc|saml:NAME (--client-id ID | --jwks URL) " +
-		"[--issuer URL] [--audience A] | status | off")
+	return errMisused{errors.New("usage: quilzo signals connect --provider oidc|saml:NAME (--client-id ID | --jwks URL) " +
+		"[--issuer URL] [--audience A] | status | off")}
 }
 
 func cmdSignals(root string, args []string) error {
@@ -304,7 +304,7 @@ func signalsConnect(root string, args []string) error {
 	audience := fs.String("audience", "", "this receiver as the transmitter names it; the push address by default")
 	clientID := fs.String("client-id", "", "the client the transmitter issued for its stream API; the secret is read from "+signalsSecretEnv)
 	jwks := fs.String("jwks", "", "the transmitter's key set, for a stream made in its own console")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	// A word left over is a flag mistyped or a value given its own place,

@@ -110,7 +110,7 @@ func featureDraftCmd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New(`usage: quilzo feature draft "what you want it to do" [-o FILE]`)
+		return errMisused{errors.New(`usage: quilzo feature draft "what you want it to do" [-o FILE]`)}
 	}
 	caller := resolveCaller(root, flagToken)
 	ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
@@ -155,7 +155,7 @@ func featureFromCmd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature from FILE.csv|FILE.json [--name N] [-o FILE]")
+		return errMisused{errors.New("usage: quilzo feature from FILE.csv|FILE.json [--name N] [-o FILE]")}
 	}
 	body, err := readBounded(pos[0], 64<<20)
 	if err != nil {

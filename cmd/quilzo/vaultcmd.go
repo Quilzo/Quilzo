@@ -201,9 +201,9 @@ func cmdVault(root string, args []string) error {
 	case "rewrap":
 		return vaultRewrap(root, args[1:])
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown vault command %q; try status, enable, rotate or rewrap",
-			args[0])
+			args[0])}
 	}
 }
 

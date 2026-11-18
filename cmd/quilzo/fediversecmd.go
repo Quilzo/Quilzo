@@ -46,9 +46,9 @@ func cmdFediverse(root string, args []string) error {
 		}
 		return fediverseBlocked(root)
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown fediverse command %q; try init, status, followers, "+
-				"block, unblock or blocked", args[0])
+				"block, unblock or blocked", args[0])}
 	}
 }
 

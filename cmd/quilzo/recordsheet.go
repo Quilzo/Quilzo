@@ -428,7 +428,7 @@ func sheetOf(root, coll, format string, bom bool) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	if len(idx.Records) == 0 && t == nil {
-		return nil, 0, fmt.Errorf("there is no collection %s: quilzo records collections lists them", coll)
+		return nil, 0, errNotFound{fmt.Errorf("there is no collection %s: quilzo records collections lists them", coll)}
 	}
 	if format == "json" {
 		declaresID := t != nil && declares(t, "id")

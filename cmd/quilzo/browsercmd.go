@@ -141,7 +141,7 @@ func cmdBrowser(root string, args []string) error {
 		}
 		return cmdBrowserFind(root)
 	}
-	return fmt.Errorf("unknown browser command %q; try status, install, find or grant", args[0])
+	return errMisused{fmt.Errorf("unknown browser command %q; try status, install, find or grant", args[0])}
 }
 
 // cmdBrowserGrant declares what an outside MCP client's browser may do:
@@ -213,7 +213,7 @@ func cmdBrowserGrant(root string, args []string) error {
 			return err
 		}
 		if _, ok := set[name]; !ok {
-			return fmt.Errorf("there is no browser grant called %s", name)
+			return errNotFound{fmt.Errorf("there is no browser grant called %s", name)}
 		}
 		delete(set, name)
 		var f grantsFile

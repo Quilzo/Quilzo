@@ -340,6 +340,11 @@ func policyInUse(root string) (bool, error) {
 // Returns nil when the action may proceed. The refusal explains which of the
 // two things was missing — an identity or a permission — because they need
 // different fixes and "forbidden" tells nobody which.
+//
+// A refusal is a gate's (errBlocked), and exits 3, as the help documents a
+// refusal by a gate; a policy that cannot be read is not one, and fails. A
+// reader's `publish` and a publisher-capped token's `auth grant` exited 1,
+// as a command that broke does, so a script could not tell the two apart.
 func authorise(root string, c *Caller, action auth.Action, resource string) error {
 	inUse, err := policyInUse(root)
 	if err != nil {
@@ -349,7 +354,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 		return nil // nothing has been granted; there is nothing to enforce
 	}
 	if !c.Verified {
-		return &errUnverified{action: action, resource: resource, why: c.Why}
+		return errBlocked{&errUnverified{action: action, resource: resource, why: c.Why}}
 	}
 	p, err := loadPolicy(root)
 	if err != nil {
@@ -357,7 +362,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	}
 	d := p.Evaluate(c.Name, action, resource)
 	if !d.Allowed {
-		return fmt.Errorf("%s", d.Reason)
+		return errBlocked{fmt.Errorf("%s", d.Reason)}
 	}
 
 	// The token's own limits, checked second and separately.
@@ -373,7 +378,10 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	// interface and the content API were each doing a different subset of the
 	// same three and one of the gaps was a privilege escalation. This surface
 	// had them all; being right is not the same as being the only one right.
-	return auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource)
+	if err := auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource); err != nil {
+		return errBlocked{err}
+	}
+	return nil
 }
 
 // errUnverified is a refusal for want of an identity, before the policy

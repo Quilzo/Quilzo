@@ -115,8 +115,8 @@ func cmdConfig(root string, args []string) error {
 	case "unset":
 		return configUnset(root, args[1:])
 	default:
-		return fmt.Errorf("unknown config command %q; try show, list, "+
-			"explain, set or unset", args[0])
+		return errMisused{fmt.Errorf("unknown config command %q; try show, list, "+
+			"explain, set or unset", args[0])}
 	}
 }
 
@@ -221,7 +221,7 @@ func configList() error {
 
 func configExplain(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config explain <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config explain <key>")}
 	}
 	s, ok := config.Lookup(args[0])
 	if !ok {
@@ -263,8 +263,8 @@ func configSet(root string, args []string) error {
 		}
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo config set <key> <value> " +
-			"[--accept-risk \"reason\"]")
+		return errMisused{fmt.Errorf("usage: quilzo config set <key> <value> " +
+			"[--accept-risk \"reason\"]")}
 	}
 	key, value = rest[0], rest[1]
 
@@ -323,7 +323,7 @@ func configSet(root string, args []string) error {
 
 func configUnset(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config unset <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config unset <key>")}
 	}
 	c, err := loadConfig(root)
 	if err != nil {

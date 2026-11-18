@@ -113,7 +113,7 @@ func trustAdd(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo trust add NAME --github OWNER/REPO --as PRINCIPAL --role ROLE")
+		return errMisused{errors.New("usage: quilzo trust add NAME --github OWNER/REPO --as PRINCIPAL --role ROLE")}
 	}
 	t := federate.Trust{Name: rest[0], Issuer: *issuer, Audience: *audience, Claims: claims,
 		Principal: *as, Role: auth.Role(*role), Resource: *on, ReadOnly: *readOnly, TTL: life.String(),
@@ -201,7 +201,7 @@ func trustList(root string) error {
 
 func trustRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo trust remove NAME")
+		return errMisused{errors.New("usage: quilzo trust remove NAME")}
 	}
 	trusts, err := loadTrusts(root)
 	if err != nil {
@@ -209,7 +209,7 @@ func trustRemove(root string, args []string) error {
 	}
 	kept := slices.DeleteFunc(slices.Clone(trusts), func(t federate.Trust) bool { return t.Name == args[0] })
 	if len(kept) == len(trusts) {
-		return fmt.Errorf("no trust called %s", args[0])
+		return errNotFound{fmt.Errorf("no trust called %s", args[0])}
 	}
 	if err := saveJSON(trustPath(root), trustFile{kept}); err != nil {
 		return err

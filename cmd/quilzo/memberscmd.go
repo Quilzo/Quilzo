@@ -21,8 +21,8 @@ import (
 // nothing stored that would let anybody do either.
 
 func memberUsage() error {
-	return fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
-		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")
+	return errMisused{fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
+		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")}
 }
 
 func cmdMember(root string, args []string) error {
@@ -151,7 +151,7 @@ func cmdMember(root string, args []string) error {
 		return nil
 	case "revoke-invite":
 		if len(args) != 2 || len(strings.TrimSpace(args[1])) < 6 {
-			return fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")
+			return errMisused{fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")}
 		}
 		if err := store.RevokeInvite(args[1]); err != nil {
 			return err

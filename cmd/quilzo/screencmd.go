@@ -35,7 +35,7 @@ func cmdScreen(args []string) error {
 	case "cost":
 		return screenCost(args[1:])
 	default:
-		return fmt.Errorf("unknown screen command %q; try cost", args[0])
+		return errMisused{fmt.Errorf("unknown screen command %q; try cost", args[0])}
 	}
 }
 

@@ -369,8 +369,8 @@ func auditVerifyHead(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf(
-			"usage: quilzo auditlog verify-head <head.json> [--keys head.pub.json]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo auditlog verify-head <head.json> [--keys head.pub.json]")}
 	}
 	headPath := pos[0]
 	keysPath := headKeysPath(root)

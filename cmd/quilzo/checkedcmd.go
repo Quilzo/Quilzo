@@ -42,9 +42,9 @@ func cmdChecked(root string, args []string) error {
 	case "clear":
 		return checkedClear(root, args[1:])
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown checked command %q; try set, list, due, own, disown or "+
-				"clear", args[0])
+				"clear", args[0])}
 	}
 }
 
@@ -96,8 +96,8 @@ func checkedSet(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
-			"usage: quilzo checked set PAGE [--every 168h] [--note \"...\"]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo checked set PAGE [--every 168h] [--note \"...\"]")}
 	}
 	page := rest[0]
 
@@ -123,7 +123,7 @@ func checkedSet(root string, args []string) error {
 	if _, exists := hashes[page]; !exists {
 		// Refused rather than recorded. A check on a page that is not there is
 		// a typo, and recording it produces a record nothing will ever clear.
-		return fmt.Errorf("there is no page called %q in the draft", page)
+		return errNotFound{fmt.Errorf("there is no page called %q in the draft", page)}
 	}
 
 	st, err := openChecked(root)
@@ -266,8 +266,14 @@ func checkedList(root string, args []string, dueOnly bool) error {
 }
 
 func checkedClear(root string, args []string) error {
+	// A flag is refused rather than taken for the page: `checked clear
+	// --zzflag` cleared a page called "--zzflag" and said so, exit 0.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo checked clear PAGE")
+		return errMisused{fmt.Errorf("usage: quilzo checked clear PAGE")}
 	}
 	st, err := openChecked(root)
 	if err != nil {
@@ -289,7 +295,7 @@ func checkedClear(root string, args []string) error {
 // and no flags, so leadingArgs has nothing to trip over.
 func checkedOwn(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo checked own PAGE WHO")
+		return errMisused{fmt.Errorf("usage: quilzo checked own PAGE WHO")}
 	}
 	page, who := args[0], strings.TrimSpace(args[1])
 	if who == "" {
@@ -310,7 +316,7 @@ func checkedOwn(root string, args []string) error {
 // checkedDisown takes the owner off a page.
 func checkedDisown(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo checked disown PAGE")
+		return errMisused{fmt.Errorf("usage: quilzo checked disown PAGE")}
 	}
 	if _, err := setOwner(root, args[0], ""); err != nil {
 		return err
@@ -330,8 +336,8 @@ func setOwner(root, page, who string) (checked.Record, error) {
 		// Same refusal as set, for the same reason: an owner on a page that is
 		// not there is a typo, and it produces a record nothing will ever
 		// clear.
-		return checked.Record{}, fmt.Errorf(
-			"there is no page called %q in the draft", page)
+		return checked.Record{}, errNotFound{fmt.Errorf(
+			"there is no page called %q in the draft", page)}
 	}
 	st, err := openChecked(root)
 	if err != nil {

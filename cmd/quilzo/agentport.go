@@ -53,7 +53,7 @@ func checkImported(root string, imp *agentport.Imported) []importedAgent {
 
 // agentImport is `quilzo agent import FILE [--from F] [--name N] [-o DIR] [--save]`.
 func agentImport(root string, args []string) error {
-	usage := errors.New("quilzo agent import FILE [--from FORMAT] [--name NAME] [-o DIR] [--save]")
+	usage := errMisused{errors.New("quilzo agent import FILE [--from FORMAT] [--name NAME] [-o DIR] [--save]")}
 	fs := flag.NewFlagSet("agent import", flag.ContinueOnError)
 	from := fs.String("from", "", "the file's format, when it is not recognised (quilzo agent formats)")
 	name := fs.String("name", "", "what to call the file's only agent here")
@@ -210,7 +210,7 @@ func agentExport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("quilzo agent export NAME [--to FORMAT] [-o PATH]")
+		return errMisused{errors.New("quilzo agent export NAME [--to FORMAT] [-o PATH]")}
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -218,7 +218,7 @@ func agentExport(root string, args []string) error {
 	}
 	m, ok := set.Agents[pos[0]]
 	if !ok {
-		return fmt.Errorf("no agent is called %s", pos[0])
+		return errNotFound{fmt.Errorf("no agent is called %s", pos[0])}
 	}
 	e, err := agentport.Write(m, *to)
 	if err != nil {

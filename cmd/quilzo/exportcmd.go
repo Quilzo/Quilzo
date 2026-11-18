@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -146,6 +147,9 @@ func cmdSiem(root string, args []string) error {
 	res, err := siem.ExportRecorded(format, events, siem.Options{
 		Reveal: *reveal, Since: *since, Until: *until,
 	}, time.Now(), recordAuditLogExport(root))
+	if errors.Is(err, siem.ErrUnknownFormat) {
+		return errMisused{err}
+	}
 	if err != nil {
 		return errBlocked{err}
 	}
@@ -240,8 +244,8 @@ func cmdSiemVerify(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 || *envelopePath == "" {
-		return fmt.Errorf(
-			"usage: quilzo siem verify EXPORT.jsonl --envelope envelope.json")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo siem verify EXPORT.jsonl --envelope envelope.json")}
 	}
 
 	raw, err := os.ReadFile(pos[0])

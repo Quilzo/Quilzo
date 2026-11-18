@@ -150,7 +150,7 @@ func eventsCmd(root string, args []string, caller *Caller) error {
 		w.Human("%s\n", body)
 		return nil
 	default:
-		return fmt.Errorf("unknown events command %q; try list, setup, import or example", args[0])
+		return errMisused{fmt.Errorf("unknown events command %q; try list, setup, import or example", args[0])}
 	}
 }
 
@@ -313,7 +313,7 @@ func eventsImport(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo events import <file.ics | https://… | webcal://…> [--dry-run]")
+		return errMisused{errors.New("usage: quilzo events import <file.ics | https://… | webcal://…> [--dry-run]")}
 	}
 	coll, err := eventsCollection(root)
 	if err != nil {

@@ -56,10 +56,10 @@ func mediaReplace(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media replace OLD NEW [--record-only]\n" +
 				"  OLD is the picture being retired and NEW is the one " +
-				"taking its place")
+				"taking its place")}
 	}
 	oldID, newID := pos[0], pos[1]
 

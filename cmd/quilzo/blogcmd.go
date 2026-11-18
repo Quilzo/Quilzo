@@ -62,7 +62,7 @@ func blogCmd(root string, args []string, caller *Caller) error {
 		w.Human("%s\n", body)
 		return nil
 	default:
-		return fmt.Errorf("unknown blog command %q; try list, setup or example", args[0])
+		return errMisused{fmt.Errorf("unknown blog command %q; try list, setup or example", args[0])}
 	}
 }
 

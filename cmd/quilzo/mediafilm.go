@@ -41,7 +41,7 @@ func mediaFilm(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo media film \"prompt\" | @FILE --author WHO [--aspect 16:9|9:16]")
+		return errMisused{fmt.Errorf("usage: quilzo media film \"prompt\" | @FILE --author WHO [--aspect 16:9|9:16]")}
 	}
 	who := strings.TrimSpace(*author)
 	if who == "" {

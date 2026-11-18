@@ -31,7 +31,7 @@ func integrationsImport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo integrations import openapi.json|server.json|agent-card.json [--name N] [--endpoint HOST] [--uses A,B] [--secret NAME]")
+		return errMisused{errors.New("usage: quilzo integrations import openapi.json|server.json|agent-card.json [--name N] [--endpoint HOST] [--uses A,B] [--secret NAME]")}
 	}
 	body, err := readBounded(pos[0], apiimport.MaxDocument)
 	if err != nil {

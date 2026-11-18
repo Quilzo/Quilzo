@@ -50,14 +50,14 @@ func cmdLang(root string, args []string) error {
 	case "translated":
 		return langTranslated(root, args[1:])
 	default:
-		return fmt.Errorf("unknown lang command %q; try status, init, add, "+
-			"check or translated", args[0])
+		return errMisused{fmt.Errorf("unknown lang command %q; try status, init, add, "+
+			"check or translated", args[0])}
 	}
 }
 
 func langInit(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo lang init <default-locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang init <default-locale>")}
 	}
 	l, err := i18n.ParseLocale(args[0])
 	if err != nil {
@@ -79,7 +79,7 @@ func langInit(root string, args []string) error {
 
 func langAdd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo lang add <locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang add <locale>")}
 	}
 	c, err := loadLocales(root)
 	if err != nil {
@@ -203,7 +203,7 @@ func langTranslated(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo lang translated <page> <locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang translated <page> <locale>")}
 	}
 
 	c, err := loadLocales(root)

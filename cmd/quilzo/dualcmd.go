@@ -302,7 +302,7 @@ func cmdPending(root string, args []string) error {
 		return nil
 	}
 	if len(args) != 2 {
-		return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
+		return errMisused{errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")}
 	}
 	id := args[1]
 	switch args[0] {
@@ -402,7 +402,7 @@ func cmdPending(root string, args []string) error {
 		}
 		return tokenIssueAs(root, ch.Args, true)
 	}
-	return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
+	return errMisused{errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")}
 }
 
 // showPending is `quilzo pending show ID`: one request, as a person

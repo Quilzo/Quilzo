@@ -445,8 +445,8 @@ func cmdAuditLog(root string, args []string) error {
 		}
 		return auditAnchor(root)
 	default:
-		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
-			"export, head, verify-head, prove, consistency or anchor", args[0])
+		return errMisused{fmt.Errorf("unknown auditlog command %q; try show, verify, "+
+			"export, head, verify-head, prove, consistency or anchor", args[0])}
 	}
 }
 
@@ -583,13 +583,13 @@ func auditShow(root string, args []string) error {
 	}
 	// A negative limit sliced past the end of the log and panicked.
 	if len(pos) > 1 || *limit < 0 {
-		return errors.New(usage)
+		return errMisused{errors.New(usage)}
 	}
 	var seq int64
 	if len(pos) == 1 {
 		n, err := strconv.ParseInt(pos[0], 10, 64)
 		if err != nil || n < 1 {
-			return fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)
+			return errMisused{fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)}
 		}
 		seq = n
 	}
@@ -711,7 +711,7 @@ func auditShowEntry(events []audit.Event, seq int64, intact, crashed bool, probl
 		}
 	}
 	if entry == nil {
-		return fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))
+		return errNotFound{fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))}
 	}
 	// "entry", as `auditlog prove` names the one it is about.
 	if w.JSON(map[string]any{"entry": entry, "intact": intact, "problems": problems}) {
@@ -927,7 +927,7 @@ func auditHead(root string, args []string) error {
 // auditProve produces an inclusion proof for one entry.
 func auditProve(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo auditlog prove <sequence>")
+		return errMisused{fmt.Errorf("usage: quilzo auditlog prove <sequence>")}
 	}
 	var seq int64
 	if _, err := fmt.Sscanf(args[0], "%d", &seq); err != nil {
@@ -986,7 +986,7 @@ func auditConsistency(root string, args []string) error {
 	case len(files) == 1 && *headPath == "":
 		*headPath = files[0]
 	case len(files) > 0:
-		return fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")
+		return errMisused{fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")}
 	}
 
 	events, err := auditEntries(root)

@@ -352,8 +352,8 @@ func authGrantAs(root string, args []string, denying bool) (err error) {
 				"  not a flag to restore")
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo auth grant <principal> <role> " +
-			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth grant <principal> <role> " +
+			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")}
 	}
 
 	expires, err := grantExpiry(*until, *forDur, time.Now())
@@ -525,7 +525,7 @@ func authRevoke(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")}
 	}
 
 	var n int
@@ -540,7 +540,7 @@ func authRevoke(root string, args []string) error {
 			n = p.RevokeNamed(rest[0], rest[1], *on)
 		}
 		if n == 0 {
-			return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
+			return errNotFound{fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)}
 		}
 		return nil
 	})
@@ -744,7 +744,7 @@ func authExplain(root string, args []string) error {
 		return err
 	}
 	if len(rest) < 1 {
-		return fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")}
 	}
 	principal := rest[0]
 	// One's own, as `auth list` is: what somebody else may do is listed to
@@ -862,7 +862,7 @@ recovered from this machine.
 	case "proof":
 		return tokenProof(args[1:])
 	default:
-		return fmt.Errorf("unknown token command %q", args[0])
+		return errMisused{fmt.Errorf("unknown token command %q", args[0])}
 	}
 }
 
@@ -900,7 +900,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")
+		return errMisused{fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")}
 	}
 	if strings.TrimSpace(*principal) == "" {
 		return fmt.Errorf("--principal is required: a token acts as somebody")
@@ -1248,7 +1248,7 @@ func tokenList(root string) error {
 
 func tokenRevoke(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo token revoke <id>")
+		return errMisused{fmt.Errorf("usage: quilzo token revoke <id>")}
 	}
 	ts, err := loadTokens(root)
 	if err != nil {

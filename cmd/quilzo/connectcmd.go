@@ -226,7 +226,7 @@ func beginConnect(root, name, person string) (string, error) {
 	}
 	p, ok := set.get(name)
 	if !ok {
-		return "", fmt.Errorf("no provider called %s: quilzo connect providers", name)
+		return "", errNotFound{fmt.Errorf("no provider called %s: quilzo connect providers", name)}
 	}
 	redirect, err := connectRedirect(root)
 	if err != nil {
@@ -468,7 +468,7 @@ func cmdConnect(root string, args []string) error {
 		return connectProvider(root, caller, args[1:])
 	case "start":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo connect start PROVIDER")
+			return errMisused{errors.New("usage: quilzo connect start PROVIDER")}
 		}
 		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 			return err
@@ -518,7 +518,7 @@ func cmdConnect(root string, args []string) error {
 			return err
 		}
 		if len(rest) != 1 {
-			return errors.New("usage: quilzo connect revoke PROVIDER [--person WHO]")
+			return errMisused{errors.New("usage: quilzo connect revoke PROVIDER [--person WHO]")}
 		}
 		who := caller.Name
 		if *person != "" && *person != caller.Name {
@@ -537,7 +537,7 @@ func cmdConnect(root string, args []string) error {
 		w.Human("  %sdisconnected; agents acting for %s no longer reach %s as them%s\n", green, who, rest[0], reset)
 		return nil
 	}
-	return fmt.Errorf("unknown connect command %q; try providers, provider, start, list or revoke", args[0])
+	return errMisused{fmt.Errorf("unknown connect command %q; try providers, provider, start, list or revoke", args[0])}
 }
 
 // connectProvider declares or removes a provider: an administrator's.
@@ -546,11 +546,11 @@ func connectProvider(root string, caller *Caller, args []string) error {
 		return connectDiscover(root, caller, args[1:])
 	}
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return errors.New("usage: quilzo connect provider add NAME [--template " + strings.Join(connect.TemplateNames(), "|") +
+		return errMisused{errors.New("usage: quilzo connect provider add NAME [--template " + strings.Join(connect.TemplateNames(), "|") +
 			"] --client-id ID [--client-secret SECRET] [--scope S]... [--host H]... " +
 			"[--auth-url URL --token-url URL --revocation-url URL --title T] [--dialect " + strings.Join(connect.DialectNames(), "|") + "]\n" +
 			"       quilzo connect provider remove NAME\n" +
-			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")
+			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")}
 	}
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -590,14 +590,14 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	}
 	if verb == "remove" {
 		if len(kept) == len(set.Providers) {
-			return fmt.Errorf("no provider called %s", name)
+			return errNotFound{fmt.Errorf("no provider called %s", name)}
 		}
 	} else {
 		p := connect.Provider{Name: name}
 		if *template != "" {
 			t, ok := connect.Templates[*template]
 			if !ok {
-				return fmt.Errorf("no template called %s; there are %s", *template, strings.Join(connect.TemplateNames(), ", "))
+				return errNotFound{fmt.Errorf("no template called %s; there are %s", *template, strings.Join(connect.TemplateNames(), ", "))}
 			}
 			p = t
 			p.Name = name

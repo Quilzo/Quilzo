@@ -257,7 +257,7 @@ func siteNewCmd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 && *name == "" {
-		return errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [--scheme both|dark|light] [-o FILE] [--install]`)
+		return errMisused{errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [--scheme both|dark|light] [-o FILE] [--install]`)}
 	}
 	brief := ""
 	if len(pos) == 1 {

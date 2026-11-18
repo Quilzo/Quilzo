@@ -39,7 +39,7 @@ func cmdCell(root string, args []string) error {
 	case "warm":
 		return cellWarm(root, args[1:])
 	}
-	return fmt.Errorf("unknown cell command %q; try status or warm", args[0])
+	return errMisused{fmt.Errorf("unknown cell command %q; try status or warm", args[0])}
 }
 
 // cellWarm makes the warm snapshot every session's cell is restored from.
@@ -61,11 +61,11 @@ func cellWarm(root string, args []string) error {
 	socket := fs.String("socket", "", "the API socket of the running cell to warm")
 	snapshot := fs.String("snapshot", "", "where the snapshot is written (default: cell.snapshot)")
 	memory := fs.String("memory", "", "where Firecracker writes its memory file (default: cell.memory)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	if strings.TrimSpace(*socket) == "" || fs.NArg() > 0 {
-		return errors.New("usage: quilzo cell warm --socket API.SOCK [--snapshot PATH] [--memory PATH]")
+		return errMisused{errors.New("usage: quilzo cell warm --socket API.SOCK [--snapshot PATH] [--memory PATH]")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {

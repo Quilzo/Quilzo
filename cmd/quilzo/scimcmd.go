@@ -647,8 +647,8 @@ func scimHandler(root string) *scim.Handler {
 }
 
 func scimUsage() error {
-	return fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB [--until DAY | --for 30d] | " +
-		"unmap GROUP")
+	return errMisused{fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB [--until DAY | --for 30d] | " +
+		"unmap GROUP")}
 }
 
 // startOfDayAfter is the first start of a day at or after t: a mapping's
@@ -777,7 +777,7 @@ func cmdSCIM(root string, args []string) error {
 		fs := flag.NewFlagSet("scim map", flag.ContinueOnError)
 		until := fs.String("until", "", "for a job granted for a time: its access ends at the start of this day (YYYY-MM-DD)")
 		forDur := fs.String("for", "", "for a job granted for a time: its access ends after this long, to the day: 30d")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseOnce(fs, flags); err != nil {
 			return err
 		}
 		if len(pos) != 2 || fs.NArg() != 0 {
@@ -813,14 +813,20 @@ func cmdSCIM(root string, args []string) error {
 		}
 		return note("scim.mapped", group+" → "+to)
 	case "unmap":
-		if len(args) != 2 {
-			return scimUsage()
-		}
-		if err := scimUnmap(root, args[1]); err != nil {
+		// A flag is refused rather than taken for the group: `scim unmap
+		// --zzflag` unmapped a group called "--zzflag", exit 0.
+		named, err := positionals(args[1:], 1)
+		if err != nil {
 			return err
 		}
-		w.Human("%q no longer grants anything here\n", args[1])
-		return note("scim.unmapped", args[1])
+		if len(named) != 1 {
+			return scimUsage()
+		}
+		if err := scimUnmap(root, named[0]); err != nil {
+			return err
+		}
+		w.Human("%q no longer grants anything here\n", named[0])
+		return note("scim.unmapped", named[0])
 	}
 	return scimUsage()
 }

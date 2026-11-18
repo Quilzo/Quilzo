@@ -159,7 +159,7 @@ func cmdSite(root string, args []string) error {
 	if *envName != "" {
 		env, ok := envSet.Lookup(*envName)
 		if !ok {
-			return fmt.Errorf("there is no environment called %q", *envName)
+			return errNotFound{fmt.Errorf("there is no environment called %q", *envName)}
 		}
 		serving = env
 	}

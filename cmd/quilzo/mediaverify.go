@@ -70,6 +70,11 @@ const (
 )
 
 func cmdMediaVerify(root string, args []string) error {
+	// It takes nothing, and what it was given was not read: `media verify
+	// --zzflag` checked the library and exited 0.
+	if err := noArguments(args); err != nil {
+		return err
+	}
 	lib, err := openMedia(root)
 	if err != nil {
 		return err
@@ -110,7 +115,7 @@ func cmdMediaVerify(root string, args []string) error {
 	}
 
 	if len(wanted) > 0 && len(out) == 0 {
-		return fmt.Errorf("no such file in the library")
+		return errNotFound{fmt.Errorf("no such file in the library")}
 	}
 	if w.JSON(out) {
 		return nil

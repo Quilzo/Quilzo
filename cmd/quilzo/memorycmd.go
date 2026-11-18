@@ -157,7 +157,7 @@ func cmdMemory(root string, args []string) error {
 		return nil
 	case "confirm", "delete":
 		if len(args) != 2 {
-			return fmt.Errorf("quilzo memory %s ID", args[0])
+			return errMisused{fmt.Errorf("quilzo memory %s ID", args[0])}
 		}
 		e, err := store.Get(args[1])
 		if err != nil {
@@ -197,7 +197,7 @@ func cmdMemory(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo memory history AGENT KEY [--about P]")
+			return errMisused{errors.New("usage: quilzo memory history AGENT KEY [--about P]")}
 		}
 		if *about == "" || !admin {
 			if *about != "" && *about != caller.Name {
@@ -230,7 +230,7 @@ func cmdMemory(root string, args []string) error {
 		return nil
 	case "edit":
 		if len(args) < 3 {
-			return errors.New("quilzo memory edit ID TEXT")
+			return errMisused{errors.New("quilzo memory edit ID TEXT")}
 		}
 		if err := writable(); err != nil {
 			return err
@@ -310,7 +310,7 @@ func cmdMemory(root string, args []string) error {
 		w.Human("every agent has forgotten %s: %s removed\n", *about, count(n, "memory"))
 		return nil
 	}
-	return fmt.Errorf("unknown memory command %q; try list, confirm, delete, edit, forget or receipt", args[0])
+	return errMisused{fmt.Errorf("unknown memory command %q; try list, confirm, delete, edit, forget or receipt", args[0])}
 }
 
 // forgetPerson removes everything any agent remembers about somebody, and

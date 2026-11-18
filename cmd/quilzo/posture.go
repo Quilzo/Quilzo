@@ -505,8 +505,8 @@ func cmdPosture(root string, args []string) error {
 	case "frameworks":
 		return postureFrameworks(root, args[1:])
 	default:
-		return fmt.Errorf("unknown posture command %q; try scan, explain, "+
-			"rules, frameworks or suppress", args[0])
+		return errMisused{fmt.Errorf("unknown posture command %q; try scan, explain, "+
+			"rules, frameworks or suppress", args[0])}
 	}
 }
 
@@ -682,11 +682,11 @@ func colourFor(s posture.Severity) string {
 
 func postureExplain(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo posture explain <rule-id>")
+		return errMisused{fmt.Errorf("usage: quilzo posture explain <rule-id>")}
 	}
 	r, ok := posture.Explain(args[0])
 	if !ok {
-		return fmt.Errorf("there is no rule %q; run quilzo posture rules", args[0])
+		return errNotFound{fmt.Errorf("there is no rule %q; run quilzo posture rules", args[0])}
 	}
 	if w.JSON(map[string]any{
 		"id": r.ID, "title": r.Title, "severity": r.Severity,
@@ -730,8 +730,8 @@ func postureSuppress(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo posture suppress <finding-id> " +
-			"--reason ... --by ... [--days N]")
+		return errMisused{fmt.Errorf("usage: quilzo posture suppress <finding-id> " +
+			"--reason ... --by ... [--days N]")}
 	}
 	if strings.TrimSpace(*reason) == "" {
 		return fmt.Errorf("a suppression needs a reason. An exception nobody " +
@@ -1119,7 +1119,7 @@ func postureFrameworks(root string, args []string) error {
 		for _, f := range frameworks.Catalogue {
 			ids = append(ids, f.ID)
 		}
-		return fmt.Errorf("no framework %q; one of %s", pos[0], strings.Join(ids, ", "))
+		return errNotFound{fmt.Errorf("no framework %q; one of %s", pos[0], strings.Join(ids, ", "))}
 	}
 	view := posture.ByFramework(rep, fw.ID)
 	if w.JSON(view) {

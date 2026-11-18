@@ -137,8 +137,8 @@ func cmdOIDC(root string, args []string) error {
 	case "check":
 		return oidcCheck(root, args[1:])
 	default:
-		return fmt.Errorf("unknown oidc command %q; try status, configure or check",
-			args[0])
+		return errMisused{fmt.Errorf("unknown oidc command %q; try status, configure or check",
+			args[0])}
 	}
 }
 
@@ -198,9 +198,9 @@ func oidcConfigure(root string, args []string) error {
 			"provider give --issuer")
 	}
 	if *issuer == "" || *clientID == "" || *redirect == "" {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo oidc configure --issuer https://idp.example \\\n" +
-				"    --client-id ... --redirect-uri https://cms.example/auth/callback")
+				"    --client-id ... --redirect-uri https://cms.example/auth/callback")}
 	}
 	sso, err := ssoClient(root)
 	if err != nil {

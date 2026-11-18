@@ -41,9 +41,9 @@ func mediaOrigin(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media origin <id> --source-type <term> " +
-				"[--model M] [--prompt P] [--author A]")
+				"[--model M] [--prompt P] [--author A]")}
 	}
 
 	lib, err := openMedia(root)

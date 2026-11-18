@@ -132,7 +132,7 @@ func cmdBooking(root string, args []string) error {
 	case "feed":
 		return bookingFeedCmd(root, args[1:], caller)
 	default:
-		return fmt.Errorf("unknown booking command %q; try list, setup, example, cancel, pause, resume or feed", args[0])
+		return errMisused{fmt.Errorf("unknown booking command %q; try list, setup, example, cancel, pause, resume or feed", args[0])}
 	}
 }
 
@@ -280,7 +280,7 @@ func bookingCancelCmd(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo booking cancel ID [--erase]")
+		return errMisused{errors.New("usage: quilzo booking cancel ID [--erase]")}
 	}
 	return cancelBooking(root, pos[0], *erase, caller)
 }

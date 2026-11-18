@@ -518,7 +518,7 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		return newsletterList(root, args[1:], caller)
 	case "add":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter add ADDRESS")
+			return errMisused{errors.New("usage: quilzo newsletter add ADDRESS")}
 		}
 		if err := addSubscriber(root, args[1], caller); err != nil {
 			return err
@@ -527,7 +527,7 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		return nil
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter remove ADDRESS|ID")
+			return errMisused{errors.New("usage: quilzo newsletter remove ADDRESS|ID")}
 		}
 		was, err := removeSubscriber(root, args[1], caller)
 		if err != nil {
@@ -554,12 +554,12 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		return newsletterIssues(root, caller)
 	case "dismiss":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter dismiss ISSUE")
+			return errMisused{errors.New("usage: quilzo newsletter dismiss ISSUE")}
 		}
 		return dismissIssue(root, args[1], caller)
 	default:
-		return fmt.Errorf("unknown newsletter command %q; try status, list, add, remove, import, export, test, "+
-			"send, issues or dismiss", args[0])
+		return errMisused{fmt.Errorf("unknown newsletter command %q; try status, list, add, remove, import, export, test, "+
+			"send, issues or dismiss", args[0])}
 	}
 }
 
@@ -637,7 +637,7 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")
+		return errMisused{errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")}
 	}
 	f, err := os.Open(pos[0])
 	if err != nil {
@@ -689,7 +689,7 @@ func newsletterTest(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(pos) != 1 || *to == "" {
-		return errors.New("usage: quilzo newsletter test PAGE --to ADDRESS [--subject S]")
+		return errMisused{errors.New("usage: quilzo newsletter test PAGE --to ADDRESS [--subject S]")}
 	}
 	if err := testIssue(root, pos[0], *subject, *to, caller); err != nil {
 		return err
@@ -708,7 +708,7 @@ func newsletterSend(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(pos) != 1 && *issue == "" {
-		return errors.New("usage: quilzo newsletter send PAGE [--subject S] --yes, or --issue ID --yes")
+		return errMisused{errors.New("usage: quilzo newsletter send PAGE [--subject S] --yes, or --issue ID --yes")}
 	}
 	list, err := openNewsletter(root)
 	if err != nil {

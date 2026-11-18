@@ -124,8 +124,8 @@ func exploitedIDs(root string) func(ids []string) bool {
 // nothing is fetched here.
 func selfKEV(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo self kev known_exploited_vulnerabilities.json " +
-			"(from https://www.cisa.gov/known-exploited-vulnerabilities-catalog; read here, nothing is fetched)")
+		return errMisused{errors.New("usage: quilzo self kev known_exploited_vulnerabilities.json " +
+			"(from https://www.cisa.gov/known-exploited-vulnerabilities-catalog; read here, nothing is fetched)")}
 	}
 	b, err := readBounded(args[0], 64<<20)
 	if err != nil {
@@ -321,7 +321,7 @@ func cmdSelf(root string, args []string) error {
 	case "kev":
 		return selfKEV(root, args[1:])
 	}
-	return fmt.Errorf("unknown self command %q; try check, verify, update, kev or vex", args[0])
+	return errMisused{fmt.Errorf("unknown self command %q; try check, verify, update, kev or vex", args[0])}
 }
 
 func selfCheck(root string) error {
@@ -402,7 +402,7 @@ func selfVerify(root string) error {
 
 func selfUpdate(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo self update vulndb.zip (from https://vuln.go.dev/vulndb.zip; read here, nothing is fetched)")
+		return errMisused{errors.New("usage: quilzo self update vulndb.zip (from https://vuln.go.dev/vulndb.zip; read here, nothing is fetched)")}
 	}
 	caller := resolveCaller(root, flagToken)
 	gz, snap, err := selfvuln.FromZip(args[0])

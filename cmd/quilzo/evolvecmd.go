@@ -68,7 +68,7 @@ A weight counts a metric toward the score; a negative weight counts it
 against, which minimises it (--weight time=-1). --memory is per process.
 `)
 		if cmd != "" {
-			return fmt.Errorf("unknown evolve command %q", cmd)
+			return errMisused{fmt.Errorf("unknown evolve command %q", cmd)}
 		}
 		return nil
 	}

@@ -55,7 +55,7 @@ func enrolBlocked(root string) func(time.Time) string {
 // authEnrol is `quilzo auth enrol NAME [--for 24h] [--revoke]`.
 func authEnrol(root string, args []string) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return errors.New("usage: quilzo auth enrol NAME [--for 24h] | quilzo auth enrol NAME --revoke")
+		return errMisused{errors.New("usage: quilzo auth enrol NAME [--for 24h] | quilzo auth enrol NAME --revoke")}
 	}
 	name := args[0]
 	fs := flag.NewFlagSet("auth enrol", flag.ContinueOnError)

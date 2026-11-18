@@ -281,7 +281,7 @@ func agentSendsCmdAs(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(args) != 1 && len(args) != 3 {
-		return errors.New(sendsUsage)
+		return errMisused{errors.New(sendsUsage)}
 	}
 	name := args[0]
 	set, err := loadAgents(root)
@@ -290,14 +290,14 @@ func agentSendsCmdAs(root string, args []string, caller *Caller) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	if len(args) == 1 {
 		return listSends(name, set.Sends[name])
 	}
 	verb, tool := args[1], strings.TrimSpace(args[2])
 	if verb != "grant" && verb != "revoke" {
-		return errors.New(sendsUsage)
+		return errMisused{errors.New(sendsUsage)}
 	}
 	if caller.Kind == audit.KindAI {
 		return errors.New("what an agent sends with nobody asked is a person's decision. A model that " +
@@ -359,7 +359,7 @@ func sendsWhat(ch dual.SendsChange) string {
 func grantSends(root string, ch dual.SendsChange, why, by, approver string, alone bool, caller *Caller) error {
 	if err := updateAgents(root, func(set *agentSet) error {
 		if _, ok := set.Agents[ch.Agent]; !ok {
-			return fmt.Errorf("no agent called %s is declared", ch.Agent)
+			return errNotFound{fmt.Errorf("no agent called %s is declared", ch.Agent)}
 		}
 		if set.Sends == nil {
 			set.Sends = map[string][]unattendedSend{}

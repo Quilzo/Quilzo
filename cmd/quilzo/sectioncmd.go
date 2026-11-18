@@ -61,8 +61,8 @@ func cmdSection(root string, args []string) error {
 	case "backdrop":
 		return sectionBackdrop(root, args[1:])
 	default:
-		return fmt.Errorf("unknown section command %q; try list, kinds, add, "+
-			"move, remove, fields, set, item, reuse, block, blocks or backdrop", args[0])
+		return errMisused{fmt.Errorf("unknown section command %q; try list, kinds, add, "+
+			"move, remove, fields, set, item, reuse, block, blocks or backdrop", args[0])}
 	}
 }
 
@@ -82,7 +82,7 @@ func sectionBackdrop(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 2 || len(pos) > 3 || (*off && len(pos) == 3) || (!*off && len(pos) != 3) {
-		return fmt.Errorf("usage: quilzo section backdrop <page> <index>|hero /media/ID, or with --off and no file")
+		return errMisused{fmt.Errorf("usage: quilzo section backdrop <page> <index>|hero /media/ID, or with --off and no file")}
 	}
 	at := section.HeroAt
 	where := "the hero"
@@ -226,8 +226,8 @@ func sectionList(root string, args []string) error {
 	name := pos[0]
 	body, exists := pages[name]
 	if !exists {
-		return fmt.Errorf("no page %q; have %s",
-			name, strings.Join(sortedKeys(pages), ", "))
+		return errNotFound{fmt.Errorf("no page %q; have %s",
+			name, strings.Join(sortedKeys(pages), ", "))}
 	}
 	placed := section.On(body)
 	if w.JSON(placed) {
@@ -266,8 +266,8 @@ func sectionAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo section add <page> <kind> [--at N]\n" +
-			"  quilzo section kinds  lists the kinds")
+		return errMisused{fmt.Errorf("usage: quilzo section add <page> <kind> [--at N]\n" +
+			"  quilzo section kinds  lists the kinds")}
 	}
 	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
 		where := *at
@@ -285,8 +285,8 @@ func sectionRemove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo section remove <page> <index-or-id>\n" +
-			"  quilzo section list <page>  shows both")
+		return errMisused{fmt.Errorf("usage: quilzo section remove <page> <index-or-id>\n" +
+			"  quilzo section list <page>  shows both")}
 	}
 	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
 		index, err := sectionAt(body, pos[1])
@@ -331,7 +331,7 @@ func sectionMove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 3 {
-		return fmt.Errorf("usage: quilzo section move <page> <index> up|down")
+		return errMisused{fmt.Errorf("usage: quilzo section move <page> <index> up|down")}
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -378,8 +378,8 @@ func editSections(root, page string,
 	}
 	body, exists := pages[page]
 	if !exists {
-		return fmt.Errorf("no page %q; have %s",
-			page, strings.Join(sortedKeys(pages), ", "))
+		return errNotFound{fmt.Errorf("no page %q; have %s",
+			page, strings.Join(sortedKeys(pages), ", "))}
 	}
 
 	next, msg, err := change(body)
@@ -441,7 +441,7 @@ func sectionFields(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo section fields <page> <index>")
+		return errMisused{fmt.Errorf("usage: quilzo section fields <page> <index>")}
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -457,8 +457,8 @@ func sectionFields(root string, args []string) error {
 	}
 	body, exists := pages[pos[0]]
 	if !exists {
-		return fmt.Errorf("no page %q; have %s",
-			pos[0], strings.Join(sortedKeys(pages), ", "))
+		return errNotFound{fmt.Errorf("no page %q; have %s",
+			pos[0], strings.Join(sortedKeys(pages), ", "))}
 	}
 	fields, err := section.Fields(body, index)
 	if err != nil {
@@ -493,8 +493,8 @@ func sectionSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 3 {
-		return fmt.Errorf("usage: quilzo section set <page> <index> path=value [path=value …]\n" +
-			"  quilzo section fields <page> <index>  lists the paths")
+		return errMisused{fmt.Errorf("usage: quilzo section set <page> <index> path=value [path=value …]\n" +
+			"  quilzo section fields <page> <index>  lists the paths")}
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -547,7 +547,7 @@ func sectionSet(root string, args []string) error {
 // sectionItem adds and removes entries in a list inside a section.
 func sectionItem(root string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo section item add|remove <page> <index> <list> [entry]")
+		return errMisused{fmt.Errorf("usage: quilzo section item add|remove <page> <index> <list> [entry]")}
 	}
 	verb := args[0]
 	pos, err := positionals(args[1:], 4)
@@ -555,7 +555,7 @@ func sectionItem(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 3 {
-		return fmt.Errorf("usage: quilzo section item %s <page> <index> <list> [entry]", verb)
+		return errMisused{fmt.Errorf("usage: quilzo section item %s <page> <index> <list> [entry]", verb)}
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -573,8 +573,8 @@ func sectionItem(root string, args []string) error {
 		})
 	case "remove", "rm":
 		if len(pos) != 4 {
-			return fmt.Errorf(
-				"usage: quilzo section item remove <page> <index> <list> <entry>")
+			return errMisused{fmt.Errorf(
+				"usage: quilzo section item remove <page> <index> <list> <entry>")}
 		}
 		entry, cerr := strconv.Atoi(pos[3])
 		if cerr != nil {
@@ -587,7 +587,7 @@ func sectionItem(root string, args []string) error {
 				list, kind, pos[0]), err
 		})
 	default:
-		return fmt.Errorf("unknown item command %q; try add or remove", verb)
+		return errMisused{fmt.Errorf("unknown item command %q; try add or remove", verb)}
 	}
 }
 
@@ -601,8 +601,8 @@ func sectionReuse(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo section reuse <page> <block> [--at N]\n" +
-			"  quilzo section blocks  lists the blocks")
+		return errMisused{fmt.Errorf("usage: quilzo section reuse <page> <block> [--at N]\n" +
+			"  quilzo section blocks  lists the blocks")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -631,7 +631,7 @@ func sectionBlock(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo section block <page> [--off]")
+		return errMisused{fmt.Errorf("usage: quilzo section block <page> [--off]")}
 	}
 	name := pos[0]
 	s, err := open(root)

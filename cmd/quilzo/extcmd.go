@@ -190,8 +190,8 @@ func cmdExt(root string, args []string) error {
 	case "test":
 		return extTest(root, args[1:])
 	default:
-		return fmt.Errorf("unknown ext command %q; try list, add, remove, "+
-			"pin or test", args[0])
+		return errMisused{fmt.Errorf("unknown ext command %q; try list, add, remove, "+
+			"pin or test", args[0])}
 	}
 }
 
@@ -281,8 +281,8 @@ func extAdd(root string, args []string) error {
 		}
 	}
 	if len(rest) != 1 || command == "" {
-		return fmt.Errorf("usage: quilzo ext add <name> --command /abs/path " +
-			"--on validate[,transform,publish] [--fields title,body]")
+		return errMisused{fmt.Errorf("usage: quilzo ext add <name> --command /abs/path " +
+			"--on validate[,transform,publish] [--fields title,body]")}
 	}
 	name = rest[0]
 
@@ -343,7 +343,7 @@ func extAdd(root string, args []string) error {
 
 func extRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo ext remove <name>")
+		return errMisused{fmt.Errorf("usage: quilzo ext remove <name>")}
 	}
 	f, err := loadExts(root)
 	if err != nil {
@@ -359,7 +359,7 @@ func extRemove(root string, args []string) error {
 		kept = append(kept, m)
 	}
 	if !found {
-		return fmt.Errorf("there is no extension called %q", args[0])
+		return errNotFound{fmt.Errorf("there is no extension called %q", args[0])}
 	}
 	f.Extensions = kept
 	if err := saveExts(root, f); err != nil {
@@ -373,7 +373,7 @@ func extRemove(root string, args []string) error {
 
 func extPin(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo ext pin <name>")
+		return errMisused{fmt.Errorf("usage: quilzo ext pin <name>")}
 	}
 	f, err := loadExts(root)
 	if err != nil {
@@ -402,14 +402,14 @@ func extPin(root string, args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("there is no extension called %q", args[0])
+	return errNotFound{fmt.Errorf("there is no extension called %q", args[0])}
 }
 
 // extTest runs one extension against a made-up page, so an operator can see
 // what it does before it runs inside a publish.
 func extTest(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo ext test <name>")
+		return errMisused{fmt.Errorf("usage: quilzo ext test <name>")}
 	}
 	f, err := loadExts(root)
 	if err != nil {
@@ -450,5 +450,5 @@ func extTest(root string, args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("there is no extension called %q", args[0])
+	return errNotFound{fmt.Errorf("there is no extension called %q", args[0])}
 }

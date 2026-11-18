@@ -61,8 +61,8 @@ func cmdWebhook(root string, args []string) error {
 	case "test":
 		return hookTest(root, args[1:])
 	default:
-		return fmt.Errorf("unknown webhook command %q; try list, add, remove "+
-			"or test", args[0])
+		return errMisused{fmt.Errorf("unknown webhook command %q; try list, add, remove "+
+			"or test", args[0])}
 	}
 }
 
@@ -77,7 +77,7 @@ func hookAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
+		return errMisused{fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")}
 	}
 	e := webhook.Endpoint{URL: pos[0], Note: *note}
 	for _, t := range strings.Split(*types, ",") {
@@ -139,7 +139,7 @@ func hookAdd(root string, args []string) error {
 
 func hookRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo webhook remove <url>")
+		return errMisused{fmt.Errorf("usage: quilzo webhook remove <url>")}
 	}
 	var removed webhook.Endpoint
 	if err := updateHooks(root, func(f *hookFile) error {
@@ -153,7 +153,7 @@ func hookRemove(root string, args []string) error {
 			kept = append(kept, e)
 		}
 		if !found {
-			return fmt.Errorf("no endpoint at %s", args[0])
+			return errNotFound{fmt.Errorf("no endpoint at %s", args[0])}
 		}
 		f.Endpoints = kept
 		return nil

@@ -36,8 +36,14 @@ type privateJWK struct {
 // tokenKeygen is `quilzo token keygen FILE`: a P-256 key in FILE, readable
 // by its owner only, and its public half in FILE.pub.
 func tokenKeygen(args []string) error {
+	// A flag is refused rather than taken for the file: `token keygen
+	// --zzflag` wrote a key to a file called "--zzflag", exit 0.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
-		return errors.New("usage: quilzo token keygen FILE")
+		return errMisused{errors.New("usage: quilzo token keygen FILE")}
 	}
 	if _, err := os.Stat(args[0]); err == nil {
 		return fmt.Errorf("%s exists; a key is not overwritten", args[0])
@@ -127,7 +133,7 @@ func tokenProof(args []string) error {
 		return err
 	}
 	if *keyFile == "" || *url == "" {
-		return errors.New("usage: quilzo token proof --key FILE --url URL [--method POST] [--presenting TOKEN]")
+		return errMisused{errors.New("usage: quilzo token proof --key FILE --url URL [--method POST] [--presenting TOKEN]")}
 	}
 	key, err := readKey(*keyFile)
 	if err != nil {

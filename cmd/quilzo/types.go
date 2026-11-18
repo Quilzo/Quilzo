@@ -51,8 +51,8 @@ func cmdTypes(root string, args []string) error {
 		}
 		return typesCheck(root)
 	default:
-		return fmt.Errorf("unknown type command %q; try list, add, show, bind, unbind, bind-collection or check",
-			args[0])
+		return errMisused{fmt.Errorf("unknown type command %q; try list, add, show, bind, unbind, bind-collection or check",
+			args[0])}
 	}
 }
 
@@ -124,8 +124,8 @@ func typesList(root string) error {
 
 func typesAdd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo type add <definition.json>\n" +
-			"  quilzo type example > article.json   writes one you can edit")
+		return errMisused{fmt.Errorf("usage: quilzo type add <definition.json>\n" +
+			"  quilzo type example > article.json   writes one you can edit")}
 	}
 	raw, err := os.ReadFile(args[0])
 	if err != nil {
@@ -168,7 +168,7 @@ func typesAdd(root string, args []string) error {
 
 func typesShow(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo type show <name>")
+		return errMisused{fmt.Errorf("usage: quilzo type show <name>")}
 	}
 	st, err := schema.Load(root)
 	if err != nil {
@@ -176,7 +176,7 @@ func typesShow(root string, args []string) error {
 	}
 	t, ok := st.Registry.Get(args[0])
 	if !ok {
-		return fmt.Errorf("there is no type %q", args[0])
+		return errNotFound{fmt.Errorf("there is no type %q", args[0])}
 	}
 	if w.JSON(t) {
 		return nil
@@ -231,7 +231,7 @@ func typesBindCollection(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo type bind-collection <collection> <type>")
+		return errMisused{fmt.Errorf("usage: quilzo type bind-collection <collection> <type>")}
 	}
 	coll, typeName := pos[0], pos[1]
 
@@ -263,7 +263,7 @@ func typesBind(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo type bind <page> <type>")
+		return errMisused{fmt.Errorf("usage: quilzo type bind <page> <type>")}
 	}
 	page, typeName := pos[0], pos[1]
 
@@ -306,11 +306,11 @@ func typesBind(root string, args []string) error {
 func typesUnbind(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("unbind", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseOnce(fs, flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo type unbind <page>")
+		return errMisused{fmt.Errorf("usage: quilzo type unbind <page>")}
 	}
 	page := pos[0]
 	st, err := schema.Load(root)
@@ -541,8 +541,8 @@ func cmdTypeStub(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo type stub <type>\n" +
-			"  quilzo type list  names them")
+		return errMisused{fmt.Errorf("usage: quilzo type stub <type>\n" +
+			"  quilzo type list  names them")}
 	}
 	st, err := schema.Load(root)
 	if err != nil {
@@ -553,8 +553,8 @@ func cmdTypeStub(root string, args []string) error {
 	}
 	t, ok := st.Registry.Get(args[0])
 	if !ok {
-		return fmt.Errorf("there is no type called %q; `quilzo type list` "+
-			"names them", args[0])
+		return errNotFound{fmt.Errorf("there is no type called %q; `quilzo type list` "+
+			"names them", args[0])}
 	}
 	body, err := json.MarshalIndent(t.Blank(), "", "  ")
 	if err != nil {

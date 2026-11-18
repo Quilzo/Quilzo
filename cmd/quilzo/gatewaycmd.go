@@ -156,7 +156,7 @@ func cmdGateway(root string, args []string) error {
 		return gatewayBudget(root, args[1:])
 	case "currency":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: quilzo gateway currency USD")
+			return errMisused{fmt.Errorf("usage: quilzo gateway currency USD")}
 		}
 		code := strings.ToUpper(strings.TrimSpace(args[1]))
 		return changeGateway(root, "currency", code, func(c *gateway.Config) error {
@@ -164,7 +164,7 @@ func cmdGateway(root string, args []string) error {
 			return c.Validate()
 		})
 	default:
-		return fmt.Errorf("unknown gateway command %q; try status, route, budget or currency", args[0])
+		return errMisused{fmt.Errorf("unknown gateway command %q; try status, route, budget or currency", args[0])}
 	}
 }
 
@@ -300,7 +300,7 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error, 
 
 func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
+		return errMisused{fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
 			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
 			"       quilzo gateway route add NAME ... --draws [--price-picture 0.04] [--ask-base64]   a route that draws pictures\n" +
 			"       quilzo gateway route add NAME ... --embeds   a route that makes embeddings (chatbot.embeddings)\n" +
@@ -309,7 +309,7 @@ func gatewayRoute(root string, args []string) error {
 			"       quilzo gateway route add NAME --provider google-veo|fal --model M --films   one that makes video (quilzo media film)\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"         [--effort low|medium|high|xhigh|max] [--geo us|global] [--server-fallback]   Anthropic's Messages API only\n" +
-			"       quilzo gateway route remove NAME")
+			"       quilzo gateway route remove NAME")}
 	}
 	verb, name := args[0], args[1]
 	fs := flag.NewFlagSet("route", flag.ContinueOnError)
@@ -367,7 +367,7 @@ func gatewayRoute(root string, args []string) error {
 		}
 		p, ok := cat.Get(*prov)
 		if !ok {
-			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", *prov)
+			return errNotFound{fmt.Errorf("no provider called %q; quilzo gateway providers lists them", *prov)}
 		}
 		pp = map[string]string{}
 		for _, kv := range provParams {
@@ -401,7 +401,7 @@ func gatewayRoute(root string, args []string) error {
 		}
 		if verb == "remove" {
 			if len(kept) == len(c.Routes) {
-				return fmt.Errorf("no route called %s", name)
+				return errNotFound{fmt.Errorf("no route called %s", name)}
 			}
 			c.Routes = kept
 			return nil
@@ -456,9 +456,9 @@ func gatewayBudget(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo gateway budget CALLER [--per-minute N] [--chars-per-day N]\n" +
+		return errMisused{fmt.Errorf("usage: quilzo gateway budget CALLER [--per-minute N] [--chars-per-day N]\n" +
 			"         [--tokens-per-day N] [--money-per-day 5.00] [--money-per-month 100]\n" +
-			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")
+			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")}
 	}
 	who := pos[0]
 	// Only the limits named change; the others are kept as they are.
@@ -815,7 +815,7 @@ func gatewayProviders(root string, args []string) error {
 	if len(args) > 0 {
 		p, ok := cat.Get(args[0])
 		if !ok {
-			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", args[0])
+			return errNotFound{fmt.Errorf("no provider called %q; quilzo gateway providers lists them", args[0])}
 		}
 		if w.JSON(p) {
 			return nil

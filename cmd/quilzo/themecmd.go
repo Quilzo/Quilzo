@@ -97,9 +97,9 @@ func cmdTheme(root string, args []string) error {
 	case "layer":
 		return themeLayer(root, args[1:])
 	default:
-		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
+		return errMisused{fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
 			"unset, check, fonts, font add, css, apply, generate, import, export, "+
-			"styles or layer", args[0])
+			"styles or layer", args[0])}
 	}
 }
 
@@ -221,7 +221,7 @@ func themeSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) == 0 || len(pos)%2 != 0 {
-		return fmt.Errorf("usage: quilzo theme set TOKEN VALUE [TOKEN VALUE …]")
+		return errMisused{fmt.Errorf("usage: quilzo theme set TOKEN VALUE [TOKEN VALUE …]")}
 	}
 	// Before the contrast check, which would otherwise be argued with for a
 	// site that is not there to be saved to.
@@ -375,7 +375,7 @@ func themeUnset(root string, args []string) error {
 		return nil
 	}
 	if len(pos) == 0 {
-		return fmt.Errorf("usage: quilzo theme unset TOKEN [TOKEN …] | --all")
+		return errMisused{fmt.Errorf("usage: quilzo theme unset TOKEN [TOKEN …] | --all")}
 	}
 	for _, name := range pos {
 		name = strings.TrimSpace(name)
@@ -559,7 +559,7 @@ func themeLayer(root string, args []string) error {
 	}
 	pos, flags := splitThemeArgs(args)
 	fs, dir := dirFlag("layer", flags)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseOnce(fs, flags); err != nil {
 		return err
 	}
 	// Words after the flags are a command written flags first, as
@@ -610,7 +610,7 @@ func themeLayer(root string, args []string) error {
 		return nil
 	case "set":
 		if len(pos) != 1 {
-			return fmt.Errorf("usage: quilzo theme layer set FILE [--dir DIR]")
+			return errMisused{fmt.Errorf("usage: quilzo theme layer set FILE [--dir DIR]")}
 		}
 		info, err := os.Stat(pos[0])
 		if err != nil {
@@ -694,7 +694,7 @@ func themeLayer(root string, args []string) error {
 		sayWhenReadersSeeIt()
 		return nil
 	}
-	return fmt.Errorf("unknown theme layer command %q; try show, set FILE or unset", sub)
+	return errMisused{fmt.Errorf("unknown theme layer command %q; try show, set FILE or unset", sub)}
 }
 
 // themeFonts lists the faces this site serves and how to add one.
@@ -796,13 +796,13 @@ func themeApply(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo theme apply <starter> — one of: %s",
-			strings.Join(starter.Names(), ", "))
+		return errMisused{fmt.Errorf("usage: quilzo theme apply <starter> — one of: %s",
+			strings.Join(starter.Names(), ", "))}
 	}
 	st, ok := starter.Get(pos[0])
 	if !ok {
-		return fmt.Errorf("no starter %q; try: %s",
-			pos[0], strings.Join(starter.Names(), ", "))
+		return errNotFound{fmt.Errorf("no starter %q; try: %s",
+			pos[0], strings.Join(starter.Names(), ", "))}
 	}
 	if len(st.Tokens) == 0 {
 		return fmt.Errorf(
@@ -917,7 +917,7 @@ func themeGenerate(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo theme generate <colour> [--scheme S] [--contrast C] [--replace]")
+		return errMisused{fmt.Errorf("usage: quilzo theme generate <colour> [--scheme S] [--contrast C] [--replace]")}
 	}
 
 	generated, err := theme.GenerateWith(pos[0], theme.Options{Scheme: *scheme, Contrast: *contrast})

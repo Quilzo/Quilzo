@@ -52,8 +52,8 @@ func cmdProvenance(root string, args []string) error {
 	case "backfill":
 		return provBackfill(root, args[1:])
 	default:
-		return fmt.Errorf(
-			"unknown provenance command %q; try set, check or backfill", args[0])
+		return errMisused{fmt.Errorf(
+			"unknown provenance command %q; try set, check or backfill", args[0])}
 	}
 }
 
@@ -72,7 +72,7 @@ func provSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo provenance set <page> --source <type> --author <who>")
+		return errMisused{fmt.Errorf("usage: quilzo provenance set <page> --source <type> --author <who>")}
 	}
 	page := pos[0]
 
@@ -86,7 +86,7 @@ func provSet(root string, args []string) error {
 	}
 	hash, ok := hashes[page]
 	if !ok {
-		return fmt.Errorf("no page %q in %s", page, *ref)
+		return errNotFound{fmt.Errorf("no page %q in %s", page, *ref)}
 	}
 
 	idx, err := loadProvenance(root)

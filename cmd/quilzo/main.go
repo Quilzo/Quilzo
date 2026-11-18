@@ -844,10 +844,7 @@ func main() {
 	if _, known := lookupNeed(cmd, cmdArgs); known && !asked && !runsWithoutAStore(cmd, cmdArgs) {
 		if err := needStore(root); err != nil {
 			w.Error(err)
-			if errors.Is(err, errNoStore) {
-				os.Exit(out.ExitNotFound)
-			}
-			os.Exit(out.ExitFailure)
+			os.Exit(exitCode(err))
 		}
 	}
 
@@ -896,8 +893,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
 			return
 		} else if err != nil {
+			// A refusal by the access policy is a gate refusing, 3, and a
+			// command nobody has is a command line that was wrong, 2: both
+			// exited 1 here, as though the command had run and failed.
 			w.Error(err)
-			os.Exit(out.ExitFailure)
+			os.Exit(exitCode(err))
 		}
 	}
 
@@ -1212,18 +1212,7 @@ func main() {
 		w.Error(err)
 		// A gate refusing is a different outcome from the command breaking, and
 		// a caller branching on exit status should be able to tell which.
-		var blocked errBlocked
-		if errors.As(err, &blocked) {
-			os.Exit(out.ExitBlocked)
-		}
-		var misused errMisused
-		if errors.As(err, &misused) {
-			os.Exit(out.ExitUsage)
-		}
-		if errors.Is(err, errNoStore) {
-			os.Exit(out.ExitNotFound)
-		}
-		os.Exit(out.ExitFailure)
+		os.Exit(exitCode(err))
 	}
 }
 
@@ -1548,7 +1537,7 @@ func cmdAdd(root string, args []string) error {
 	merge := fs.Bool("merge", false,
 		"with --based-on: merge instead of refusing, unless you and they "+
 			"changed the same field")
-	if err := fs.Parse(reorder(args, addValued)); err != nil {
+	if err := parseOnce(fs, reorder(args, addValued)); err != nil {
 		return err
 	}
 	if *merge && *basedOn == "" {
@@ -2345,7 +2334,7 @@ func cmdLog(root string, args []string) error {
 	}
 	head := s.GetRef(*ref)
 	if head == "" {
-		return fmt.Errorf("no ref %q", *ref)
+		return errNotFound{fmt.Errorf("no ref %q", *ref)}
 	}
 	live := s.GetRef(site.RefLive)
 	hist, err := s.History(head, *limit)
@@ -2380,7 +2369,7 @@ func cmdRender(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 2 {
-		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
+		return errMisused{fmt.Errorf("usage: quilzo render PAGE TEMPLATE")}
 	}
 	pageName, templatePath := pos[0], pos[1]
 
@@ -2399,7 +2388,7 @@ func cmdRender(root string, args []string) error {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return fmt.Errorf("no page %q; have %s", pageName, strings.Join(names, ", "))
+		return errNotFound{fmt.Errorf("no page %q; have %s", pageName, strings.Join(names, ", "))}
 	}
 
 	src, err := os.ReadFile(templatePath)

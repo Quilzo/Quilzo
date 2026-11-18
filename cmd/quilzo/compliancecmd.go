@@ -68,8 +68,8 @@ func cmdCompliance(root string, args []string) error {
 	case "ai-act", "iso42001", "aibom":
 		return complianceAI(root, args[0], args[1:])
 	default:
-		return fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, ksi, pledge, "+
-			"sbom, crypto, controls, accessibility, summary, %s", args[0], complianceAIName)
+		return errMisused{fmt.Errorf("unknown compliance command %q; try site, implementation, component, ssp, ksi, pledge, "+
+			"sbom, crypto, controls, accessibility, summary, %s", args[0], complianceAIName)}
 	}
 }
 
@@ -361,7 +361,7 @@ func complianceImplementation(args []string) error {
 	if len(args) == 1 {
 		im, ok := controls.Lookup(args[0])
 		if !ok {
-			return fmt.Errorf("no statement for %s; quilzo compliance implementation lists the %d there are", args[0], len(all))
+			return errNotFound{fmt.Errorf("no statement for %s; quilzo compliance implementation lists the %d there are", args[0], len(all))}
 		}
 		if w.JSON(im) {
 			return nil

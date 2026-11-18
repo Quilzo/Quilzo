@@ -656,6 +656,19 @@ type Store struct {
 // ErrNoRequest is an id that names no request.
 var ErrNoRequest = errors.New("there is no such request")
 
+// ErrRefused is what a refusal by the rule of two people is, for errors.Is:
+// a request approved by the person who made it, or withdrawn or redeemed by
+// somebody else. Each refusal keeps its own words; this is for a caller that
+// has to tell a refusal from a request that could not be read, as the
+// command line does, which exited 1 for an administrator approving their
+// own request where the help documents 3 for a refusal by a gate.
+var ErrRefused = errors.New("refused by the rule of two people")
+
+// refused is a refusal in its own words that is ErrRefused.
+type refused struct{ error }
+
+func (refused) Is(target error) bool { return target == ErrRefused }
+
 // Propose records a request. alone says the proposer is the only
 // administrator, so it is decided as it is made, done, for them to apply.
 func (s Store) Propose(kind, what string, payload any, why, by string, alone bool, now time.Time) (Request, error) {
@@ -699,7 +712,7 @@ func (s Store) Decide(id, by string, approve, alone bool, now time.Time) (Reques
 		// One rule for who is the same person, everywhere a second one is
 		// asked for (auth.SamePerson).
 		if approve && auth.SamePerson(r.By, by) && !alone {
-			return fmt.Errorf("request %s is yours: another administrator approves it", r.ID)
+			return refused{fmt.Errorf("request %s is yours: another administrator approves it", r.ID)}
 		}
 		r.DecidedBy, r.DecidedAt = by, now.UTC()
 		r.Alone = alone && auth.SamePerson(r.By, by)
@@ -726,7 +739,7 @@ func (s Store) Withdraw(id, by string, now time.Time) (Request, error) {
 			return ErrNoRequest
 		}
 		if !strings.EqualFold(r.By, by) {
-			return fmt.Errorf("request %s is %s's to withdraw", r.ID, r.By)
+			return refused{fmt.Errorf("request %s is %s's to withdraw", r.ID, r.By)}
 		}
 		if !r.Open(now) && !r.Redeemable(now) {
 			return fmt.Errorf("request %s is %s", r.ID, stateWords(*r, now))
@@ -748,7 +761,7 @@ func (s Store) Redeem(id, by string, now time.Time) (Request, error) {
 			return ErrNoRequest
 		}
 		if !strings.EqualFold(r.By, by) {
-			return fmt.Errorf("request %s was %s's: only they receive the token", r.ID, r.By)
+			return refused{fmt.Errorf("request %s was %s's: only they receive the token", r.ID, r.By)}
 		}
 		if !r.Redeemable(now) {
 			return fmt.Errorf("request %s is %s", r.ID, stateWords(*r, now))

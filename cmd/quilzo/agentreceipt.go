@@ -75,7 +75,7 @@ func agentReceipt(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("quilzo agent receipt RUN [-o FILE] [--bundle FILE]")
+		return errMisused{fmt.Errorf("quilzo agent receipt RUN [-o FILE] [--bundle FILE]")}
 	}
 	if *bundle != "" {
 		// The bundle opens the pictures the run kept, which the admin shows
@@ -117,7 +117,7 @@ func receiptCmd(root, name, what string, args []string,
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("quilzo %s %s [-o FILE]", name, what)
+		return errMisused{fmt.Errorf("quilzo %s %s [-o FILE]", name, what)}
 	}
 	rf, err := build(root, args[0], time.Now())
 	if err != nil {
@@ -313,7 +313,7 @@ func agentVerifyReceipt(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return errors.New("quilzo agent verify-receipt FILE [--keys head.pub.json]")
+		return errMisused{errors.New("quilzo agent verify-receipt FILE [--keys head.pub.json]")}
 	}
 	body, err := os.ReadFile(args[0])
 	if err != nil {

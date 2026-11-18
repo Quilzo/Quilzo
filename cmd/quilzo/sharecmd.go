@@ -205,7 +205,7 @@ func revokeShare(root, page, id string, now time.Time) (share, error) {
 				return nil
 			}
 		}
-		return fmt.Errorf("no link %s", id)
+		return errNotFound{fmt.Errorf("no link %s", id)}
 	})
 	return out, err
 }
@@ -350,7 +350,7 @@ func (s share) endedAt() time.Time {
 func cmdShare(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	if len(args) == 0 {
-		return errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")}
 	}
 	if err := migrateShares(root); err != nil {
 		return err
@@ -385,7 +385,7 @@ func cmdShare(root string, args []string) error {
 		return nil
 	case "revoke":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo share revoke ID")
+			return errMisused{errors.New("usage: quilzo share revoke ID")}
 		}
 		// Whoever may edit the page the link is to may end it.
 		f, err := loadShares(root)
@@ -419,7 +419,7 @@ func cmdShare(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo share PAGE [--days 7]")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7]")}
 	}
 	// Sharing a draft shows it to somebody outside: whoever may publish the
 	// page may, since publishing shows it to everybody.

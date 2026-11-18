@@ -124,12 +124,12 @@ func cmdSecret(root string, args []string) error {
 	switch args[0] {
 	case "set":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo secret set NAME   (the value from standard input, or QUILZO_SECRET_VALUE)")
+			return errMisused{errors.New("usage: quilzo secret set NAME   (the value from standard input, or QUILZO_SECRET_VALUE)")}
 		}
 		return secretSetCmd(root, args[1], caller)
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo secret remove NAME")
+			return errMisused{errors.New("usage: quilzo secret remove NAME")}
 		}
 		return secretRemove(root, args[1], caller)
 	case "list":
@@ -138,7 +138,7 @@ func cmdSecret(root string, args []string) error {
 		}
 		return secretList(root)
 	}
-	return fmt.Errorf("unknown secret command %q; try set, list or remove", args[0])
+	return errMisused{fmt.Errorf("unknown secret command %q; try set, list or remove", args[0])}
 }
 
 func secretSetCmd(root, name string, caller *Caller) error {
@@ -236,7 +236,7 @@ func secretRemove(root, name string, caller *Caller) error {
 		return err
 	}
 	if _, ok := f.Sealed[name]; !ok {
-		return fmt.Errorf("no credential %q is kept", name)
+		return errNotFound{fmt.Errorf("no credential %q is kept", name)}
 	}
 	delete(f.Sealed, name)
 	delete(f.Set, name)

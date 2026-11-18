@@ -338,7 +338,7 @@ func cmdPay(root string, args []string) error {
 	case "orders":
 		return payOrders(root, args[1:], caller)
 	}
-	return fmt.Errorf("unknown pay command %q; try status, enable, disable, sync or orders", args[0])
+	return errMisused{fmt.Errorf("unknown pay command %q; try status, enable, disable, sync or orders", args[0])}
 }
 
 func payStatus(root string) error {
@@ -399,7 +399,7 @@ func payEnable(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo pay enable stripe [--ship-to GB,IE] [--done \"…\"]")
+		return errMisused{errors.New("usage: quilzo pay enable stripe [--ship-to GB,IE] [--done \"…\"]")}
 	}
 	ch := dual.PayChange{Provider: pos[0], Done: strings.TrimSpace(*done)}
 	for _, c := range strings.Split(*shipTo, ",") {

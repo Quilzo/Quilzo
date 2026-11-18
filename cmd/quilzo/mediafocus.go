@@ -70,10 +70,10 @@ func mediaFocus(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media focus ID --at top-left\n" +
 				"       quilzo media focus ID --at 30,20\n" +
-				"       quilzo media focus ID --clear")
+				"       quilzo media focus ID --clear")}
 	}
 
 	lib, err := openMedia(root)

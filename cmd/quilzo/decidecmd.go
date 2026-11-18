@@ -45,7 +45,7 @@ func cmdDecide(root string, args []string) error {
 	case "eval":
 		return decideEval(root, args[1:])
 	}
-	return fmt.Errorf("unknown decide command %q; try list, set, remove, ask or eval", args[0])
+	return errMisused{fmt.Errorf("unknown decide command %q; try list, set, remove, ask or eval", args[0])}
 }
 
 func decideList(root string) error {
@@ -119,7 +119,7 @@ func changeDeciders(root string, caller *Caller, change, name string,
 
 func decideSet(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo decide set FILE.json   (one decider, as JSON)")
+		return errMisused{fmt.Errorf("usage: quilzo decide set FILE.json   (one decider, as JSON)")}
 	}
 	b, err := os.ReadFile(args[0])
 	if err != nil {
@@ -141,12 +141,12 @@ func decideSet(root string, args []string) error {
 
 func decideRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo decide remove NAME")
+		return errMisused{fmt.Errorf("usage: quilzo decide remove NAME")}
 	}
 	caller := resolveCaller(root, flagToken)
 	return changeDeciders(root, caller, "remove", args[0], func(s *decide.Set) error {
 		if !s.Remove(args[0]) {
-			return fmt.Errorf("no decider called %s", args[0])
+			return errNotFound{fmt.Errorf("no decider called %s", args[0])}
 		}
 		return nil
 	})
@@ -180,7 +180,7 @@ func loadDecider(root, name string) (decide.Decider, error) {
 	}
 	d, ok := set.Get(name)
 	if !ok {
-		return d, fmt.Errorf("no decider called %s", name)
+		return d, errNotFound{fmt.Errorf("no decider called %s", name)}
 	}
 	return d, nil
 }
@@ -204,7 +204,7 @@ func readState(arg string) (any, error) {
 
 func decideAsk(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo decide ask NAME '{\"json\": \"state\"}' | @FILE")
+		return errMisused{fmt.Errorf("usage: quilzo decide ask NAME '{\"json\": \"state\"}' | @FILE")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -242,8 +242,8 @@ func decideAsk(root string, args []string) error {
 
 func decideEval(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo decide eval NAME CASES.jsonl\n" +
-			"  one case per line: {\"state\": {...}, \"expect\": {\"question\": \"answer\"}}")
+		return errMisused{fmt.Errorf("usage: quilzo decide eval NAME CASES.jsonl\n" +
+			"  one case per line: {\"state\": {...}, \"expect\": {\"question\": \"answer\"}}")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {

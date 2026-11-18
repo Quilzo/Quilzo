@@ -43,7 +43,7 @@ func cmdAssist(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(`usage: quilzo assist "what to change" --author <who>`)
+		return errMisused{fmt.Errorf(`usage: quilzo assist "what to change" --author <who>`)}
 	}
 	instruction := pos[0]
 

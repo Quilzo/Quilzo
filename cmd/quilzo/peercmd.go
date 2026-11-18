@@ -91,8 +91,8 @@ func cmdPeer(root string, args []string) error {
 	case "adopt":
 		return peerAdopt(root, args[1:])
 	default:
-		return fmt.Errorf("unknown peer command %q; try list, add, remove, "+
-			"pull or adopt", args[0])
+		return errMisused{fmt.Errorf("unknown peer command %q; try list, add, remove, "+
+			"pull or adopt", args[0])}
 	}
 }
 
@@ -155,8 +155,8 @@ func peerAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 2 {
-		return fmt.Errorf(
-			"usage: quilzo peer add NAME https://host [--ref draft]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo peer add NAME https://host [--ref draft]")}
 	}
 	name, url, ref := pos[0], pos[1], *refFlag
 	if err := replica.ValidPeerName(name); err != nil {
@@ -202,7 +202,7 @@ func peerRemove(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo peer remove NAME")
+		return errMisused{fmt.Errorf("usage: quilzo peer remove NAME")}
 	}
 	name := args[0]
 	f, err := loadPeers(root)
@@ -219,7 +219,7 @@ func peerRemove(root string, args []string) error {
 		kept = append(kept, p)
 	}
 	if !found {
-		return fmt.Errorf("no peer called %q", name)
+		return errNotFound{fmt.Errorf("no peer called %q", name)}
 	}
 	f.Peers = kept
 	if err := saveJSON(peersPath(root), f); err != nil {
@@ -241,7 +241,7 @@ func peerPull(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo peer pull NAME")
+		return errMisused{fmt.Errorf("usage: quilzo peer pull NAME")}
 	}
 	name := args[0]
 	f, err := loadPeers(root)
@@ -255,7 +255,7 @@ func peerPull(root string, args []string) error {
 		}
 	}
 	if peer == nil {
-		return fmt.Errorf("no peer called %q; `quilzo peer list`", name)
+		return errNotFound{fmt.Errorf("no peer called %q; `quilzo peer list`", name)}
 	}
 	token := strings.TrimSpace(os.Getenv(peer.tokenEnv()))
 	if token == "" {
@@ -324,7 +324,7 @@ func peerAdopt(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo peer adopt NAME")
+		return errMisused{fmt.Errorf("usage: quilzo peer adopt NAME")}
 	}
 	name := args[0]
 	if err := replica.ValidPeerName(name); err != nil {

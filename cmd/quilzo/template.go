@@ -38,8 +38,8 @@ func cmdTemplate(root string, args []string) error {
 	case "adopt":
 		return templateAdopt(root, args[1:])
 	default:
-		return fmt.Errorf("unknown template command %q; try list, show, use, "+
-			"layouts or adopt", args[0])
+		return errMisused{fmt.Errorf("unknown template command %q; try list, show, use, "+
+			"layouts or adopt", args[0])}
 	}
 }
 
@@ -66,12 +66,12 @@ func templateList() error {
 
 func templateShow(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo template show <name>")
+		return errMisused{fmt.Errorf("usage: quilzo template show <name>")}
 	}
 	t, ok := starter.Get(args[0])
 	if !ok {
-		return fmt.Errorf("no starter template %q; try: %s",
-			args[0], strings.Join(starter.Names(), ", "))
+		return errNotFound{fmt.Errorf("no starter template %q; try: %s",
+			args[0], strings.Join(starter.Names(), ", "))}
 	}
 	if w.JSON(t) {
 		return nil
@@ -125,11 +125,11 @@ func templateShow(args []string) error {
 func templateLayouts(args []string) error {
 	fs := flag.NewFlagSet("layouts", flag.ContinueOnError)
 	dir := fs.String("dir", "templates", "the site's template directory, for its own layouts")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: quilzo template layouts [--dir templates]")
+		return errMisused{fmt.Errorf("usage: quilzo template layouts [--dir templates]")}
 	}
 	shipped := starter.LayoutNames()
 	own := siteLayoutNames(*dir)
@@ -254,12 +254,12 @@ func templateUse(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo template use <name> [--dir templates]")
+		return errMisused{fmt.Errorf("usage: quilzo template use <name> [--dir templates]")}
 	}
 	t, ok := starter.Get(pos[0])
 	if !ok {
-		return fmt.Errorf("no starter template %q; try: %s",
-			pos[0], strings.Join(starter.Names(), ", "))
+		return errNotFound{fmt.Errorf("no starter template %q; try: %s",
+			pos[0], strings.Join(starter.Names(), ", "))}
 	}
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
@@ -412,8 +412,8 @@ func templateAdopt(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
-			"usage: quilzo template adopt <file.html> [--as name] [--dry-run]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo template adopt <file.html> [--as name] [--dry-run]")}
 	}
 
 	src, err := os.ReadFile(pos[0])

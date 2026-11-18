@@ -114,8 +114,8 @@ func cmdBrand(root string, args []string) error {
 	case "check":
 		return brandCheck(root, args[1:])
 	default:
-		return fmt.Errorf("unknown brand command %q; try list, init or check",
-			args[0])
+		return errMisused{fmt.Errorf("unknown brand command %q; try list, init or check",
+			args[0])}
 	}
 }
 

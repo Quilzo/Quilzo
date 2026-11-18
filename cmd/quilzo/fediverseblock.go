@@ -96,9 +96,9 @@ func fediverseBlock(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo fediverse block HOST-OR-ACTOR\n" +
-				"  a host — example.social — covers every account on it")
+				"  a host — example.social — covers every account on it")}
 	}
 	target := strings.TrimSpace(args[0])
 	list, err := loadBlocklist(root)
@@ -155,7 +155,7 @@ func fediverseUnblock(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")
+		return errMisused{fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")}
 	}
 	target := strings.TrimSpace(args[0])
 	list, err := loadBlocklist(root)

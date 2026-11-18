@@ -64,9 +64,9 @@ func cmdShield(root string, args []string) error {
 		}
 		return shieldRepair(root)
 	default:
-		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
+		return errMisused{fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
 			"lockdown, freeze, pause, lift, judge, trust, decoy, playbook, hold, "+
-			"release, dry-run or repair", args[0])
+			"release, dry-run or repair", args[0])}
 	}
 }
 
@@ -319,7 +319,7 @@ func shieldLift(root string, args []string) error {
 		pos = []string{"all"}
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo shield lift ID|all [--mistake]")
+		return errMisused{errors.New("usage: quilzo shield lift ID|all [--mistake]")}
 	}
 	c, by := shieldBy(root)
 	now := time.Now()
@@ -350,7 +350,7 @@ func shieldLift(root string, args []string) error {
 
 func shieldJudge(root string, args []string) error {
 	if len(args) != 2 || (args[1] != shield.Mistake && args[1] != shield.Right) {
-		return errors.New("usage: quilzo shield judge ID mistake|right")
+		return errMisused{errors.New("usage: quilzo shield judge ID mistake|right")}
 	}
 	c, by := shieldBy(root)
 	p, err := shield.Judge(root, args[0], args[1], by, time.Now())
@@ -389,7 +389,7 @@ func shieldTrust(root string, args []string) error {
 		return nil
 	}
 	if len(args) != 2 || (args[0] != "add" && args[0] != "remove") {
-		return errors.New("usage: quilzo shield trust [list] | add CIDR | remove CIDR")
+		return errMisused{errors.New("usage: quilzo shield trust [list] | add CIDR | remove CIDR")}
 	}
 	c, _ := shieldBy(root)
 	if err := shield.Trust(root, args[1], args[0] == "add", time.Now()); err != nil {
@@ -444,7 +444,7 @@ func shieldDecoy(root string, args []string) error {
 		return nil
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield decoy remove ID")
+			return errMisused{errors.New("usage: quilzo shield decoy remove ID")}
 		}
 		if err := shield.RemoveDecoy(root, args[1], now); err != nil {
 			return err
@@ -453,7 +453,7 @@ func shieldDecoy(root string, args []string) error {
 		w.Human("%sremoved%s %s\n", green, reset, args[1])
 		return nil
 	}
-	return errors.New("usage: quilzo shield decoy [list] | add --where TEXT | remove ID")
+	return errMisused{errors.New("usage: quilzo shield decoy [list] | add --where TEXT | remove ID")}
 }
 
 func shieldPlaybookNamed(bk *shield.Book, name string) (shield.Playbook, bool) {
@@ -490,11 +490,11 @@ func shieldPlaybook(root string, args []string) error {
 		return nil
 	case "show":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield playbook show NAME")
+			return errMisused{errors.New("usage: quilzo shield playbook show NAME")}
 		}
 		pb, ok := shieldPlaybookNamed(bk, args[1])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", args[1])
+			return errNotFound{fmt.Errorf("there is no playbook %s", args[1])}
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -508,11 +508,11 @@ func shieldPlaybook(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT")
+			return errMisused{errors.New("usage: quilzo shield playbook mode NAME act|watch|off --why TEXT")}
 		}
 		pb, ok := shieldPlaybookNamed(bk, pos[0])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", pos[0])
+			return errNotFound{fmt.Errorf("there is no playbook %s", pos[0])}
 		}
 		pb.Mode = pos[1]
 		return shieldPropose(root, c, by, pb, false, *why, now)
@@ -541,7 +541,7 @@ func shieldPlaybook(root string, args []string) error {
 		return shieldPropose(root, c, by, pb, *remove != "", *why, now)
 	case "approve", "decline":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])
+			return errMisused{fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])}
 		}
 		// Their own change, approved alone: not for a day after another
 		// administrator stopped being one.
@@ -566,7 +566,7 @@ func shieldPlaybook(root string, args []string) error {
 		return nil
 	case "withdraw":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo shield playbook withdraw ID")
+			return errMisused{errors.New("usage: quilzo shield playbook withdraw ID")}
 		}
 		p, err := shield.Withdraw(root, args[1], by, now)
 		if err != nil {
@@ -576,8 +576,8 @@ func shieldPlaybook(root string, args []string) error {
 		w.Human("%swithdrawn%s %s\n", green, reset, proposalWords(p))
 		return nil
 	}
-	return errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT | " +
-		"propose --file F --why TEXT | approve ID | decline ID | withdraw ID")
+	return errMisused{errors.New("usage: quilzo shield playbook list | show NAME | mode NAME act|watch|off --why TEXT | " +
+		"propose --file F --why TEXT | approve ID | decline ID | withdraw ID")}
 }
 
 func shieldPropose(root string, c *Caller, by string, pb shield.Playbook, remove bool, why string, now time.Time) error {
@@ -830,7 +830,7 @@ func shieldDryRun(root string, args []string) error {
 	case len(pos) == 1:
 		pb, ok := shieldPlaybookNamed(bk, pos[0])
 		if !ok {
-			return fmt.Errorf("there is no playbook %s", pos[0])
+			return errNotFound{fmt.Errorf("there is no playbook %s", pos[0])}
 		}
 		pbs = []shield.Playbook{pb}
 	default:

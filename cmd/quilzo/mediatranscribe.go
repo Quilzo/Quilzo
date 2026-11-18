@@ -52,7 +52,7 @@ func mediaTranscribe(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo media transcribe RECORDING --lang en --author WHO")
+		return errMisused{fmt.Errorf("usage: quilzo media transcribe RECORDING --lang en --author WHO")}
 	}
 	who := strings.TrimSpace(*author)
 	if who == "" {

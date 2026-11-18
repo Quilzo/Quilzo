@@ -231,7 +231,7 @@ func cmdAgent(root string, args []string) error {
 }
 
 func agentUsage() error {
-	return fmt.Errorf(`usage: quilzo agent <command>
+	return errMisused{fmt.Errorf(`usage: quilzo agent <command>
 
   templates              the archetypes, and when to reach for each
   template list | save FILE | remove KIND
@@ -272,7 +272,7 @@ func agentUsage() error {
   resume RUN             continue a run that was interrupted
   replay RUN STEP        run it again from after that step, as a new run
 
-kinds: %s`, strings.Join(agent.KindNames(), ", "))
+kinds: %s`, strings.Join(agent.KindNames(), ", "))}
 }
 
 func agentTemplates(root string) error {
@@ -376,7 +376,7 @@ func agentNew(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent new NAME --kind KIND")
+		return errMisused{fmt.Errorf("usage: quilzo agent new NAME --kind KIND")}
 	}
 	name, kind := args[0], *kindFlag
 	if kind == "" {
@@ -490,7 +490,7 @@ func agentShow(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent show NAME")
+		return errMisused{fmt.Errorf("usage: quilzo agent show NAME")}
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -498,7 +498,7 @@ func agentShow(root string, args []string) error {
 	}
 	m, ok := set.Agents[args[0]]
 	if !ok {
-		return fmt.Errorf("no agent called %q", args[0])
+		return errNotFound{fmt.Errorf("no agent called %q", args[0])}
 	}
 	body, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -607,12 +607,12 @@ func agentCheckRun(root string, args []string) error {
 		"let a model choose the actions, instead of walking the manifest")
 	program := fs.Bool("program", false,
 		"run the agent's own program, in its box, deciding the actions")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseOnce(fs, rest); err != nil {
 		return err
 	}
 	args = append(pos, fs.Args()...)
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent run NAME [--model | --program] [\"what it should do\"]")
+		return errMisused{fmt.Errorf("usage: quilzo agent run NAME [--model | --program] [\"what it should do\"]")}
 	}
 	if len(args) > 2 {
 		return fmt.Errorf("the goal is one argument, so quote it, and flags " +
@@ -1043,7 +1043,7 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	var trail []narrowing
 	m, ok := set.Agents[name]
 	if !ok {
-		return m, nil, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return m, nil, errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	// Paused by the shield: an evaluation or a playbook found something
 	// steering it, and it does not run until a person lifts that. An

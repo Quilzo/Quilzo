@@ -55,7 +55,7 @@ func cmdLogd(root string, args []string) error {
 	signGID := fs.String("sign-gid", "",
 		"comma-separated groups an account must connect as to ask for heads "+
 			"and statements; empty means any")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	// What is left after the flags, answered before anything else. Main
@@ -69,7 +69,7 @@ func cmdLogd(root string, args []string) error {
 			commandHelp("logd", nil)
 			return nil
 		}
-		return fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])
+		return errMisused{fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])}
 	}
 
 	// Refusing to run as root. The writer needs to open one file for appending
