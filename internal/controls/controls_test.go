@@ -262,6 +262,32 @@ func TestThePlanSaysWhatQuilzoIs(t *testing.T) {
 	}
 }
 
+// The component definition says what Quilzo is, in the README's words.
+//
+// It described the component as "content platform, admin, security
+// console, agent runtime and machine interface": a list that leads with the
+// content platform, names a security console Quilzo does not have, and is
+// what a governance tool imports as the component's description, and what
+// an assessor reads first in it.
+func TestTheComponentSaysWhatQuilzoIs(t *testing.T) {
+	want := strings.ToLower(whatQuilzoIs(t))
+	def, err := ComponentDefinition("dev", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	comps := def.ComponentDefinition.Components
+	if len(comps) != 1 {
+		t.Fatalf("the component definition has %d components, and this reads the one that is Quilzo", len(comps))
+	}
+	said := comps[0].Description
+	if !strings.Contains(strings.ToLower(said), want) {
+		t.Errorf("the component definition describes Quilzo as %q, and the README says it is %q", said, want)
+	}
+	if strings.Contains(strings.ToLower(said), "security console") {
+		t.Errorf("the component definition names a security console Quilzo does not have: %q", said)
+	}
+}
+
 // whatQuilzoIs is the README's sentence about what Quilzo is, the bold
 // line under the wordmark, without its full stop.
 func whatQuilzoIs(t *testing.T) string {

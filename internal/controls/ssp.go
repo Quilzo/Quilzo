@@ -25,9 +25,11 @@ import (
 // quilzoIs is the README's sentence about what Quilzo is, the words the
 // documents an assessor reads describe it in. The plan went on calling a
 // deployment "the self-hosted CMS for the organisation's websites, chatbots
-// and AI agents", beside "the security console", after the product had
-// become an agent platform with a CMS in it and a security team's own tools
-// had left it; a test holds this to the README.
+// and AI agents", beside "the security console", and the component
+// definition the component "content platform, admin, security console,
+// agent runtime and machine interface", after the product had become an
+// agent platform with a CMS in it and a security team's own tools had left
+// it; a test holds this to the README.
 const quilzoIs = "the self-hosted AI agent platform: a control plane, an agent studio, a CMS and chatbots in one Go binary"
 
 // SSPInput is what the plan is drafted from.
