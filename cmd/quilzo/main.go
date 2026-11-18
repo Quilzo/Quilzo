@@ -1866,9 +1866,10 @@ func cmdPublish(root string, args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	force := fs.Bool("force-inaccessible", false,
 		"publish despite blocking accessibility failures, and record that you did")
-	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible)")
+	reason := fs.String("reason", "", "why the override is justified (required with --force-inaccessible, "+
+		"--force-unmarked and --no-a11y-check)")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
+	skip := fs.Bool("no-a11y-check", false, "skip the check entirely (needs --reason, and is recorded)")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
 	// One commit, and the flags on either side of it. Parsing stopped at the
@@ -2044,6 +2045,14 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 				"an override with no reason records only that somebody wanted " +
 				"one")}
 	}
+	// What this publish waived, for its record, as the browser's names it.
+	// The command line recorded the accessibility override and nothing
+	// else, so a publish of pages with no provenance, let through on a
+	// stated reason, read in the log the same as one of marked pages.
+	var waived []string
+	if len(unmarked) > 0 && *forceUnmarked {
+		waived = append(waived, "unmarked-ai")
+	}
 
 	// The gate runs before the pointer moves. ATAG Part B asks that the tool
 	// help authors produce accessible content, and a report printed after
@@ -2075,6 +2084,24 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		w.Human("  %saccessibility not checked: publish.require_a11y is "+
 			"off%s\n", yellow, reset)
 	}
+	// --no-a11y-check is a waiver of a blocking gate like the others, so it
+	// takes a reason and is recorded with it. It needed nothing: one flag
+	// put a video with sound and no captions live, a page the gate calls
+	// unusable for someone, while --force-inaccessible beside it asked for a
+	// written reason, and afterwards the publish read in the log the same
+	// as one that had been checked.
+	if required && *skip {
+		if strings.TrimSpace(*reason) == "" {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "accessibility check skipped with no reason"}))
+			return errBlocked{fmt.Errorf(
+				"--no-a11y-check needs --reason: skipping the check is recorded, " +
+					"and a skip with no reason is indistinguishable from not " +
+					"knowing the check exists")}
+		}
+		waived = append(waived, "a11y-check")
+		w.Human("  %saccessibility not checked: %s%s\n", yellow, *reason, reset)
+	}
 	if required && !*skip {
 		reports, cerr := checkAccessibility(root, s, target, *tplDir)
 		if cerr != nil {
@@ -2101,8 +2128,8 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 				"the accessibility check could not run, so publishing would "+
 					"claim a check that did not happen: %v\n"+
 					"  create the template, point --templates at it, or pass "+
-					"--no-a11y-check if this store is not what renders the "+
-					"pages", cerr)}
+					"--no-a11y-check --reason \"...\" if this store is not what "+
+					"renders the pages", cerr)}
 		} else if n := a11y.BlockingCount(reports); n > 0 {
 			if w.Mode != out.JSON {
 				printA11y(reports)
@@ -2126,6 +2153,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 					"--force-inaccessible needs --reason. An override without a stated " +
 						"justification is indistinguishable from not checking")
 			}
+			waived = append(waived, "accessibility")
 			w.Human("  %soverriding %d blocking failure(s): %s%s\n",
 				yellow, n, *reason, reset)
 		}
@@ -2196,12 +2224,19 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		w.Human("already live\n")
 		return nil
 	}
-	record(root, caller.auditRecord("publish", "/", audit.Success,
-		map[string]string{
-			"commit":   short(pub.Published),
-			"changes":  fmt.Sprintf("%d", len(pub.Changes)),
-			"override": overrideNote(*force, *reason),
-		}))
+	published := map[string]string{
+		"commit":   short(pub.Published),
+		"changes":  fmt.Sprintf("%d", len(pub.Changes)),
+		"override": overrideNote(*force, *reason),
+	}
+	if len(waived) > 0 {
+		published["waived"] = strings.Join(waived, ",")
+		published["reason"] = *reason
+	}
+	if required && *skip {
+		published["a11y"] = "not checked"
+	}
+	record(root, caller.auditRecord("publish", "/", audit.Success, published))
 
 	// Told after the fact, never before, and a failure here never blocks. A
 	// receiver being down is not a reason to stop publishing — making it one

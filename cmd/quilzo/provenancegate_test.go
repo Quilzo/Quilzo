@@ -70,7 +70,7 @@ func TestMarkedContentPublishes(t *testing.T) {
 		"--source", "humanEdits", "--author", "someone"); err != nil {
 		t.Fatalf("could not mark the page: %v", err)
 	}
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a marked page was refused: %v", err)
 	}
 }
@@ -188,8 +188,58 @@ func TestAStoreHoldingRecordsCanPublishOnceItsPagesAreMarked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a store holding records refused to publish with every page "+
 			"marked: %v", err)
+	}
+}
+
+// Skipping the accessibility check is a waiver like the others: it takes a
+// reason and leaves both in the record of the publish. --no-a11y-check
+// needed nothing, so one flag put a video with sound and no captions live,
+// a page the gate calls unusable for someone, while its sibling
+// --force-inaccessible asked for a written reason; and afterwards the
+// publish record read the same as one that had been checked.
+func TestSkippingTheAccessibilityCheckTakesAReasonAndIsRecorded(t *testing.T) {
+	root := newStoreWithDraft(t)
+	if err := runCmd(t, root, "provenance", "set", "index",
+		"--source", "humanEdits", "--author", "someone"); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := open(root)
+	before := s.GetRef(site.RefLive)
+	if err := runPublish(t, root, "--no-a11y-check"); err == nil {
+		t.Fatal("the accessibility check was skipped with no reason")
+	} else if !strings.Contains(err.Error(), "--reason") {
+		t.Fatalf("refused for the wrong reason: %v", err)
+	}
+	if s, _ := open(root); s.GetRef(site.RefLive) != before {
+		t.Fatal("a refused skip moved live")
+	}
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "rendered by another system"); err != nil {
+		t.Fatalf("a skip with a reason was refused: %v", err)
+	}
+	recs := publishRecords(t, root)
+	last := recs[len(recs)-1]
+	if last.Detail["commit"] == "" || last.Detail["a11y"] != "not checked" ||
+		last.Detail["reason"] != "rendered by another system" || !strings.Contains(last.Detail["waived"], "a11y-check") {
+		t.Errorf("the publish record does not say the check was skipped, and why: %v", last.Detail)
+	}
+}
+
+// A waiver of the provenance gate is in the record of the publish it let
+// through, as the browser's is. The command line asked for the reason and
+// then recorded only the accessibility override, so a publish of pages with
+// no provenance read the same as one of marked pages.
+func TestTheUnmarkedWaiverIsInThePublishRecord(t *testing.T) {
+	root := newStoreWithDraft(t)
+	if err := runPublish(t, root, "--no-a11y-check", "--force-unmarked",
+		"--reason", "hand-authored, backfill pending"); err != nil {
+		t.Fatal(err)
+	}
+	recs := publishRecords(t, root)
+	last := recs[len(recs)-1]
+	if !strings.Contains(last.Detail["waived"], "unmarked-ai") || last.Detail["reason"] != "hand-authored, backfill pending" {
+		t.Errorf("the publish record does not say what was waived, and why: %v", last.Detail)
 	}
 }

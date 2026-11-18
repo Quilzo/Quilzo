@@ -30,7 +30,7 @@ func TestPromotingIntoProductionTakesThePublishChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runPublish(t, root, "--no-a11y-check"); err == nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err == nil {
 		t.Fatal("control: publish did not refuse")
 	}
 	_ = cmdEnv(root, []string{"promote", "draft", "production"})
@@ -49,8 +49,8 @@ func TestPromotingIntoProductionTakesThePublishChecks(t *testing.T) {
 	if s.GetRef("env-staging") != s.GetRef(site.RefDraft) {
 		t.Fatal("the draft did not reach staging")
 	}
-	_ = cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check"})
-	_ = cmdEnv(root, []string{"promote", "draft", "production", "--skip", "--no-a11y-check"})
+	_ = cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check", "--reason", "no templates here"})
+	_ = cmdEnv(root, []string{"promote", "draft", "production", "--skip", "--no-a11y-check", "--reason", "no templates here"})
 	if live := s.GetRef(site.RefLive); live != "" {
 		t.Fatal("an unchecked draft reached production by way of staging")
 	}
@@ -100,7 +100,7 @@ func TestPromotionIsCheckedOnWhatItPromotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("QUILZO_TOKEN", dana)
-	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check"}); err == nil ||
+	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check", "--reason", "no templates here"}); err == nil ||
 		s.GetRef(site.RefLive) == staged {
 		t.Fatal("staging went live on the approval of a different draft")
 	}
@@ -109,7 +109,7 @@ func TestPromotionIsCheckedOnWhatItPromotes(t *testing.T) {
 	if err := cmdEnv(root, []string{"promote", "draft", "staging"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check"}); err != nil {
+	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check", "--reason", "no templates here"}); err != nil {
 		t.Fatal(err)
 	}
 	live := s.GetRef(site.RefLive)
@@ -154,7 +154,7 @@ func TestPromotingWhatProductionHoldsMovesNothing(t *testing.T) {
 	for _, args := range [][]string{
 		{"add", "staging", "--before", "production"},
 		{"promote", "draft", "staging"},
-		{"promote", "staging", "production", "--no-a11y-check"},
+		{"promote", "staging", "production", "--no-a11y-check", "--reason", "no templates here"},
 	} {
 		if err := cmdEnv(root, args); err != nil {
 			t.Fatal(err)
@@ -168,7 +168,7 @@ func TestPromotingWhatProductionHoldsMovesNothing(t *testing.T) {
 	if err := cmdReview(root, []string{"require", "1"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check"}); err != nil {
+	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check", "--reason", "no templates here"}); err != nil {
 		t.Fatalf("promoting what production already holds was refused: %v", err)
 	}
 	if s.GetRef(site.RefLive) != live {

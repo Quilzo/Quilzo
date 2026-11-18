@@ -257,7 +257,7 @@ func envPromote(root string, args []string) error {
 		"into production: publish despite blocking accessibility failures, and record that you did")
 	reason := fs.String("reason", "", "why an override is justified")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	noCheck := fs.Bool("no-a11y-check", false, "into production: skip the accessibility check entirely")
+	noCheck := fs.Bool("no-a11y-check", false, "into production: skip the accessibility check entirely (needs --reason)")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"into production: publish pages that declare no provenance (needs --reason)")
 	if err := fs.Parse(reorder(args, map[string]bool{"reason": true, "templates": true})); err != nil {

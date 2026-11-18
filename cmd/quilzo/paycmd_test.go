@@ -219,7 +219,7 @@ func TestAShopSellsAtExactlyThePublishedPrice(t *testing.T) {
 	slug := prov.made[0].ID
 	old := page[slug][1]
 	reprice(t, root, slug, int(prov.made[0].Amount)+100)
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatal(err)
 	}
 	after := shopPage(t, root)
@@ -234,7 +234,7 @@ func TestAShopSellsAtExactlyThePublishedPrice(t *testing.T) {
 	// no button rather than one charging the old price, and the rest sell.
 	prov.fail = errors.New("connection refused")
 	reprice(t, root, slug, int(prov.made[0].Amount)+200)
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a provider being down stopped a publish: %v", err)
 	}
 	down := shopPage(t, root)
