@@ -1072,13 +1072,20 @@ func TestEveryDocumentThatAddsAndPublishesSaysWhoWroteIt(t *testing.T) {
 }
 
 // `serve --open` opens the admin where a passkey works: by name, for an
-// admin on loopback or on every interface, and as it was given otherwise.
+// admin on the address localhost is or on every interface, and as it was
+// given otherwise.
+//
+// Every loopback address was opened as localhost, and localhost is
+// 127.0.0.1 and ::1 and no other: an admin on 127.0.0.2:9000 was opened at
+// http://localhost:9000, where nothing listens, and told its reader to open
+// it there.
 func TestServeOpensTheAdminWhereAPasskeyWorks(t *testing.T) {
 	for addr, want := range map[string]string{
 		"127.0.0.1:8080":         "http://localhost:8080",
 		"[::1]:8080":             "http://localhost:8080",
-		"127.0.0.2:9000":         "http://localhost:9000",
+		"127.0.0.2:9000":         "http://127.0.0.2:9000",
 		"0.0.0.0:8080":           "http://localhost:8080",
+		"[::]:8080":              "http://localhost:8080",
 		":8080":                  "http://localhost:8080",
 		"admin.example.org:8443": "http://admin.example.org:8443",
 	} {
@@ -1086,5 +1093,39 @@ func TestServeOpensTheAdminWhereAPasskeyWorks(t *testing.T) {
 		if got != want || renamed != (want != "http://"+addr) {
 			t.Errorf("an admin on %s is opened at %s (renamed %v), want %s", addr, got, renamed, want)
 		}
+	}
+}
+
+// What `serve --open` opens is where the admin answers, for an admin on
+// any address of this machine it can listen on: the name a passkey needs
+// is no use at an address nothing is listening on.
+func TestServeOpensAnAddressTheAdminAnswersAt(t *testing.T) {
+	for _, at := range []string{"127.0.0.1:0", "127.0.0.2:0", "0.0.0.0:0"} {
+		l, err := net.Listen("tcp", at)
+		if err != nil {
+			t.Logf("cannot listen on %s here, so not tried: %v", at, err)
+			continue
+		}
+		go func() {
+			for {
+				c, err := l.Accept()
+				if err != nil {
+					return
+				}
+				c.Close()
+			}
+		}()
+		opened, _ := adminAddress(l.Addr().String())
+		u, err := url.Parse(opened)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := net.DialTimeout("tcp", u.Host, 5*time.Second)
+		if err != nil {
+			t.Errorf("an admin on %s is opened at %s, which nothing answers: %v", l.Addr(), opened, err)
+		} else {
+			c.Close()
+		}
+		l.Close()
 	}
 }

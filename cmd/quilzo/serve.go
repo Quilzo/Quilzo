@@ -1277,15 +1277,20 @@ func cmdServe(root string, args []string) error {
 // "passkeys need a domain name", and people sign in to it with a passkey.
 // `serve --open` opened http://127.0.0.1:8080 all the same, on the line
 // after the one that said to open it as localhost, and the README's
-// Quickstart ended there. The same holds for any loopback address, and for
-// an admin on every interface, seen from this machine, where the browser
-// --open starts is.
+// Quickstart ended there. The same holds for ::1, and for an admin on every
+// interface, seen from this machine, where the browser --open starts is.
+//
+// Only the addresses localhost is, though, and not every loopback address:
+// a browser takes localhost to be 127.0.0.1 or ::1, so an admin on
+// 127.0.0.2 opened as localhost was opened where nothing listens. That one
+// is opened at its address, which answers, and refuses only the passkey.
 func adminAddress(addr string) (string, bool) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return "http://" + addr, false
 	}
-	if ip := net.ParseIP(host); host == "" || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+	ip := net.ParseIP(host)
+	if host == "" || (ip != nil && (ip.IsUnspecified() || ip.Equal(net.IPv4(127, 0, 0, 1)) || ip.Equal(net.IPv6loopback))) {
 		return "http://localhost:" + port, true
 	}
 	return "http://" + addr, false
