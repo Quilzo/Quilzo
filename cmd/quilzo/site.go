@@ -669,11 +669,13 @@ func (run siteRun) dress(st *public.Site) {
 	if run.ref != "" {
 		st.Ref = run.ref
 	}
-	// lastmod is computed per request rather than cached, because it is
-	// derived from history and history only grows. A cached value would go
-	// stale exactly when a page changed, which is the one moment it matters.
-	st.LastChanged = func() (map[string]time.Time, error) {
-		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
+	// lastmod is derived from history, and is asked for the commit the site
+	// serves: once per commit, since a commit's history never changes and a
+	// publish is a different commit (public.Site.lastChanged). It walked the
+	// live ref's history whatever the site served, so a site serving another
+	// environment listed its pages with live's dates.
+	st.LastChanged = func(head string) (map[string]time.Time, error) {
+		return seo.LastChanged(s, head, 5000)
 	}
 	st.Redirects = run.redirects
 	st.RedirectsAt = reloadingRedirects(root, run.redirectFile, run.redirects)

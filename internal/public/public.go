@@ -92,6 +92,11 @@ type Site struct {
 	// publish window is deliberately not part of it.
 	pageMu  sync.Mutex
 	pageSet *pageSet
+	// lastMu, lastHead and lastAt memoise LastChanged's answer for one
+	// commit, for the same reason (see lastChanged).
+	lastMu   sync.Mutex
+	lastHead string
+	lastAt   map[string]time.Time
 	// Layouts is every template this site can render a page through. A page
 	// names one in its own body; one that names none renders through the
 	// default. Resolution happens in internal/render, which is also where the
@@ -220,8 +225,10 @@ type Site struct {
 	// Nil means a single-language site and nothing about this feature appears
 	// in the output.
 	Locales *i18n.Config
-	// LastChanged supplies each page's real modification time.
-	LastChanged func() (map[string]time.Time, error)
+	// LastChanged supplies each page's real modification time at the commit
+	// head, which is the commit the site serves. Asked once per commit
+	// (lastChanged).
+	LastChanged func(head string) (map[string]time.Time, error)
 	// Listings resolves the queries a page embeds. Nil means a page naming one
 	// fails to assemble rather than rendering without it — a listing-shaped
 	// hole is not noticed until somebody asks why the table is empty.
@@ -540,6 +547,40 @@ func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, st.Stylesheet)
 }
 
+// lastChanged is each page's date at the commit head, worked out once per
+// commit and remembered until the site serves another.
+//
+// LastChanged walks back through up to five thousand commits of history and
+// reads the tree of each, and the sitemap asked it on every request: about
+// 11 ms for a one-page site after five hundred publishes and rising with
+// every publish, on the address crawlers ask for most, which anybody may
+// ask for as often as they like. The answer is a fact about the commit, as
+// fixed as the commit is, so the key is the commit, as it is for the
+// decoded pages (pagecache.go): a publish moves the ref, the next request
+// asks with a different head, and nothing remembered for the old one can
+// answer it.
+//
+// Under the lock, so the requests that arrive together after a publish walk
+// once between them. A walk that fails is not remembered, and the sitemap
+// goes without dates, as it did. The map is shared between callers, who
+// only read it.
+func (st *Site) lastChanged(head string) map[string]time.Time {
+	if st.LastChanged == nil || head == "" {
+		return nil
+	}
+	st.lastMu.Lock()
+	defer st.lastMu.Unlock()
+	if st.lastAt != nil && st.lastHead == head {
+		return st.lastAt
+	}
+	changed, err := st.LastChanged(head)
+	if err != nil {
+		return nil
+	}
+	st.lastHead, st.lastAt = head, changed
+	return changed
+}
+
 // sitemap lists the live pages with the date each last actually changed.
 func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	if st.BaseURL == "" {
@@ -564,10 +605,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var changed map[string]time.Time
-	if st.LastChanged != nil {
-		changed, _ = st.LastChanged()
-	}
+	changed := st.lastChanged(live)
 
 	names := make([]string, 0, len(pages))
 	for name := range pages {
