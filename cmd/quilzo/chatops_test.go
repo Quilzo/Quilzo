@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/mcp"
 )
 
@@ -177,5 +178,59 @@ func TestDeclaringAChatbotOverTheInterfaceKeepsWhatItIsNotGiven(t *testing.T) {
 	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_write", "declare_assistant",
 		map[string]any{"name": "other"}); merr == nil {
 		t.Error("a chatbot was declared with no title")
+	}
+}
+
+// budgetOf is the budget a caller has of its own in the store's gateway.
+func budgetOf(t *testing.T, root, who string) gateway.Budget {
+	t.Helper()
+	cfg, err := gateway.Load(gatewayPath(root))
+	if err != nil || cfg == nil {
+		t.Fatalf("the gateway: %v %v", cfg, err)
+	}
+	for _, b := range cfg.Budgets {
+		if b.Consumer == who {
+			return b
+		}
+	}
+	return gateway.Budget{}
+}
+
+// Changing one limit of a budget from the command line keeps the others,
+// and naming a caller alone shows its budget. The budget was built again
+// from the flags given, zero meaning unlimited: `--per-minute 30` lifted a
+// public chatbot's money and character caps without a word, and
+// `gateway budget chatbot:help`, typed to see it, lifted every limit.
+func TestChangingOneLimitOfABudgetKeepsTheOthers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := connectStore(t)
+	if err := cmdGateway(root, []string{"currency", "GBP"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--money-per-day", "5.00",
+		"--chars-per-day", "100000"}); err != nil {
+		t.Fatal(err)
+	}
+	set := gateway.Budget{Consumer: "chatbot:help", CharsPerDay: 100000, MoneyPerDay: "5.00"}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--per-minute", "30"}); err != nil {
+		t.Fatal(err)
+	}
+	set.PerMinute = 30
+	if got := budgetOf(t, root, "chatbot:help"); got != set {
+		t.Errorf("one limit changed left %+v", got)
+	}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := budgetOf(t, root, "chatbot:help"); got != set {
+		t.Errorf("asking for the budget changed it to %+v", got)
+	}
+	// Named, a limit goes as it came; --remove is how the budget goes.
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--money-per-day", ""}); err != nil {
+		t.Fatal(err)
+	}
+	set.MoneyPerDay = ""
+	if got := budgetOf(t, root, "chatbot:help"); got != set {
+		t.Errorf("a limit lifted by name left %+v", got)
 	}
 }

@@ -193,18 +193,19 @@
     <p id="bwho-help" class="help"><code>chatbot:NAME</code>, <code>assist</code>, <code>agent:NAME</code>, <code>person:NAME</code> (everything their agents run), or <code>*</code>.</p></div>
   <div class="numrow">
     <div class="field"><label for="bpm">Calls per minute</label>
-      <input id="bpm" name="per_minute" type="number" min="0" value="0"></div>
+      <input id="bpm" name="per_minute" type="number" min="0" placeholder="as it is" aria-describedby="bkeep-help"></div>
     <div class="field"><label for="bpd">Characters per day</label>
-      <input id="bpd" name="chars_per_day" type="number" min="0" value="0" aria-describedby="bpd-help"></div>
+      <input id="bpd" name="chars_per_day" type="number" min="0" placeholder="as it is" aria-describedby="bpd-help bkeep-help"></div>
     <div class="field"><label for="btk">Tokens per day</label>
-      <input id="btk" name="tokens_per_day" type="number" min="0" value="0"></div>
+      <input id="btk" name="tokens_per_day" type="number" min="0" placeholder="as it is" aria-describedby="bkeep-help"></div>
   </div>
-  <p id="bpd-help" class="help numhelp">Characters are prompt and reply together; about four characters to a token. 0 is unlimited.</p>
+  <p id="bpd-help" class="help numhelp">Characters are prompt and reply together; about four characters to a token.</p>
+  <p id="bkeep-help" class="help numhelp">A limit left empty stays as the caller has it, unlimited for a new one. 0 is unlimited.</p>
   <div class="numrow">
     <div class="field"><label for="bmd">Money per day</label>
-      <input id="bmd" name="money_per_day" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="5.00" aria-describedby="bmoney-help"></div>
+      <input id="bmd" name="money_per_day" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="5.00" aria-describedby="bmoney-help bkeep-help"></div>
     <div class="field"><label for="bmm">Money per month</label>
-      <input id="bmm" name="money_per_month" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="100" aria-describedby="bmoney-help"></div>
+      <input id="bmm" name="money_per_month" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="100" aria-describedby="bmoney-help bkeep-help"></div>
   </div>
   <p id="bmoney-help" class="help numhelp">At the routes' prices. A caller over its limit is refused its next call, and a chatbot answers from its pages instead.</p>
   <button type="submit">Save budget</button>

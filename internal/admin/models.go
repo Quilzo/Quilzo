@@ -241,18 +241,45 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		cfg.Routes = kept
 	case "budget", "budget-remove":
 		var kept []gateway.Budget
-		for _, b := range cfg.Budgets {
-			if b.Consumer != name {
-				kept = append(kept, b)
+		b := gateway.Budget{Consumer: name}
+		for _, old := range cfg.Budgets {
+			if old.Consumer == name {
+				b = old
+				continue
 			}
+			kept = append(kept, old)
 		}
 		if op == "budget" {
-			pm, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("per_minute")))
-			pd, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("chars_per_day")))
-			tk, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("tokens_per_day")))
-			kept = append(kept, gateway.Budget{Consumer: name, PerMinute: pm, CharsPerDay: pd, TokensPerDay: tk,
-				MoneyPerDay:   strings.TrimSpace(r.FormValue("money_per_day")),
-				MoneyPerMonth: strings.TrimSpace(r.FormValue("money_per_month"))})
+			// A field left empty keeps the limit the caller has, and 0 is
+			// unlimited, as `gateway budget` changes only the limits it is
+			// given. The form started at zero and a save replaced the
+			// whole budget, so slowing a public chatbot to thirty calls a
+			// minute lifted its money and character caps without a word.
+			for _, f := range []struct {
+				field string
+				into  *int
+			}{{"per_minute", &b.PerMinute}, {"chars_per_day", &b.CharsPerDay}, {"tokens_per_day", &b.TokensPerDay}} {
+				if raw := strings.TrimSpace(r.FormValue(f.field)); raw != "" {
+					n, err := strconv.Atoi(raw)
+					if err != nil || n < 0 {
+						back("e", f.field+" is a whole number, 0 for unlimited")
+						return
+					}
+					*f.into = n
+				}
+			}
+			for _, f := range []struct {
+				field string
+				into  *string
+			}{{"money_per_day", &b.MoneyPerDay}, {"money_per_month", &b.MoneyPerMonth}} {
+				if raw := strings.TrimSpace(r.FormValue(f.field)); raw != "" {
+					*f.into = raw
+					if m, err := gateway.ParseMoney(raw); err == nil && m == 0 {
+						*f.into = ""
+					}
+				}
+			}
+			kept = append(kept, b)
 		}
 		cfg.Budgets = kept
 	case "currency":

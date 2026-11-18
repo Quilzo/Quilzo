@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/provider"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -266,7 +267,10 @@ func gatewayStatus(root string) error {
 // Grant, not publish: a route decides where prompts go — what visitors typed
 // and what the site holds — and pointing it somewhere new is a decision about
 // who receives that, of the same weight as deciding who may sign in.
-func changeGateway(root, change, name string, edit func(*gateway.Config) error) error {
+//
+// What the edit says of the change (said) goes in the record beside the
+// name, when it says anything.
+func changeGateway(root, change, name string, edit func(*gateway.Config) error, said ...map[string]string) error {
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -284,9 +288,13 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 	if err := gateway.Save(gatewayPath(root), cfg); err != nil {
 		return err
 	}
+	detail := map[string]string{"name": name}
+	for _, more := range said {
+		maps.Copy(detail, more)
+	}
 	record(root, audit.Record{Action: "gateway." + change, Resource: "/gateway/" + name,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
-		Verified: caller.Verified, Detail: map[string]string{"name": name}})
+		Verified: caller.Verified, Detail: detail})
 	return nil
 }
 
@@ -453,20 +461,117 @@ func gatewayBudget(root string, args []string) error {
 			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")
 	}
 	who := pos[0]
+	// Only the limits named change; the others are kept as they are.
+	//
+	// The budget was rebuilt from the flags given, zero meaning unlimited,
+	// so `gateway budget chatbot:help`, typed to see it, wiped every limit
+	// on the public chatbot and said nothing, and `--per-minute 10` alone
+	// dropped its character and token caps. Asked with nothing to change,
+	// it shows the budget; --remove is how one goes.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if !*drop && len(set) == 0 {
+		return showBudget(root, who)
+	}
+	// What it was and what it became, for the record: "gateway.budget
+	// chatbot:help" was all it said, the same for a cap raised to unlimited
+	// as for one lowered.
+	changed := map[string]string{"from": "none", "to": "none"}
 	return changeGateway(root, "budget", who, func(c *gateway.Config) error {
 		var kept []gateway.Budget
-		for _, b := range c.Budgets {
-			if b.Consumer != who {
-				kept = append(kept, b)
+		b := gateway.Budget{Consumer: who}
+		for _, old := range c.Budgets {
+			if old.Consumer == who {
+				b = old
+				changed["from"] = budgetWords(old)
+				continue
 			}
+			kept = append(kept, old)
 		}
 		if !*drop {
-			kept = append(kept, gateway.Budget{Consumer: who, PerMinute: *perMinute,
-				CharsPerDay: *perDay, TokensPerDay: *tokens, MoneyPerDay: *moneyDay, MoneyPerMonth: *moneyMonth})
+			if set["per-minute"] {
+				b.PerMinute = *perMinute
+			}
+			if set["chars-per-day"] {
+				b.CharsPerDay = *perDay
+			}
+			if set["tokens-per-day"] {
+				b.TokensPerDay = *tokens
+			}
+			if set["money-per-day"] {
+				b.MoneyPerDay = *moneyDay
+			}
+			if set["money-per-month"] {
+				b.MoneyPerMonth = *moneyMonth
+			}
+			kept = append(kept, b)
+			changed["to"] = budgetWords(b)
 		}
 		c.Budgets = kept
 		return c.Validate()
-	})
+	}, changed)
+}
+
+// showBudget is `quilzo gateway budget CALLER` with nothing to change: the
+// budget that applies to the caller, its own or the one for everybody
+// else, under the same authority that changes one, since a budget says
+// what a caller is allowed to spend.
+//
+// A caller with none of its own was told "the one for * applies, if there
+// is one", which showed no limit and left whether there was one to be
+// looked up.
+func showBudget(root, who string) error {
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return err
+	}
+	cfg, err := gateway.Load(gatewayPath(root))
+	if err != nil {
+		return err
+	}
+	b, found := gateway.Budget{Consumer: who}, false
+	if cfg != nil {
+		if applies, ok := cfg.BudgetFor(who); ok {
+			b, found = applies, true
+		}
+	}
+	if w.JSON(b) {
+		return nil
+	}
+	switch {
+	case !found && who == "*":
+		w.Human("there is no budget for *: nothing limits a caller with no budget of its own\n")
+		return nil
+	case !found:
+		w.Human("%s has no budget of its own and there is none for *: nothing limits it\n", who)
+		return nil
+	case b.Consumer != who:
+		w.Human("%s has no budget of its own; the one for %s applies\n", who, b.Consumer)
+	default:
+		w.Human("%s%s%s\n", bold, who, reset)
+	}
+	w.Human("  %s\n", budgetWords(b))
+	return nil
+}
+
+// budgetWords is a budget's limits on one line, as it is shown and as a
+// change to it is recorded.
+func budgetWords(b gateway.Budget) string {
+	limit := func(n int, what string) string {
+		if n == 0 {
+			return "unlimited " + what
+		}
+		return fmt.Sprintf("%d %s", n, what)
+	}
+	money := func(m string) string {
+		if m == "" {
+			return "unlimited"
+		}
+		return m
+	}
+	return fmt.Sprintf("%s, %s, %s, money %s a day and %s a month", limit(b.PerMinute, "calls a minute"),
+		limit(b.CharsPerDay, "characters a day"), limit(b.TokensPerDay, "tokens a day"),
+		money(b.MoneyPerDay), money(b.MoneyPerMonth))
 }
 
 // gatewayCapability is the gateway for the admin's Models screen.
