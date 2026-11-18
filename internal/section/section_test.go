@@ -190,6 +190,39 @@ func TestEveryKindHasASummaryAndAStubThatSaysSomething(t *testing.T) {
 	}
 }
 
+// The catalogue comes a group at a time. `quilzo section kinds` starts a
+// heading whenever the group changes, and events, posts, newsletter, notice
+// and cta were added at the end of the list after booking, so it printed
+// "data" and "closing" twice, with those five cut off from the rest of
+// their groups.
+func TestTheKindsOfAGroupComeTogether(t *testing.T) {
+	done := map[string]bool{}
+	current := ""
+	for _, k := range Kinds() {
+		if k.Group == current {
+			continue
+		}
+		if done[k.Group] {
+			t.Errorf("%s comes after the %s group has ended and another begun",
+				k.Name, k.Group)
+		}
+		done[current] = true
+		current = k.Group
+	}
+	var groups []string
+	for _, k := range Kinds() {
+		if len(groups) == 0 || groups[len(groups)-1] != k.Group {
+			groups = append(groups, k.Group)
+		}
+	}
+	if !reflect.DeepEqual(groups, Groups()) {
+		t.Errorf("the kinds come in groups %v, and Groups says %v", groups, Groups())
+	}
+	if len(Kinds()) != len(kinds) {
+		t.Errorf("%d kinds of %d", len(Kinds()), len(kinds))
+	}
+}
+
 // A page's arrangement is checked against the catalogue.
 //
 // A section whose kind this build does not know renders as nothing at all, so a

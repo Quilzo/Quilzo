@@ -375,10 +375,22 @@ var kinds = []Kind{
 	},
 }
 
-// Kinds returns the catalogue, in reading order.
+// Kinds returns the catalogue, in reading order, a group at a time.
+//
+// A group at a time because every list of them is read under its group's
+// heading, and kinds added later were added at the end: events and posts
+// after booking, so `quilzo section kinds` printed "data" and "closing"
+// twice. Grouped here rather than by moving them in the slice, whose order
+// also decides which kind an entry naming two of them is read as.
 func Kinds() []Kind {
-	out := make([]Kind, len(kinds))
-	copy(out, kinds)
+	out := make([]Kind, 0, len(kinds))
+	for _, g := range Groups() {
+		for _, k := range kinds {
+			if k.Group == g {
+				out = append(out, k)
+			}
+		}
+	}
 	return out
 }
 
