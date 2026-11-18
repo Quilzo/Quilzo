@@ -377,20 +377,43 @@ func themeUnset(root string, args []string) error {
 	if len(pos) == 0 {
 		return fmt.Errorf("usage: quilzo theme unset TOKEN [TOKEN …] | --all")
 	}
+	// A bare name is every key the token is set under, as the Design
+	// screen's reset takes it: `theme generate` writes one per scheme,
+	// primary.light and primary.dark, and an unset that looked only for a
+	// key called primary said "primary was not set", recorded the change it
+	// had not made, and left both schemes wearing the generated colour.
+	// A name with a scheme on it is that one key.
+	var removed []string
 	for _, name := range pos {
 		name = strings.TrimSpace(name)
-		if _, present := existing[name]; !present {
+		keys := []string{name}
+		if base, light, dark := theme.Scope(name); light && dark {
+			keys = append(keys, base+".light", base+".dark")
+		}
+		var gone []string
+		for _, k := range keys {
+			if _, present := existing[k]; present {
+				delete(existing, k)
+				gone = append(gone, k)
+			}
+		}
+		if len(gone) == 0 {
 			w.Human("  %s%s was not set%s\n", dim, name, reset)
 			continue
 		}
-		delete(existing, name)
-		w.Human("unset %s%s%s\n", bold, name, reset)
+		removed = append(removed, gone...)
+		w.Human("unset %s%s%s\n", bold, strings.Join(gone, ", "), reset)
+	}
+	// Nothing was set, so nothing changed: no write, no record of a change,
+	// and no word about a preview that has nothing new in it.
+	if len(removed) == 0 {
+		return nil
 	}
 	if err := writeThemeFile(*dir, existing); err != nil {
 		return err
 	}
 	record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
-		audit.Success, map[string]string{"removed": strings.Join(pos, ",")}))
+		audit.Success, map[string]string{"removed": strings.Join(removed, ",")}))
 	sayWhenReadersSeeIt()
 	return nil
 }

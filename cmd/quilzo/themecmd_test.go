@@ -140,3 +140,75 @@ func TestALayerSetOnAnEmptyStoreSaysWhatToDo(t *testing.T) {
 		t.Errorf("an empty store was given a templates directory: %v", err)
 	}
 }
+
+// Putting a token back puts it back in both schemes, as the Design screen's
+// reset does.
+//
+// `theme generate` writes primary.light and primary.dark, and `theme unset
+// primary` deleted only a key called primary, which was not there. It said
+// "primary was not set", exited 0, recorded theme.unset, said the preview had
+// it now, and left the generated colour in both schemes, while `theme show`
+// went on marking primary as set by this site.
+func TestUnsettingATokenPutsItBackInBothSchemes(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	if err := writeThemeFile(dir, map[string]string{
+		"primary.light": "#b74727", "primary.dark": "#d76544",
+		"on-surface.dark": "#eeeeee", "radius": "6px",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	said, err := humanOutput(t, func() error {
+		return cmdTheme(root, []string{"unset", "primary", "--dir", dir})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	th := savedTheme(t, dir)
+	shipped, _ := theme.Lookup("primary")
+	for _, dark := range []bool{false, true} {
+		v, set := th.Value("primary", dark)
+		want := shipped.Light
+		if dark {
+			want = shipped.Dark
+		}
+		if set || v != want {
+			t.Errorf("primary in the %s scheme is %s (set by the site: %v) after `theme unset primary`; the shipped value is %s",
+				schemeName(dark), v, set, want)
+		}
+	}
+	if strings.Contains(said, "was not set") || !strings.Contains(said, "primary.dark") || !strings.Contains(said, "primary.light") {
+		t.Errorf("the command does not say which keys it removed:\n%s", said)
+	}
+	// What else the file said is left as it was.
+	if v, _ := th.Value("on-surface", true); v != "#eeeeee" {
+		t.Errorf("on-surface.dark was touched: %s", v)
+	}
+	if v, _ := th.Value("radius", false); v != "6px" {
+		t.Errorf("radius was touched: %s", v)
+	}
+
+	// One scheme by its own key, and only that one.
+	if _, err := humanOutput(t, func() error {
+		return cmdTheme(root, []string{"unset", "on-surface.dark", "--dir", dir})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if values, _ := loadThemeFile(dir); len(values) != 1 || values["radius"] != "6px" {
+		t.Errorf("after unsetting on-surface.dark the file holds %v", values)
+	}
+
+	// A token the site never set changes nothing, and does not say the
+	// preview has a change that was never made.
+	before, _ := os.ReadFile(filepath.Join(dir, themeFile))
+	said, err = humanOutput(t, func() error {
+		return cmdTheme(root, []string{"unset", "motion", "--dir", dir})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, themeFile))
+	if !strings.Contains(said, "motion was not set") || strings.Contains(said, "preview has it now") ||
+		string(before) != string(after) {
+		t.Errorf("unsetting a token nobody set:\n%s", said)
+	}
+}
