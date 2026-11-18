@@ -1267,7 +1267,7 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) (err er
 		if m.Templates.Dir != "" {
 			args = append(args, "--templates", m.Templates.Dir)
 		}
-		if perr := cmdPublish(root, append(args, commit)); perr != nil {
+		if perr := publishLine(root, append(args, commit), false); perr != nil {
 			restore()
 			detail["published"] = "refused"
 			return errBlocked{fmt.Errorf("the demonstration was taken out of the draft, "+

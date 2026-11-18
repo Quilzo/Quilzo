@@ -1935,7 +1935,13 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
 }
 
-func cmdPublish(root string, args []string) error {
+func cmdPublish(root string, args []string) error { return publishLine(root, args, true) }
+
+// publishLine is `quilzo publish ARGS`, answering --json with what is live
+// when answer is set: false where a publication is one step of a command
+// that answers for itself, as `demo remove` does, which would otherwise
+// write two documents.
+func publishLine(root string, args []string, answer bool) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	force := fs.Bool("force-inaccessible", false,
 		"publish despite blocking accessibility failures, and record that you did")
@@ -1953,14 +1959,19 @@ func cmdPublish(root string, args []string) error {
 	}
 	return publishAs(root, pos, resolveCaller(root, flagToken), publishFlags{
 		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
+		answer: answer,
 	})
 }
 
 // publishFlags are publish's options, for a publish that did not come from
 // its command line: one somebody scheduled.
+//
+// answer is whether what is live is the answer under --json: for `quilzo
+// publish`, and not for a publication made as a step of `env promote`,
+// `demo remove` or a schedule, whose command answers for itself.
 type publishFlags struct {
-	force, skip, forceUnmarked bool
-	reason, tplDir             string
+	force, skip, forceUnmarked, answer bool
+	reason, tplDir                     string
 }
 
 // beforeLiveMoves, when set, is called after every check a publish makes has
@@ -2266,7 +2277,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		return err
 	}
 	if len(pub.Changes) == 0 && pub.Previous == pub.Published {
-		if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": []string{}, "already_live": true}) {
+		if opts.answer && w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": []string{}, "already_live": true}) {
 			return nil
 		}
 		w.Human("already live\n")
@@ -2290,7 +2301,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	fireWebhooks(root, "published", pub.Published, changed)
 	// What is live now under --json, which a deployment script needs to
 	// record and to roll back to. It answered nothing, exit 0.
-	if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": changed}) {
+	if opts.answer && w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": changed}) {
 		syncPayAfterLive(root, caller)
 		return nil
 	}
