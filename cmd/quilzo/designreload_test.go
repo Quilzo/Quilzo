@@ -778,3 +778,59 @@ func TestTheServedAgentCardLeadsWithTheSitesSentence(t *testing.T) {
 		t.Errorf("the card says %q", card.Description)
 	}
 }
+
+// A change to the design alone can be published.
+//
+// Every design command says the site serves it from its next publish, and a
+// publish with no page changed answered "already live" and moved nothing.
+// The site takes the design when a publish moves what it serves, so readers
+// kept the old design until somebody edited a page, restarted the site or
+// sent it SIGHUP, none of which any design command mentions.
+func TestAChangeToTheDesignAloneCanBePublished(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	before := served(rl, "/site.css").Body.String()
+
+	if err := cmdTheme(root, []string{"set", "style", "bold", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if served(rl, "/site.css").Body.String() != before {
+		t.Fatal("a design change reached readers before any publish")
+	}
+	said, err := humanOutput(t, func() error { return runPublish(t, root, "-templates", tpl) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(said, "already live") || !strings.Contains(said, "design") {
+		t.Errorf("a publish of a changed design said:\n%s", said)
+	}
+	if served(rl, "/site.css").Body.String() == before {
+		t.Fatal("the published design is not the one served")
+	}
+	pubs := actions(t, root, "publish")
+	if last := pubs[len(pubs)-1]; last.Detail["design"] != "changed" {
+		t.Errorf("the publish was recorded as %+v", last.Detail)
+	}
+
+	// Once it is live, the same design again is already live.
+	said, err = humanOutput(t, func() error { return runPublish(t, root, "-templates", tpl) })
+	if err != nil || !strings.Contains(said, "already live") {
+		t.Errorf("publishing again: %v\n%s", err, said)
+	}
+
+	// From the machine interface as well, which a site-building agent uses.
+	if err := cmdTheme(root, []string{"set", "style", "soft", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := callOp(t, buildMCP(root, s, &Caller{Name: "dana", Kind: audit.KindHuman, Verified: true}, tpl), "quilzo_publish", "publish")
+	if resp.Error != nil {
+		t.Fatalf("publishing over the machine interface: %+v", resp.Error)
+	}
+	if got := served(rl, "/site.css").Body.String(); !strings.Contains(got, "style: soft") {
+		t.Error("a design published over the machine interface is not the one served")
+	}
+}

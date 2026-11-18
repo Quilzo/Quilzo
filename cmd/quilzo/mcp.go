@@ -654,12 +654,22 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if err != nil {
 			return nil, err
 		}
+		// The design the gate above rendered through goes with it, a
+		// change to it alone included, as it does from the command line.
+		designChanged, derr := markDesignPublished(root, tplDir)
+		if derr != nil {
+			return nil, derr
+		}
 		// Verified as the caller was, as mcp.write_page is.
 		who, model := interfaceClient(caller.Name, caller.Client)
+		detail := map[string]string{"on_behalf_of": caller.Name}
+		if designChanged {
+			detail["design"] = "changed"
+		}
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
 			Principal: who, Kind: audit.KindAI, Model: model,
-			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Verified: caller.Verified, Detail: detail,
 		})
 		var changed []string
 		for _, c := range pub.Changes {
@@ -668,6 +678,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		fireWebhooks(root, "published", pub.Published, changed)
 		// Nothing printed: standard output may be this conversation.
 		go func() { _, _, _ = syncPay(root, caller) }()
+		if designChanged && len(pub.Changes) == 0 {
+			return "published; the design is live, and the pages were live already", nil
+		}
 		return fmt.Sprintf("published; %d change(s) are live", len(pub.Changes)), nil
 	})
 

@@ -2261,16 +2261,32 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if err != nil {
 		return err
 	}
-	if len(pub.Changes) == 0 && pub.Previous == pub.Published {
+	// The design the gates above passed is what the site takes with this
+	// publish, a change to it alone included (designreload.go).
+	designChanged, derr := markDesignPublished(root, *tplDir)
+	if derr != nil {
+		w.Human("  %s%v%s\n", yellow, derr, reset)
+	}
+	pagesMoved := len(pub.Changes) > 0 || pub.Previous != pub.Published
+	if !pagesMoved && !designChanged {
 		w.Human("already live\n")
 		return nil
 	}
-	record(root, caller.auditRecord("publish", "/", audit.Success,
-		map[string]string{
-			"commit":   short(pub.Published),
-			"changes":  fmt.Sprintf("%d", len(pub.Changes)),
-			"override": overrideNote(*force, *reason),
-		}))
+	detail := map[string]string{
+		"commit":   short(pub.Published),
+		"changes":  fmt.Sprintf("%d", len(pub.Changes)),
+		"override": overrideNote(*force, *reason),
+	}
+	if designChanged {
+		detail["design"] = "changed"
+	}
+	record(root, caller.auditRecord("publish", "/", audit.Success, detail))
+	if !pagesMoved {
+		// Only the design: the pages were live already, and nothing a
+		// pointer could go back to has moved.
+		w.Human("the design is live now; the pages were live already (%s)\n", onOneLine(short(pub.Published)))
+		return nil
+	}
 
 	// Told after the fact, never before, and a failure here never blocks. A
 	// receiver being down is not a reason to stop publishing — making it one
@@ -2282,6 +2298,9 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
 	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
+	if designChanged {
+		w.Human("  %sand the design changed since the last publish, which the site takes with it%s\n", dim, reset)
+	}
 	syncPayAfterLive(root, caller)
 	if pub.Previous != "" {
 		w.Human("  %sprevious %s is still stored; `quilzo rollback` moves the "+

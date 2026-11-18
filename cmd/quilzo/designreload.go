@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -46,8 +47,9 @@ import (
 //
 // The public site reads its settings again when the configuration, the
 // listings or the languages change, and reads both the design and the
-// settings when a publish moves the pages it serves, looked at once a second
-// whether or not anybody is visiting (siteReloader.Watch), and on SIGHUP.
+// settings when a publish moves the pages it serves or passes a new design
+// (publishedDesign), looked at once a second whether or not anybody is
+// visiting (siteReloader.Watch), and on SIGHUP.
 //
 // The site does not take a design change the moment the file changes, and
 // that is deliberate. The publish gate is what holds the design to the
@@ -122,6 +124,50 @@ func dirState(dirs ...string) string {
 		}
 	}
 	return b.String()
+}
+
+// # A publish that changes only the design
+//
+// A publish moved the live ref, and the site took the design when it saw the
+// ref move. A change to the design alone moves no ref: `theme set` and the
+// Design screen say the site serves the change from its next publish, and
+// that publish answered "already live" and left readers on the old design
+// until somebody edited a page, restarted the site or sent it SIGHUP, none
+// of which any design command mentions. So each publish records the digest
+// of the design it passed beside the store (publishedDesignPath), says when
+// that is all it changed, and the site serving live takes the design when
+// the record moves, as it does when the ref moves.
+
+// publishedDesignPath is the digest of the design the last publish passed.
+func publishedDesignPath(root string) string { return filepath.Join(root, "design-published") }
+
+// publishedDesign is the digest the last publish recorded, "" before any.
+func publishedDesign(root string) string {
+	b, err := os.ReadFile(publishedDesignPath(root))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// markDesignPublished records the design in dir as the one a publish has
+// passed, and says whether it differs from the one the last publish
+// recorded. A design that does not read is not recorded: it is not one the
+// site could take either.
+func markDesignPublished(root, dir string) (bool, error) {
+	d, err := loadDesign(dir)
+	if err != nil {
+		return false, nil
+	}
+	sum := designDigest(d)
+	if sum == publishedDesign(root) {
+		return false, nil
+	}
+	if err := atomicfile.Write(publishedDesignPath(root), []byte(sum+"\n"), 0o600); err != nil {
+		return false, fmt.Errorf("the design was checked and could not be recorded as published, "+
+			"so the site has not been told to take it: %w", err)
+	}
+	return true, nil
 }
 
 // filesState is dirState for named files.
@@ -373,6 +419,10 @@ type siteReloader struct {
 	live   string
 	files  string
 	looked time.Time
+	// published is the digest of the design the last publish passed, as
+	// the site last read it: a publish that changed only the design moves
+	// it and not the ref (publishedDesign).
+	published string
 	// designDue is a publish whose design has not reached readers yet,
 	// because the build it came with was refused for a reason that was not
 	// the design: the next build that succeeds takes it, if templates/ is
@@ -391,8 +441,19 @@ func newSiteReloader(root, dir string, s *store.Store, ref string, d *Design, st
 	rl.gen.Store(&siteGen{st: st, handler: st.Handler(), design: d,
 		designSum: designDigest(d), settingsSum: settingsDigest(root), configSaid: configSays(root)})
 	rl.live = s.GetRef(ref)
+	rl.published = rl.publishedDesign()
 	rl.files = filesState(siteSettingsFiles(root)...)
 	return rl
+}
+
+// publishedDesign is the design a publish to live last passed, for the site
+// serving live. An environment's site takes its design when its own ref
+// moves, as it did.
+func (rl *siteReloader) publishedDesign() string {
+	if rl.ref != site.RefLive {
+		return ""
+	}
+	return publishedDesign(rl.root)
 }
 
 // Site is the site being served now.
@@ -414,13 +475,14 @@ func (rl *siteReloader) Check() {
 	// The ref is a small file the site reads several times a request already;
 	// a publish is noticed by the first request after it.
 	live := rl.store.GetRef(rl.ref)
+	published := rl.publishedDesign()
 	if !rl.mu.TryLock() {
 		return
 	}
 	defer rl.mu.Unlock()
 	now := rl.now()
-	if live != rl.live {
-		rl.live, rl.looked = live, now
+	if live != rl.live || published != rl.published {
+		rl.live, rl.published, rl.looked = live, published, now
 		rl.files = filesState(siteSettingsFiles(rl.root)...)
 		_ = rl.reload(reloadPublish)
 		return
@@ -467,6 +529,7 @@ func (rl *siteReloader) Reload() error {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.live = rl.store.GetRef(rl.ref)
+	rl.published = rl.publishedDesign()
 	rl.files = filesState(siteSettingsFiles(rl.root)...)
 	rl.looked = rl.now()
 	return rl.reload(reloadSignal)
