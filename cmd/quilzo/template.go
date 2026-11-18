@@ -385,11 +385,19 @@ func templateUse(root string, args []string) error {
 	// because nothing had said who or what wrote it (the provenance gate in
 	// cmdPublish), and the site has no --open. The sample is the template's,
 	// written by people, so a person's is what is said of it.
+	//
+	// The publish and the site look for the layouts in templates unless told
+	// otherwise, so a template written anywhere else with --dir says where:
+	// without it both were refused, "no template directory at templates".
+	where := ""
+	if filepath.Clean(*dir) != "templates" {
+		where = " --templates " + *dir
+	}
 	w.Human("\n  %snext:%s\n", dim, reset)
 	w.Human("    quilzo add %s=%s\n", *page, sample)
 	w.Human("    quilzo provenance set %s --source humanEdits\n", *page)
-	w.Human("    quilzo publish\n")
-	w.Human("    quilzo site\n")
+	w.Human("    quilzo publish%s\n", where)
+	w.Human("    quilzo site%s\n", where)
 	w.Human("\n  %sprovenance says who or what wrote the page; publishing refuses a "+
 		"page nobody has said that of%s\n", dim, reset)
 	w.Human("  %sthe stylesheet is generated from the theme and served at "+

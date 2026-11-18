@@ -755,24 +755,30 @@ func TestInstallsFirstSiteIsServed(t *testing.T) {
 //
 // It said add, publish and `site --open`: the publish was refused for the
 // same reason as INSTALL's, and the site has no --open, so the last step
-// was refused too.
+// was refused too. Written somewhere else with --dir, the publish and the
+// site it named looked for the layouts in templates, and were refused
+// again: "no template directory at templates".
 func TestWhatTemplateUseSaysNextPublishesThePage(t *testing.T) {
-	f := newWalk(t)
-	f.run("quilzo init")
-	f.run("quilzo template use sections")
-	said := f.log.String()
-	at := strings.Index(said, "next:")
-	if at < 0 {
-		t.Fatalf("template use says nothing of what comes next:\n%s", said)
+	for _, use := range []string{"quilzo template use sections", "quilzo template use sections --dir mine"} {
+		t.Run(use, func(t *testing.T) {
+			f := newWalk(t)
+			f.run("quilzo init")
+			f.run(use)
+			said := f.log.String()
+			at := strings.Index(said, "next:")
+			if at < 0 {
+				t.Fatalf("template use says nothing of what comes next:\n%s", said)
+			}
+			for _, l := range strings.Split(said[at+len("next:"):], "\n") {
+				if strings.HasPrefix(l, "    quilzo ") {
+					f.run(strings.TrimSpace(l))
+				} else if strings.TrimSpace(l) != "" {
+					break
+				}
+			}
+			f.siteHome()
+		})
 	}
-	for _, l := range strings.Split(said[at+len("next:"):], "\n") {
-		if strings.HasPrefix(l, "    quilzo ") {
-			f.run(strings.TrimSpace(l))
-		} else if strings.TrimSpace(l) != "" {
-			break
-		}
-	}
-	f.siteHome()
 }
 
 // CONTRIBUTING's two-minute path reaches the admin, signed in, and the
