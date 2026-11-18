@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -344,7 +343,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		b, _ := json.MarshalIndent(map[string]any{
+		b, _ := mcpJSONIndent(map[string]any{
 			"total": total, "returned": len(records), "records": records,
 		}, "", "  ")
 		return string(b), nil
@@ -808,7 +807,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		b, _ := json.MarshalIndent(res, "", "  ")
+		b, _ := mcpJSONIndent(res, "", "  ")
 		return string(b), nil
 	})
 

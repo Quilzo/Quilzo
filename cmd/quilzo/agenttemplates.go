@@ -197,16 +197,16 @@ func cmdAgentTemplate(root string, args []string) error {
 		return nil
 	case "save":
 		if len(args) != 2 {
-			return errors.New("quilzo agent template save FILE")
+			return errMisused{errors.New("quilzo agent template save FILE")}
 		}
 		return saveCustomTemplate(root, args[1])
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("quilzo agent template remove KIND")
+			return errMisused{errors.New("quilzo agent template remove KIND")}
 		}
 		return removeCustomTemplate(root, args[1])
 	}
-	return fmt.Errorf("unknown template command %q; try list, save or remove", args[0])
+	return errMisused{fmt.Errorf("unknown template command %q; try list, save or remove", args[0])}
 }
 
 func saveCustomTemplate(root, file string) error {
@@ -257,7 +257,7 @@ func removeCustomTemplate(root, kind string) error {
 	}
 	path := filepath.Join(templatesDir(root), kind+".json")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return fmt.Errorf("there is no template called %s", kind)
+		return errNotFound{fmt.Errorf("there is no template called %s", kind)}
 	}
 	// A kind is only known while its template exists, so agents of it would
 	// stop validating and stop running the moment it went.

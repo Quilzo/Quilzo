@@ -62,8 +62,8 @@ func cmdAssistant(root string, args []string) error {
 	case "embed":
 		return assistantEmbed(root, args[1:])
 	default:
-		return fmt.Errorf("unknown assistant command %q; try list, add, "+
-			"action, remove, ask, eval, gaps or embed", args[0])
+		return errMisused{fmt.Errorf("unknown assistant command %q; try list, add, "+
+			"action, remove, ask, eval, gaps or embed", args[0])}
 	}
 }
 
@@ -171,7 +171,7 @@ func assistantAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo assistant add NAME --title TITLE [...]")
+		return errMisused{fmt.Errorf("usage: quilzo assistant add NAME --title TITLE [...]")}
 	}
 	instr := *instructions
 	if strings.HasPrefix(instr, "@") {
@@ -319,8 +319,8 @@ func assistantAction(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form|agent --target T --description D " +
-			"[--fields a,b] [--writes] [--identity --identity-secret NAME]")
+		return errMisused{fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form|agent --target T --description D " +
+			"[--fields a,b] [--writes] [--identity --identity-secret NAME]")}
 	}
 	// The credential named is one there is. Named before it was sealed,
 	// or mistyped, it was saved, and the identity action was then never
@@ -332,10 +332,11 @@ func assistantAction(root string, args []string) error {
 		}
 	}
 	caller := resolveCaller(root, flagToken)
-	return saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
+	var made assistant.Action
+	err := saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
 		a, ok := s.Get(pos[0])
 		if !ok {
-			return fmt.Errorf("no assistant called %s", pos[0])
+			return errNotFound{fmt.Errorf("no assistant called %s", pos[0])}
 		}
 		kept := a.Actions[:0:0]
 		for _, ac := range a.Actions {
@@ -344,11 +345,12 @@ func assistantAction(root string, args []string) error {
 			}
 		}
 		if !*remove {
-			kept = append(kept, assistant.Action{
+			made = assistant.Action{
 				Name: pos[1], Kind: assistant.ActionKind(*kind),
 				Target: *target, Description: *description,
 				Fields: splitList(*fields), Writes: *writes, Identity: *identity,
-			})
+			}
+			kept = append(kept, made)
 		}
 		if *signer != "" {
 			a.IdentitySecret = *signer
@@ -356,6 +358,23 @@ func assistantAction(root string, args []string) error {
 		a.Actions = kept
 		return s.Put(a)
 	})
+	if err != nil {
+		return err
+	}
+	// What was set, as `assistant add` says what it declared: this was set
+	// without a word, exit 0, and under --json with nothing.
+	if *remove {
+		if w.JSON(map[string]any{"assistant": pos[0], "action": pos[1], "removed": true}) {
+			return nil
+		}
+		w.Human("action %s removed from %s\n", pos[1], pos[0])
+		return nil
+	}
+	if w.JSON(map[string]any{"assistant": pos[0], "action": made}) {
+		return nil
+	}
+	w.Human("action %s on %s: %s %s\n", made.Name, pos[0], made.Kind, made.Target)
+	return nil
 }
 
 func assistantRemove(root string, args []string) error {
@@ -364,15 +383,23 @@ func assistantRemove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo assistant remove NAME")
+		return errMisused{fmt.Errorf("usage: quilzo assistant remove NAME")}
 	}
 	caller := resolveCaller(root, flagToken)
-	return saveAssistant(root, caller, "remove", pos[0], func(s *assistant.Set) error {
+	err = saveAssistant(root, caller, "remove", pos[0], func(s *assistant.Set) error {
 		if !s.Remove(pos[0]) {
-			return fmt.Errorf("no assistant called %s", pos[0])
+			return errNotFound{fmt.Errorf("no assistant called %s", pos[0])}
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if w.JSON(map[string]any{"assistant": pos[0], "removed": true}) {
+		return nil
+	}
+	w.Human("%s removed\n", pos[0])
+	return nil
 }
 
 // assistantIndex builds what an assistant may read: the published site,
@@ -626,7 +653,7 @@ func loadAssistant(root, name string) (assistant.Assistant, error) {
 	}
 	a, ok := set.Get(name)
 	if !ok {
-		return a, fmt.Errorf("no assistant called %s", name)
+		return a, errNotFound{fmt.Errorf("no assistant called %s", name)}
 	}
 	return a, nil
 }
@@ -637,7 +664,7 @@ func assistantAsk(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant ask NAME \"question\"")
+		return errMisused{fmt.Errorf("usage: quilzo assistant ask NAME \"question\"")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -689,9 +716,9 @@ func assistantEval(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl\n" +
+		return errMisused{fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl\n" +
 			"  one case per line: {\"question\": \"...\", \"page\": \"returns\"}\n" +
-			"  a case with no page is a question the site does not answer")
+			"  a case with no page is a question the site does not answer")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {

@@ -33,7 +33,7 @@ func cmdFlow(args []string) error {
 	case "demo":
 		return flowDemo(args[1:])
 	default:
-		return fmt.Errorf("unknown flow command %q; try demo", args[0])
+		return errMisused{fmt.Errorf("unknown flow command %q; try demo", args[0])}
 	}
 }
 

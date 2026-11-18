@@ -117,7 +117,7 @@ func lockClaim(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo lock <page> [--note \"...\"]")
+		return errMisused{fmt.Errorf("usage: quilzo lock <page> [--note \"...\"]")}
 	}
 
 	locks, err := loadLocks(root)
@@ -152,7 +152,7 @@ func lockClaim(root string, args []string) error {
 
 func lockRelease(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo lock release <page>")
+		return errMisused{fmt.Errorf("usage: quilzo lock release <page>")}
 	}
 	locks, err := loadLocks(root)
 	if err != nil {
@@ -454,8 +454,8 @@ func cmdReview(root string, args []string) error {
 	case "require":
 		return reviewRequire(root, args[1:])
 	default:
-		return fmt.Errorf("unknown review command %q; try status, approve "+
-			"or require", args[0])
+		return errMisused{fmt.Errorf("unknown review command %q; try status, approve "+
+			"or require", args[0])}
 	}
 }
 
@@ -646,7 +646,7 @@ func reviewRequire(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo review require <n> [--approvers a,b]")
+		return errMisused{fmt.Errorf("usage: quilzo review require <n> [--approvers a,b]")}
 	}
 	var n int
 	if _, err := fmt.Sscanf(pos[0], "%d", &n); err != nil || n < 0 {

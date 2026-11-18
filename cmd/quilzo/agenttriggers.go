@@ -75,7 +75,7 @@ func emitEvent(root string, e event.Event, c *Caller) {
 		}
 	}
 	if _, err := l.Append(e); err != nil {
-		fmt.Fprintf(os.Stderr, "  %scould not record that %s: %v%s\n", dim, event.Describe(e.Type), err, reset)
+		fmt.Fprintf(os.Stderr, "  %scould not record that %s: %v%s\n", noteDim, event.Describe(e.Type), err, noteReset)
 	}
 }
 

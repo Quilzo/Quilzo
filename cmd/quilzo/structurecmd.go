@@ -63,7 +63,7 @@ func cmdTerms(root string, args []string) error {
 		}
 		return termsCheck(root)
 	default:
-		return fmt.Errorf("unknown terms command %q; try list or check", args[0])
+		return errMisused{fmt.Errorf("unknown terms command %q; try list or check", args[0])}
 	}
 }
 
@@ -180,9 +180,9 @@ func cmdMenus(root string, args []string) error {
 	case "remove", "rm":
 		return menuItemRemove(root, args[1:])
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown menu command %q; try list, check, add, set or remove",
-			args[0])
+			args[0])}
 	}
 }
 
@@ -225,9 +225,9 @@ func menuItemSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"quilzo menu add NAME --label \"Shop\" --target shop --order 10\n" +
-				"  one menu name, with its flags")
+				"  one menu name, with its flags")}
 	}
 	name := pos[0]
 	if strings.TrimSpace(*label) == "" {
@@ -298,7 +298,12 @@ func menuItemSet(root string, args []string) error {
 	if replaced {
 		verb = "updated"
 	}
-	fmt.Printf("%s %s in %s  %sorder %d%s\n", verb, it.ID, name, dim, it.Order, reset)
+	// The entry under --json, with the id a later `menu remove` names; it
+	// was this prose.
+	if w.JSON(map[string]any{"menu": name, "item": it, "replaced": replaced}) {
+		return nil
+	}
+	w.Human("%s %s in %s  %sorder %d%s\n", verb, it.ID, name, dim, it.Order, reset)
 	return nil
 }
 
@@ -310,7 +315,7 @@ func menuItemRemove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("quilzo menu remove NAME ITEM-ID")
+		return errMisused{fmt.Errorf("quilzo menu remove NAME ITEM-ID")}
 	}
 	name, id := pos[0], pos[1]
 
@@ -326,7 +331,7 @@ func menuItemRemove(root string, args []string) error {
 	}
 	m, found := set.Get(name)
 	if !found {
-		return fmt.Errorf("no menu called %q", name)
+		return errNotFound{fmt.Errorf("no menu called %q", name)}
 	}
 	kept := m.Items[:0]
 	var removed bool
@@ -342,7 +347,7 @@ func menuItemRemove(root string, args []string) error {
 		kept = append(kept, it)
 	}
 	if !removed {
-		return fmt.Errorf("no item %q in %s", id, name)
+		return errNotFound{fmt.Errorf("no item %q in %s", id, name)}
 	}
 	m.Items = kept
 	if werr := saveJSON(menuPath(root), set); werr != nil {
@@ -350,7 +355,10 @@ func menuItemRemove(root string, args []string) error {
 	}
 	record(root, caller.auditRecord("menu.save", name, audit.Success,
 		map[string]string{"removed": id}))
-	fmt.Printf("removed %s from %s\n", id, name)
+	if w.JSON(map[string]any{"menu": name, "removed": id}) {
+		return nil
+	}
+	w.Human("removed %s from %s\n", id, name)
 	return nil
 }
 
@@ -459,7 +467,7 @@ func cmdListings(root string, args []string) error {
 	case "run":
 		return listingsRun(root, args[1:])
 	default:
-		return fmt.Errorf("unknown listing command %q; try list or run", args[0])
+		return errMisused{fmt.Errorf("unknown listing command %q; try list or run", args[0])}
 	}
 }
 
@@ -503,7 +511,7 @@ func listingsRun(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo listing run <name> [--arg k=v,k=v]")
+		return errMisused{fmt.Errorf("usage: quilzo listing run <name> [--arg k=v,k=v]")}
 	}
 
 	set, err := loadListings(root)
@@ -512,7 +520,7 @@ func listingsRun(root string, args []string) error {
 	}
 	l, ok := set.Get(pos[0])
 	if !ok {
-		return fmt.Errorf("there is no listing %q", pos[0])
+		return errNotFound{fmt.Errorf("there is no listing %q", pos[0])}
 	}
 	s, err := open(root)
 	if err != nil {

@@ -122,7 +122,7 @@ func saveGatewayState(root string, st *gatewayState, now time.Time) error {
 		kept = kept[len(kept)-maxHeld:]
 	}
 	st.Held = kept
-	b, err := json.Marshal(st)
+	b, err := mcpJSON(st)
 	if err != nil {
 		return err
 	}
@@ -448,7 +448,7 @@ func gatewayDecide(root, id string, approve bool, by *Caller, now time.Time) err
 		return recordE(root, by.auditRecord("mcp.gateway.decided", "/integrations/"+h.Integration, audit.Success,
 			map[string]string{"held": id, "tool": h.Tool, "approved": strconv.FormatBool(approve), "on_behalf_of": h.Principal}))
 	}
-	return fmt.Errorf("no held call is %q", id)
+	return errNotFound{fmt.Errorf("no held call is %q", id)}
 }
 
 // heldCalls are the calls waiting for a person, oldest first.

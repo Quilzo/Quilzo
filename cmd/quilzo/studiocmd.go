@@ -43,19 +43,19 @@ func cmdStudio(root string, args []string) error {
 		// Said before it is a mystery. A capture surface nobody can sign in
 		// to looks broken, and the reason is one command away.
 		fmt.Fprintf(os.Stderr, "  %sno tokens exist yet, so nobody can sign "+
-			"in:%s\n", dim, reset)
+			"in:%s\n", noteDim, noteReset)
 		fmt.Fprintf(os.Stderr, "  %squilzo token issue you --principal you "+
-			"--role author%s\n", dim, reset)
+			"--role author%s\n", noteDim, noteReset)
 	}
 
 	fmt.Fprintf(os.Stderr, "studio on http://%s\n", *addr)
 	fmt.Fprintf(os.Stderr, "  %sit records the screen and stores the result; "+
-		"there is no editor here%s\n", dim, reset)
+		"there is no editor here%s\n", noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sa separate origin because it runs a script, "+
-		"which the admin does not%s\n", dim, reset)
+		"which the admin does not%s\n", noteDim, noteReset)
 	if _, ok := media.HaveFFmpeg(); !ok {
 		fmt.Fprintf(os.Stderr, "  %sno ffmpeg here, so a recording is stored "+
-			"without its length or a poster frame%s\n", dim, reset)
+			"without its length or a poster frame%s\n", noteDim, noteReset)
 	}
 
 	server := &http.Server{Addr: *addr, Handler: srv.Handler()}

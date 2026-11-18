@@ -213,8 +213,11 @@ func exportedEntries(root string) ([]audit.Event, error) {
 	events, err := audit.Read(auditPath(root))
 	var bad *audit.Unreadable
 	if errors.As(err, &bad) {
+		// Coloured as stderr is, where it goes: in stdout's colour, `quilzo
+		// siem jsonl -o FILE 2>err.log` at a terminal wrote escape codes
+		// into the log.
 		fmt.Fprintf(w.Err, "%s%v: not in this export, which holds every entry and only entries;\n"+
-			"  quilzo auditlog verify says what is there%s\n", yellow, bad, reset)
+			"  quilzo auditlog verify says what is there%s\n", noteYellow, bad, noteReset)
 	}
 	return audit.Entries(events, err)
 }
@@ -277,7 +280,7 @@ func openAudit(root string) (*audit.Log, error) {
 // is the gap nobody can explain afterwards.
 func record(root string, r audit.Record) {
 	if err := recordE(root, r); err != nil {
-		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", noteRed, err, noteReset)
 	}
 }
 
@@ -445,8 +448,8 @@ func cmdAuditLog(root string, args []string) error {
 		}
 		return auditAnchor(root)
 	default:
-		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
-			"export, head, verify-head, prove, consistency or anchor", args[0])
+		return errMisused{fmt.Errorf("unknown auditlog command %q; try show, verify, "+
+			"export, head, verify-head, prove, consistency or anchor", args[0])}
 	}
 }
 
@@ -583,13 +586,13 @@ func auditShow(root string, args []string) error {
 	}
 	// A negative limit sliced past the end of the log and panicked.
 	if len(pos) > 1 || *limit < 0 {
-		return errors.New(usage)
+		return errMisused{errors.New(usage)}
 	}
 	var seq int64
 	if len(pos) == 1 {
 		n, err := strconv.ParseInt(pos[0], 10, 64)
 		if err != nil || n < 1 {
-			return fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)
+			return errMisused{fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)}
 		}
 		seq = n
 	}
@@ -711,7 +714,7 @@ func auditShowEntry(events []audit.Event, seq int64, intact, crashed bool, probl
 		}
 	}
 	if entry == nil {
-		return fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))
+		return errNotFound{fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))}
 	}
 	// "entry", as `auditlog prove` names the one it is about.
 	if w.JSON(map[string]any{"entry": entry, "intact": intact, "problems": problems}) {
@@ -927,7 +930,7 @@ func auditHead(root string, args []string) error {
 // auditProve produces an inclusion proof for one entry.
 func auditProve(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo auditlog prove <sequence>")
+		return errMisused{fmt.Errorf("usage: quilzo auditlog prove <sequence>")}
 	}
 	var seq int64
 	if _, err := fmt.Sscanf(args[0], "%d", &seq); err != nil {
@@ -986,7 +989,7 @@ func auditConsistency(root string, args []string) error {
 	case len(files) == 1 && *headPath == "":
 		*headPath = files[0]
 	case len(files) > 0:
-		return fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")
+		return errMisused{fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")}
 	}
 
 	events, err := auditEntries(root)

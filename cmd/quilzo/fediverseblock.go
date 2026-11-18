@@ -96,9 +96,9 @@ func fediverseBlock(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo fediverse block HOST-OR-ACTOR\n" +
-				"  a host — example.social — covers every account on it")
+				"  a host — example.social — covers every account on it")}
 	}
 	target := strings.TrimSpace(args[0])
 	list, err := loadBlocklist(root)
@@ -139,6 +139,11 @@ func fediverseBlock(root string, args []string) error {
 		"/", audit.Success, map[string]string{
 			"target": target, "dropped": fmt.Sprint(dropped),
 		}))
+	// What is refused and who stopped following, under --json; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"blocked": target, "followers_removed": dropped}) {
+		return nil
+	}
 	w.Human("%s is refused\n", target)
 	if dropped > 0 {
 		w.Human("  %s%d follower(s) from there removed%s\n", dim, dropped, reset)
@@ -155,7 +160,7 @@ func fediverseUnblock(root string, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")
+		return errMisused{fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")}
 	}
 	target := strings.TrimSpace(args[0])
 	list, err := loadBlocklist(root)
@@ -166,14 +171,17 @@ func fediverseUnblock(root string, args []string) error {
 	list.Hosts = without(list.Hosts, target)
 	list.Actors = without(list.Actors, target)
 	if len(list.Hosts)+len(list.Actors) == before {
-		return fmt.Errorf("%s is not on the list; `quilzo fediverse blocked` "+
-			"shows what is", target)
+		return errNotFound{fmt.Errorf("%s is not on the list; `quilzo fediverse blocked` "+
+			"shows what is", target)}
 	}
 	if err := saveJSON(blockPath(root), list); err != nil {
 		return err
 	}
 	record(root, resolveCaller(root, flagToken).auditRecord("fediverse.unblock",
 		"/", audit.Success, map[string]string{"target": target}))
+	if w.JSON(map[string]any{"unblocked": target}) {
+		return nil
+	}
 	w.Human("%s is no longer refused\n", target)
 	w.Human("  %sthey are not following again by themselves; a block removes "+
 		"the follow and unblocking does not put it back%s\n", dim, reset)

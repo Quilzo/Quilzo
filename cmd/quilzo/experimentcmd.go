@@ -39,7 +39,7 @@ func cmdExperiment(root string, args []string) error {
 	case "report":
 		return experimentReport(root, args[1:])
 	}
-	return fmt.Errorf("unknown experiment command %q; try list, add, start, stop, report or remove", args[0])
+	return errMisused{fmt.Errorf("unknown experiment command %q; try list, add, start, stop, report or remove", args[0])}
 }
 
 func experimentList(root string) error {
@@ -123,7 +123,7 @@ func experimentAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 || *page == "" || len(variants) == 0 {
-		return fmt.Errorf("usage: quilzo experiment add NAME --page P --variant b=P-B --goal form:contact")
+		return errMisused{fmt.Errorf("usage: quilzo experiment add NAME --page P --variant b=P-B --goal form:contact")}
 	}
 	e := experiment.Experiment{Name: pos[0], Page: *page, Goal: *goal,
 		Variants: []experiment.Variant{{Name: "control", Page: *page, Weight: 50}}}
@@ -150,13 +150,13 @@ func experimentAdd(root string, args []string) error {
 
 func experimentState(root, verb string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo experiment %s NAME", verb)
+		return errMisused{fmt.Errorf("usage: quilzo experiment %s NAME", verb)}
 	}
 	caller := resolveCaller(root, flagToken)
 	return changeExperiments(root, caller, verb, args[0], func(s *experiment.Set) error {
 		e, ok := s.Get(args[0])
 		if !ok {
-			return fmt.Errorf("no experiment called %s", args[0])
+			return errNotFound{fmt.Errorf("no experiment called %s", args[0])}
 		}
 		if err := authorisePages(root, caller, e); err != nil {
 			return err
@@ -182,7 +182,7 @@ func experimentReport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo experiment report NAME [--days N]")
+		return errMisused{fmt.Errorf("usage: quilzo experiment report NAME [--days N]")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -194,7 +194,7 @@ func experimentReport(root string, args []string) error {
 	}
 	e, ok := set.Get(pos[0])
 	if !ok {
-		return fmt.Errorf("no experiment called %s", pos[0])
+		return errNotFound{fmt.Errorf("no experiment called %s", pos[0])}
 	}
 	d, err := analytics.Read(analyticsDir(root), *days, time.Now())
 	if err != nil {

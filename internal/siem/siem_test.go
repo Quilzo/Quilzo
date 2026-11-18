@@ -5,6 +5,7 @@ package siem
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -397,6 +398,31 @@ func TestOnlyTheFormatsWorthMaintainingAreOffered(t *testing.T) {
 	}
 	if _, err := Export("leef", log(t, nil), Options{}, now); err == nil {
 		t.Error("an unsupported format silently produced output")
+	}
+}
+
+// A format nobody has is said to be that, whatever the events are.
+//
+// The format was looked at last, after the chain was verified and the range
+// applied, so an empty log, a range with nothing in it or a chain that does
+// not verify each answered for the format instead: `quilzo siem zzbogus` on
+// a new store said "no events in that range" and exited 3, a gate refusing,
+// where a format nobody has is the command used wrongly, 2.
+func TestAnUnknownFormatIsSaidWhateverTheEvents(t *testing.T) {
+	broken := log(t, nil)
+	broken[1].Action = "something else"
+	for name, c := range map[string]struct {
+		events []audit.Event
+		opt    Options
+	}{
+		"no events":         {nil, Options{}},
+		"an empty range":    {log(t, nil), Options{Since: 900, Until: 999}},
+		"a broken chain":    {broken, Options{}},
+		"the log as stored": {log(t, nil), Options{AsStored: true}},
+	} {
+		if _, err := Export("zzbogus", c.events, c.opt, now); !errors.Is(err, ErrUnknownFormat) {
+			t.Errorf("%s: an unknown format was refused for something else: %v", name, err)
+		}
 	}
 }
 

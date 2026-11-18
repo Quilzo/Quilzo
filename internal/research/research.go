@@ -334,6 +334,11 @@ func (s *Store) Work(name string) string { return filepath.Join(s.Dir, name, "wo
 // RunDir is where a computation's record and outputs are kept.
 func (s *Store) RunDir(name, id string) string { return filepath.Join(s.Dir, name, "runs", id) }
 
+// ErrNoProject is a name no research project has, for errors.Is: the
+// command line exits 4 for it, "not found", as the help documents, where
+// `quilzo research show` of a project nobody made exited 1.
+var ErrNoProject = errors.New("no research project")
+
 // Load reads a project.
 func (s *Store) Load(name string) (Project, error) {
 	if !ValidName(name) {
@@ -343,7 +348,7 @@ func (s *Store) Load(name string) (Project, error) {
 	}
 	b, err := os.ReadFile(s.projectPath(name))
 	if os.IsNotExist(err) {
-		return Project{}, fmt.Errorf("no research project called %q; quilzo research list", name)
+		return Project{}, fmt.Errorf("%w called %q; quilzo research list", ErrNoProject, name)
 	}
 	if err != nil {
 		return Project{}, err

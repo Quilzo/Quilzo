@@ -536,7 +536,8 @@ func TestTheBootstrapDoesNotNameAnAdministratorNobodyIs(t *testing.T) {
 	root := connectStore(t)
 	var buf bytes.Buffer
 	w = out.New(false)
-	w.Out = &buf
+	// The notice is said on stderr, beside whatever the change answers.
+	w.Out, w.Err = &buf, &buf
 	t.Cleanup(func() { w = nil })
 	apply, err := proposeSecond(root, resolveCaller(root, ""), dual.AuditLog, "move the audit log",
 		dual.AuditLogChange{Dir: t.TempDir()}, "")
@@ -554,6 +555,8 @@ func TestARevokeSaysWhatIsLeftOnce(t *testing.T) {
 	root := onlyOwner(t)
 	seedPolicy(t, root, [2]string{"theo", "author"}, [2]string{"theo", "admin"})
 	_, printed := captureStdout(t)
+	// What a person reads: under --json the revoke answers a document.
+	w = out.New(false)
 	err := cmdAuth(root, []string{"revoke", "theo", "author"})
 	said := printed()
 	if err != nil {
@@ -570,6 +573,7 @@ func TestARevokeSaysWhatIsLeftOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, printed = captureStdout(t)
+	w = out.New(false)
 	err = cmdAuth(root, []string{"revoke", "kim", "author", "--on", "/blog"})
 	said = printed()
 	if err != nil {

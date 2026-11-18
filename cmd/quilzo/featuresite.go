@@ -41,7 +41,7 @@ func designFlag(name string, args []string) ([]string, error) {
 	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for a site package")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseOnce(fs, rest); err != nil {
 		return nil, err
 	}
 	return append(pos, fs.Args()...), nil

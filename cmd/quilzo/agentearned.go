@@ -247,7 +247,7 @@ func agentEarned(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent earned NAME [--reset]")
+		return errMisused{fmt.Errorf("usage: quilzo agent earned NAME [--reset]")}
 	}
 	name := args[0]
 	set, err := loadAgents(root)
@@ -256,7 +256,7 @@ func agentEarned(root string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	caller := resolveCaller(root, "")
 	if *resetAll {

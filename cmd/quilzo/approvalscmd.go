@@ -98,7 +98,7 @@ func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitl
 
 func cmdApprovals(root string, args []string) error {
 	if len(args) > 0 {
-		return fmt.Errorf("usage: quilzo approvals")
+		return errMisused{fmt.Errorf("usage: quilzo approvals")}
 	}
 	now := time.Now().UTC()
 	items, err := waitingFor(root, resolveCaller(root, ""), now)

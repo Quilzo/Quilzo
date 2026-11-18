@@ -32,6 +32,15 @@ type errMisused struct{ error }
 
 func (e errMisused) Unwrap() error { return e.error }
 
+// badFlag is what the flag package said of a flag it could not read: one the
+// command does not define, or a value missing or not of the flag's kind. It
+// is a command line that does not parse, and so misused: it was handed back
+// bare and exited 1, so `add --bogus` and some three hundred other command
+// lines with a mistyped flag were failures a script would retry.
+type badFlag struct{ error }
+
+func (e badFlag) Unwrap() error { return e.error }
+
 // invoked is the command and the arguments main dispatched, so that a
 // refusal can quote the lines of the help about the command rather than a
 // flag set's bare name. Empty in a test that calls a command directly.
@@ -71,12 +80,24 @@ func parseFlags(fs *flag.FlagSet, args []string, pos *[]string, n int) error {
 	return nil
 }
 
+// parseOnce is fs.Parse, with what the flag package could not read said to
+// be a misused command line (badFlag), for the few commands that parse their
+// flags themselves as well as for the loop below. A flag that asked for help
+// is left as it is, for main to answer.
+func parseOnce(fs *flag.FlagSet, args []string) error {
+	err := fs.Parse(args)
+	if err == nil || errors.Is(err, flag.ErrHelp) {
+		return err
+	}
+	return errMisused{badFlag{err}}
+}
+
 // parseInterspersed is the loop under parseFlags and parseAnywhere: each
 // positional argument and where it stood in args.
 func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int, err error) {
 	off := 0
 	for off <= len(args) {
-		if err := fs.Parse(args[off:]); err != nil {
+		if err := parseOnce(fs, args[off:]); err != nil {
 			return nil, nil, err
 		}
 		rest := fs.Args()
@@ -216,9 +237,12 @@ func positionals(args []string, n int) ([]string, error) {
 	var pos []string
 	err := parseFlags(fs, args, &pos, n)
 	var misused errMisused
+	var bad badFlag
 	switch {
 	case err == nil:
 		return pos, nil
+	case errors.As(err, &bad):
+		// Named below, with the help's lines.
 	case errors.As(err, &misused), errors.Is(err, flag.ErrHelp):
 		return nil, err
 	}

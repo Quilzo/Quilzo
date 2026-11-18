@@ -74,8 +74,8 @@ func cmdEnv(root string, args []string) error {
 	case "diff":
 		return envDiff(root, args[1:])
 	default:
-		return fmt.Errorf("unknown env command %q; try list, add, remove, "+
-			"promote or diff", args[0])
+		return errMisused{fmt.Errorf("unknown env command %q; try list, add, remove, "+
+			"promote or diff", args[0])}
 	}
 }
 
@@ -158,7 +158,7 @@ func envAdd(root string, args []string) error {
 		}
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo env add <name> [--before production]")
+		return errMisused{fmt.Errorf("usage: quilzo env add <name> [--before production]")}
 	}
 	name = rest[0]
 
@@ -170,7 +170,7 @@ func envAdd(root string, args []string) error {
 	if before != "" {
 		target, ok := e.Lookup(before)
 		if !ok {
-			return fmt.Errorf("there is no environment called %q", before)
+			return errNotFound{fmt.Errorf("there is no environment called %q", before)}
 		}
 		// Placed midway between the previous one and the target, so several
 		// environments can be inserted without renumbering anything.
@@ -197,6 +197,11 @@ func envAdd(root string, args []string) error {
 		audit.Success, map[string]string{"environment": name,
 			"order": strconv.Itoa(order)}))
 
+	// The environment and the order it is in, under --json; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"name": name, "ref": "env-" + name, "order": order, "environments": e.Sorted()}) {
+		return nil
+	}
 	w.Human("added %s%s%s\n", bold, name, reset)
 	for _, env := range e.Sorted() {
 		arrow := "  "
@@ -211,7 +216,7 @@ func envAdd(root string, args []string) error {
 
 func envRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo env remove <name>")
+		return errMisused{fmt.Errorf("usage: quilzo env remove <name>")}
 	}
 	e, err := loadEnvs(root)
 	if err != nil {
@@ -219,7 +224,7 @@ func envRemove(root string, args []string) error {
 	}
 	target, ok := e.Lookup(args[0])
 	if !ok {
-		return fmt.Errorf("there is no environment called %q", args[0])
+		return errNotFound{fmt.Errorf("there is no environment called %q", args[0])}
 	}
 	if target.Production {
 		return fmt.Errorf(
@@ -242,6 +247,9 @@ func envRemove(root string, args []string) error {
 	// name from a list; deleting the ref would discard the record of what that
 	// environment was serving, which is the thing somebody asks about
 	// afterwards.
+	if w.JSON(map[string]any{"name": args[0], "removed": true, "ref_kept": true}) {
+		return nil
+	}
 	w.Human("removed %s\n", args[0])
 	w.Human("  %sits ref is left in place, so what it was serving is still "+
 		"recoverable%s\n", dim, reset)
@@ -260,13 +268,13 @@ func envPromote(root string, args []string) error {
 	noCheck := fs.Bool("no-a11y-check", false, "into production: skip the accessibility check entirely")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"into production: publish pages that declare no provenance (needs --reason)")
-	if err := fs.Parse(reorder(args, map[string]bool{"reason": true, "templates": true})); err != nil {
+	if err := parseOnce(fs, reorder(args, map[string]bool{"reason": true, "templates": true})); err != nil {
 		return err
 	}
 	rest, skip := fs.Args(), *skipFlag
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip] " +
-			"[the options of quilzo publish, into production]")
+		return errMisused{fmt.Errorf("usage: quilzo env promote <from> <to> [--skip] " +
+			"[the options of quilzo publish, into production]")}
 	}
 
 	e, err := loadEnvs(root)
@@ -361,7 +369,7 @@ func promoteByPublishing(root string, s *store.Store, plan site.PromotionPlan, c
 
 func envDiff(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo env diff <a> <b>")
+		return errMisused{fmt.Errorf("usage: quilzo env diff <a> <b>")}
 	}
 	e, err := loadEnvs(root)
 	if err != nil {

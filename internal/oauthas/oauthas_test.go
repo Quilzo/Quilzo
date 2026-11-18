@@ -561,8 +561,8 @@ func TestRevocation(t *testing.T) {
 	if grants[0].Ended.IsZero() || !r.toks.revoked[grants[0].ID] {
 		t.Fatal("not ended")
 	}
-	if err := r.End(grants[0].ID, "sam", "x"); err == nil {
-		t.Fatal("ended twice")
+	if err := r.End(grants[0].ID, "sam", "x"); !errors.Is(err, ErrNoConnection) {
+		t.Fatalf("ended twice: %v", err)
 	}
 }
 

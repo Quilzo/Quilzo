@@ -183,8 +183,8 @@ func cutSuffixFold(s, suffix string) (string, bool) {
 // themeFont is `quilzo theme font add FILE`.
 func themeFont(root string, args []string) error {
 	if len(args) == 0 || args[0] != "add" {
-		return fmt.Errorf("usage: quilzo theme font add FILE [--name Family-400-700] " +
-			"[--dir templates] [--force]")
+		return errMisused{fmt.Errorf("usage: quilzo theme font add FILE [--name Family-400-700] " +
+			"[--dir templates] [--force]")}
 	}
 	return themeFontAdd(root, args[1:])
 }
@@ -195,13 +195,13 @@ func themeFontAdd(root string, args []string) error {
 	name := fs.String("name", "",
 		"the name to serve it under: the family, then the weight or range and the style (Satoshi-400-700)")
 	force := fs.Bool("force", false, "replace a face already served under that name")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseOnce(fs, flags); err != nil {
 		return err
 	}
 	pos = append(pos, fs.Args()...)
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo theme font add FILE [--name Family-400-700] " +
-			"[--dir templates] [--force]")
+		return errMisused{fmt.Errorf("usage: quilzo theme font add FILE [--name Family-400-700] " +
+			"[--dir templates] [--force]")}
 	}
 	f, err := os.Open(pos[0])
 	if err != nil {

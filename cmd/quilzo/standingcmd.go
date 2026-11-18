@@ -37,7 +37,7 @@ func cmdStanding(args []string) error {
 		}
 		return standingList()
 	default:
-		return fmt.Errorf("unknown standing command %q; try list", args[0])
+		return errMisused{fmt.Errorf("unknown standing command %q; try list", args[0])}
 	}
 }
 

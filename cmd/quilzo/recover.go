@@ -204,14 +204,14 @@ func cmdRecover(root string, args []string) error {
 
 	fmt.Println(secret)
 	fmt.Fprintf(os.Stderr, "\n  %sid %s · admin on / · expires in %s%s\n",
-		dim, tok.ID, ttl, reset)
-	fmt.Fprintf(os.Stderr, "  %sthis is the only time it is shown%s\n", dim, reset)
+		noteDim, tok.ID, ttl, noteReset)
+	fmt.Fprintf(os.Stderr, "  %sthis is the only time it is shown%s\n", noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "\n  %sit is deliberately short-lived: use it to "+
-		"issue a proper token%s\n", yellow, reset)
+		"issue a proper token%s\n", noteYellow, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sand to find out why every admin credential "+
-		"was lost%s\n", yellow, reset)
+		"was lost%s\n", noteYellow, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sthe recovery is in the audit log, where it cannot "+
-		"be removed, and the security contact is told of it%s\n", dim, reset)
+		"be removed, and the security contact is told of it%s\n", noteDim, noteReset)
 	return nil
 }
 

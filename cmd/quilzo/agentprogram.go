@@ -385,7 +385,7 @@ func cmdAgentbox() { agentbox.InitMain() }
 
 func cmdAgentboxShim(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo %s SPEC", agentboxShim)
+		return errMisused{fmt.Errorf("usage: quilzo %s SPEC", agentboxShim)}
 	}
 	agentbox.ShimMain(args[0])
 	return errors.New("the box was not closed, so the program did not run")
@@ -465,9 +465,9 @@ func within(dir, path string) bool {
 // and `quilzo agent program NAME --remove`: what an agent's program is.
 // Deciding what runs, with the run's reach, is an administrator's.
 func agentProgramCmd(root string, args []string) error {
-	usage := errors.New("quilzo agent program NAME [--backend native|openshell] [--image IMG] [--read DIR]... " +
+	usage := errMisused{errors.New("quilzo agent program NAME [--backend native|openshell] [--image IMG] [--read DIR]... " +
 		"[--env K=V]... [--memory-mb N] -- COMMAND [ARG...]  |  quilzo agent program NAME --pin  |  " +
-		"quilzo agent program NAME --remove")
+		"quilzo agent program NAME --remove")}
 	rest := args
 	var command []string
 	for i, a := range rest {
@@ -505,7 +505,7 @@ func agentProgramCmd(root string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	detail := map[string]string{"agent": name}
 	switch {
@@ -563,7 +563,7 @@ func agentProgramCmd(root string, args []string) error {
 	if err := updateAgents(root, func(set *agentSet) error {
 		stored, ok := set.Agents[name]
 		if !ok {
-			return fmt.Errorf("no agent called %s is declared", name)
+			return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 		}
 		// A pin is of the program that was read; one declared meanwhile
 		// is another program, and nobody has looked at it yet.

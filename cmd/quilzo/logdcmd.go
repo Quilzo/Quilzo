@@ -55,7 +55,7 @@ func cmdLogd(root string, args []string) error {
 	signGID := fs.String("sign-gid", "",
 		"comma-separated groups an account must connect as to ask for heads "+
 			"and statements; empty means any")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	// What is left after the flags, answered before anything else. Main
@@ -69,7 +69,7 @@ func cmdLogd(root string, args []string) error {
 			commandHelp("logd", nil)
 			return nil
 		}
-		return fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])
+		return errMisused{fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])}
 	}
 
 	// Refusing to run as root. The writer needs to open one file for appending
@@ -134,28 +134,28 @@ func cmdLogd(root string, args []string) error {
 	}
 	defer listener.Close()
 
-	fmt.Fprintf(os.Stderr, "%slog writer on %s%s\n", dim, path, reset)
+	fmt.Fprintf(os.Stderr, "%slog writer on %s%s\n", noteDim, path, noteReset)
 	fmt.Fprintf(os.Stderr, "  %srunning as uid %d; the CMS submits over this "+
-		"socket and never opens the log%s\n", dim, os.Geteuid(), reset)
+		"socket and never opens the log%s\n", noteDim, os.Geteuid(), noteReset)
 	if srv.Heads != nil {
 		fmt.Fprintf(os.Stderr, "  %sit signs the log's heads; the public keys are at %s%s\n",
-			dim, headKeysPath(root), reset)
+			noteDim, headKeysPath(root), noteReset)
 	} else {
-		fmt.Fprintf(os.Stderr, "  %sit signs no heads: %s%s\n", yellow, srv.HeadsWhy, reset)
+		fmt.Fprintf(os.Stderr, "  %sit signs no heads: %s%s\n", noteYellow, srv.HeadsWhy, noteReset)
 	}
 	if len(uids) > 0 {
 		fmt.Fprintf(os.Stderr, "  %saccepting submissions from uid %v only%s\n",
-			dim, uids, reset)
+			noteDim, uids, noteReset)
 	} else {
 		fmt.Fprintf(os.Stderr, "  %sany account that can reach the socket may "+
-			"submit; --allow-uid narrows that%s\n", yellow, reset)
+			"submit; --allow-uid narrows that%s\n", noteYellow, noteReset)
 	}
 	switch {
 	case len(signers) > 0 || len(signGroups) > 0:
-		fmt.Fprintf(os.Stderr, "  %ssigning for %s only%s\n", dim, signersWords(signers, signGroups), reset)
+		fmt.Fprintf(os.Stderr, "  %ssigning for %s only%s\n", noteDim, signersWords(signers, signGroups), noteReset)
 	case srv.Heads != nil:
 		fmt.Fprintf(os.Stderr, "  %severy account that may submit may ask it to sign; --sign-uid and "+
-			"--sign-gid narrow that%s\n", dim, reset)
+			"--sign-gid narrow that%s\n", noteDim, noteReset)
 	}
 
 	// A clean shutdown removes the socket, so the next start is not a stale one
@@ -228,7 +228,7 @@ func newLogWriter(root string, uids []int) (*logd.Server, error) {
 			// entries by submitting rubbish, which is a denial of service
 			// against the thing being protected.
 			fmt.Fprintf(os.Stderr, "%srefused (uid %d): %s%s\n",
-				yellow, uid, reason, reset)
+				noteYellow, uid, reason, noteReset)
 		},
 	}
 	// The head key, made here on first start: head.key at 0600, this

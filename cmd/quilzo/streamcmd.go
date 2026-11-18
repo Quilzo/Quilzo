@@ -181,5 +181,5 @@ func cmdSiemStream(root string, args []string) error {
 		w.Human("sent %d record(s)\n", n)
 		return nil
 	}
-	return errors.New("usage: quilzo siem stream [status] | key | send")
+	return errMisused{errors.New("usage: quilzo siem stream [status] | key | send")}
 }

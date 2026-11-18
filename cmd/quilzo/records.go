@@ -52,8 +52,8 @@ func cmdRecords(root string, args []string) error {
 	case "export":
 		return recordsExport(root, args[1:])
 	default:
-		return fmt.Errorf("unknown records command %q; try collections, "+
-			"list, get, add, delete, import or export", args[0])
+		return errMisused{fmt.Errorf("unknown records command %q; try collections, "+
+			"list, get, add, delete, import or export", args[0])}
 	}
 }
 
@@ -152,7 +152,7 @@ func recordsList(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo records list <collection> [--where field=value]")
+		return errMisused{fmt.Errorf("usage: quilzo records list <collection> [--where field=value]")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -189,7 +189,7 @@ func recordsList(root string, args []string) error {
 
 func recordsGet(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo records get <collection> <id>")
+		return errMisused{fmt.Errorf("usage: quilzo records get <collection> <id>")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -245,9 +245,9 @@ func recordsAdd(root string, args []string) error {
 		return err
 	}
 	if len(rest) < 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo records add <collection> field=value [...]\n" +
-				"   or: quilzo records add <collection> --from record.json")
+				"   or: quilzo records add <collection> --from record.json")}
 	}
 	coll := rest[0]
 
@@ -300,7 +300,7 @@ func recordsAdd(root string, args []string) error {
 
 func recordsDelete(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo records delete <collection> <id>")
+		return errMisused{fmt.Errorf("usage: quilzo records delete <collection> <id>")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -341,8 +341,8 @@ func recordsImport(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo records import <collection> <file.csv|file.json|file.ics> " +
-			"[--key FIELD|none] [--map 'Heading=field,…'] [--dates dmy|mdy] [--skip-bad] [--dry-run] [--no-pictures]")
+		return errMisused{fmt.Errorf("usage: quilzo records import <collection> <file.csv|file.json|file.ics> " +
+			"[--key FIELD|none] [--map 'Heading=field,…'] [--dates dmy|mdy] [--skip-bad] [--dry-run] [--no-pictures]")}
 	}
 	if *dates != "" && *dates != "dmy" && *dates != "mdy" {
 		return fmt.Errorf("--dates is dmy (day first) or mdy (month first), not %q", *dates)
@@ -379,7 +379,7 @@ func recordsExport(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo records export <collection> [--format csv|json] [-o FILE] [--excel]")
+		return errMisused{fmt.Errorf("usage: quilzo records export <collection> [--format csv|json] [-o FILE] [--excel]")}
 	}
 	if *format != "csv" && *format != "json" {
 		return fmt.Errorf("--format is csv or json, not %q", *format)

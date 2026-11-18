@@ -89,7 +89,7 @@ func couldIn(root string, set *agentSet, name, what, page string, withModel, pro
 	}
 	decl, ok := set.Agents[name]
 	if !ok {
-		return a, fmt.Errorf("no agent called %q", name)
+		return a, errNotFound{fmt.Errorf("no agent called %q", name)}
 	}
 	if program && decl.Program == nil {
 		a.Why = name + " declares no program"
@@ -194,7 +194,7 @@ func couldIn(root string, set *agentSet, name, what, page string, withModel, pro
 
 // agentCould is `quilzo agent could NAME [--model | --program] [--as PERSON] WHAT [PAGE]`.
 func agentCould(root string, args []string) error {
-	usage := errors.New("quilzo agent could NAME [--model | --program] [--as PERSON] OPERATION [PAGE] | tool:NAME | host:HOST")
+	usage := errMisused{errors.New("quilzo agent could NAME [--model | --program] [--as PERSON] OPERATION [PAGE] | tool:NAME | host:HOST")}
 	fs := flag.NewFlagSet("agent could", flag.ContinueOnError)
 	withModel := fs.Bool("model", false, "a model deciding")
 	program := fs.Bool("program", false, "its program deciding")

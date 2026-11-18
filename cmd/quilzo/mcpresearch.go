@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -24,7 +23,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 	refuse := func(err error) (any, error) { return nil, &mcp.Refusal{Reason: err.Error()} }
 	str := func(a map[string]any, k string) string { v, _ := a[k].(string); return strings.TrimSpace(v) }
 	asJSON := func(v any) (any, error) {
-		b, err := json.Marshal(v)
+		b, err := mcpJSON(v)
 		return string(b), err
 	}
 

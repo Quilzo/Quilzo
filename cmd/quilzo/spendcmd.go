@@ -251,7 +251,7 @@ func spendGrant(root string, args []string, caller *Caller) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo spend grant AGENT --currency USD --per 50 --budget 500 --payee PAYEE --purpose WHY")
+		return errMisused{errors.New("usage: quilzo spend grant AGENT --currency USD --per 50 --budget 500 --payee PAYEE --purpose WHY")}
 	}
 	agentName := rest[0]
 	if err := mayGrantSpending(root, caller, agentName); err != nil {
@@ -260,7 +260,7 @@ func spendGrant(root string, args []string, caller *Caller) error {
 	if agents, err := loadAgents(root); err != nil {
 		return err
 	} else if _, ok := agents.Agents[agentName]; !ok {
-		return fmt.Errorf("no agent called %s is declared", agentName)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", agentName)}
 	}
 	cur := strings.ToUpper(strings.TrimSpace(*currency))
 	// The currency first, so ETH is refused as what it is rather than as
@@ -353,7 +353,7 @@ func spendList(root string, args []string) error {
 
 func spendRevoke(root string, args []string, caller *Caller) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo spend revoke ID")
+		return errMisused{errors.New("usage: quilzo spend revoke ID")}
 	}
 	b, err := readBook(root)
 	if err != nil {
@@ -366,7 +366,7 @@ func spendRevoke(root string, args []string, caller *Caller) error {
 		}
 	}
 	if agentName == "" {
-		return fmt.Errorf("no mandate %s", args[0])
+		return errNotFound{fmt.Errorf("no mandate %s", args[0])}
 	}
 	if err := mayGrantSpending(root, caller, agentName); err != nil {
 		return err

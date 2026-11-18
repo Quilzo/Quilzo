@@ -218,7 +218,7 @@ func checkAllGaps(ctx context.Context, root string) string {
 func assistantGaps(root string, args []string) error {
 	pos, rest := leadingArgs(args, 1)
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo assistant gaps NAME [--check] [--close KEY]")
+		return errMisused{fmt.Errorf("usage: quilzo assistant gaps NAME [--check] [--close KEY]")}
 	}
 	name := pos[0]
 	fs := flag.NewFlagSet("assistant gaps", flag.ContinueOnError)

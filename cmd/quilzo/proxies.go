@@ -121,13 +121,15 @@ func unbelieved(local string, resolve func() *clientip.Resolver, to io.Writer, n
 				// it ends the assumption for both, so the hint says so
 				// before it is followed rather than leaving a proxy on this
 				// machine to stop being believed without a word.
+				// In stderr's colours: in stdout's, `quilzo serve
+				// 2>>serve.log` at a terminal logged escape codes.
 				if first {
 					fmt.Fprintf(to, "  %s%s sent X-Forwarded-For and is not believed: %s believes "+
 						"a proxy on this machine only. If %s is the proxy in front, name it. Naming "+
 						"any proxy ends that for the site and the admin both, so a proxy on this "+
 						"machine is then believed only if it is named too:%s\n"+
 						"      quilzo config set network.trusted_proxies %s\n",
-						yellow, c.Peer, local, c.Peer, reset, c.Peer)
+						noteYellow, c.Peer, local, c.Peer, noteReset, c.Peer)
 				}
 			}
 		}

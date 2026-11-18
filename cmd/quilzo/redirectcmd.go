@@ -83,7 +83,7 @@ func removeSiteRedirect(root, from string) error {
 		next = append(next, x)
 	}
 	if !found {
-		return fmt.Errorf("no redirect from %s", from)
+		return errNotFound{fmt.Errorf("no redirect from %s", from)}
 	}
 	if len(next) == 0 {
 		if err := os.Remove(storeRedirectsPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -175,7 +175,7 @@ func cmdRedirect(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo redirect add FROM TO [--temporary] [--note TEXT]")
+			return errMisused{errors.New("usage: quilzo redirect add FROM TO [--temporary] [--note TEXT]")}
 		}
 		if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 			return err
@@ -185,11 +185,15 @@ func cmdRedirect(root string, args []string) error {
 			return err
 		}
 		record(root, caller.auditRecord("redirect.added", r.From, audit.Success, map[string]string{"to": r.To}))
+		// The redirect under --json, which answered nothing.
+		if w.JSON(r) {
+			return nil
+		}
 		w.Human("  %s%s now goes to %s%s\n", green, r.From, r.To, reset)
 		return nil
 	case "remove", "rm":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo redirect remove FROM")
+			return errMisused{errors.New("usage: quilzo redirect remove FROM")}
 		}
 		if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 			return err
@@ -198,8 +202,11 @@ func cmdRedirect(root string, args []string) error {
 			return err
 		}
 		record(root, caller.auditRecord("redirect.removed", args[1], audit.Success, nil))
+		if w.JSON(map[string]any{"from": args[1], "removed": true}) {
+			return nil
+		}
 		w.Human("  %sremoved%s\n", green, reset)
 		return nil
 	}
-	return fmt.Errorf("unknown redirect command %q; try list, add or remove", args[0])
+	return errMisused{fmt.Errorf("unknown redirect command %q; try list, add or remove", args[0])}
 }

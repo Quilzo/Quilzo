@@ -52,8 +52,8 @@ func cmdEngagement(root string, args []string) error {
 	case "check":
 		return engagementCheck(root, args[1:])
 	default:
-		return fmt.Errorf("unknown engagement command %q; try list, open, "+
-			"issue or check", args[0])
+		return errMisused{fmt.Errorf("unknown engagement command %q; try list, open, "+
+			"issue or check", args[0])}
 	}
 }
 
@@ -110,9 +110,9 @@ func engagementOpen(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo engagement open ID --firm ... --auditor ... " +
-				"--scope ... --until 2026-12-31 --because \"...\"")
+				"--scope ... --until 2026-12-31 --because \"...\"")}
 	}
 	period, err := window(*from, *to)
 	if err != nil {
@@ -195,7 +195,7 @@ func engagementIssue(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo engagement issue ID [-o FILE]")
+		return errMisused{fmt.Errorf("usage: quilzo engagement issue ID [-o FILE]")}
 	}
 	all, err := loadEngagements(root)
 	if err != nil {
@@ -209,7 +209,7 @@ func engagementIssue(root string, args []string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("there is no engagement %q", pos[0])
+		return errNotFound{fmt.Errorf("there is no engagement %q", pos[0])}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
@@ -317,7 +317,7 @@ func engagementCheck(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo engagement check FILE [--keys FILE]")
+		return errMisused{fmt.Errorf("usage: quilzo engagement check FILE [--keys FILE]")}
 	}
 	body, err := os.ReadFile(pos[0])
 	if err != nil {

@@ -1287,11 +1287,11 @@ func unknownCommand(cmd string) error {
 		moved = "\n  " + errMovedOut(left[0]).Error()
 	}
 	if len(near) > 0 {
-		return fmt.Errorf("there is no %q command. Did you mean %s?%s\n"+
-			"  quilzo help — every command", cmd, strings.Join(near, ", "), moved)
+		return errMisused{fmt.Errorf("there is no %q command. Did you mean %s?%s\n"+
+			"  quilzo help — every command", cmd, strings.Join(near, ", "), moved)}
 	}
-	return fmt.Errorf("there is no %q command.%s\n  quilzo help — every command",
-		cmd, moved)
+	return errMisused{fmt.Errorf("there is no %q command.%s\n  quilzo help — every command",
+		cmd, moved)}
 }
 
 // editDistance is Levenshtein, bounded by the length of the shorter word.
@@ -1430,7 +1430,7 @@ func authoriseCommand(root, cmd string, args []string) error {
 			!mayInArea(root, caller, n) {
 			var u *errUnverified
 			if errors.As(err, &u) {
-				err = u.named(sub)
+				err = errBlocked{u.named(sub)}
 			}
 			if help {
 				// Not a refusal on the record: nothing was attempted. The

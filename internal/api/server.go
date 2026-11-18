@@ -568,7 +568,11 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 			visible++
 		}
 	}
-	out := Listing{Total: visible, Offset: offset, Limit: limit,
+	// Pages is [] when there are none on this page of the listing, as an
+	// empty list is on the command line and the machine interface: a nil
+	// slice was written "pages": null, and a client iterating it failed
+	// where it had nothing to do.
+	out := Listing{Pages: []Page{}, Total: visible, Offset: offset, Limit: limit,
 		Commit: commit}
 	for i := offset; i < len(names) && i < offset+limit; i++ {
 		name := names[i]

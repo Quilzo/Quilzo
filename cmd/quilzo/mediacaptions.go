@@ -66,14 +66,14 @@ func mediaCaptions(root string, args []string) error {
 		// VIDEO OTHER --remove TRACK` took the track off the first and said
 		// nothing of the other.
 		if len(rest) != 1 {
-			return fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")
+			return errMisused{fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")}
 		}
 		return removeTrack(root, rest[0], id)
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media captions VIDEO CAPTIONFILE --lang en " +
-				"[--label English] [--kind captions|subtitles] [--default]")
+				"[--label English] [--kind captions|subtitles] [--default]")}
 	}
 
 	video, err := lib.Stat(rest[0])

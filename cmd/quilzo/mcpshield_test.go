@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,4 +70,75 @@ func TestEveryAnswerThatLooksLikeDataIsJSON(t *testing.T) {
 	if read < 20 {
 		t.Fatalf("only %d operations answered", read)
 	}
+}
+
+// An empty list is [] in every answer, as it is on the command line.
+//
+// The command line writes an empty list as [] (out.Writer.JSON), and the
+// machine interface encoded its answers for itself, so shield_status on a
+// store with nothing in force answered "active": null, and the operations
+// that marshal their own answer did the same with theirs. Every operation
+// that reads is asked on a fresh store, where most lists are empty; a null
+// left in an answer is a nil pointer, which says there is no such thing.
+func TestAnEmptyListIsAListInEveryAnswer(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	got, e := callTool(t, srv, "quilzo_read", "shield_status", map[string]any{})
+	if e != nil {
+		t.Fatal(e.Message)
+	}
+	var status map[string]any
+	if err := json.Unmarshal([]byte(got), &status); err != nil {
+		t.Fatal(err)
+	}
+	if active, ok := status["active"].([]any); !ok || len(active) != 0 {
+		t.Errorf("shield_status with nothing in force answered active %v, not []", status["active"])
+	}
+	for _, op := range srv.Operations() {
+		if op.Writes || op.Publishes {
+			continue
+		}
+		tool := "quilzo_read"
+		if strings.HasPrefix(op.Name, "check") {
+			tool = "quilzo_check"
+		}
+		text, e := callTool(t, srv, tool, op.Name, map[string]any{})
+		if e != nil || !json.Valid([]byte(text)) {
+			continue
+		}
+		var doc any
+		_ = json.Unmarshal([]byte(text), &doc)
+		if path := nullIn(doc, ""); path != "" {
+			t.Errorf("%s answered null at %s: %.160s", op.Name, path, text)
+		}
+	}
+}
+
+// nullIn is where in a decoded document a null is, or "".
+func nullIn(v any, at string) string {
+	switch t := v.(type) {
+	case nil:
+		return at + " "
+	case map[string]any:
+		for k, x := range t {
+			if p := nullIn(x, at+"."+k); p != "" {
+				return p
+			}
+		}
+	case []any:
+		for i, x := range t {
+			if p := nullIn(x, fmt.Sprintf("%s[%d]", at, i)); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }

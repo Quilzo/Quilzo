@@ -1126,11 +1126,11 @@ func demoRemove(root string, args []string) error {
 	flags := flag.NewFlagSet("demo remove", flag.ContinueOnError)
 	yes := flags.Bool("yes", false, "remove it; without this, only say what would go")
 	dry := flags.Bool("dry-run", false, "only say what would go, even with --yes")
-	if err := flags.Parse(args); err != nil {
+	if err := parseOnce(flags, args); err != nil {
 		return err
 	}
 	if flags.NArg() > 0 {
-		return errors.New("usage: quilzo demo remove [--yes | --dry-run]")
+		return errMisused{errors.New("usage: quilzo demo remove [--yes | --dry-run]")}
 	}
 	return removeDemo(root, *yes && !*dry, resolveCaller(root, flagToken))
 }
@@ -1267,7 +1267,7 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) (err er
 		if m.Templates.Dir != "" {
 			args = append(args, "--templates", m.Templates.Dir)
 		}
-		if perr := cmdPublish(root, append(args, commit)); perr != nil {
+		if perr := publishLine(root, append(args, commit), false); perr != nil {
 			restore()
 			detail["published"] = "refused"
 			return errBlocked{fmt.Errorf("the demonstration was taken out of the draft, "+

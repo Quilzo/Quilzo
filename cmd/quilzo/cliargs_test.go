@@ -257,14 +257,22 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 				cmd := exec.CommandContext(ctx, os.Args[0], append(append([]string{"quilzo-main"}, a...), words...)...)
 				cmd.Dir = dir
 				cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
-				var said bytes.Buffer
-				cmd.Stdout, cmd.Stderr = &said, &said
+				var said, stderr bytes.Buffer
+				cmd.Stdout, cmd.Stderr = &said, io.MultiWriter(&said, &stderr)
 				err := cmd.Run()
 				if ctx.Err() != nil {
 					t.Fatalf("`quilzo %s` did not refuse them and went on running", line)
 				}
 				if err == nil {
 					t.Errorf("`quilzo %s` exited 0:\n%s", line, firstLines(said.String(), 3))
+					return
+				}
+				// A refusal of the command line is 2, as the help has it,
+				// and not the 1 of a command that ran and failed: `token
+				// zzw1` and fifty more subcommands nobody has exited 1.
+				code := cmd.ProcessState.ExitCode()
+				if first := firstErrLine(stderr.String()); misuseSaid.MatchString(first) && code != 2 {
+					t.Errorf("`quilzo %s` refused its command line and exited %d, not 2: %s", line, code, first)
 				}
 			})
 		}

@@ -41,7 +41,7 @@ func cmdPersonalise(root string, args []string) error {
 	case "test":
 		return personaliseTest(root, args[1:])
 	}
-	return fmt.Errorf("unknown personalise command %q; try list, add, enable, disable, remove or test", args[0])
+	return errMisused{fmt.Errorf("unknown personalise command %q; try list, add, enable, disable, remove or test", args[0])}
 }
 
 func personaliseList(root string) error {
@@ -122,7 +122,7 @@ func personaliseAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo personalise add NAME --page P --variant V --when FIELD=VALUES")
+		return errMisused{fmt.Errorf("usage: quilzo personalise add NAME --page P --variant V --when FIELD=VALUES")}
 	}
 	r := personalise.Rule{Name: pos[0], Page: *page, Variant: *variant, Timezone: *tz}
 	for _, w := range when {
@@ -147,13 +147,13 @@ func personaliseAdd(root string, args []string) error {
 
 func personaliseState(root, verb string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo personalise %s NAME", verb)
+		return errMisused{fmt.Errorf("usage: quilzo personalise %s NAME", verb)}
 	}
 	caller := resolveCaller(root, flagToken)
 	return changeRules(root, caller, verb, args[0], func(s *personalise.Set) error {
 		r, ok := s.Get(args[0])
 		if !ok {
-			return fmt.Errorf("no rule called %s", args[0])
+			return errNotFound{fmt.Errorf("no rule called %s", args[0])}
 		}
 		if err := authoriseRule(root, caller, r); err != nil {
 			return err
@@ -180,7 +180,7 @@ func personaliseTest(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo personalise test PAGE [--campaign X --referrer URL --language L --device phone --at TIME]")
+		return errMisused{fmt.Errorf("usage: quilzo personalise test PAGE [--campaign X --referrer URL --language L --device phone --at TIME]")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {

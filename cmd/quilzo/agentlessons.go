@@ -91,20 +91,20 @@ func findLesson(all []lessons.Lesson, id string) (int, error) {
 			return i, nil
 		}
 	}
-	return -1, fmt.Errorf("there is no lesson %s", id)
+	return -1, errNotFound{fmt.Errorf("there is no lesson %s", id)}
 }
 
 // agentLessons is `quilzo agent lessons NAME | reflect RUN | try NAME ID |
 // adopt NAME ID | retire NAME ID`.
 func agentLessons(root string, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: quilzo agent lessons NAME | reflect RUN | try NAME ID [--k N] | adopt NAME ID | retire NAME ID --why W")
+		return errMisused{errors.New("usage: quilzo agent lessons NAME | reflect RUN | try NAME ID [--k N] | adopt NAME ID | retire NAME ID --why W")}
 	}
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "reflect":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo agent lessons reflect RUN")
+			return errMisused{errors.New("usage: quilzo agent lessons reflect RUN")}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -129,7 +129,7 @@ func agentLessons(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo agent lessons try NAME ID [--k N]")
+			return errMisused{errors.New("usage: quilzo agent lessons try NAME ID [--k N]")}
 		}
 		t, err := tryLesson(root, pos[0], pos[1], *k, caller)
 		if err != nil {
@@ -155,7 +155,7 @@ func agentLessons(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo agent lessons adopt NAME ID [--tainted-ok]")
+			return errMisused{errors.New("usage: quilzo agent lessons adopt NAME ID [--tainted-ok]")}
 		}
 		l, err := adoptLesson(root, pos[0], pos[1], *tainted, caller)
 		if err != nil {
@@ -171,7 +171,7 @@ func agentLessons(root string, args []string) error {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo agent lessons retire NAME ID --why W")
+			return errMisused{errors.New("usage: quilzo agent lessons retire NAME ID --why W")}
 		}
 		if err := retireLesson(root, pos[0], pos[1], *why, caller); err != nil {
 			return err
@@ -179,10 +179,17 @@ func agentLessons(root string, args []string) error {
 		w.Human("retired %s; no run of %s reads it\n", pos[1], pos[0])
 		return nil
 	}
-	if len(args) != 1 {
-		return errors.New("usage: quilzo agent lessons NAME")
+	// Read as names are everywhere else (positionals), so a flag it does
+	// not take is refused: `agent lessons --zzflag` listed the lessons of an
+	// agent called "--zzflag" and exited 0.
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
 	}
-	return listLessons(root, args[0])
+	if len(pos) != 1 {
+		return errMisused{errors.New("usage: quilzo agent lessons NAME")}
+	}
+	return listLessons(root, pos[0])
 }
 
 func listLessons(root, name string) error {

@@ -100,8 +100,8 @@ func cmdSandbox(args []string) error {
 		}
 	}
 	if len(rest) == 0 {
-		return fmt.Errorf("usage: quilzo %s [--allow DIR]... -- COMMAND [ARG]...",
-			sandboxCmd)
+		return errMisused{fmt.Errorf("usage: quilzo %s [--allow DIR]... -- COMMAND [ARG]...",
+			sandboxCmd)}
 	}
 	target := rest[0]
 	if !filepath.IsAbs(target) {

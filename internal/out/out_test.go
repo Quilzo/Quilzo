@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -265,5 +267,56 @@ func TestExitCodesAreDistinctAndNamed(t *testing.T) {
 	// should be able to tell "you may not" from "it broke".
 	if ExitBlocked == ExitFailure {
 		t.Error("a refusal must be distinguishable from a failure")
+	}
+}
+
+// An error is coloured as stderr is, and not as stdout is.
+//
+// Error wrote stdout's colour to stderr, so `quilzo publish 2>>publish.log`
+// at a terminal wrote escape codes into the log, which is what this package
+// exists to prevent.
+func TestAnErrorIsColouredByStderrNotStdout(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	w := &Writer{Mode: Human, Colour: true, Out: &stdout, Err: &stderr}
+	w.Error(errors.New("no agent called \"nope\""))
+	if strings.Contains(stderr.String(), "\033") {
+		t.Errorf("an error to a stderr that is not a terminal carried escape codes: %q", stderr.String())
+	}
+	stderr.Reset()
+	w = &Writer{Mode: Human, ErrColour: true, Out: &stdout, Err: &stderr}
+	w.Error(errors.New("no agent called \"nope\""))
+	if !strings.Contains(stderr.String(), w.Notes().Red()) || w.Notes().Red() == "" {
+		t.Errorf("an error to a terminal was not coloured: %q", stderr.String())
+	}
+	if n := w.Notes(); n.Out != &stderr || !n.Colour {
+		// Notes go where errors go, coloured only if that is a terminal.
+		t.Error("notes are not written to stderr as stderr is coloured")
+	}
+}
+
+// The null device is not a terminal.
+//
+// It is a character device, which was all that was asked, so `>/dev/null`
+// made stdout a terminal and `2>/dev/null` stderr one.
+func TestTheNullDeviceIsNotATerminal(t *testing.T) {
+	f, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Errorf("%s was taken for a terminal", os.DevNull)
+	}
+	// And a terminal is one: the controlling side of a new pseudo-terminal,
+	// where the system has them.
+	if runtime.GOOS == "linux" {
+		pty, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+		if err != nil {
+			t.Skip(err)
+		}
+		defer pty.Close()
+		if !isTerminal(pty) {
+			t.Error("a pseudo-terminal was not taken for a terminal")
+		}
 	}
 }

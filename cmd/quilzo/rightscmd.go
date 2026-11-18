@@ -256,9 +256,9 @@ func rightsSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"quilzo rights set ID --licence NAME --holder WHO " +
-				"--until YYYY-MM-DD\n  one id, with its flags")
+				"--until YYYY-MM-DD\n  one id, with its flags")}
 	}
 	id := pos[0]
 	caller := resolveCaller(root, flagToken)
@@ -363,9 +363,16 @@ func cmdRights(root string, args []string) error {
 	if len(args) > 0 && args[0] == "set" {
 		return rightsSet(root, args[1:])
 	}
+	// Read as names are everywhere else (positionals): a word that looked
+	// like a flag was stepped over, so `rights --zzflag` checked the draft
+	// and exited 0.
+	named, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	ref := site.RefDraft
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		ref = args[0]
+	if len(named) == 1 {
+		ref = named[0]
 	}
 	s, err := open(root)
 	if err != nil {

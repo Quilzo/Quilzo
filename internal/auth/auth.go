@@ -1583,6 +1583,12 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 	return &out, nil
 }
 
+// ErrNoToken is an id that names no token in the store, for errors.Is: the
+// command line exits 4 for it, "not found", as the help documents. `quilzo
+// token revoke` of an id nobody issued exited 1, as a revocation that broke
+// does, so a script could not tell a typo from a store it could not write.
+var ErrNoToken = errors.New("no token")
+
 // Revoke marks a token unusable, along with every session minted from it.
 //
 // The cascade is the point. Revoking a long-lived token while its sessions keep
@@ -1608,7 +1614,7 @@ func (ts *TokenStore) Revoke(id string) (int, error) {
 		}
 	}
 	if !found {
-		return 0, fmt.Errorf("no token %s", id)
+		return 0, fmt.Errorf("%w %s", ErrNoToken, id)
 	}
 
 	sessions := 0

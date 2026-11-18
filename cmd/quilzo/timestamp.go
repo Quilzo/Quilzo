@@ -47,7 +47,7 @@ func cmdTimestamp(root string, args []string) error {
 	case "export":
 		return stampExport(root, args[1:])
 	default:
-		return fmt.Errorf("unknown timestamp command %q; try stamp, list or export", args[0])
+		return errMisused{fmt.Errorf("unknown timestamp command %q; try stamp, list or export", args[0])}
 	}
 }
 

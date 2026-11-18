@@ -402,7 +402,7 @@ func agentWorkspace(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo agent workspace NAME [--clear]")
+		return errMisused{errors.New("usage: quilzo agent workspace NAME [--clear]")}
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -410,7 +410,7 @@ func agentWorkspace(root string, args []string) error {
 	}
 	m, ok := set.Agents[pos[0]]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", pos[0])
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", pos[0])}
 	}
 	if !holdsShell(m) {
 		return fmt.Errorf("%s holds none of the workspace's capabilities, so it has no workspace", m.Name)

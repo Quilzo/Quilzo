@@ -106,7 +106,7 @@ func fleetUnregister(root, name string, by *Caller) error {
 		return err
 	}
 	if !reg.Remove(name) {
-		return fmt.Errorf("no agent called %s is registered", name)
+		return errNotFound{fmt.Errorf("no agent called %s is registered", name)}
 	}
 	if err := saveJSON(fleetPath(root), reg); err != nil {
 		return err
@@ -449,7 +449,7 @@ func cmdFleet(root string, args []string) error {
 				return err
 			}
 			if len(pos) != 1 {
-				return errors.New("quilzo fleet add CARD_URL [--name NAME]")
+				return errMisused{errors.New("quilzo fleet add CARD_URL [--name NAME]")}
 			}
 			e, err := fleetRegister(root, pos[0], *name, resolveCaller(root, flagToken), time.Now())
 			if err != nil {
@@ -459,7 +459,7 @@ func cmdFleet(root string, args []string) error {
 			return nil
 		case "remove":
 			if len(args) != 2 {
-				return errors.New("quilzo fleet remove NAME")
+				return errMisused{errors.New("quilzo fleet remove NAME")}
 			}
 			return fleetUnregister(root, args[1], resolveCaller(root, flagToken))
 		case "check":
@@ -503,7 +503,7 @@ func cmdFleet(root string, args []string) error {
 			}
 			return nil
 		default:
-			return fmt.Errorf("unknown fleet command %q; try add, remove, check or shadow", args[0])
+			return errMisused{fmt.Errorf("unknown fleet command %q; try add, remove, check or shadow", args[0])}
 		}
 	}
 	fs := flag.NewFlagSet("fleet", flag.ContinueOnError)

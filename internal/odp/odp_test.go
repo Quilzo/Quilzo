@@ -93,6 +93,13 @@ func TestChangingThePolicyTakesTwo(t *testing.T) {
 	if _, err := pol.Withdraw(pr.ID, "lee"); err == nil {
 		t.Fatal("somebody else withdrew it")
 	}
+	// A proposal nobody made is named as that, for the command line's 4.
+	if _, err := pol.Decide("nope", "lee", true, false, now); !errors.Is(err, ErrNoProposal) {
+		t.Errorf("deciding a proposal nobody made: %v", err)
+	}
+	if _, err := pol.Withdraw("nope", "dana"); !errors.Is(err, ErrNoProposal) {
+		t.Errorf("withdrawing a proposal nobody made: %v", err)
+	}
 	if _, err := pol.Decide(pr.ID, "lee", true, false, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}

@@ -25,7 +25,7 @@ import (
 //	quilzo agent trigger events
 func agentTriggerCmd(root string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")
+		return errMisused{fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")}
 	}
 	if args[0] == "events" {
 		if err := noArguments(args[1:]); err != nil {
@@ -49,7 +49,7 @@ func agentTriggerCmd(root string, args []string) error {
 	case "remove":
 		return agentTriggerRemove(root, name, rest[1:])
 	}
-	return fmt.Errorf("unknown trigger command %q; try add, remove or list", rest[0])
+	return errMisused{fmt.Errorf("unknown trigger command %q; try add, remove or list", rest[0])}
 }
 
 func agentTriggerEvents() error {
@@ -91,7 +91,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	m.Triggers = append(append([]agent.Trigger(nil), m.Triggers...), t)
 	if err := declareAgent(root, m, false, true, caller); err != nil {
@@ -120,7 +120,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 
 func agentTriggerRemove(root, name string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent trigger %s remove N (the number in the list)", name)
+		return errMisused{fmt.Errorf("usage: quilzo agent trigger %s remove N (the number in the list)", name)}
 	}
 	n, err := strconv.Atoi(args[0])
 	set, lerr := loadAgents(root)
@@ -129,7 +129,7 @@ func agentTriggerRemove(root, name string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	if err != nil || n < 1 || n > len(m.Triggers) {
 		return fmt.Errorf("%q is not one of %s's triggers, numbered 1 to %d", args[0], name, len(m.Triggers))
@@ -179,7 +179,7 @@ func agentTriggerList(root, name string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	views := triggerViews(root, name, m, time.Now())
 	if w.JSON(views) {

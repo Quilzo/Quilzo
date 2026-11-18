@@ -35,7 +35,7 @@ func cmdScreen(args []string) error {
 	case "cost":
 		return screenCost(args[1:])
 	default:
-		return fmt.Errorf("unknown screen command %q; try cost", args[0])
+		return errMisused{fmt.Errorf("unknown screen command %q; try cost", args[0])}
 	}
 }
 
@@ -56,7 +56,7 @@ func screenCost(args []string) error {
 	if suiteGiven {
 		fmt.Fprintf(os.Stderr, "%s--suite %d changes nothing: frame encryption has "+
 			"moved out of Quilzo with calls, and these figures are the codec's alone%s\n",
-			yellow, *suite, reset)
+			noteYellow, *suite, noteReset)
 	}
 
 	f := synthetic(*width, *height)

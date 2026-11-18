@@ -57,10 +57,10 @@ func cmdMove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo move OLD NEW [--dry-run]\n" +
 				"  moves the page and everything under it, and carries every\n" +
-				"  reference and menu entry that names them")
+				"  reference and menu entry that names them")}
 	}
 	from, to := strings.Trim(pos[0], "/"), strings.Trim(pos[1], "/")
 	if from == to {
@@ -94,8 +94,8 @@ func cmdMove(root string, args []string) error {
 
 	moving := site.Under(pages, from)
 	if len(moving) == 0 {
-		return fmt.Errorf("there is no page called %q, and nothing under it",
-			from)
+		return errNotFound{fmt.Errorf("there is no page called %q, and nothing under it",
+			from)}
 	}
 	renames := map[string]string{}
 	for _, name := range moving {

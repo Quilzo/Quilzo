@@ -60,9 +60,9 @@ func mediaGenerate(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media generate \"what to draw\" --alt \"what it " +
-				"shows\" --author WHO")
+				"shows\" --author WHO")}
 	}
 	prompt := strings.TrimSpace(rest[0])
 

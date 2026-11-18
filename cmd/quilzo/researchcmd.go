@@ -114,7 +114,7 @@ func cmdResearch(root string, args []string) error {
 	}
 	caller := func() *Caller { return resolveCaller(root, flagToken) }
 	rest := args[1:]
-	usage := func(u string) error { return errors.New("usage: quilzo research " + u) }
+	usage := func(u string) error { return errMisused{errors.New("usage: quilzo research " + u)} }
 	switch args[0] {
 	case "list":
 		if err := noArguments(rest); err != nil {
@@ -386,8 +386,8 @@ func cmdResearch(root string, args []string) error {
 		}
 		return os.WriteFile(*outPath, []byte(md), 0o644)
 	}
-	return fmt.Errorf("unknown research command %q; try list, new, show, add, plan, register, run, rerun, claim, "+
-		"search, cite, quote, write, check or report", args[0])
+	return errMisused{fmt.Errorf("unknown research command %q; try list, new, show, add, plan, register, run, rerun, claim, "+
+		"search, cite, quote, write, check or report", args[0])}
 }
 
 // readTextArg reads a file, or standard input for "-".

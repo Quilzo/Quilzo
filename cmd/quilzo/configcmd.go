@@ -115,8 +115,8 @@ func cmdConfig(root string, args []string) error {
 	case "unset":
 		return configUnset(root, args[1:])
 	default:
-		return fmt.Errorf("unknown config command %q; try show, list, "+
-			"explain, set or unset", args[0])
+		return errMisused{fmt.Errorf("unknown config command %q; try show, list, "+
+			"explain, set or unset", args[0])}
 	}
 }
 
@@ -221,7 +221,7 @@ func configList() error {
 
 func configExplain(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config explain <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config explain <key>")}
 	}
 	s, ok := config.Lookup(args[0])
 	if !ok {
@@ -263,8 +263,8 @@ func configSet(root string, args []string) error {
 		}
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo config set <key> <value> " +
-			"[--accept-risk \"reason\"]")
+		return errMisused{fmt.Errorf("usage: quilzo config set <key> <value> " +
+			"[--accept-risk \"reason\"]")}
 	}
 	key, value = rest[0], rest[1]
 
@@ -310,6 +310,11 @@ func configSet(root string, args []string) error {
 	// why the field is called "setting".
 	record(root, caller.auditRecord("config.set", "/", outcome, detail))
 
+	// The setting under --json, as it was and as it is; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"key": key, "from": before, "to": value, "accepted_risk": reason}) {
+		return nil
+	}
 	w.Human("%s = %s\n", key, value)
 	approvalApplies(root, key)
 	if reason != "" {
@@ -323,7 +328,7 @@ func configSet(root string, args []string) error {
 
 func configUnset(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config unset <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config unset <key>")}
 	}
 	c, err := loadConfig(root)
 	if err != nil {
@@ -352,6 +357,9 @@ func configUnset(root string, args []string) error {
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))
 	// As show, list and explain say the default, not as the file holds it.
+	if w.JSON(map[string]any{"key": args[0], "from": before, "to": c.Shown(args[0]), "default": true}) {
+		return nil
+	}
 	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
 	approvalApplies(root, args[0])
 	return nil

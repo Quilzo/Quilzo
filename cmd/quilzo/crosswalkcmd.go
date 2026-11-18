@@ -65,8 +65,8 @@ func cmdFramework(root string, args []string) error {
 		}
 		return frameworkRelations()
 	default:
-		return fmt.Errorf("unknown framework command %q; try list, status, "+
-			"adopt, map or relations", args[0])
+		return errMisused{fmt.Errorf("unknown framework command %q; try list, status, "+
+			"adopt, map or relations", args[0])}
 	}
 }
 
@@ -181,7 +181,7 @@ func frameworkStatus(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo framework status NAME")
+		return errMisused{fmt.Errorf("usage: quilzo framework status NAME")}
 	}
 	report, standings, err := frameworkAssess(root, pos[0], *from, *to)
 	if err != nil {
@@ -247,7 +247,7 @@ func frameworkAdopt(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo framework adopt NAME")
+		return errMisused{fmt.Errorf("usage: quilzo framework adopt NAME")}
 	}
 	report, standings, err := frameworkAssess(root, pos[0], *from, *to)
 	if err != nil {
@@ -308,12 +308,12 @@ func frameworkMap(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 3 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo framework map CONTROL FRAMEWORK:ID RELATION " +
 				"--why \"...\"\n" +
 				"  relations: equal, superset-of, subset-of, " +
 				"intersects-with, no-relationship\n" +
-				"  quilzo framework relations says what each one means")
+				"  quilzo framework relations says what each one means")}
 	}
 	caller := resolveCaller(root, flagToken)
 	m := crosswalk.Mapping{
@@ -342,11 +342,11 @@ func frameworkMap(root string, args []string) error {
 		}
 	}
 	if !known {
-		return fmt.Errorf(
+		return errNotFound{fmt.Errorf(
 			"there is no control called %q. A mapping to a control nobody "+
 				"declared can never be evidenced, so the requirement it "+
 				"claims to satisfy would sit as met with nothing behind it",
-			m.Control)
+			m.Control)}
 	}
 	reqs, err := loadRequirements(root)
 	if err != nil {
@@ -359,10 +359,10 @@ func frameworkMap(root string, args []string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf(
+		return errNotFound{fmt.Errorf(
 			"there is no requirement %q in %s. A mapping to a clause that "+
 				"is not in the framework file is one nothing will ever "+
-				"report on", m.Requirement, requirementsPath(root))
+				"report on", m.Requirement, requirementsPath(root))}
 	}
 
 	if err := os.MkdirAll(crosswalkDir(root), 0o700); err != nil {

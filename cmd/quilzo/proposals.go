@@ -183,11 +183,11 @@ func proposalBody(root, id string) ([]byte, proposal, error) {
 		return nil, pr, fmt.Errorf("%q is not a proposal", id)
 	}
 	if err := loadJSON(proposalMetaPath(root, id), &pr); err != nil || time.Since(pr.At) > proposalTTL {
-		return nil, pr, fmt.Errorf("no proposal %s is waiting", id)
+		return nil, pr, errNotFound{fmt.Errorf("no proposal %s is waiting", id)}
 	}
 	body, err := os.ReadFile(proposalPath(root, id))
 	if err != nil {
-		return nil, pr, fmt.Errorf("no proposal %s is waiting", id)
+		return nil, pr, errNotFound{fmt.Errorf("no proposal %s is waiting", id)}
 	}
 	return body, pr, nil
 }

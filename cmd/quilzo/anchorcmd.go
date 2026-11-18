@@ -109,8 +109,8 @@ func cmdAnchor(root string, args []string) error {
 	case "export":
 		return anchorExport(root, args[1:])
 	default:
-		return fmt.Errorf("unknown anchor command %q; try status, submit, upgrade or export",
-			args[0])
+		return errMisused{fmt.Errorf("unknown anchor command %q; try status, submit, upgrade or export",
+			args[0])}
 	}
 }
 

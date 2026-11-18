@@ -50,8 +50,8 @@ func cmdEntity(root string, args []string) error {
 	case "relies":
 		return entityRelies(root, args[1:])
 	default:
-		return fmt.Errorf("unknown entity command %q; try tree, report or "+
-			"relies", args[0])
+		return errMisused{fmt.Errorf("unknown entity command %q; try tree, report or "+
+			"relies", args[0])}
 	}
 }
 
@@ -145,7 +145,7 @@ func entityReport(root string, args []string) error {
 	if len(pos) == 1 {
 		scope = pos[0]
 		if _, ok := t.Get(scope); !ok {
-			return fmt.Errorf("there is no entity %q", scope)
+			return errNotFound{fmt.Errorf("there is no entity %q", scope)}
 		}
 	}
 	period, err := window(*from, *to)
@@ -227,8 +227,8 @@ func entityRelies(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 3 {
-		return fmt.Errorf(
-			"usage: quilzo entity relies COMPANY ON CONTROL --because \"...\"")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo entity relies COMPANY ON CONTROL --because \"...\"")}
 	}
 	t, err := loadTree(root)
 	if err != nil {
@@ -254,7 +254,7 @@ func entityRelies(root string, args []string) error {
 		}
 	}
 	if !known {
-		return fmt.Errorf("there is no control called %q", r.Control)
+		return errNotFound{fmt.Errorf("there is no control called %q", r.Control)}
 	}
 	// Saying a subsidiary need not perform a control itself is a statement
 	// its auditor will question: the same authority as publishing.

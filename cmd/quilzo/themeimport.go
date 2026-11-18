@@ -56,9 +56,9 @@ func themeImport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo theme import FILE [--list] [--map mapping.json] " +
-				"[--set token=path] [--scheme dark]")
+				"[--set token=path] [--scheme dark]")}
 	}
 
 	f, err := readTokenFile(pos[0])

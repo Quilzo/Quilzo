@@ -52,8 +52,8 @@ func cmdProvenance(root string, args []string) error {
 	case "backfill":
 		return provBackfill(root, args[1:])
 	default:
-		return fmt.Errorf(
-			"unknown provenance command %q; try set, check or backfill", args[0])
+		return errMisused{fmt.Errorf(
+			"unknown provenance command %q; try set, check or backfill", args[0])}
 	}
 }
 
@@ -72,7 +72,7 @@ func provSet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo provenance set <page> --source <type> --author <who>")
+		return errMisused{fmt.Errorf("usage: quilzo provenance set <page> --source <type> --author <who>")}
 	}
 	page := pos[0]
 
@@ -86,7 +86,7 @@ func provSet(root string, args []string) error {
 	}
 	hash, ok := hashes[page]
 	if !ok {
-		return fmt.Errorf("no page %q in %s", page, *ref)
+		return errNotFound{fmt.Errorf("no page %q in %s", page, *ref)}
 	}
 
 	idx, err := loadProvenance(root)
@@ -119,11 +119,17 @@ func provSet(root string, args []string) error {
 		return err
 	}
 
-	fmt.Printf("%s: %s\n", page, rec.SourceType.Describe())
-	if d := rec.Disclosure(); d != "" {
-		fmt.Printf("  %sreaders will see: %s%s\n", dim, d, reset)
+	// A document under --json: the record and what it is bound to. This
+	// printed its prose whatever was asked for.
+	if w.JSON(map[string]any{"page": page, "source": rec.SourceType, "described": rec.SourceType.Describe(),
+		"disclosure": rec.Disclosure(), "sha256": hash}) {
+		return nil
 	}
-	fmt.Printf("  %sbound to sha256:%s%s\n", dim, short(hash), reset)
+	w.Human("%s: %s\n", page, rec.SourceType.Describe())
+	if d := rec.Disclosure(); d != "" {
+		w.Human("  %sreaders will see: %s%s\n", dim, d, reset)
+	}
+	w.Human("  %sbound to sha256:%s%s\n", dim, short(hash), reset)
 	return nil
 }
 

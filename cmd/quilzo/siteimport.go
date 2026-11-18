@@ -100,8 +100,8 @@ func siteImportCmd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo site import https://your-old-site.example | EXPORT.xml | EXPORT.json | FOLDER | FOLDER.zip " +
-			"[--pages N] [--name N] [--site https://…] [--no-pictures] [-o FILE] [--install]")
+		return errMisused{errors.New("usage: quilzo site import https://your-old-site.example | EXPORT.xml | EXPORT.json | FOLDER | FOLDER.zip " +
+			"[--pages N] [--name N] [--site https://…] [--no-pictures] [-o FILE] [--install]")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if *install {

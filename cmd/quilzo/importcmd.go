@@ -43,7 +43,7 @@ func cmdImport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")
+		return errMisused{fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")}
 	}
 
 	body, err := os.ReadFile(pos[0])
@@ -259,9 +259,9 @@ func cmdMedia(root string, args []string) error {
 		}
 		return mediaFormats()
 	default:
-		return fmt.Errorf("unknown media command %q; try add, get, list, "+
+		return errMisused{fmt.Errorf("unknown media command %q; try add, get, list, "+
 			"remove, replace, renditions, origin, focus, edit, generate, "+
-			"captions, transcribe, speak, verify or formats", args[0])
+			"captions, transcribe, speak, verify or formats", args[0])}
 	}
 }
 
@@ -398,7 +398,7 @@ func mediaRemove(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media remove <id> [--force]")
+		return errMisused{fmt.Errorf("usage: quilzo media remove <id> [--force]")}
 	}
 	id := pos[0]
 
@@ -623,7 +623,7 @@ func mediaAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")
+		return errMisused{fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")}
 	}
 	if *decorative && strings.TrimSpace(*alt) != "" {
 		return fmt.Errorf("--decorative says the image needs no description, " +
@@ -653,16 +653,16 @@ func mediaAdd(root string, args []string) error {
 			// Reported, not fatal. The file has already been proved to be a
 			// valid image; failing the upload because the optimiser could not
 			// improve it would refuse something acceptable.
-			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", noteDim, oerr, noteReset)
 		} else if len(opt.Did) > 0 {
 			body = opt.Body
 			for _, did := range opt.Did {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, did, noteReset)
 			}
 			if opt.StrippedMetadata {
 				fmt.Fprintf(os.Stderr, "  %sthe original carried metadata — a "+
 					"photograph from a phone usually holds GPS coordinates%s\n",
-					yellow, reset)
+					noteYellow, noteReset)
 			}
 			// Re-accepted so the stored id is the hash of what is actually
 			// stored. Skipping this would file the optimised bytes under the
@@ -677,7 +677,7 @@ func mediaAdd(root string, args []string) error {
 		if len(body) > media.SingleFileWarn {
 			fmt.Fprintf(os.Stderr, "  %sthis one file is %d KB; a page carrying "+
 				"a few of these will be slow on a phone%s\n",
-				yellow, len(body)/1024, reset)
+				noteYellow, len(body)/1024, noteReset)
 		}
 	}
 
@@ -788,7 +788,7 @@ func mediaGet(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")
+		return errMisused{fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")}
 	}
 
 	c := fetch.For("import")
@@ -942,11 +942,11 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 			// already been proved a valid image, and refusing it because the
 			// optimiser could not improve it would refuse something
 			// acceptable.
-			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", noteDim, oerr, noteReset)
 		} else if len(opt.Did) > 0 {
 			body = opt.Body
 			for _, did := range opt.Did {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, did, noteReset)
 			}
 			// Re-accepted, because the id is the hash of the bytes and these
 			// are different bytes. Storing them under the original's hash

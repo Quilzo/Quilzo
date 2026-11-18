@@ -112,8 +112,8 @@ func cmdFeature(root string, args []string) error {
 	case "from":
 		return featureFromCmd(root, rest)
 	default:
-		return fmt.Errorf("unknown feature command %q; try example, draft, from, check, install, approve, decline, "+
-			"pending, proposals, list, show, remove, rollback, export or capture", args[0])
+		return errMisused{fmt.Errorf("unknown feature command %q; try example, draft, from, check, install, approve, decline, "+
+			"pending, proposals, list, show, remove, rollback, export or capture", args[0])}
 	}
 }
 
@@ -359,7 +359,7 @@ func featureCheck(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature check FILE [--keys head.pub.json] [--templates DIR] [--take-site]")
+		return errMisused{errors.New("usage: quilzo feature check FILE [--keys head.pub.json] [--templates DIR] [--take-site]")}
 	}
 	p, _, err := readFeature(root, pos[0], *keys)
 	if err != nil {
@@ -447,7 +447,7 @@ func featureInstall(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature install FILE [--keys head.pub.json] [--rows ROWS.json] [--templates DIR] [--take-site]")
+		return errMisused{errors.New("usage: quilzo feature install FILE [--keys head.pub.json] [--rows ROWS.json] [--templates DIR] [--take-site]")}
 	}
 	return installFeatureFileWith(root, pos[0], *keys, *rowsPath, *takeSite, resolveCaller(root, flagToken))
 }
@@ -703,7 +703,7 @@ func featureDecide(root string, args []string, approve bool) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo feature %s ID", verb)
+		return errMisused{fmt.Errorf("usage: quilzo feature %s ID", verb)}
 	}
 	return decideFeature(root, args[0], approve, resolveCaller(root, flagToken))
 }
@@ -726,7 +726,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 	var pend feature.Pending
 	body, err := os.ReadFile(featurePendingPath(root, id))
 	if err != nil {
-		return fmt.Errorf("no request %s is waiting", id)
+		return errNotFound{fmt.Errorf("no request %s is waiting", id)}
 	}
 	if err := json.Unmarshal(body, &pend); err != nil {
 		return err
@@ -746,7 +746,8 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		return nil
 	}
 	if auth.SamePerson(caller.Name, pend.RequestedBy) {
-		return fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)
+		// Refused by the rule of two people, a gate, 3; it exited 1.
+		return errBlocked{fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)}
 	}
 	p, _, err := loadFeaturePackage(root, pend.Name, pend.Digest)
 	if err != nil {
@@ -1367,7 +1368,7 @@ func featureList(root string) error {
 
 func featureShow(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo feature show NAME")
+		return errMisused{errors.New("usage: quilzo feature show NAME")}
 	}
 	installed, err := loadInstalledFeatures(root)
 	if err != nil {
@@ -1375,7 +1376,7 @@ func featureShow(root string, args []string) error {
 	}
 	in := installed[args[0]]
 	if in == nil {
-		return fmt.Errorf("no feature called %s is installed", args[0])
+		return errNotFound{fmt.Errorf("no feature called %s is installed", args[0])}
 	}
 	p, _, err := loadFeaturePackage(root, in.Name, in.Digest)
 	if err != nil {
@@ -1415,7 +1416,7 @@ func featureRemove(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return errors.New("usage: quilzo feature remove NAME")
+		return errMisused{errors.New("usage: quilzo feature remove NAME")}
 	}
 	return removeFeature(root, args[0], resolveCaller(root, flagToken))
 }
@@ -1433,7 +1434,7 @@ func removeFeature(root, name string, caller *Caller) error {
 	}
 	in := installed[name]
 	if in == nil {
-		return fmt.Errorf("no feature called %s is installed", name)
+		return errNotFound{fmt.Errorf("no feature called %s is installed", name)}
 	}
 	empty := &feature.Package{Format: feature.Format, Name: in.Name, Version: in.Version, Title: in.Title}
 	plan := empty.MakePlan(feature.State{}, in.Owns)
@@ -1458,7 +1459,7 @@ func featureRollback(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return errors.New("usage: quilzo feature rollback NAME")
+		return errMisused{errors.New("usage: quilzo feature rollback NAME")}
 	}
 	caller := resolveCaller(root, flagToken)
 	p, o, err := rollbackFeature(root, args[0], caller)
@@ -1481,7 +1482,7 @@ func rollbackFeature(root, name string, caller *Caller) (*feature.Package, featu
 	}
 	in := installed[name]
 	if in == nil {
-		return nil, featureOutcome{}, fmt.Errorf("no feature called %s is installed", name)
+		return nil, featureOutcome{}, errNotFound{fmt.Errorf("no feature called %s is installed", name)}
 	}
 	if len(in.History) == 0 {
 		return nil, featureOutcome{}, fmt.Errorf("%s has no earlier version to go back to", in.Name)
@@ -1509,7 +1510,7 @@ func featureExport(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature export NAME [-o FILE] [--sign]")
+		return errMisused{errors.New("usage: quilzo feature export NAME [-o FILE] [--sign]")}
 	}
 	installed, err := loadInstalledFeatures(root)
 	if err != nil {
@@ -1517,7 +1518,7 @@ func featureExport(root string, args []string) error {
 	}
 	in := installed[pos[0]]
 	if in == nil {
-		return fmt.Errorf("no feature called %s is installed", pos[0])
+		return errNotFound{fmt.Errorf("no feature called %s is installed", pos[0])}
 	}
 	p, _, err := loadFeaturePackage(root, in.Name, in.Digest)
 	if err != nil {
@@ -1586,8 +1587,8 @@ func featureCapture(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature capture NAME --title T --purpose P [--type A] [--collection C] " +
-			"[--listing L] [--form F] [--page P] [--menu M] [--chatbot B] [--agent A] [--webhook URL] [-o FILE] [--sign]")
+		return errMisused{errors.New("usage: quilzo feature capture NAME --title T --purpose P [--type A] [--collection C] " +
+			"[--listing L] [--form F] [--page P] [--menu M] [--chatbot B] [--agent A] [--webhook URL] [-o FILE] [--sign]")}
 	}
 	st, _, err := featureState(root)
 	if err != nil {
@@ -1598,7 +1599,7 @@ func featureCapture(root string, args []string) error {
 	get := func(kind, name string, into any) error {
 		raw, ok := st.Current[feature.Ref{Kind: kind, Name: name}]
 		if !ok {
-			return fmt.Errorf("there is no %s %q", kind, name)
+			return errNotFound{fmt.Errorf("there is no %s %q", kind, name)}
 		}
 		return json.Unmarshal(raw, into)
 	}

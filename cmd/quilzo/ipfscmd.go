@@ -38,8 +38,8 @@ func cmdIPFS(root string, args []string) error {
 	case "verify":
 		return ipfsVerify(root, args[1:])
 	default:
-		return fmt.Errorf("unknown ipfs command %q; try id, write or verify",
-			args[0])
+		return errMisused{fmt.Errorf("unknown ipfs command %q; try id, write or verify",
+			args[0])}
 	}
 }
 
@@ -158,7 +158,7 @@ func ipfsVerify(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo ipfs verify <cid>")
+		return errMisused{fmt.Errorf("usage: quilzo ipfs verify <cid>")}
 	}
 	claimed := pos[0]
 

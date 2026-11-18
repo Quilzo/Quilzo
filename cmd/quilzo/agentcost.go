@@ -41,7 +41,7 @@ func agentCost(root string, args []string) error {
 		return fmt.Errorf("--by is agent, person, goal or day, not %q", *by)
 	}
 	if len(pos) > 1 {
-		return fmt.Errorf("usage: quilzo agent cost [--by agent|person|goal|day] [--since 720h] [NAME]")
+		return errMisused{fmt.Errorf("usage: quilzo agent cost [--by agent|person|goal|day] [--since 720h] [NAME]")}
 	}
 	name := ""
 	if len(pos) == 1 {

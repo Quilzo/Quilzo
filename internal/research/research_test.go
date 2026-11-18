@@ -396,6 +396,16 @@ func TestARegisteredPlanChecksOnlyAsThePlanThatWasSigned(t *testing.T) {
 	}
 }
 
+// A project nobody made is named as not there, for the command line's 4:
+// `quilzo research show` of one exited 1.
+func TestAProjectNobodyMadeIsNotThere(t *testing.T) {
+	st := &Store{Dir: t.TempDir()}
+	if _, err := st.Load("nobody"); !errors.Is(err, ErrNoProject) ||
+		err.Error() != `no research project called "nobody"; quilzo research list` {
+		t.Errorf("a project nobody made: %v", err)
+	}
+}
+
 // A name that is not a project's is quoted back short. The agent interface
 // passes whatever a caller sent, and a 100 KB name was answered, and
 // recorded, whole.

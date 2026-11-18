@@ -60,7 +60,7 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 		return err
 	}
 	if len(pos) != 2 {
-		return errors.New("usage: quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")
+		return errMisused{errors.New("usage: quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")}
 	}
 	// The scopes the person deciding names, when they name any: what a
 	// server lists says what it offers, not what this agent will do there,

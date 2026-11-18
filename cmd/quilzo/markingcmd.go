@@ -93,7 +93,7 @@ func deploymentBanner(root string) (string, error) {
 // cmdMarking prints the scheme and what it would refuse.
 func cmdMarking(root string, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "show" && args[0] != "check") {
-		return fmt.Errorf("usage: quilzo marking [show|check PAGE-BANNER]")
+		return errMisused{fmt.Errorf("usage: quilzo marking [show|check PAGE-BANNER]")}
 	}
 
 	cfg, err := loadConfig(root)
@@ -255,10 +255,10 @@ func checkMarking(root string, s *store.Store, target string) error {
 // who approved it, who carried it, and why.
 func cmdTransfer(root string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo transfer record DIR --approved-by WHO " +
 				"--carried-by WHO --reason WHY\n" +
-				"       quilzo transfer verify DIR")
+				"       quilzo transfer verify DIR")}
 	}
 	switch args[0] {
 	case "record":
@@ -266,8 +266,8 @@ func cmdTransfer(root string, args []string) error {
 	case "verify":
 		return transferVerify(args[1:])
 	default:
-		return fmt.Errorf("unknown transfer command %q; try record or verify",
-			args[0])
+		return errMisused{fmt.Errorf("unknown transfer command %q; try record or verify",
+			args[0])}
 	}
 }
 
@@ -283,8 +283,8 @@ func transferRecord(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo transfer record DIR --approved-by " +
-			"WHO --carried-by WHO --reason WHY")
+		return errMisused{fmt.Errorf("usage: quilzo transfer record DIR --approved-by " +
+			"WHO --carried-by WHO --reason WHY")}
 	}
 
 	// The paperwork carries the deployment's banner, and is refused when the
@@ -325,7 +325,7 @@ func transferRecord(root string, args []string) error {
 
 func transferVerify(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo transfer verify DIR")
+		return errMisused{fmt.Errorf("usage: quilzo transfer verify DIR")}
 	}
 	rec, problems, err := marking.VerifyTransfer(args[0])
 	if err != nil {

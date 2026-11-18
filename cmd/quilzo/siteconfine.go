@@ -86,7 +86,7 @@ func prepareSite(root string, strict bool) ([]string, error) {
 			return nil, fmt.Errorf("making the newsletter's key: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "  %sthe newsletter takes no sign-ups until its key is made: run quilzo site "+
-			"--prepare as the store's owner (%v)%s\n", yellow, err, reset)
+			"--prepare as the store's owner (%v)%s\n", noteYellow, err, noteReset)
 	}
 	dirs, files := siteWritable(root)
 	var made []string
@@ -94,7 +94,7 @@ func prepareSite(root string, strict bool) ([]string, error) {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			if !strict && (errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS)) {
 				fmt.Fprintf(os.Stderr, "  %s%s cannot be made in a read-only store, so what is kept there is off "+
-					"until quilzo site --prepare is run as the store's owner%s\n", yellow, d, reset)
+					"until quilzo site --prepare is run as the store's owner%s\n", noteYellow, d, noteReset)
 				continue
 			}
 			return nil, fmt.Errorf("making %s for the confined site: %w", d, err)
@@ -141,7 +141,7 @@ func writableAPIConfined(apiWritable, confine bool) bool {
 func confineSite(root string) error {
 	if sandbox.ABI() == 0 {
 		fmt.Fprintf(os.Stderr, "  %snot confined: this kernel has no Landlock, so the site can write "+
-			"anything the account running it can%s\n", yellow, reset)
+			"anything the account running it can%s\n", noteYellow, noteReset)
 		return nil
 	}
 	abs, err := filepath.Abs(root)

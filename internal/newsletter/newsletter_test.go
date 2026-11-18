@@ -394,6 +394,12 @@ func TestAgentsProposeAShortListOfIssues(t *testing.T) {
 	if _, err := l.NewIssue("p", " ", Sending, "ann", "", t0); err == nil {
 		t.Fatal("an issue with no subject")
 	}
+	// One nobody wrote is named as not there, for the command line's 4.
+	for _, id := range []string{"nope", "20260101-00000000"} {
+		if _, err := l.Issue(id); !errors.Is(err, ErrNoIssue) {
+			t.Errorf("reading issue %q nobody wrote: %v", id, err)
+		}
+	}
 }
 
 func TestAPageBecomesALetterWithItsWordsInOrder(t *testing.T) {

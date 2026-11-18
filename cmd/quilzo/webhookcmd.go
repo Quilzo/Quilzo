@@ -61,8 +61,8 @@ func cmdWebhook(root string, args []string) error {
 	case "test":
 		return hookTest(root, args[1:])
 	default:
-		return fmt.Errorf("unknown webhook command %q; try list, add, remove "+
-			"or test", args[0])
+		return errMisused{fmt.Errorf("unknown webhook command %q; try list, add, remove "+
+			"or test", args[0])}
 	}
 }
 
@@ -77,7 +77,7 @@ func hookAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
+		return errMisused{fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")}
 	}
 	e := webhook.Endpoint{URL: pos[0], Note: *note}
 	for _, t := range strings.Split(*types, ",") {
@@ -126,20 +126,23 @@ func hookAdd(root string, args []string) error {
 	if w.JSON(map[string]any{"url": e.URL, "secret": secret}) {
 		return nil
 	}
+	// The key alone on stdout, and what is said of it on stderr, so it
+	// can be handed straight to the receiver.
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
+	n := w.Notes()
+	n.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
 		"  same bytes to verify a delivery, so it is a shared value rather\n"+
-		"  than something that can be hashed%s\n", yellow, reset)
-	w.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
+		"  than something that can be hashed%s\n", n.Yellow(), n.Reset())
+	n.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
 		"  together. The timestamp is what stops a captured request being\n"+
 		"  replayed a year later with a signature that still verifies%s\n",
-		dim, reset)
+		n.Dim(), n.Reset())
 	return nil
 }
 
 func hookRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo webhook remove <url>")
+		return errMisused{fmt.Errorf("usage: quilzo webhook remove <url>")}
 	}
 	var removed webhook.Endpoint
 	if err := updateHooks(root, func(f *hookFile) error {
@@ -153,7 +156,7 @@ func hookRemove(root string, args []string) error {
 			kept = append(kept, e)
 		}
 		if !found {
-			return fmt.Errorf("no endpoint at %s", args[0])
+			return errNotFound{fmt.Errorf("no endpoint at %s", args[0])}
 		}
 		f.Endpoints = kept
 		return nil
@@ -376,7 +379,7 @@ func sendWebhookEvent(root string, ev webhook.Event) {
 		sent = append(sent, last)
 		if !last.Succeeded {
 			fmt.Fprintf(os.Stderr, "%swebhook to %s failed after %d attempt(s)%s\n",
-				yellow, e.URL, len(deliveries), reset)
+				noteYellow, e.URL, len(deliveries), noteReset)
 		}
 	}
 	recordDeliveries(root, sent)

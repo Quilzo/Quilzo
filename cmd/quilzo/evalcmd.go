@@ -379,11 +379,11 @@ func evalReports(root, name string, limit int) ([]evals.Report, error) {
 }
 
 func evalUsage() error {
-	return errors.New("usage: quilzo eval cases AGENT | keep RUN-ID [expectations] | " +
+	return errMisused{errors.New("usage: quilzo eval cases AGENT | keep RUN-ID [expectations] | " +
 		"add AGENT --goal G [expectations] | remove AGENT CASE-ID | " +
 		"run AGENT [--k 3] [--model] | show AGENT\n" +
 		"  expectations: --finishes --uses a,b --avoids c --asks-before d " +
-		"--answer-has \"text\" --max-steps N --no-refusals")
+		"--answer-has \"text\" --max-steps N --no-refusals")}
 }
 
 // expectFlags are the closed list a case may say, as flags.
@@ -431,7 +431,7 @@ func cmdEval(root string, args []string) error {
 			return err
 		}
 		if _, ok := set.Agents[name]; !ok {
-			return fmt.Errorf("no agent called %q; quilzo agent list", name)
+			return errNotFound{fmt.Errorf("no agent called %q; quilzo agent list", name)}
 		}
 		return nil
 	}

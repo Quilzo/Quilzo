@@ -53,8 +53,13 @@ const (
 type Writer struct {
 	Mode   Mode
 	Colour bool
-	Out    io.Writer
-	Err    io.Writer
+	// ErrColour is Colour for what is written to Err, decided by Err. It
+	// was decided by stdout, so an error written to a log file behind
+	// `quilzo publish >/dev/null 2>>publish.log` was written in escape
+	// codes, which is the failure the rule below is there to prevent.
+	ErrColour bool
+	Out       io.Writer
+	Err       io.Writer
 
 	// failed is whether a document could not be written (Failed).
 	failed bool
@@ -62,25 +67,46 @@ type Writer struct {
 
 // New builds a Writer for the process.
 //
-// Colour is enabled only when writing to a character device and NO_COLOR is
-// unset. Guessing wrongly in this direction is what puts escape codes into a
-// log file, a pipe, or an agent's transcript.
+// Colour is enabled only when writing to a terminal and NO_COLOR is unset,
+// and stdout and stderr are each asked for themselves. Guessing wrongly in
+// this direction is what puts escape codes into a log file, a pipe, or an
+// agent's transcript.
 func New(jsonMode bool) *Writer {
 	w := &Writer{Out: os.Stdout, Err: os.Stderr}
 	if jsonMode {
 		w.Mode = JSON
 		return w // never coloured; JSON is for a parser
 	}
-	w.Colour = isTerminal(os.Stdout) && os.Getenv("NO_COLOR") == ""
+	plain := os.Getenv("NO_COLOR") != ""
+	w.Colour = isTerminal(os.Stdout) && !plain
+	w.ErrColour = isTerminal(os.Stderr) && !plain
 	return w
 }
 
+// isTerminal is whether f is a terminal a person reads.
+//
+// A character device is not enough: /dev/null is one, so `quilzo agent show
+// nope >/dev/null 2>err.txt` decided that stdout was a terminal and wrote its
+// error in escape codes. The terminal itself is asked (isTTY).
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
-	if err != nil {
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
 		return false
 	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return isTTY(f)
+}
+
+// Notes is a Writer for what is said about an answer rather than the answer
+// itself: prose to stderr, coloured only when stderr is a terminal, and
+// nothing under --json, as Human writes nothing there.
+//
+// For a command whose answer is a secret shown once. `token issue` wrote the
+// token between a notice and three lines of prose, so `quilzo token issue
+// ... > ci.tok` and `$(quilzo token issue ...)` captured something no
+// command would take, and the token is not shown again. Its stdout holds the
+// token alone now, and everything said about it is here.
+func (w *Writer) Notes() *Writer {
+	return &Writer{Mode: w.Mode, Colour: w.ErrColour, ErrColour: w.ErrColour, Out: w.Err, Err: w.Err}
 }
 
 // Colour codes. Empty strings when colour is off, so call sites stay unchanged
@@ -128,9 +154,7 @@ func (w *Writer) JSON(v any) bool {
 	// iterating the answer failed where it had no work to do. Here rather
 	// than at each of them, so the next listing cannot forget. An untyped
 	// nil is left as null: that is a command saying there is no such thing.
-	if rv := reflect.ValueOf(v); rv.IsValid() {
-		v = emptyLists(rv, map[onPath]bool{}).Interface()
-	}
+	v = EmptyLists(v)
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
@@ -151,6 +175,21 @@ func (w *Writer) JSON(v any) bool {
 // any command whose stdout was a full disk, exited 0 with nothing written, so
 // a script read the empty output as its answer.
 func (w *Writer) Failed() bool { return w.failed }
+
+// EmptyLists is v as JSON writes it here: with every nil slice and map in
+// it empty, so an empty list is [] and not null (emptyLists).
+//
+// For a document written somewhere other than a Writer. The machine
+// interface answers an agent with JSON it encodes for itself, and went on
+// answering null for an empty list after the command line had stopped:
+// shield_status on a store with nothing in force said "active": null.
+func EmptyLists(v any) any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return v
+	}
+	return emptyLists(rv, map[onPath]bool{}).Interface()
+}
 
 var (
 	jsonMarshaler = reflect.TypeFor[json.Marshaler]()
@@ -306,7 +345,9 @@ func (w *Writer) Error(err error) {
 		_ = enc.Encode(map[string]string{"error": err.Error()})
 		return
 	}
-	fmt.Fprintf(w.Err, "%s%v%s\n", w.Red(), err, w.Reset())
+	// Coloured as stderr is, which is where it goes.
+	n := w.Notes()
+	fmt.Fprintf(w.Err, "%s%v%s\n", n.Red(), err, n.Reset())
 }
 
 // Exit codes, fixed and documented.

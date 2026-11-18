@@ -56,6 +56,12 @@ var (
 	bold, dim, green, yellow, red, reset string
 	w                                    *out.Writer
 
+	// The colours for what is written to stderr, which are stderr's: a
+	// warning or a progress line written with stdout's colours put escape
+	// codes into a log file whenever stdout was a terminal and stderr was
+	// not, as in `quilzo serve 2>>serve.log` (out.Writer.Notes).
+	noteBold, noteDim, noteGreen, noteYellow, noteRed, noteReset string
+
 	// flagToken holds a --token given anywhere on the command line.
 	//
 	// Set by the global pass in main, which also removes it, so every
@@ -738,6 +744,9 @@ func main() {
 	}()
 	bold, dim = w.Bold(), w.Dim()
 	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
+	n := w.Notes()
+	noteBold, noteDim, noteGreen = n.Bold(), n.Dim(), n.Green()
+	noteYellow, noteRed, noteReset = n.Yellow(), n.Red(), n.Reset()
 
 	root := defaultRoot
 	// A tiny hand-rolled global flag pass, so `--root` and `--token` work
@@ -844,10 +853,7 @@ func main() {
 	if _, known := lookupNeed(cmd, cmdArgs); known && !asked && !runsWithoutAStore(cmd, cmdArgs) {
 		if err := needStore(root); err != nil {
 			w.Error(err)
-			if errors.Is(err, errNoStore) {
-				os.Exit(out.ExitNotFound)
-			}
-			os.Exit(out.ExitFailure)
+			os.Exit(exitCode(err))
 		}
 	}
 
@@ -856,7 +862,7 @@ func main() {
 	// (sitestate.go). Moved by whichever command runs first; a move that
 	// fails is said, and the commands go on with what is where.
 	if err := moveSiteState(root); err != nil {
-		fmt.Fprintf(os.Stderr, "%s%v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", noteYellow, err, noteReset)
 	}
 
 	// The network boundary, applied once for every command before any of them
@@ -893,11 +899,14 @@ func main() {
 			if !asked {
 				usage()
 			}
-			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
+			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", noteYellow, err, noteReset)
 			return
 		} else if err != nil {
+			// A refusal by the access policy is a gate refusing, 3, and a
+			// command nobody has is a command line that was wrong, 2: both
+			// exited 1 here, as though the command had run and failed.
 			w.Error(err)
-			os.Exit(out.ExitFailure)
+			os.Exit(exitCode(err))
 		}
 	}
 
@@ -1212,18 +1221,7 @@ func main() {
 		w.Error(err)
 		// A gate refusing is a different outcome from the command breaking, and
 		// a caller branching on exit status should be able to tell which.
-		var blocked errBlocked
-		if errors.As(err, &blocked) {
-			os.Exit(out.ExitBlocked)
-		}
-		var misused errMisused
-		if errors.As(err, &misused) {
-			os.Exit(out.ExitUsage)
-		}
-		if errors.Is(err, errNoStore) {
-			os.Exit(out.ExitNotFound)
-		}
-		os.Exit(out.ExitFailure)
+		os.Exit(exitCode(err))
 	}
 }
 
@@ -1548,7 +1546,7 @@ func cmdAdd(root string, args []string) error {
 	merge := fs.Bool("merge", false,
 		"with --based-on: merge instead of refusing, unless you and they "+
 			"changed the same field")
-	if err := fs.Parse(reorder(args, addValued)); err != nil {
+	if err := parseOnce(fs, reorder(args, addValued)); err != nil {
 		return err
 	}
 	if *merge && *basedOn == "" {
@@ -1692,6 +1690,12 @@ func cmdAdd(root string, args []string) error {
 	written := len(pages)
 	if merged.Pages != nil {
 		written = len(merged.Pages)
+	}
+	// The commit under --json, which is what a script adding pages needs
+	// next, for --based-on and for review. It answered nothing, exit 0.
+	if w.JSON(map[string]any{"commit": cid, "pages": changed, "draft_pages": written,
+		"kept_theirs": merged.TookTheirs, "kept_mine": merged.TookMine}) {
+		return nil
 	}
 	w.Human("draft %s  %d page(s)\n", short(cid), written)
 	sayClaims(claimsByOthers(root, caller.Name, append(changed, strings.Split(*remove, ",")...)))
@@ -1940,7 +1944,13 @@ func checkAccessibilityOf(root string, s *store.Store, commitID, tplDir string) 
 	return design, append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
 }
 
-func cmdPublish(root string, args []string) error {
+func cmdPublish(root string, args []string) error { return publishLine(root, args, true) }
+
+// publishLine is `quilzo publish ARGS`, answering --json with what is live
+// when answer is set: false where a publication is one step of a command
+// that answers for itself, as `demo remove` does, which would otherwise
+// write two documents.
+func publishLine(root string, args []string, answer bool) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	force := fs.Bool("force-inaccessible", false,
 		"publish despite blocking accessibility failures, and record that you did")
@@ -1958,14 +1968,19 @@ func cmdPublish(root string, args []string) error {
 	}
 	return publishAs(root, pos, resolveCaller(root, flagToken), publishFlags{
 		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
+		answer: answer,
 	})
 }
 
 // publishFlags are publish's options, for a publish that did not come from
 // its command line: one somebody scheduled.
+//
+// answer is whether what is live is the answer under --json: for `quilzo
+// publish`, and not for a publication made as a step of `env promote`,
+// `demo remove` or a schedule, whose command answers for itself.
 type publishFlags struct {
-	force, skip, forceUnmarked bool
-	reason, tplDir             string
+	force, skip, forceUnmarked, answer bool
+	reason, tplDir                     string
 }
 
 // beforeLiveMoves, when set, is called after every check a publish makes has
@@ -2290,6 +2305,9 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	}
 	pagesMoved := len(pub.Changes) > 0 || pub.Previous != pub.Published
 	if !pagesMoved && !designChanged {
+		if opts.answer && w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": []string{}, "already_live": true}) {
+			return nil
+		}
 		w.Human("already live\n")
 		return nil
 	}
@@ -2304,7 +2322,11 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	record(root, caller.auditRecord("publish", "/", audit.Success, detail))
 	if !pagesMoved {
 		// Only the design: the pages were live already, and nothing a
-		// pointer could go back to has moved.
+		// pointer could go back to has moved. Under --json it says so as
+		// one document, as every other publish answers.
+		if opts.answer && w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": []string{}, "design": "changed"}) {
+			return nil
+		}
 		w.Human("the design is live now; the pages were live already (%s)\n", onOneLine(short(pub.Published)))
 		return nil
 	}
@@ -2318,6 +2340,12 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		changed = append(changed, c.Path)
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
+	// What is live now under --json, which a deployment script needs to
+	// record and to roll back to. It answered nothing, exit 0.
+	if opts.answer && w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "changes": changed}) {
+		syncPayAfterLive(root, caller)
+		return nil
+	}
 	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
 	if designChanged {
 		w.Human("  %sand the design changed since the last publish, which the site takes with it%s\n", dim, reset)
@@ -2364,10 +2392,15 @@ func cmdRollback(root string, args []string) error {
 		reverted = append(reverted, c.Path)
 	}
 	fireWebhooks(root, "rolled-back", pub.Published, reverted)
-	fmt.Printf("live is now %s  (%d change(s) reverted)\n",
+	// As publish answers: this printed its prose under --json too.
+	if w.JSON(map[string]any{"commit": pub.Published, "previous": pub.Previous, "reverted": reverted}) {
+		syncPayAfterLive(root, caller)
+		return nil
+	}
+	w.Human("live is now %s  (%d change(s) reverted)\n",
 		short(pub.Published), len(pub.Changes))
 	syncPayAfterLive(root, caller)
-	fmt.Printf("  %srolled back from %s, which is still stored and can be "+
+	w.Human("  %srolled back from %s, which is still stored and can be "+
 		"published again%s\n", dim, short(pub.Previous), reset)
 	return nil
 }
@@ -2385,7 +2418,7 @@ func cmdLog(root string, args []string) error {
 	}
 	head := s.GetRef(*ref)
 	if head == "" {
-		return fmt.Errorf("no ref %q", *ref)
+		return errNotFound{fmt.Errorf("no ref %q", *ref)}
 	}
 	live := s.GetRef(site.RefLive)
 	hist, err := s.History(head, *limit)
@@ -2420,7 +2453,7 @@ func cmdRender(root string, args []string) error {
 		return err
 	}
 	if len(pos) < 2 {
-		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
+		return errMisused{fmt.Errorf("usage: quilzo render PAGE TEMPLATE")}
 	}
 	pageName, templatePath := pos[0], pos[1]
 
@@ -2439,7 +2472,7 @@ func cmdRender(root string, args []string) error {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return fmt.Errorf("no page %q; have %s", pageName, strings.Join(names, ", "))
+		return errNotFound{fmt.Errorf("no page %q; have %s", pageName, strings.Join(names, ", "))}
 	}
 
 	src, err := os.ReadFile(templatePath)
@@ -2637,7 +2670,10 @@ func cmdVerify(root string) error {
 	}
 	n, err := s.Verify()
 	if err != nil {
-		return fmt.Errorf("%s%v%s", red, err, reset)
+		// Bare: main writes it to stderr in red when stderr is a terminal.
+		// It carried stdout's red, so `quilzo verify 2>err.log` at a
+		// terminal wrote escape codes into the log.
+		return err
 	}
 	// The count under --json, as `auditlog verify` gives its entries. This
 	// printed its prose whatever was asked for, so a script checking that

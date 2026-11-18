@@ -73,8 +73,8 @@ func cmdSchedule(root string, args []string) error {
 	case "run":
 		return scheduleRun(root, args[1:])
 	default:
-		return fmt.Errorf("unknown schedule command %q; try list, add, cancel "+
-			"or run", args[0])
+		return errMisused{fmt.Errorf("unknown schedule command %q; try list, add, cancel "+
+			"or run", args[0])}
 	}
 }
 
@@ -86,9 +86,9 @@ func scheduleAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo schedule add <when>\n" +
-				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")
+				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")}
 	}
 
 	when, err := schedule.ParseWhen(pos[0], time.Now())
@@ -126,6 +126,11 @@ func scheduleAdd(root string, args []string) error {
 	})
 	fireWebhooks(root, "scheduled", draft, nil)
 
+	// The commit and when, under --json, which `schedule cancel` names; it
+	// answered nothing, exit 0.
+	if w.JSON(map[string]any{"commit": draft, "at": when.UTC(), "note": *note}) {
+		return nil
+	}
 	w.Human("%s will publish at %s%s%s\n", short(draft), bold,
 		when.UTC().Format("15:04 on 2 Jan 2006"), reset)
 	w.Human("  %sthis names that exact commit. Editing the draft afterwards does\n"+
@@ -137,12 +142,12 @@ func scheduleAdd(root string, args []string) error {
 
 func scheduleCancel(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo schedule cancel <commit>")
+		return errMisused{fmt.Errorf("usage: quilzo schedule cancel <commit>")}
 	}
 	update := func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) }
 	if err := schedule.Withdraw(update, args[0]); err != nil {
 		if errors.Is(err, schedule.ErrNothingPending) {
-			return fmt.Errorf("nothing pending matches %q", args[0])
+			return errNotFound{fmt.Errorf("nothing pending matches %q", args[0])}
 		}
 		return err
 	}
@@ -152,6 +157,9 @@ func scheduleCancel(root string, args []string) error {
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: schedule.CancelDetail(args[0], caller.Name),
 	})
+	if w.JSON(map[string]any{"commit": args[0], "cancelled": true}) {
+		return nil
+	}
 	w.Human("cancelled\n")
 	return nil
 }

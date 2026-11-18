@@ -40,7 +40,7 @@ func cmdDesktop(root string, args []string) error {
 		}
 		return desktopConsent(root)
 	}
-	return fmt.Errorf("unknown desktop command %q; try status or consent", args[0])
+	return errMisused{fmt.Errorf("unknown desktop command %q; try status or consent", args[0])}
 }
 
 func desktopStatus(root string) error {

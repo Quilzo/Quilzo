@@ -285,9 +285,9 @@ func manifestLoader(root string) func(string) (agent.Manifest, error) {
 		}
 		m, ok := set.Agents[name]
 		if !ok {
-			return agent.Manifest{}, fmt.Errorf(
+			return agent.Manifest{}, errNotFound{fmt.Errorf(
 				"no agent called %q; the supervisor names it as a delegate "+
-					"and this install has no such manifest", name)
+					"and this install has no such manifest", name)}
 		}
 		if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 			return agent.Manifest{}, err

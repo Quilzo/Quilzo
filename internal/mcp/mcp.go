@@ -69,6 +69,7 @@ import (
 	"unicode"
 
 	"github.com/quilzo/quilzo/internal/jsonschema"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
@@ -712,7 +713,10 @@ func answerText(v any) (string, error) {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	// An empty list is [], as the command line writes it (out.EmptyLists):
+	// shield_status on a store with nothing in force answered "active":
+	// null, and an agent iterating it failed where it had nothing to do.
+	if err := enc.Encode(out.EmptyLists(v)); err != nil {
 		return "", fmt.Errorf("the answer could not be written as JSON: %w", err)
 	}
 	return strings.TrimSuffix(b.String(), "\n"), nil

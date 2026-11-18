@@ -649,7 +649,7 @@ func loadAgentRun(root, id string) (agent.Record, error) {
 		b, err = readBounded(filepath.Join(agentEvalRunsDir(root), id+".json"), 16<<20)
 	}
 	if os.IsNotExist(err) {
-		return rec, fmt.Errorf("there is no run %s", id)
+		return rec, errNotFound{fmt.Errorf("there is no run %s", id)}
 	}
 	if err != nil {
 		return rec, err
@@ -718,7 +718,7 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	case isNew && exists:
 		return fmt.Errorf("an agent called %s is already declared", m.Name)
 	case !isNew && !exists:
-		return fmt.Errorf("no agent called %s is declared", m.Name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", m.Name)}
 	}
 	m.Program = keepPin(set.Agents[m.Name].Program, m.Program)
 	// The amendment's reach, computed rather than summarised: what this
@@ -850,7 +850,7 @@ func withdrawAgent(root, name string, caller *Caller) error {
 		return err
 	}
 	if _, ok := set.Agents[name]; !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	for other, m := range set.Agents {
 		for _, d := range m.Delegates {
@@ -1022,7 +1022,7 @@ func agentRuns(root string, args []string) error {
 
 func agentTrace(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent trace RUN")
+		return errMisused{fmt.Errorf("usage: quilzo agent trace RUN")}
 	}
 	r, err := loadAgentRun(root, args[0])
 	if err != nil {
@@ -1135,7 +1135,7 @@ func printable(s string) string {
 
 func runAndStep(args []string, usage string) (string, int, error) {
 	if len(args) != 2 {
-		return "", 0, fmt.Errorf("usage: quilzo agent %s", usage)
+		return "", 0, errMisused{fmt.Errorf("usage: quilzo agent %s", usage)}
 	}
 	n, err := strconv.Atoi(args[1])
 	if err != nil || n < 0 {
@@ -1148,7 +1148,7 @@ func runAndStep(args []string, usage string) (string, int, error) {
 // person's answers to the decider's question a run is waiting on.
 func agentAnswerQuestion(root string, args []string) error {
 	if len(args) < 3 {
-		return fmt.Errorf("usage: quilzo agent answer RUN STEP NAME=VALUE...")
+		return errMisused{fmt.Errorf("usage: quilzo agent answer RUN STEP NAME=VALUE...")}
 	}
 	id, n, err := runAndStep(args[:2], "answer RUN STEP NAME=VALUE...")
 	if err != nil {
@@ -1193,7 +1193,7 @@ func agentAnswer(root string, approve bool, args []string) error {
 
 func agentResumeCmd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent resume RUN")
+		return errMisused{fmt.Errorf("usage: quilzo agent resume RUN")}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 	defer cancel()

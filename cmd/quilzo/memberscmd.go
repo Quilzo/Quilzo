@@ -21,8 +21,8 @@ import (
 // nothing stored that would let anybody do either.
 
 func memberUsage() error {
-	return fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
-		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")
+	return errMisused{fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
+		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")}
 }
 
 func cmdMember(root string, args []string) error {
@@ -128,9 +128,11 @@ func cmdMember(root string, args []string) error {
 			return err
 		}
 		if !w.JSON(map[string]any{"code": code, "hash": inv.Hash, "expires": inv.Expires}) {
+			// The code alone on stdout, shown once, and its note on stderr.
 			w.Human("%s\n", code)
-			w.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
-				dim, inv.Expires.Format("2 Jan 2006"), reset)
+			n := w.Notes()
+			n.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
+				n.Dim(), inv.Expires.Format("2 Jan 2006"), n.Reset())
 		}
 		return done("member.invited", inv.Hash[:12])
 	case "invites":
@@ -151,7 +153,7 @@ func cmdMember(root string, args []string) error {
 		return nil
 	case "revoke-invite":
 		if len(args) != 2 || len(strings.TrimSpace(args[1])) < 6 {
-			return fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")
+			return errMisused{fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")}
 		}
 		if err := store.RevokeInvite(args[1]); err != nil {
 			return err

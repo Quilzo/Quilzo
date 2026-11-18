@@ -4,6 +4,7 @@
 package shield
 
 import (
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -43,8 +44,10 @@ func TestAChangeTakesASecondPerson(t *testing.T) {
 	if got, _ := inForce(t, root, "chatbot-flood"); got.Mode != "watch" {
 		t.Fatal("a proposal took effect")
 	}
-	if _, err := Decide(root, p.ID, "dana", true, false, t0); err == nil {
-		t.Fatal("the proposer approved their own change")
+	// Named, so the command line can say it was the rule of two people
+	// refusing (3) and not a decision that could not be written (1).
+	if _, err := Decide(root, p.ID, "dana", true, false, t0); !errors.Is(err, ErrSameProposer) {
+		t.Fatalf("the proposer approved their own change: %v", err)
 	}
 	if _, err := Withdraw(root, p.ID, "sam", t0); err == nil {
 		t.Fatal("somebody else withdrew it")
@@ -56,8 +59,8 @@ func TestAChangeTakesASecondPerson(t *testing.T) {
 	if got, _ := inForce(t, root, "chatbot-flood"); got.Mode != "act" || !got.Builtin {
 		t.Fatalf("not in force: %+v", got)
 	}
-	if _, err := Decide(root, p.ID, "sam", true, false, t0); err == nil {
-		t.Fatal("approved twice")
+	if _, err := Decide(root, p.ID, "sam", true, false, t0); !errors.Is(err, ErrNoChange) {
+		t.Fatalf("approved twice: %v", err)
 	}
 	bk, _ := LoadBook(root)
 	if len(bk.Pending) != 0 || len(bk.Decided) != 1 {

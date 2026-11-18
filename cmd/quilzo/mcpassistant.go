@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -73,7 +72,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		record(root, caller.auditRecord("assistant.gaps.read", "/ask/"+name, audit.Success,
 			map[string]string{"assistant": name, "groups": fmt.Sprint(len(out)), "via": "mcp"}))
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 
@@ -89,14 +88,10 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		// None is an empty list. A nil slice marshalled to null, which a
-		// client expecting a list had to special-case and which told the
-		// model nothing, where the command line says there are none.
-		list := set.Assistants
-		if list == nil {
-			list = []assistant.Assistant{}
-		}
-		b, err := json.Marshal(list)
+		// None is an empty list: mcpJSON makes every nil list [] (a nil
+		// slice marshalled to null, which a client expecting a list had to
+		// special-case and which told the model nothing).
+		b, err := mcpJSON(set.Assistants)
 		return string(b), err
 	})
 
@@ -157,7 +152,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			srcs = append(srcs, src{i + 1, h.Page, h.Header()})
 		}
 		out["sources"] = srcs
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 

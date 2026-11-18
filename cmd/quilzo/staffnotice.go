@@ -271,5 +271,5 @@ func redact(msg, secret string) string {
 
 // sayNoticeError is how the server's log hears a notice failed.
 func sayNoticeError(err error) {
-	fmt.Fprintf(os.Stderr, "  %snotifying staff: %v%s\n", dim, err, reset)
+	fmt.Fprintf(os.Stderr, "  %snotifying staff: %v%s\n", noteDim, err, noteReset)
 }

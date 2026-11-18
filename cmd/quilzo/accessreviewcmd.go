@@ -520,7 +520,7 @@ func cmdAccess(root string, args []string) error {
 	case "review":
 		return cmdAccessReview(root, args[1:])
 	}
-	return fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])
+	return errMisused{fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])}
 }
 
 // accessReviewUsage is how to use quilzo access review.
@@ -653,11 +653,11 @@ func cmdAccessReview(root string, args []string) error {
 		pos, flags := leadingArgs(args[1:], 2)
 		fs := flag.NewFlagSet("access review decide", flag.ContinueOnError)
 		why := fs.String("why", "", "why; keeping privileged access needs one")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseOnce(fs, flags); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo access review decide ITEM keep|revoke [--why TEXT]")
+			return errMisused{errors.New("usage: quilzo access review decide ITEM keep|revoke [--why TEXT]")}
 		}
 		// Anything left over is refused rather than dropped: a reason
 		// typed without its quotes (--why edits the handbook) was kept as
@@ -710,7 +710,7 @@ func cmdAccessReview(root string, args []string) error {
 			accessreview.ControlID, r.Closed.Add(accessReviewEvery(root)).UTC().Format("2 Jan 2006"), reset)
 		return nil
 	}
-	return fmt.Errorf("unknown access review command %q; start, items, decide or close", args[0])
+	return errMisused{fmt.Errorf("unknown access review command %q; start, items, decide or close", args[0])}
 }
 
 // itemFacts is an item's second line: how and when it was granted, until

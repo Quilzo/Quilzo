@@ -226,7 +226,7 @@ func embedAfterPublish(ctx context.Context, root string) string {
 // assistantEmbed is quilzo assistant embed [NAME].
 func assistantEmbed(root string, args []string) error {
 	if len(args) > 1 {
-		return fmt.Errorf("usage: quilzo assistant embed [NAME]")
+		return errMisused{fmt.Errorf("usage: quilzo assistant embed [NAME]")}
 	}
 	only := ""
 	if len(args) == 1 {

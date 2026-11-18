@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -162,6 +163,11 @@ func TreeHead(events []Event, now time.Time) (Head, error) {
 	}, nil
 }
 
+// ErrNoEntry is a sequence number no entry in the log has, for errors.Is:
+// the command line exits 4 for it, "not found", as the help documents,
+// where `quilzo auditlog prove` of an entry past the end exited 1.
+var ErrNoEntry = errors.New("there is no entry")
+
 // Inclusion proves that one entry is in the log.
 //
 // The proof is about twenty hashes for a log of a million entries, which is
@@ -177,7 +183,7 @@ func Inclusion(events []Event, seq int64) ([]string, Head, error) {
 		}
 	}
 	if index < 0 {
-		return nil, Head{}, fmt.Errorf("there is no entry with sequence %d", seq)
+		return nil, Head{}, fmt.Errorf("%w with sequence %d", ErrNoEntry, seq)
 	}
 	l, err := tree(events)
 	if err != nil {

@@ -38,8 +38,8 @@ func cmdNote(root string, args []string) error {
 	case "remove", "rm":
 		return noteRemove(root, args[1:])
 	default:
-		return fmt.Errorf(
-			"unknown note command %q; try add, list, resolve or remove", args[0])
+		return errMisused{fmt.Errorf(
+			"unknown note command %q; try add, list, resolve or remove", args[0])}
 	}
 }
 
@@ -77,9 +77,9 @@ func noteAdd(root string, args []string) error {
 		return err
 	}
 	if len(rest) < 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo note add PAGE \"what you want to say\" " +
-				"[--field NAME] [--author WHO]")
+				"[--field NAME] [--author WHO]")}
 	}
 	page, text := rest[0], rest[1]
 
@@ -259,7 +259,7 @@ func noteResolve(root string, args []string) error {
 		return err
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("usage: quilzo note resolve PAGE ID")
+		return errMisused{fmt.Errorf("usage: quilzo note resolve PAGE ID")}
 	}
 	st, err := openNotes(root)
 	if err != nil {
@@ -294,9 +294,9 @@ func noteRemove(root string, args []string) error {
 		return err
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("usage: quilzo note remove PAGE ID\n" +
+		return errMisused{fmt.Errorf("usage: quilzo note remove PAGE ID\n" +
 			"  to finish with a note and keep the conversation readable, " +
-			"resolve it instead")
+			"resolve it instead")}
 	}
 	st, err := openNotes(root)
 	if err != nil {
@@ -375,7 +375,7 @@ func expandNoteID(st *note.Store, page, given string) (string, error) {
 	case 1:
 		return found[0], nil
 	case 0:
-		return "", fmt.Errorf("no note on %s starts with %q", page, given)
+		return "", errNotFound{fmt.Errorf("no note on %s starts with %q", page, given)}
 	default:
 		return "", fmt.Errorf(
 			"%d notes on %s start with %q; give more of the id",

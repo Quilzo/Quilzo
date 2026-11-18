@@ -48,7 +48,9 @@ package siem
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -145,8 +147,21 @@ type Envelope struct {
 	ExportedAt   string `json:"exported_at"`
 }
 
+// ErrUnknownFormat is a format this does not write. It is the caller's
+// mistake, not a refusal of the log: the command line exited 3 for `quilzo
+// siem zzbogus`, as though a gate had refused the export, where a format
+// nobody has is a command used wrongly.
+var ErrUnknownFormat = errors.New("unknown format")
+
 // Export renders events.
 func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result, error) {
+	// The format first, before anything is asked of the events. It was
+	// looked at last, so on a new store's empty log `quilzo siem zzbogus`
+	// said "no events in that range" and exited 3, a gate refusing, and a
+	// chain that did not verify was said instead of the format nobody has.
+	if !slices.Contains(Formats(), f) {
+		return nil, fmt.Errorf("%w %q; try ocsf, cef or jsonl", ErrUnknownFormat, f)
+	}
 	opt = opt.withDefaults()
 	if opt.AsStored {
 		return exportAsStored(f, events, opt, now)
@@ -209,7 +224,7 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 	case JSONL:
 		body, err = renderJSONL(selected, opt)
 	default:
-		return nil, fmt.Errorf("unknown format %q; try ocsf, cef or jsonl", f)
+		return nil, fmt.Errorf("%w %q; try ocsf, cef or jsonl", ErrUnknownFormat, f)
 	}
 	if err != nil {
 		return nil, err

@@ -205,7 +205,7 @@ func revokeShare(root, page, id string, now time.Time) (share, error) {
 				return nil
 			}
 		}
-		return fmt.Errorf("no link %s", id)
+		return errNotFound{fmt.Errorf("no link %s", id)}
 	})
 	return out, err
 }
@@ -350,7 +350,7 @@ func (s share) endedAt() time.Time {
 func cmdShare(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	if len(args) == 0 {
-		return errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")}
 	}
 	if err := migrateShares(root); err != nil {
 		return err
@@ -385,7 +385,7 @@ func cmdShare(root string, args []string) error {
 		return nil
 	case "revoke":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo share revoke ID")
+			return errMisused{errors.New("usage: quilzo share revoke ID")}
 		}
 		// Whoever may edit the page the link is to may end it.
 		f, err := loadShares(root)
@@ -419,7 +419,7 @@ func cmdShare(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo share PAGE [--days 7]")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7]")}
 	}
 	// Sharing a draft shows it to somebody outside: whoever may publish the
 	// page may, since publishing shows it to everybody.
@@ -444,8 +444,12 @@ func cmdShare(root string, args []string) error {
 	if w.JSON(map[string]any{"id": sh.ID, "url": shareURL(root, secret), "expires": sh.Expires}) {
 		return nil
 	}
-	w.Human("%s%s%s\n  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
+	// The address alone on stdout, since it holds the secret and is shown
+	// once, and what is said of it on stderr.
+	w.Human("%s%s%s\n", bold, shareURL(root, secret), reset)
+	n := w.Notes()
+	n.Human("  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
 		"quilzo share revoke %s ends it%s\n",
-		bold, shareURL(root, secret), reset, dim, sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, reset)
+		n.Dim(), sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, n.Reset())
 	return nil
 }

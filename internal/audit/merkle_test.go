@@ -4,6 +4,7 @@
 package audit
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,10 @@ func TestOneEntryIsProvableWithoutTheLog(t *testing.T) {
 	proof, head, err := Inclusion(events, 500)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// An entry past the end is named as not there, for the command line's 4.
+	if _, _, err := Inclusion(events, 99999); !errors.Is(err, ErrNoEntry) {
+		t.Errorf("an entry past the end of the log: %v", err)
 	}
 	if len(proof) > 20 {
 		t.Errorf("the proof is %d hashes for a log of 1000; it should be "+

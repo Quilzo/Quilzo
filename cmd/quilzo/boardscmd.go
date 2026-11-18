@@ -51,8 +51,8 @@ func siteBoards(root string) *public.Boards {
 }
 
 func boardUsage() error {
-	return fmt.Errorf("usage: quilzo board list | add NAME --title T --moderation pre|post [--max N] [--closed] | " +
-		"remove NAME | held | recent | approve ID | delete ID")
+	return errMisused{fmt.Errorf("usage: quilzo board list | add NAME --title T --moderation pre|post [--max N] [--closed] | " +
+		"remove NAME | held | recent | approve ID | delete ID")}
 }
 
 func cmdBoard(root string, args []string) error {
@@ -126,7 +126,7 @@ func cmdBoard(root string, args []string) error {
 			return err
 		}
 		if !set.Remove(args[1]) {
-			return fmt.Errorf("no board %q", args[1])
+			return errNotFound{fmt.Errorf("no board %q", args[1])}
 		}
 		if err := board.Save(boardsPath(root), set); err != nil {
 			return err
@@ -201,7 +201,7 @@ func boardsHooks(root string) *admin.BoardsAdmin {
 				return err
 			}
 			if !set.Remove(name) {
-				return fmt.Errorf("no board %q", name)
+				return errNotFound{fmt.Errorf("no board %q", name)}
 			}
 			if err := board.Save(boardsPath(root), set); err != nil {
 				return err

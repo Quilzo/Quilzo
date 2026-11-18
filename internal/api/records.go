@@ -210,6 +210,11 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string
 			Error: "the collection could not be read", Detail: err.Error()})
 		return
 	}
+	// An empty list is [], not the null a nil slice is written as: a
+	// collection nothing matched answered "records": null.
+	if recs == nil {
+		recs = []collection.Record{}
+	}
 	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"collection": name, "total": total, "records": recs,

@@ -153,12 +153,12 @@ func inboxHooks(root string) *admin.Inbox {
 }
 
 func inboxUsage() error {
-	return fmt.Errorf(`usage: quilzo inbox <command>
+	return errMisused{fmt.Errorf(`usage: quilzo inbox <command>
 
   list                        conversations, the ones waiting for a reply first
   show ASSISTANT/ID           one conversation
   reply ASSISTANT/ID "text"   answer it, as yourself
-  close ASSISTANT/ID          end it`)
+  close ASSISTANT/ID          end it`)}
 }
 
 func splitConversation(arg string) (string, string, error) {
@@ -261,7 +261,7 @@ func cmdInbox(root string, args []string) error {
 		return nil
 	case "reply", "close":
 		fs := flag.NewFlagSet("inbox "+args[0], flag.ContinueOnError)
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseOnce(fs, args[1:]); err != nil {
 			return err
 		}
 		rest := fs.Args()

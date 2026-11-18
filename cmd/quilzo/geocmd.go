@@ -138,7 +138,7 @@ func cachedGeo(root string) (*geo.Locator, string, error) {
 }
 
 func geoUsage() error {
-	return fmt.Errorf("usage: quilzo geo status | network add PREFIX NAME --kind office|vpn [--city C --country CC --lat N --lon N] | network remove PREFIX | help")
+	return errMisused{fmt.Errorf("usage: quilzo geo status | network add PREFIX NAME --kind office|vpn [--city C --country CC --lat N --lon N] | network remove PREFIX | help")}
 }
 
 // cmdGeo says where sign-ins are placed from, and names networks.
@@ -217,7 +217,9 @@ func cmdGeo(root string, args []string) error {
 			// 192.168.0.0/16` took the first away, said nothing of the other
 			// and exited 0, with an office still trusted that was to stop
 			// being.
-			if len(args) != 3 {
+			// And a flag is not a prefix: `geo network remove --zzflag`
+			// saved the networks again and exited 0.
+			if len(args) != 3 || strings.HasPrefix(args[2], "-") {
 				return errMisused{geoUsage()}
 			}
 			kept := c.Networks[:0]

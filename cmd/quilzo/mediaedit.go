@@ -55,9 +55,9 @@ func mediaEdit(root string, args []string) error {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media edit ID [--crop 16:9] [--box x,y,w,h] " +
-				"[--turn right] [--flip across] [--grey]")
+				"[--turn right] [--flip across] [--grey]")}
 	}
 
 	e := media.Edit{Aspect: strings.TrimSpace(*crop), Grey: *grey}

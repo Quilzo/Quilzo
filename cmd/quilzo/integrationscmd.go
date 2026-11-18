@@ -86,7 +86,7 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsTemplate(root, args[1:])
 	case "approve", "decline":
 		if len(args) != 2 {
-			return fmt.Errorf("quilzo integrations %s ID", args[0])
+			return errMisused{fmt.Errorf("quilzo integrations %s ID", args[0])}
 		}
 		if err := gatewayDecide(root, args[1], args[0] == "approve", resolveCaller(root, flagToken), time.Now()); err != nil {
 			return err
@@ -94,8 +94,8 @@ func cmdIntegrations(root string, args []string) error {
 		fmt.Printf("%sd %s\n", args[0], args[1])
 		return nil
 	default:
-		return fmt.Errorf(
-			"unknown integrations command %q; try list, import, template, tools, pin, call, gateway, held, approve or decline", args[0])
+		return errMisused{fmt.Errorf(
+			"unknown integrations command %q; try list, import, template, tools, pin, call, gateway, held, approve or decline", args[0])}
 	}
 }
 
@@ -152,7 +152,7 @@ func integrationsList(root string) error {
 // reviewed, which is the live risk in this ecosystem.
 func integrationsTools(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("quilzo integrations tools NAME")
+		return errMisused{fmt.Errorf("quilzo integrations tools NAME")}
 	}
 	in, err := oneIntegration(root, args[0])
 	if err != nil {
@@ -197,13 +197,13 @@ func integrationsTools(root string, args []string) error {
 
 func integrationsCall(root string, args []string) error {
 	fs := flag.NewFlagSet("integrations call", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	rest := fs.Args()
 	if len(rest) < 2 {
-		return fmt.Errorf(
-			"quilzo integrations call NAME TOOL [key=value ...]")
+		return errMisused{fmt.Errorf(
+			"quilzo integrations call NAME TOOL [key=value ...]")}
 	}
 	name, tool := rest[0], rest[1]
 
@@ -288,8 +288,8 @@ func oneIntegration(root, name string) (agent.Integration, error) {
 			return in, nil
 		}
 	}
-	return agent.Integration{}, fmt.Errorf(
-		"no integration called %q; `quilzo integrations list`", name)
+	return agent.Integration{}, errNotFound{fmt.Errorf(
+		"no integration called %q; `quilzo integrations list`", name)}
 }
 
 // mcpTransport stands in for the network in tests; nil is the network,
@@ -335,7 +335,7 @@ func newMCPClientFor(root, person string) *mcpclient.Client {
 // every tool the install uses, or the ones named.
 func integrationsPin(root string, args []string) error {
 	if len(args) < 1 {
-		return errors.New("quilzo integrations pin NAME [TOOL...]")
+		return errMisused{errors.New("quilzo integrations pin NAME [TOOL...]")}
 	}
 	set, err := loadIntegrations(root)
 	if err != nil {
@@ -348,7 +348,7 @@ func integrationsPin(root string, args []string) error {
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("no integration called %q; `quilzo integrations list`", args[0])
+		return errNotFound{fmt.Errorf("no integration called %q; `quilzo integrations list`", args[0])}
 	}
 	in := set.Declared[idx]
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -480,7 +480,7 @@ func secretEnvName(name string) string {
 // [--daily N] [--ask TOOL,...]`, or `--off`: offering a company's MCP
 // server to other systems' agents through Quilzo, or not.
 func integrationsGateway(root string, args []string) error {
-	usage := errors.New("quilzo integrations gateway NAME --role reader|author|publisher [--daily N] [--ask TOOL,...] | --off")
+	usage := errMisused{errors.New("quilzo integrations gateway NAME --role reader|author|publisher [--daily N] [--ask TOOL,...] | --off")}
 	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("integrations gateway", flag.ContinueOnError)
 	role := fs.String("role", "", "the least role a caller needs")
@@ -508,7 +508,7 @@ func integrationsGateway(root string, args []string) error {
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("no integration called %q; quilzo integrations list", pos[0])
+		return errNotFound{fmt.Errorf("no integration called %q; quilzo integrations list", pos[0])}
 	}
 	in := &set.Declared[idx]
 	detail := map[string]string{"integration": in.Name}
