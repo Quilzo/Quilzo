@@ -129,7 +129,7 @@ const usageText = `quilzo — the self-hosted AI agent platform: a control plane
           a CMS and chatbots in one Go binary.
 
 content (immutable, and publishing moves a pointer; templates cannot execute anything)
-  quilzo init [--admin NAME]              create a content store, and its first administrator
+  quilzo init [--admin NAME]               create a content store, and its first administrator
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
   quilzo find WORDS                        a page, screen, setting, type or file
