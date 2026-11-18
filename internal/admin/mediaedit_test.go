@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -333,5 +334,43 @@ func TestTheLibraryListsPicturesNotTheirNarrowerCopies(t *testing.T) {
 	all := get(t, srv, "/media?all=1", token).Body.String()
 	if n := strings.Count(all, `class="media-card"`); n != 2+copies {
 		t.Errorf("asked for everything, %d cards for %d files", n, 2+copies)
+	}
+}
+
+// A narrower copy whose picture is gone is still a card. Removing a picture
+// leaves the copies made from it, and the screen came to fold every copy
+// under its picture: with the picture removed, its copies were on no card,
+// the screen counted no files, and the only way to find and remove them was
+// to know to ask for every file. A copy is folded under a picture that is
+// there, and one whose picture is not is listed as itself.
+func TestACopyWhosePictureIsGoneIsStillListed(t *testing.T) {
+	srv, token := setup(t)
+	id := withPicture(t, srv)
+	lib := libraryOf(t, srv)
+	files, err := lib.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies := 0
+	for _, f := range files {
+		if f.RenditionOf == id {
+			copies++
+		}
+	}
+	if copies == 0 {
+		t.Fatal("the picture has no narrower copies, so this tests nothing")
+	}
+	if err := lib.Remove(id); err != nil {
+		t.Fatal(err)
+	}
+	html := get(t, srv, "/media", token).Body.String()
+	if n := strings.Count(html, `class="media-card"`); n != copies {
+		t.Errorf("%d cards for the %d narrower copies of a picture that is gone", n, copies)
+	}
+	if !regexp.MustCompile(fmt.Sprintf(`\b%d files?,`, copies)).MatchString(html) {
+		t.Errorf("the library does not count the %d files it holds", copies)
+	}
+	if strings.Contains(html, "a narrower copy of </span>") || strings.Contains(html, "listed with the picture") {
+		t.Error("a copy is said to be of a picture, or listed with one, that is not there")
 	}
 }
