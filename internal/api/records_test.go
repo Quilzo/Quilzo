@@ -127,3 +127,26 @@ func TestARecordIDThatAddressesNothingIsRefusedAs400(t *testing.T) {
 		t.Errorf("a usable record id answered %d: %s", w.Code, w.Body)
 	}
 }
+
+// An empty list is [] in the content API's answers, as on the command line
+// and the machine interface, and not null.
+//
+// encoding/json writes a nil slice as null, and a nil slice is how Go
+// spells an empty list: a collection nothing matched answered "records":
+// null, and a page of the listing past the last page "pages": null, so a
+// client iterating the answer failed where it had nothing to do.
+func TestAnEmptyListIsAListInTheContentAPI(t *testing.T) {
+	srv, tok := recordsServer(t)
+	for _, path := range []string{
+		"/api/v1/records/samples?where=name:nobody",
+		"/api/v1/pages?offset=50",
+	} {
+		w := req(t, srv, "GET", path, tok["reader"], nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), "null") {
+			t.Errorf("%s answered a null where an empty list is: %s", path, w.Body.String())
+		}
+	}
+}
