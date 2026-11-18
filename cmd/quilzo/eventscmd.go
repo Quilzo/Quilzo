@@ -103,9 +103,12 @@ func eventsPackage() *feature.Package {
 				Sort:  "date", Descending: true, Rows: 50},
 		},
 		Pages: []feature.Page{
-			{Name: "events", Body: map[string]any{"title": "What's on",
+			// Headed by the page's own h1, as head_title, with the list under
+			// it. The list's h2 was the only heading, so every publish of a
+			// site with events said the page had headings and no h1.
+			{Name: "events", Body: map[string]any{"title": "What's on", "head_title": "What's on",
 				"description": "Events still to come, and a calendar to subscribe to.",
-				"sections": []any{map[string]any{"events": map[string]any{"title": "What's on", "rows": float64(20),
+				"sections": []any{map[string]any{"events": map[string]any{"title": "Coming up", "rows": float64(20),
 					"intro": ""}}}}},
 			// No title of its own: it stands for whichever event is being
 			// looked at, and the heading comes from the record.
