@@ -108,7 +108,7 @@ func TestASuggestionComesFromTheSiteOrNotAtAll(t *testing.T) {
 		"--handoff"}); err != nil {
 		t.Fatal(err)
 	}
-	draft, sources, err := suggestReply(root, "help", "can I return opened ink")
+	draft, sources, err := suggestReply(root, "help", "can I return opened ink", "dana")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +120,10 @@ func TestASuggestionComesFromTheSiteOrNotAtAll(t *testing.T) {
 	if strings.Contains(draft, "[1]") {
 		t.Errorf("the suggestion carries citation markers: %q", draft)
 	}
-	if _, _, err := suggestReply(root, "help", "what is the airspeed of a swallow"); err == nil {
+	if _, _, err := suggestReply(root, "help", "what is the airspeed of a swallow", "dana"); err == nil {
 		t.Error("a question the site does not answer produced a suggestion")
 	}
-	if _, _, err := suggestReply(root, "gone", "returns"); err == nil {
+	if _, _, err := suggestReply(root, "gone", "returns", "dana"); err == nil {
 		t.Error("an assistant that does not exist made a suggestion")
 	}
 }

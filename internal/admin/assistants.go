@@ -40,12 +40,16 @@ type Assistants struct {
 	// Save writes the set, recording who changed which assistant and how.
 	Save func(set *assistant.Set, by, change, name string) error
 	// Index is what an assistant reads: the published site, filtered, and
-	// its documents — with the reason any document could not be used.
-	Index func(assistant.Assistant) (*assistant.Index, []string, error)
+	// its documents — with the reason any document could not be used. by
+	// is the person trying it, whom ranking a question by meaning is
+	// charged to, as Model's answer is.
+	Index func(a assistant.Assistant, by string) (*assistant.Index, []string, error)
 	// Documents lists the library files a chatbot could be given.
 	Documents func() ([]DocumentChoice, error)
-	// Model is the configured model, or nil with the reason there is none.
-	Model func(assistant.Assistant) (assistant.Model, string)
+	// Model is the configured model, or nil with the reason there is none,
+	// charged to by, the person trying it, against their own budget, and
+	// not to the chatbot's, which is what its visitors are answered within.
+	Model func(a assistant.Assistant, by string) (assistant.Model, string)
 	// Forms names the site's forms, for the action picker.
 	Forms func() ([]string, error)
 	// Gaps are what visitors asked a chatbot that it could not answer,
@@ -202,7 +206,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	// The test console.
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" && s.Assistants.Index != nil {
 		data["Q"] = q
-		idx, warnings, ierr := s.Assistants.Index(a)
+		idx, warnings, ierr := s.Assistants.Index(a, p.Name)
 		data["DocWarnings"] = warnings
 		if ierr != nil {
 			data["TestError"] = ierr.Error()
@@ -210,7 +214,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 			var m assistant.Model
 			why := "extractive by declaration"
 			if a.UseModel && s.Assistants.Model != nil {
-				m, why = s.Assistants.Model(a)
+				m, why = s.Assistants.Model(a, p.Name)
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 			defer cancel()

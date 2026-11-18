@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -355,10 +356,11 @@ func assistantIndex(root string, a assistant.Assistant) (*assistant.Index, error
 	return assistantIndexAs(root, a, nil)
 }
 
-// assistantIndexAs is assistantIndex for a caller who may be acting in an
-// agent's run (agentplatform.go). The question the index embeds to rank its
-// passages by meaning is a model call, and in a run it is charged to the run
-// and its person, as the chatbot's answer is.
+// assistantIndexAs is assistantIndex for somebody trying the chatbot rather
+// than a visitor, who may be acting in an agent's run (agentplatform.go).
+// The question the index embeds to rank its passages by meaning is a model
+// call, and it is charged to them (chatbotConsumers), and to the run they
+// act in, as the chatbot's answer is.
 func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant.Index, error) {
 	idx, _, err := assistantKnowledge(root, a, c)
 	return idx, err
@@ -366,7 +368,7 @@ func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant
 
 // assistantKnowledge is assistantIndex with the reasons any document could
 // not be used, for the owner's console. c is as in assistantIndexAs, and nil
-// when the index is asked in no run.
+// for a visitor's question.
 func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
 	return assistantKnowledgeOf(root, a, c, true)
 }
@@ -517,6 +519,44 @@ func assistantModel(a assistant.Assistant) (assistant.Model, string) {
 // from its pages instead. Each of payers is charged as well, each against
 // its own budget: the person whose agent run asked the chatbot.
 func assistantModelAt(root string, a assistant.Assistant, payers ...string) (assistant.Model, string) {
+	return chatbotModel(root, a, append([]string{"chatbot:" + a.Name}, payers...))
+}
+
+// assistantModelAs is the chatbot's model for somebody trying it, not a
+// visitor: charged to whoever tries it (chatbotConsumers), each against
+// their own budget, and not to chatbot:NAME, whose budget is what the
+// chatbot's visitors are answered within.
+func assistantModelAs(root string, a assistant.Assistant, by *Caller) (assistant.Model, string) {
+	return chatbotModel(root, a, chatbotConsumers(a, by))
+}
+
+// chatbotConsumers is who a chatbot's model call is charged to: the
+// chatbot for a visitor's question, and for its own upkeep such as asking
+// its unanswered questions again after a publish (by nil); and the person
+// trying it otherwise, as everything else they set off is, an agent run
+// charged to the person who started it and an agent acting under its own
+// identity charged as the agent.
+//
+// Every ask was charged to chatbot:NAME: a reader's thirty-question
+// evaluation used up a public chatbot's day, every visitor after it was
+// answered from the pages without the model, and the gateway's status did
+// not say who had spent it.
+func chatbotConsumers(a assistant.Assistant, by *Caller) []string {
+	switch {
+	case by == nil || by.Name == "":
+		return []string{"chatbot:" + a.Name}
+	case by.run != nil && by.runFor != "":
+		return []string{"person:" + by.runFor}
+	case strings.HasPrefix(by.Name, agent.PrincipalPrefix):
+		return []string{"agent:" + strings.TrimPrefix(by.Name, agent.PrincipalPrefix)}
+	}
+	return []string{"person:" + by.Name}
+}
+
+// chatbotModel is assistantModelAt charged to consumers, the first of them
+// the caller the gateway knows the call by.
+func chatbotModel(root string, a assistant.Assistant, consumers []string) (assistant.Model, string) {
+	payers := consumers[1:]
 	if !a.UseModel {
 		return nil, "extractive by declaration"
 	}
@@ -534,11 +574,11 @@ func assistantModelAt(root string, a assistant.Assistant, payers ...string) (ass
 				if r == "" {
 					return nil, "kept to " + a.Route + ", which no route serves"
 				}
-				return gw.ForRoute(r, "chatbot:"+a.Name, payers...), ""
+				return gw.ForRoute(r, consumers[0], payers...), ""
 			case a.Route != "":
-				return gw.ForModel(a.Route, "chatbot:"+a.Name, payers...), ""
+				return gw.ForModel(a.Route, consumers[0], payers...), ""
 			}
-			return gw.For("chatbot:"+a.Name, payers...), ""
+			return gw.For(consumers[0], payers...), ""
 		}
 	}
 	if a.RouteOnly {
@@ -579,11 +619,12 @@ func assistantAsk(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	idx, err := assistantIndex(root, a)
+	// Charged to whoever asks, not to the visitors' budget.
+	idx, err := assistantIndexAs(root, a, caller)
 	if err != nil {
 		return err
 	}
-	m, why := assistantModelAt(root, a)
+	m, why := assistantModelAs(root, a, caller)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	ans, err := assistant.Respond(ctx, a, idx, m, pos[1])
@@ -646,16 +687,18 @@ func assistantEval(root string, args []string) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("%s holds no cases", pos[1])
 	}
-	idx, err := assistantIndex(root, a)
+	// Charged to whoever measures it, not to the visitors' budget.
+	idx, err := assistantIndexAs(root, a, caller)
 	if err != nil {
 		return err
 	}
-	m, _ := assistantModelAt(root, a)
+	m, _ := assistantModelAs(root, a, caller)
 	// Named before it is measured, and measured through that route alone
 	// (onlyThrough). Named after, the route a failed call had left resting
 	// was passed over and the next one named instead.
 	served := servedBy(m)
-	if only := onlyThrough(root, served.Route, "chatbot:"+a.Name); only != nil {
+	payers := chatbotConsumers(a, caller)
+	if only := onlyThrough(root, served.Route, payers[0], payers[1:]...); only != nil {
 		m = only
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -729,8 +772,8 @@ func assistantsCapability(root string) *admin.Assistants {
 			})
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
-			return assistantKnowledge(root, a, nil)
+		Index: func(a assistant.Assistant, by string) (*assistant.Index, []string, error) {
+			return assistantKnowledge(root, a, &Caller{Name: by})
 		},
 		Documents: func() ([]admin.DocumentChoice, error) {
 			lib, err := openMedia(root)
@@ -751,8 +794,8 @@ func assistantsCapability(root string) *admin.Assistants {
 			}
 			return out, nil
 		},
-		Model: func(a assistant.Assistant) (assistant.Model, string) {
-			return assistantModelAt(root, a)
+		Model: func(a assistant.Assistant, by string) (assistant.Model, string) {
+			return assistantModelAs(root, a, &Caller{Name: by})
 		},
 		Forms: func() ([]string, error) {
 			set, err := loadForms(root)

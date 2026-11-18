@@ -20,6 +20,8 @@ type fakeAssistants struct {
 	set      *assistant.Set
 	changes  []string
 	model    assistant.Model
+	// triedBy is who each model the test console asked for was for.
+	triedBy []string
 }
 
 func (f *fakeAssistants) wire() *Assistants {
@@ -34,7 +36,7 @@ func (f *fakeAssistants) wire() *Assistants {
 			f.changes = append(f.changes, by+" "+change+" "+name)
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
+		Index: func(a assistant.Assistant, _ string) (*assistant.Index, []string, error) {
 			return assistant.NewIndex(assistant.Chunk(map[string]any{
 				"returns": map[string]any{"title": "Returns",
 					"body": "Opened ink bottles cannot be returned. <b>bold</b>"},
@@ -43,7 +45,10 @@ func (f *fakeAssistants) wire() *Assistants {
 		Documents: func() ([]DocumentChoice, error) {
 			return []DocumentChoice{{ID: strings.Repeat("a", 64), Name: "care.pdf", Format: "pdf"}}, nil
 		},
-		Model: func(assistant.Assistant) (assistant.Model, string) { return f.model, "" },
+		Model: func(a assistant.Assistant, by string) (assistant.Model, string) {
+			f.triedBy = append(f.triedBy, by)
+			return f.model, ""
+		},
 		Forms: func() ([]string, error) { return []string{"returns_form"}, nil },
 	}
 }

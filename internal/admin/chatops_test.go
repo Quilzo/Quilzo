@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/gateway"
 )
 
@@ -53,5 +54,19 @@ func TestABudgetChangedOnTheScreenKeepsWhatItIsNotGiven(t *testing.T) {
 	}
 	if body := get(t, srv, "/models", token).Body.String(); strings.Contains(body, `name="per_minute" type="number" min="0" value="0"`) {
 		t.Error("the form still starts at zero, which would lift a limit it was not meant to")
+	}
+}
+
+// The test console asks for the model as the person signed in, so what it
+// spends is charged to them and not to the chatbot's visitors' budget. It
+// asked as nobody, and every question an owner tried there was charged to
+// the chatbot.
+func TestTheConsoleAsksAsThePersonTryingIt(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help", UseModel: true})
+	fa.model = unfaithful{}
+	get(t, srv, "/assistants/help?q="+url.QueryEscape("can I return opened ink"), token)
+	if len(fa.triedBy) != 1 || fa.triedBy[0] == "" {
+		t.Fatalf("the console asked for the model for %q", fa.triedBy)
 	}
 }

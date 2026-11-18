@@ -4,8 +4,11 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -232,5 +235,118 @@ func TestChangingOneLimitOfABudgetKeepsTheOthers(t *testing.T) {
 	set.MoneyPerDay = ""
 	if got := budgetOf(t, root, "chatbot:help"); got != set {
 		t.Errorf("a limit lifted by name left %+v", got)
+	}
+}
+
+// ledgerPayers is who each model call in the store's ledger was charged to,
+// its own caller first.
+func ledgerPayers(t *testing.T, root string) [][]string {
+	t.Helper()
+	b, err := os.ReadFile(usagePath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out [][]string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var u gateway.Usage
+		if err := json.Unmarshal([]byte(line), &u); err != nil {
+			t.Fatalf("%q: %v", line, err)
+		}
+		out = append(out, append([]string{u.Consumer}, u.Also...))
+	}
+	return out
+}
+
+// Somebody trying a chatbot, on the command line or over the agent
+// interface, is charged for it against their own budget, and the
+// chatbot's budget is left for its visitors. Every ask was charged to
+// chatbot:NAME: a reader's thirty-question evaluation used up a public
+// chatbot's day, every visitor after it was answered from the pages
+// without the model, and the gateway's status did not say who had spent it.
+func TestTryingAChatbotIsChargedToWhoeverTriesIt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USER", "rita")
+	root := publishedShop(t)
+	var calls int64
+	up := modelServer(t, false, &calls)
+	if err := cmdGateway(root, []string{"route", "add", "main", "--url", up.URL + "/v1", "--model", "small"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--model", "--public"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"ask", "help", "can I return opened ink"}); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(t.TempDir(), "cases.jsonl")
+	if err := os.WriteFile(cases, []byte(`{"question": "can I return opened ink", "page": "returns"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"eval", "help", cases}); err != nil {
+		t.Fatal(err)
+	}
+	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_read", "ask_assistant",
+		map[string]any{"name": "help", "question": "can I return opened ink"}); merr != nil {
+		t.Fatal(merr.Message)
+	}
+	tried := ledgerPayers(t, root)
+	if len(tried) < 3 {
+		t.Fatalf("the ledger holds %v", tried)
+	}
+	for _, who := range tried {
+		if slices.Contains(who, "chatbot:help") {
+			t.Errorf("trying the chatbot was charged to its visitors' budget: %v", who)
+		}
+	}
+	if !slices.ContainsFunc(tried, func(who []string) bool { return who[0] == "person:rita" }) ||
+		!slices.ContainsFunc(tried, func(who []string) bool { return who[0] == "person:dana" }) {
+		t.Errorf("nobody who tried it was charged: %v", tried)
+	}
+
+	// A visitor's question is the chatbot's, as it was.
+	a, _ := loadAssistant(root, "help")
+	idx, err := assistantIndex(root, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, why := assistantModelAt(root, a)
+	if m == nil {
+		t.Fatal(why)
+	}
+	if _, err := assistant.Respond(context.Background(), a, idx, m, "can I return opened ink"); err != nil {
+		t.Fatal(err)
+	}
+	all := ledgerPayers(t, root)
+	if last := all[len(all)-1]; last[0] != "chatbot:help" {
+		t.Errorf("a visitor's question was charged to %v", last)
+	}
+
+	// The admin's test console, a suggested reply in the Inbox and asking
+	// unanswered questions again are the person's who does them.
+	gui := assistantsCapability(root)
+	idx, _, err = gui.Index(a, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ = gui.Model(a, "sam")
+	if _, err := assistant.Respond(context.Background(), a, idx, m, "can I return opened ink"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := inboxHooks(root).Suggest("help", "can I return opened ink", "sam"); err != nil {
+		t.Fatal(err)
+	}
+	keepGaps(t, root)
+	gapKeeper(root)("help", "how much is delivery to the moon")
+	if asked, _, err := gui.CheckGaps(context.Background(), "help", "sam"); err != nil || asked == 0 {
+		t.Fatalf("asked %d again: %v", asked, err)
+	}
+	all = ledgerPayers(t, root)
+	if len(all) < len(tried)+4 {
+		t.Fatalf("the console, the suggestion and the check made %d calls", len(all)-len(tried)-1)
+	}
+	for _, who := range all[len(tried)+1:] {
+		if strings.Join(who, ",") != "person:sam" {
+			t.Errorf("trying the chatbot on a screen was charged to %v", who)
+		}
 	}
 }

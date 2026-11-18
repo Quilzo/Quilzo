@@ -383,7 +383,7 @@ func TestAnOfferIsShownWhereThereIsAPlaceForOne(t *testing.T) {
 	}
 
 	*asked = 0
-	if draft, _, err := suggestReply(root, "help", q); err == nil {
+	if draft, _, err := suggestReply(root, "help", q, "dana"); err == nil {
 		t.Errorf("a draft for a message no page answers: %q", draft)
 	}
 	keepGaps(t, root)
