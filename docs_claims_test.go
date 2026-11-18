@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -347,17 +348,15 @@ func TestTheProposalsFiguresAreTrueOfTheTree(t *testing.T) {
 // under its own address. The statement failed the check it named, so the
 // check is made here.
 //
-// Merges are left out. A merge is authored by whoever merged it, and the one
-// a pull request's CI checks out is made by GitHub for the test; the commits
-// under it are the ones somebody wrote.
+// Merges are left out; writtenCommits says why.
 func TestAUTHORSListsEveryAuthorInTheHistory(t *testing.T) {
-	out, err := exec.Command("git", "log", "--no-merges", "--format=%ae").Output()
+	written, err := writtenCommits(".", "%ae")
 	if err != nil {
 		t.Skipf("git log: %v", err)
 	}
 	authors := read(t, "AUTHORS")
 	seen := map[string]bool{}
-	for _, addr := range strings.Fields(string(out)) {
+	for _, addr := range written {
 		if seen[addr] {
 			continue
 		}
@@ -368,7 +367,99 @@ func TestAUTHORSListsEveryAuthorInTheHistory(t *testing.T) {
 		}
 	}
 	if len(seen) == 0 {
-		t.Skip("this checkout has no commit that is not a merge")
+		t.Skip("this checkout has no commit that is not a merge, or that git can tell is not one")
+	}
+}
+
+// writtenCommits is the commits in dir's history that somebody wrote, one
+// line each, as format gives it: every commit but a merge.
+//
+// A merge is authored by whoever merged it, and the one a pull request's CI
+// checks out is made by GitHub for the test; the commits under it are the
+// ones somebody wrote.
+//
+// --no-merges alone does not leave that one out. CI checks it out one commit
+// deep, and git cannot see the parents of a commit at the edge of a shallow
+// history, so a merge there is a commit with none, which --no-merges keeps.
+// A commit at that edge cannot be told from a merge, and is left out too:
+// git lists those commits in the repository's shallow file.
+func writtenCommits(dir, format string) ([]string, error) {
+	out, err := exec.Command("git", "-C", dir, "log", "--no-merges", "--format=%H "+format).Output()
+	if err != nil {
+		return nil, err
+	}
+	edge := map[string]bool{}
+	if p, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "shallow").Output(); err == nil {
+		path := strings.TrimSpace(string(p))
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, path)
+		}
+		// No file is a history that is not shallow, with no edge.
+		if b, err := os.ReadFile(path); err == nil {
+			for _, hash := range strings.Fields(string(b)) {
+				edge[hash] = true
+			}
+		}
+	}
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		hash, rest, _ := strings.Cut(line, " ")
+		if hash == "" || edge[hash] {
+			continue
+		}
+		lines = append(lines, rest)
+	}
+	return lines, nil
+}
+
+// The history checks leave out a merge that a shallow checkout has cut from
+// its parents.
+//
+// They read the history with --no-merges, to leave out the merge GitHub
+// makes for a pull request's CI. CI checks that merge out one commit deep,
+// and git cannot see the parents of a commit at the edge of a shallow
+// history: a merge whose parents were not fetched is a commit with none,
+// which --no-merges keeps. So on a pull request the AUTHORS check read the
+// one commit it meant to leave out, and nothing else, and held the address
+// GitHub wrote it under to AUTHORS.
+func TestTheHistoryChecksLeaveOutAMergeAShallowCheckoutCutOff(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git here")
+	}
+	dir := t.TempDir()
+	src, clone := filepath.Join(dir, "src"), filepath.Join(dir, "clone")
+	git := func(by string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=x", "GIT_AUTHOR_EMAIL="+by, "GIT_COMMITTER_NAME=x", "GIT_COMMITTER_EMAIL="+by)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	const wrote, merged = "wrote@example.com", "merged@example.com"
+	git(wrote, "init", "-q", src)
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "one")
+	git(wrote, "-C", src, "checkout", "-q", "-b", "side")
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "two")
+	git(wrote, "-C", src, "checkout", "-q", "-")
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "three")
+	git(merged, "-C", src, "merge", "-q", "--no-ff", "-m", "merge", "side")
+	git(wrote, "clone", "-q", "--depth", "1", "file://"+filepath.ToSlash(src), clone)
+
+	full, err := writtenCommits(src, "%ae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full) != 3 || slices.Contains(full, merged) {
+		t.Fatalf("the whole history's written commits are by %v; want three by %s", full, wrote)
+	}
+	shallow, err := writtenCommits(clone, "%ae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(shallow, merged) {
+		t.Errorf("a checkout one commit deep of a merge reads as a commit %s wrote: %v", merged, shallow)
 	}
 }
 
@@ -379,14 +470,13 @@ func TestAUTHORSListsEveryAuthorInTheHistory(t *testing.T) {
 // carried a Signed-off-by line. The sign-off is what CONTRIBUTING.md asks of
 // a contribution; it is not what the history so far has.
 func TestTheProposalSaysTheHistoryIsSignedOffOnlyIfItIs(t *testing.T) {
-	out, err := exec.Command("git", "log", "--no-merges",
-		"--format=%h %(trailers:key=Signed-off-by,valueonly,separator=;)").Output()
+	written, err := writtenCommits(".", "%(trailers:key=Signed-off-by,valueonly,separator=;)")
 	if err != nil {
 		t.Skipf("git log: %v", err)
 	}
 	unsigned := 0
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if f := strings.Fields(line); len(f) == 1 {
+	for _, signers := range written {
+		if strings.TrimSpace(signers) == "" {
 			unsigned++
 		}
 	}
