@@ -196,19 +196,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		// out was cleared: an agent renaming a chatbot wiped the pages it
 		// must never read, and its instructions, and it then answered from
 		// the pages it had been kept from. Given empty, a setting is
-		// cleared, as asked.
-		given := func(k string, into func(string)) {
+		// cleared, as asked. What it may be given is what an author may
+		// build on every surface (assistant.Building).
+		bot.Name = name
+		for _, k := range assistant.Building {
 			if _, ok := a[k]; ok {
-				into(str(k))
+				bot.Build(k, str(k))
 			}
 		}
-		bot.Name = name
-		given("title", func(v string) { bot.Title = v })
-		given("greeting", func(v string) { bot.Greeting = v })
-		given("instructions", func(v string) { bot.Instructions = v })
-		given("pages", func(v string) { bot.Pages = splitList(v) })
-		given("exclude", func(v string) { bot.Exclude = splitList(v) })
-		given("refusal", func(v string) { bot.Refusal = v })
 		bot.Public = false
 		if err := set.Put(bot); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}

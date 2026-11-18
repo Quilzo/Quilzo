@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -120,5 +121,61 @@ func TestAReaderTriesAChatbotOnTheScreenAndReadsNoVisitorsWords(t *testing.T) {
 	decideForm(t, author, "/assistants/gaps", token, url.Values{"name": {"help"}, "do": {"close"}, "key": {"zqbarra"}})
 	if closed != 1 {
 		t.Error("an author could not close a group")
+	}
+}
+
+// An author builds a chatbot that is not public on the Chatbots screen, as
+// on the command line and over the agent interface: what it is called and
+// says and which pages it reads. The rest is shown to them, switched off,
+// and stays a publisher's, as does any change to a public chatbot. The
+// screen let only a publisher save, while an author's agent changed the
+// same settings through declare_assistant.
+func TestAnAuthorBuildsAPrivateChatbotOnTheScreen(t *testing.T) {
+	fa := &fakeAssistants{set: &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help",
+		Exclude: []string{"returns"}, UseModel: true, Collections: []string{"orders"}}}}}
+	author, token := asRole(t, auth.RoleAuthor)
+	author.Assistants = fa.wire()
+	body := get(t, author, "/assistants/help", token).Body.String()
+	if !strings.Contains(body, `action="/assistants/save"`) || !strings.Contains(body, `id="title" name="title"`) {
+		t.Fatal("an author is not given the settings they may change")
+	}
+	for _, field := range []string{"collections", "route", "handoff_days", "nudge"} {
+		if !regexp.MustCompile(`<input id="` + field + `"[^>]* disabled`).MatchString(body) {
+			t.Errorf("%s, a publisher's, is not switched off for an author", field)
+		}
+	}
+	if strings.Contains(body, `action="/assistants/action"`) || strings.Contains(body, `action="/assistants/remove"`) {
+		t.Error("an author is offered what a chatbot may do, or its removal")
+	}
+	// As the browser posts it, and with what a switched-off field would
+	// have said added by hand: only what an author builds changes.
+	decideForm(t, author, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Front desk"}, "greeting": {"Hi"}, "instructions": {""}, "refusal": {""}, "pages": {""},
+		"exclude": {"returns, legal"}, "public": {"1"}, "collections": {""}})
+	a, _ := fa.set.Get("help")
+	if a.Title != "Front desk" || a.Greeting != "Hi" || strings.Join(a.Exclude, ",") != "returns,legal" {
+		t.Errorf("what an author builds did not change: %+v", a)
+	}
+	if a.Public || !a.UseModel || strings.Join(a.Collections, ",") != "orders" {
+		t.Errorf("an author changed what is a publisher's: %+v", a)
+	}
+	decideForm(t, author, "/assistants/save", token, url.Values{"name": {"spare"}, "title": {"Spare"}})
+	if b, ok := fa.set.Get("spare"); !ok || b.Public {
+		t.Errorf("an author could not make a private chatbot: %+v %v", b, ok)
+	}
+	decideForm(t, author, "/assistants/remove", token, url.Values{"name": {"spare"}})
+	if _, ok := fa.set.Get("spare"); !ok {
+		t.Error("an author removed a chatbot")
+	}
+
+	// Public, it is a publisher's to change.
+	a.Public = true
+	fa.set.Put(a)
+	if body := get(t, author, "/assistants/help", token).Body.String(); strings.Contains(body, `action="/assistants/save"`) {
+		t.Error("an author is offered the settings of a public chatbot")
+	}
+	decideForm(t, author, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Renamed"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Front desk" {
+		t.Errorf("an author changed a public chatbot: %+v", a)
 	}
 }

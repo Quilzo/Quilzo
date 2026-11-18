@@ -111,7 +111,8 @@ func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Nav": "assistants", "Title": "Chatbots", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
-		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanSave":  s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
+		"CanBuild": s.mayBuild(p),
 	}
 	if s.Assistants == nil || s.Assistants.Load == nil {
 		data["Unavailable"] = "This build was started without assistant " +
@@ -178,6 +179,10 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
+	// An author builds one that is not public, and is shown the rest of
+	// its settings switched off (Locked): they are a publisher's.
+	data["CanBuild"] = !a.Public && s.mayBuild(p)
+	data["Locked"] = !data["CanSave"].(bool)
 	if s.Assistants.Documents != nil {
 		if docs, derr := s.Assistants.Documents(); derr == nil {
 			on := map[string]bool{}
@@ -312,15 +317,33 @@ func (s *Server) handleAssistantGaps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.assistantWrite(w, r)
+	p, ok := s.assistantWriteAt(w, r, auth.ActEditDraft)
 	if !ok {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	back := "/assistants"
 	full := r.FormValue("full") == "1"
+	publisher := s.allows(p, auth.ActPublish, "/")
 	err := s.changeAssistants(p, "declare", name, func(set *assistant.Set) error {
 		a, existed := set.Get(name)
+		if !publisher && existed && a.Public {
+			back = "/assistants/" + url.PathEscape(name)
+			return fmt.Errorf("%s is public: a publisher changes it", name)
+		}
+		if !publisher && full {
+			// An author builds it (assistant.Building), and the rest is
+			// kept as it is, whatever the form says of it.
+			if !existed {
+				a = assistant.Assistant{Name: name}
+			}
+			for _, k := range assistant.Building {
+				if _, given := r.PostForm[k]; given {
+					a.Build(k, r.PostForm.Get(k))
+				}
+			}
+			return set.Put(a)
+		}
 		if existed && !full {
 			// The New chatbot form posts here without full=1, as an edit
 			// would; on a name in use it retitled that chatbot, a public
@@ -473,6 +496,22 @@ const errNoSuchAssistant = assistantError("there is no assistant by that name")
 // A public assistant is a new way for anybody on the internet to reach what
 // the site says and what it offers to do.
 func (s *Server) assistantWrite(w http.ResponseWriter, r *http.Request) (principal, bool) {
+	return s.assistantWriteAt(w, r, auth.ActPublish)
+}
+
+// mayBuild is whether p builds a chatbot that is not public here: what it
+// is called and says and which pages it reads (assistant.Building), as
+// `assistant add` and declare_assistant let an author. Only a publisher
+// could save on this screen, while an author's agent changed the same
+// settings over the agent interface.
+func (s *Server) mayBuild(p principal) bool {
+	return s.allows(p, auth.ActEditDraft, "/") && !p.Limits.ReadOnly
+}
+
+// assistantWriteAt is assistantWrite for somebody who may act: edit-draft
+// for building a chatbot that is not public, which the save itself holds
+// to assistant.Building for anybody who may not publish.
+func (s *Server) assistantWriteAt(w http.ResponseWriter, r *http.Request, act auth.Action) (principal, bool) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "this changes an assistant and takes a POST",
@@ -483,7 +522,7 @@ func (s *Server) assistantWrite(w http.ResponseWriter, r *http.Request) (princip
 	if !ok {
 		return principal{}, false
 	}
-	if !s.can(w, r, p, auth.ActPublish, "/") {
+	if !s.can(w, r, p, act, "/") {
 		return principal{}, false
 	}
 	if s.Assistants == nil || s.Assistants.Load == nil || s.Assistants.Save == nil {

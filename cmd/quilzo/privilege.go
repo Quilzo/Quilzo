@@ -327,7 +327,11 @@ var commandNeeds = map[string]need{
 	"templates": {action: auth.ActEditDraft},
 	// Declaring a chatbot is a publish: a public one is a new way for anybody
 	// on the internet to reach what the site says and what it offers to do.
-	"assistant":      {action: auth.ActPublish},
+	"assistant": {action: auth.ActPublish},
+	// Building one that is not public, what it is called and says and
+	// which pages it reads, is an author's, as over the agent interface;
+	// the command asks publish itself for the rest, and of a public one.
+	"assistant add":  {action: auth.ActEditDraft},
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},

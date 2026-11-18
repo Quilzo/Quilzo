@@ -567,6 +567,47 @@ func (s *Set) Launcher() (Assistant, bool) {
 	return Assistant{}, false
 }
 
+// Building is what of a chatbot that is not public an author may change,
+// on every surface: what it is called and says, and which pages it reads.
+// The rest reaches the public or spends on its behalf, and is a
+// publisher's: making it public, its model and route, the records and
+// documents it reads, what it offers to do, and where it appears. An
+// author's agent was let do this over the agent interface while the
+// command line and the Chatbots screen asked the author for publish.
+var Building = []string{"title", "greeting", "instructions", "refusal", "pages", "exclude"}
+
+// Build sets one of Building to what a person or an agent gave: page
+// prefixes comma-separated, the rest as text. It reports false for a
+// setting that is not one of Building, which it leaves as it is.
+func (a *Assistant) Build(setting, value string) bool {
+	value = strings.TrimSpace(value)
+	switch setting {
+	case "title":
+		a.Title = value
+	case "greeting":
+		a.Greeting = value
+	case "instructions":
+		a.Instructions = value
+	case "refusal":
+		a.Refusal = value
+	case "pages", "exclude":
+		var list []string
+		for _, p := range strings.Split(value, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				list = append(list, p)
+			}
+		}
+		if setting == "pages" {
+			a.Pages = list
+		} else {
+			a.Exclude = list
+		}
+	default:
+		return false
+	}
+	return true
+}
+
 // Put adds or replaces one, after validating it.
 func (s *Set) Put(a Assistant) error {
 	// The launcher's pages and the nudge's are named as the pages it reads

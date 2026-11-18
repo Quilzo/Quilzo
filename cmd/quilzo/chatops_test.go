@@ -145,12 +145,13 @@ func TestRedeclaringAChatbotKeepsWhatItDoesNotName(t *testing.T) {
 	}
 }
 
-// chatbotMCPAs is the chatbot operations over the agent interface, as who, on a
-// store whose policy says what each person may do.
-func chatbotMCPAs(root, who string) *mcp.Server {
+// chatbotMCPAs is the chatbot operations over the agent interface, as who
+// holding a token for role, on a store whose policy says what each person
+// may do.
+func chatbotMCPAs(root, who string, role auth.Role) *mcp.Server {
 	srv := mcp.NewServer("quilzo", "test")
 	srv.Authorise = func(mcp.Operation) error { return nil }
-	registerAssistantOps(srv, root, &Caller{Name: who, Kind: audit.KindHuman, Verified: true})
+	registerAssistantOps(srv, root, &Caller{Name: who, Role: role, Scope: "/", Kind: audit.KindHuman, Verified: true})
 	return srv
 }
 
@@ -401,5 +402,54 @@ func TestAnAuthorReadsAndClosesAChatbotsGapsOnTheCommandLine(t *testing.T) {
 	}
 	if err := chatbotAs(t, root, tokens, "rita", "gaps", "desk"); err == nil {
 		t.Error("a reader read visitors' unanswered questions")
+	}
+}
+
+// Building a private chatbot, what it is called and says and which pages
+// it reads, is an author's on every surface, as it was over the agent
+// interface; the rest of it is a publisher's everywhere. declare_assistant
+// let an author's agent rename a chatbot and change what it reads, while
+// `assistant add` refused the author the same ("publish needs publisher").
+func TestAnAuthorBuildsAPrivateChatbotOnEverySurface(t *testing.T) {
+	root, tokens := chatbotPeople(t)
+	if err := chatbotAs(t, root, tokens, "ed", "add", "desk", "--title", "Front desk", "--greeting", "Hello"); err != nil {
+		t.Fatalf("an author was refused building a private chatbot: %v", err)
+	}
+	if a, _ := loadAssistant(root, "desk"); a.Title != "Front desk" || a.Greeting != "Hello" || strings.Join(a.Exclude, ",") != "returns" {
+		t.Errorf("built: %+v", a)
+	}
+	if err := chatbotAs(t, root, tokens, "ed", "add", "spare", "--title", "Spare", "--pages", "delivery"); err != nil {
+		t.Errorf("an author was refused a new private chatbot: %v", err)
+	}
+	for _, flags := range [][]string{{"--public"}, {"--model"}, {"--collections", "orders"}, {"--handoff"}} {
+		if err := chatbotAs(t, root, tokens, "ed", append([]string{"add", "desk"}, flags...)...); err == nil {
+			t.Errorf("an author changed what is a publisher's: %v", flags)
+		}
+	}
+	if err := chatbotAs(t, root, tokens, "rita", "add", "desk", "--title", "Mine"); err == nil {
+		t.Error("a reader changed a chatbot")
+	}
+	if _, merr := callTool(t, chatbotMCPAs(root, "rita", auth.RoleReader), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "desk", "title": "Mine"}); merr == nil {
+		t.Error("a reader's agent changed a chatbot")
+	}
+	if _, merr := callTool(t, chatbotMCPAs(root, "ed", auth.RoleAuthor), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "desk", "refusal": "Ask at the desk"}); merr != nil {
+		t.Errorf("an author's agent was refused: %s", merr.Message)
+	}
+
+	// Public, it is a publisher's to change, everywhere.
+	if err := chatbotAs(t, root, tokens, "pat", "add", "desk", "--public"); err != nil {
+		t.Fatal(err)
+	}
+	if err := chatbotAs(t, root, tokens, "ed", "add", "desk", "--title", "Renamed"); err == nil {
+		t.Error("an author changed a public chatbot")
+	}
+	if _, merr := callTool(t, chatbotMCPAs(root, "ed", auth.RoleAuthor), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "desk", "title": "Renamed"}); merr == nil {
+		t.Error("an author's agent changed a public chatbot")
+	}
+	if a, _ := loadAssistant(root, "desk"); a.Title != "Front desk" || a.Refusal != "Ask at the desk" || !a.Public {
+		t.Errorf("the chatbot is %+v", a)
 	}
 }

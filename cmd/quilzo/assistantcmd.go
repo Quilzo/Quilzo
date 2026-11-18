@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -108,7 +109,16 @@ func saveAssistant(root string, caller *Caller, action, name string,
 
 	// Publish, not edit: a public assistant is a new way for anybody on the
 	// internet to reach what this site says, and what it may offer to do.
-	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+	return saveAssistantAt(root, caller, auth.ActPublish, action, name, change)
+}
+
+// saveAssistantAt is saveAssistant for a caller who may act: edit-draft
+// for building a chatbot that is not public (assistant.Building), which
+// change asks publish of again when the chatbot it finds is public.
+func saveAssistantAt(root string, caller *Caller, act auth.Action, action, name string,
+	change func(*assistant.Set) error) error {
+
+	if err := authorise(root, caller, act, "/"); err != nil {
 		return err
 	}
 	path := assistantsPath(root)
@@ -187,6 +197,18 @@ func assistantAdd(root string, args []string) error {
 	// by naming it, --public=false, as it is turned on.
 	named := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { named[f.Name] = true })
+	// Building a chatbot that is not public, what it is called and says
+	// and which pages it reads, is an author's, as declare_assistant lets
+	// an author's agent; anything else this command names is a
+	// publisher's, and so is any change to a public chatbot. The whole
+	// command asked for publish, so an author was refused here what their
+	// agent did over the agent interface.
+	act := auth.ActEditDraft
+	for f := range named {
+		if !slices.Contains(assistant.Building, f) {
+			act = auth.ActPublish
+		}
+	}
 	var qs []string
 	for _, q := range strings.Split(*suggest, "|") {
 		if q = strings.TrimSpace(q); q != "" {
@@ -241,8 +263,13 @@ func assistantAdd(root string, args []string) error {
 	}
 	a := assistant.Assistant{Name: pos[0]}
 	caller := resolveCaller(root, flagToken)
-	err := saveAssistant(root, caller, "declare", a.Name, func(s *assistant.Set) error {
+	err := saveAssistantAt(root, caller, act, "declare", a.Name, func(s *assistant.Set) error {
 		if old, ok := s.Get(a.Name); ok {
+			if old.Public && act != auth.ActPublish {
+				if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
+					return err
+				}
+			}
 			a = old
 			if a.Launcher != nil {
 				l := *a.Launcher
