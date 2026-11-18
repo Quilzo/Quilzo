@@ -323,8 +323,78 @@ func TestExistingStylesAreGeneratedAsTheyWere(t *testing.T) {
 	}
 }
 
+// readableNow and readableBefore are the rules that drew words below their
+// ratio: the hero's standfirst and a featured plan's "/month" under an
+// opacity, the hero's chip on a tint of its own text, the hero's wash
+// moving it towards its words, a band's standfirst in a colour no pair holds
+// against the band, and the wordmarks faded. Each is a fix to a page somebody
+// published, measured in cmd/quilzo's TestEveryWordSiteNewDrawsIsReadable.
+var readableNow, readableBefore = []string{
+	`.tone-accent a:not(.btn), .tone-primary a:not(.btn),
+.tone-accent .btn-outlined, .tone-primary .btn-outlined { color: inherit; }
+/* A standfirst on a tinted band takes the band's text colour too. It kept
+   the secondary text colour, which the theme checks against the page and a
+   card and never against a band, and a closing band's standfirst read at
+   2.59:1 on sites that passed every check. */
+.tone-accent .lead, .tone-primary .lead { color: inherit; }
+`,
+	`/* The hero's standfirst and chip are in the hero's own text colour on the
+   hero's own background, the pair the theme checks. The standfirst was faded
+   with an opacity and the chip sat on a tint of the text, and the palette
+   generator places that pair at exactly the ratio it needs, so both were
+   below it on every generated site (3.7:1 and 2.7:1) and no check saw them.
+   The chip is drawn as an outline instead of a tint. */
+.hero .lead { color: inherit; }
+.hero .chip { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }
+`,
+	`/* A CSS-drawn surface, for a hero that wants an image and does not have one.
+   Two radial washes over the token palette — no bytes, no request, and it
+   recolours with the theme instead of fighting it.
+   The washes are of the lowest surface, which is lighter than the hero in
+   the light scheme and darker in the dark, so they only ever move the hero
+   away from its words. They were of the accent and the second accent, which
+   moved it towards them wherever those were darker in light or lighter in
+   dark, and the hero's heading read at 2.7:1 on generated palettes the
+   theme had checked at 4.5:1. */
+.surface-wash {
+  background:
+    radial-gradient(120% 90% at 12% 8%, color-mix(in srgb, var(--surface-container-lowest) 40%, transparent), transparent 60%),
+    radial-gradient(90% 70% at 92% 92%, color-mix(in srgb, var(--surface-container-lowest) 24%, transparent), transparent 62%),
+`,
+	`  /* Not faded: a wordmark is words, and an opacity of 0.75 put the
+     secondary text colour, which is checked unfaded, below its ratio. */
+  color: var(--on-surface-variant);
+}
+`,
+	`/* Unfaded: an opacity on the featured plan's "/month" put it at 3.3:1. */
+.plan.featured .price .period { color: inherit; }
+`,
+}, []string{
+	`.tone-accent a:not(.btn), .tone-primary a:not(.btn),
+.tone-accent .btn-outlined, .tone-primary .btn-outlined { color: inherit; }
+`,
+	`.hero .lead { color: inherit; opacity: 0.88; }
+.hero .chip { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
+`,
+	`/* A CSS-drawn surface, for a hero that wants an image and does not have one.
+   Two radial washes and a conic sheen over the token palette — no bytes, no
+   request, and it recolours with the theme instead of fighting it. */
+.surface-wash {
+  background:
+    radial-gradient(120% 90% at 12% 8%, color-mix(in srgb, var(--primary) 26%, transparent), transparent 60%),
+    radial-gradient(90% 70% at 92% 92%, color-mix(in srgb, var(--tertiary-container) 55%, transparent), transparent 62%),
+`,
+	`  color: var(--on-surface-variant);
+  opacity: 0.75;
+}
+`,
+	`.plan.featured .price .period { color: inherit; opacity: 0.8; }
+`,
+}
+
 // The components are what they were, with the opt-in rules after them and
-// the centred eyebrow, the page transitions and the meter as the changes.
+// the centred eyebrow, the page transitions, the meter and the rules that
+// drew words below their ratio as the changes.
 func TestTheComponentsOnlyGrew(t *testing.T) {
 	c := Components()
 	added := Backdrops()
@@ -343,8 +413,14 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 	before = strings.Replace(before, answerAnchor, transitionsMoved+answerAnchor, 1)
 	before = strings.Replace(before, meterNote, "", 1)
 	before = strings.Replace(before, meterFillNow, meterFillBefore, 1)
+	for i, now := range readableNow {
+		if strings.Count(before, now) != 1 {
+			t.Fatalf("readable rule %d is not where this test expects it", i)
+		}
+		before = strings.Replace(before, now, readableBefore[i], 1)
+	}
 	if got := sum(before); got != componentsBefore {
-		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions and the meter: %s", got)
+		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions, the meter and the readable rules: %s", got)
 	}
 }
 
