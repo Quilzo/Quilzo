@@ -243,3 +243,29 @@ func TestTheUnmarkedWaiverIsInThePublishRecord(t *testing.T) {
 		t.Errorf("the publish record does not say what was waived, and why: %v", last.Detail)
 	}
 }
+
+// A publish whose accessibility was not checked says so in its own record,
+// however the check came to be off. With publish.require_a11y off, adding
+// --no-a11y-check left no trace at all: the record of the setting was
+// written only without the flag, and the publish record named the skip
+// only with the setting on, so the publication read the same as a checked
+// one.
+func TestAPublishNotCheckedByTheSettingAndTheFlagSaysSo(t *testing.T) {
+	root := newStoreWithDraft(t)
+	if err := runCmd(t, root, "provenance", "set", "index",
+		"--source", "humanEdits", "--author", "someone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "publish.require_a11y", "false",
+		"--accept-risk", "rendered by another system"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+		t.Fatalf("with the check off by the setting, the flag was refused: %v", err)
+	}
+	recs := publishRecords(t, root)
+	last := recs[len(recs)-1]
+	if last.Detail["commit"] == "" || last.Detail["a11y"] != "not checked" {
+		t.Errorf("the publish record does not say accessibility was not checked: %v", last.Detail)
+	}
+}

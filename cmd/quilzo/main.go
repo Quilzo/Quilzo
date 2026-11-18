@@ -2071,11 +2071,14 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if cfg, cerr := loadConfig(root); cerr == nil && cfg != nil {
 		required = cfg.Bool("publish.require_a11y")
 	}
-	if !required && !*skip {
+	if !required {
 		// Recorded, because a configured skip is still a skip and the audit
 		// log is where "this publication was not checked" has to be legible.
 		// --no-a11y-check records the same thing per command; this records it
-		// per publication, which is the point of moving the decision.
+		// per publication, which is the point of moving the decision. With
+		// the flag as well, too: this was written only without it, and the
+		// publish record named only a skip the setting had not already made,
+		// so the two together left no trace that nothing was checked.
 		record(root, caller.auditRecord("publish", "/", audit.Success,
 			map[string]string{
 				"a11y": "not checked",
@@ -2233,7 +2236,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		published["waived"] = strings.Join(waived, ",")
 		published["reason"] = *reason
 	}
-	if required && *skip {
+	if !required || *skip {
 		published["a11y"] = "not checked"
 	}
 	record(root, caller.auditRecord("publish", "/", audit.Success, published))
