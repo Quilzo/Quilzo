@@ -1164,3 +1164,122 @@ func TestARunIsBoundedByWhatItsStarterMayDoNow(t *testing.T) {
 		}
 	}
 }
+
+// A run is bounded at the role its starter holds on every page of the part
+// of the site it is bounded to, and not at the highest they hold on any:
+// a run is one role over one part, and nothing asks the access policy
+// again of each page it writes. Somebody the policy grants no role, or
+// none still in force, holds none, though others are granted something.
+//
+// Held to the highest role within the part (auth.Policy.Carries), dana,
+// reader of the site and author of /about, ran an agent with an
+// administrator's token from before that wrote the returns page as an
+// author, and so did she as an author of /about and of /blog, the
+// narrowest part holding both being the whole site. Denied author over the
+// site, an administrator's run wrote it as an administrator; and demoted
+// to the permission to run agents and nothing else, or with her
+// administrator's grant ended, she was kept at her token's role, as
+// somebody the policy says nothing about is, and her run wrote it as one.
+func TestARunIsBoundedAtTheRoleItsStarterHoldsOnEveryPageOfIt(t *testing.T) {
+	ended := time.Now().Add(-time.Hour).Unix()
+	for name, c := range map[string]struct {
+		grants []auth.Binding
+		bound  agent.Bound
+	}{
+		"a reader of the site and an author of /about": {[]auth.Binding{
+			{Principal: "dana", Role: auth.RoleReader, Resource: "/"},
+			{Principal: "dana", Role: auth.RoleAuthor, Resource: "/about"},
+		}, agent.Bound{Role: string(auth.RoleReader), Scope: "/"}},
+		"an author of /about and of /blog": {[]auth.Binding{
+			{Principal: "dana", Role: auth.RoleAuthor, Resource: "/about"},
+			{Principal: "dana", Role: auth.RoleAuthor, Resource: "/blog"},
+		}, agent.Bound{Role: string(auth.RoleNone), Scope: "/"}},
+		"an administrator denied author over the site": {[]auth.Binding{
+			{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"},
+			{Principal: "dana", Role: auth.RoleAuthor, Resource: "/", Deny: true},
+		}, agent.Bound{Role: string(auth.RoleReader), Scope: "/"}},
+		"somebody granted no role, only the permission to run agents": {nil,
+			agent.Bound{Role: string(auth.RoleNone), Scope: "/"}},
+		"an administrator whose grant has ended": {[]auth.Binding{
+			{Principal: "dana", Role: auth.RoleAdmin, Resource: "/", Expires: ended},
+		}, agent.Bound{Role: string(auth.RoleNone), Scope: "/"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("QUILZO_TOKEN", "")
+			root := demoStore(t)
+			declaredAutonomy(t, root)
+			alone := asker("alone")
+			alone.AskFirst = nil
+			alone.Budget.Tools = 4
+			if err := declareAgent(root, alone, true, true, asAdmin("sam")); err != nil {
+				t.Fatal(err)
+			}
+			// Reads the pages, then writes the returns page, then is done.
+			var mu sync.Mutex
+			after := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				choice := `{"op":"list_pages"}`
+				if !strings.Contains(string(b), "Nothing has been done yet") {
+					mu.Lock()
+					if after++; after == 1 {
+						choice = `{"op":"write_page","input":{"page":"returns","fields":` +
+							`{"title":"Not hers","body":"Returns are not hers to change.","updated":"2026-11-01"}}}`
+					} else {
+						choice = `{"op":"done","say":"written"}`
+					}
+					mu.Unlock()
+				}
+				out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+					"message": map[string]any{"role": "assistant", "content": choice}}}})
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(out)
+			}))
+			t.Cleanup(srv.Close)
+			t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+			t.Setenv("QUILZO_MODEL", "stand-in")
+			t.Setenv("QUILZO_MODEL_KEY", "")
+
+			// dana's token, issued while she administered the store.
+			seedPolicy(t, root, [2]string{"sam", "admin"}, [2]string{"dana", "admin"})
+			ts, _ := loadTokens(root)
+			secret, _, err := ts.Issue("dana-cli", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := saveJSON(tokensPath(root), ts); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := updatePolicy(root, func(p *auth.Policy) error {
+				p.Revoke("dana", auth.RoleAdmin, "/")
+				for _, b := range c.grants {
+					if err := p.Grant(b); err != nil {
+						return err
+					}
+				}
+				return p.Grant(auth.Binding{Principal: "dana", Permission: auth.ActRunAgents, Resource: auth.AreaAgents})
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			dana := resolveCaller(root, secret)
+			if !dana.Verified || dana.Name != "dana" {
+				t.Fatalf("dana is not who the token says: %s", dana.Why)
+			}
+			id, out, err := runAgentKept(context.Background(), root, "alone", "tidy the pages", true, dana)
+			for _, st := range out.Trace.Steps {
+				if st.Action.Op == "write_page" && st.Allowed && st.Err == "" {
+					t.Errorf("a run dana started wrote %v (%v)\n%s", st.Action.Input["page"], err, describeRun(out.Trace))
+				}
+			}
+			rec, err := loadAgentRun(root, id)
+			if err != nil || rec.Bound == nil || rec.Bound.Role != c.bound.Role || rec.Bound.Scope != c.bound.Scope {
+				t.Errorf("a run dana started is bounded at %+v (%v), not at %+v", rec.Bound, err, c.bound)
+			}
+			if a, err := could(root, "alone", "write_page", "returns", false, false, dana); err != nil || a.Could {
+				t.Errorf("agent could says a run dana starts could write the returns page (%s) %v", a.Why, err)
+			}
+		})
+	}
+}

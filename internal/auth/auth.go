@@ -524,10 +524,9 @@ func (p *Policy) Highest(principal string) Role {
 		}
 	}
 	p.mu.RUnlock()
-	defining := map[Role]Action{RoleAdmin: ActGrant, RolePublisher: ActPublish, RoleAuthor: ActEditDraft, RoleReader: ActView}
 	best := RoleNone
 	for _, b := range held {
-		if b.Role.AtLeast(best) && b.Role != best && p.Evaluate(principal, defining[b.Role], b.Resource).Allowed {
+		if b.Role.AtLeast(best) && b.Role != best && p.Evaluate(principal, definingAction[b.Role], b.Resource).Allowed {
 			best = b.Role
 		}
 	}
@@ -1775,8 +1774,8 @@ func (p *Policy) Carries(principal string, role Role, resource string) Role {
 // on: resource itself when a role is granted on it or above it, and
 // otherwise the narrowest path holding every role granted inside it. It is
 // empty when they are granted roles only outside resource, so hold nothing
-// in it, and resource when they are granted no role at all, which keeps a
-// credential over it as it is, as Carries keeps a token's role for them.
+// in it, and resource when they are granted no role at all, where no part
+// is narrower than another: what they hold there is HeldThroughout's to say.
 //
 // What a run is bounded to is one part of the site (agent.Bound), and a
 // token's path is no more than a ceiling over it. A run read its part from
@@ -1824,6 +1823,39 @@ func (p *Policy) PartWithin(principal, resource string) string {
 	}
 	return part
 }
+
+// HeldThroughout is the highest role a principal may use everywhere in
+// resource: the highest granted on it or above it, and below any role or
+// permission denied there that it, or one under it, is asked by, as
+// Evaluate decides. A role granted only inside it is held on part of it,
+// and does not count.
+//
+// What a run is bounded at is one role over one part of the site
+// (agent.Bound), and nothing asks the policy again of each page it writes,
+// so the role has to hold on every page of that part. Bounded at the
+// highest role held anywhere in it (Carries, StrongestWithin), a run dana
+// started as a reader of the site and an author of /about wrote the
+// returns page as an author, and so did one started by an author of /about
+// and of /blog, the narrowest part holding both being the whole site. An
+// administrator denied author over the site wrote it as an administrator.
+// A role denied only somewhere inside the part is not one a single bound
+// can leave out, and this does not.
+func (p *Policy) HeldThroughout(principal, resource string) Role {
+	granted := p.StrongestRole(principal, resource)
+	held := RoleNone
+	for _, r := range Roles {
+		if !granted.AtLeast(r) || !p.Evaluate(principal, definingAction[r], resource).Allowed {
+			break
+		}
+		held = r
+	}
+	return held
+}
+
+// definingAction is the action that holding each role is asked by: the
+// one it is the lowest role to be allowed.
+var definingAction = map[Role]Action{RoleAdmin: ActGrant, RolePublisher: ActPublish,
+	RoleAuthor: ActEditDraft, RoleReader: ActView}
 
 // Snapshot returns a copy of the bindings.
 //

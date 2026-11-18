@@ -938,3 +938,54 @@ func TestThePartOfTheSiteHeldIsNoWiderThanTheRolesGranted(t *testing.T) {
 		}
 	}
 }
+
+// The role held throughout a part of the site is the one granted on it or
+// above it, below a role or permission denied there: not a role granted on
+// only some of it, a grant that has ended, a permission, or a role a
+// guarded area does not let reach it.
+//
+// A run is one role over one part, and was bounded at the highest held
+// anywhere in it, so a reader of the site who is an author of /about ran
+// an agent that wrote the returns page as an author.
+func TestTheRoleHeldThroughoutAPartIsOneHeldOnEveryPageOfIt(t *testing.T) {
+	ended := time.Now().Add(-time.Hour).Unix()
+	p := &Policy{Bindings: []Binding{
+		{Principal: "dana", Role: RoleReader, Resource: "/"},
+		{Principal: "dana", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/blog"},
+		{Principal: "ana", Role: RoleAdmin, Resource: "/"},
+		{Principal: "ana", Role: RoleAuthor, Resource: "/", Deny: true},
+		{Principal: "kim", Role: RoleAdmin, Resource: "/"},
+		{Principal: "kim", Role: RolePublisher, Resource: "/legal", Deny: true},
+		{Principal: "lou", Role: RoleAdmin, Resource: "/"},
+		{Principal: "lou", Permission: ActPublish, Resource: "/", Deny: true},
+		{Principal: "pat", Permission: ActRunAgents, Resource: AreaAgents},
+		{Principal: "pat", Permission: ActPublish, Resource: "/"},
+		{Principal: "sam", Role: RoleAdmin, Resource: "/", Expires: ended},
+	}}
+	for _, c := range []struct {
+		who, on string
+		held    Role
+	}{
+		{"dana", "/", RoleReader},
+		{"dana", "/about", RoleAuthor},
+		{"dana", "/about/team", RoleAuthor},
+		{"dana", AreaSecurity, RoleNone},
+		{"lee", "/", RoleNone},
+		{"lee", "/blog", RoleAuthor},
+		{"ana", "/", RoleReader},
+		{"ana", "/blog", RoleReader},
+		// A role denied only inside the part is not one it can leave out.
+		{"kim", "/", RoleAdmin},
+		{"kim", "/legal", RoleAuthor},
+		{"lou", "/", RoleAuthor},
+		{"pat", "/", RoleNone},
+		{"sam", "/", RoleNone},
+		{"nobody", "/", RoleNone},
+	} {
+		if got := p.HeldThroughout(c.who, c.on); got != c.held {
+			t.Errorf("%s holds %q throughout %s, want %q", c.who, got, c.on, c.held)
+		}
+	}
+}

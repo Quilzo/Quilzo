@@ -337,10 +337,10 @@ func (c *Caller) bound(root string) *agent.Bound {
 }
 
 // carried is this caller held to what the access policy lets them do now:
-// their token's role no higher than the policy carries for them
-// (auth.Policy.Carries), and its part of the site no wider than the part
-// their roles are granted on (auth.Policy.PartWithin). A run is narrowed
-// by it, and keeps it for whoever takes the run on (bound).
+// their token's part of the site no wider than the part their roles are
+// granted on (auth.Policy.PartWithin), and its role no higher than the one
+// they hold on every page of that part (auth.Policy.HeldThroughout). A run
+// is narrowed by it, and keeps it for whoever takes the run on (bound).
 //
 // A token is a ceiling, and what its holder holds is what they may do
 // under it. A run read its reach from the token alone: dana, an
@@ -350,20 +350,32 @@ func (c *Caller) bound(root string) *agent.Bound {
 // on, wrote the returns page too. A token over the whole site for
 // somebody whose grants are all on /about did the same.
 //
+// The role held on every page, and not the highest held on any
+// (auth.Policy.Carries): a run is one role over one part, and nothing asks
+// again of each page it writes. Held to the highest, a reader of the site
+// who is an author of /about, or an author of /about and of /blog, ran an
+// agent that wrote the returns page as an author, and an administrator
+// denied author over the site wrote it as an administrator.
+//
 // Somebody granted roles only outside the token's part of the site holds
-// nothing in it, which is the lowest reach there is (within). Somebody
-// granted no role at all keeps the token's, as Carries does: in a store
-// nobody has been granted anything in, that is everybody, and the token is
-// all there is to go by. A caller nobody verified is not shown to be the
-// person the policy names, and is left as resolved.
+// nothing in it, which is the lowest reach there is (within), and so does
+// somebody granted no role at all, or none still in force, in a store
+// where others have been granted something: authorise refuses them every
+// role's actions. Kept at the token's role, dana, demoted from
+// administrator to the permission to run agents and nothing else, or whose
+// administrator's grant had ended, ran an agent with her old token that
+// wrote the returns page as an administrator. Only a store nobody has been
+// granted anything in has no policy to hold anybody to, and there the
+// token is all there is to go by. A caller nobody verified is not shown to
+// be the person the policy names, and is left as resolved.
 func (c *Caller) carried(root string) *Caller {
 	if c == nil || !c.Verified {
 		return c
 	}
 	pol, err := loadPolicy(root)
-	if err != nil || pol == nil {
+	if err != nil || pol == nil || len(pol.Snapshot()) == 0 {
 		// Unreadable is refused at every gate (policyInUse), and an absent
-		// policy holds nothing to narrow by.
+		// or empty policy holds nothing to narrow by.
 		return c
 	}
 	out := *c
@@ -375,7 +387,9 @@ func (c *Caller) carried(root string) *Caller {
 	if strings.Trim(part, "/") != strings.Trim(c.Scope, "/") {
 		out.Scope = part
 	}
-	out.Role = pol.Carries(c.Name, c.Role, part)
+	if held := pol.HeldThroughout(c.Name, part); !held.AtLeast(c.Role) {
+		out.Role = held
+	}
 	return &out
 }
 
