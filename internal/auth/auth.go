@@ -852,6 +852,21 @@ func (t Token) Person() bool {
 	return strings.EqualFold(t.Name, "cli") || strings.Contains(t.Name, "@")
 }
 
+// kindOf is the Kind a session exchanged from parent carries: the
+// parent's, or, for one issued before kinds were recorded, what Person
+// judges it, written down.
+//
+// The parent's Kind alone was nothing for such a token, and the session
+// was judged by its own name: "cli (session)" is not "cli", so the session
+// of somebody's own token was a program's, and could not decide the access
+// review its parent could.
+func kindOf(parent Token) string {
+	if parent.Kind == "" && parent.Person() {
+		return KindPerson
+	}
+	return parent.Kind
+}
+
 // RecordKind records whose hands a token is for (Token's Kind).
 func (ts *TokenStore) RecordKind(id, kind string) error {
 	if kind != KindPerson && kind != KindProgram {
@@ -1365,7 +1380,7 @@ func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource st
 		Key:   thumbprint,
 		// Whose hands it is in is whose the token it came from is: a
 		// person's own token exchanged for a session is still theirs.
-		Kind: parent.Kind,
+		Kind: kindOf(*parent),
 		// A token is one factor, and a session made from one is too, until
 		// its person proves themselves another way (see Level).
 		Methods: []string{MethodToken}, AAL: 1, AuthAt: now.Unix(),
@@ -1513,6 +1528,11 @@ func (ts *TokenStore) IssueFederated(name, principal string, role Role, resource
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == t.ID {
 			ts.Tokens[i].ExpiresAt, ts.Tokens[i].Key = now.Add(ttl).Unix(), thumbprint
+			// A program's, as recorded: with no kind it was judged by its
+			// name, which carries the run's id or the assertion's jti as
+			// the other issuer wrote it, and one with an @ in it made a CI
+			// job's token a person's.
+			ts.Tokens[i].Kind = KindProgram
 			t = ts.Tokens[i]
 		}
 	}
