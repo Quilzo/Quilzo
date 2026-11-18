@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -257,8 +258,14 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 				cmd := exec.CommandContext(ctx, os.Args[0], append(append([]string{"quilzo-main"}, a...), words...)...)
 				cmd.Dir = dir
 				cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+				// Both streams go into said, and os/exec copies each from its
+				// own goroutine, so the buffer they share is written under one
+				// lock: unlocked, the race detector reported every run of this
+				// test as a data race.
 				var said, stderr bytes.Buffer
-				cmd.Stdout, cmd.Stderr = &said, io.MultiWriter(&said, &stderr)
+				var mu sync.Mutex
+				cmd.Stdout = lockedWriter{&mu, &said}
+				cmd.Stderr = lockedWriter{&mu, io.MultiWriter(&said, &stderr)}
 				err := cmd.Run()
 				if ctx.Err() != nil {
 					t.Fatalf("`quilzo %s` did not refuse them and went on running", line)
@@ -1246,4 +1253,17 @@ func TestGlobalFlagsStopAtTheDoubleDash(t *testing.T) {
 	if m.Program == nil || !slices.Equal(m.Program.Command, want) {
 		t.Fatalf("the program was declared as %v, want %v", m.Program, want)
 	}
+}
+
+// lockedWriter writes to w under mu, so that writers sharing one buffer from
+// several goroutines, as a command's stdout and stderr do, take turns.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
