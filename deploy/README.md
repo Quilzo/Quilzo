@@ -80,7 +80,9 @@ What each one is for:
 - `init --admin you` makes `you` the first administrator and prints the link
   that adds their passkey. Open it once the stack is up; it works once.
 - `token issue first` is `you`'s token for the commands that come after
-  these (below), and is shown once. A store issues a token without being
+  these (below), and is shown once. As the store's first token, for its
+  only administrator, it is recorded as `you`'s own, so it can do what a
+  person does there, an access review among it. A store issues a token without being
   shown one only while it holds none at all, and signing in to the admin
   makes one, so the first is issued here, before the admin starts.
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
@@ -138,7 +140,9 @@ docker compose run --rm -e QUILZO_TOKEN admin logd status
 Tokens are made on the command line, with an administrator's token: the
 admin has no page for it. The first lasts a week (`token.ttl.default`), so
 make the next before it ends, and one for each person or program that needs
-one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
+one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`,
+with `--person` for a person's own, to use themselves; without it a token is
+recorded as a program's.
 
 ### Heads, receipts and the key that signs them
 

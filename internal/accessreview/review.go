@@ -513,6 +513,10 @@ type Decider struct {
 	Verified bool
 	// Model is what an AI decider runs, for the record that refuses it.
 	Model string
+	// Credential is the name of the token the decider was proved by, when
+	// it was one, so a refusal of a program's token names the token and
+	// not the person it acts as.
+	Credential string
 }
 
 // check refuses a decider who cannot review: nobody named, or not a
@@ -527,6 +531,10 @@ func (d Decider) check() error {
 		return fmt.Errorf("%s is a model. Whether somebody still needs access is a question about what "+
 			"they do all day, which a model cannot see; it may read the list, and a person decides", d.Name)
 	case audit.KindService, audit.KindUnknown:
+		if d.Credential != "" {
+			return fmt.Errorf("the token %s is not recorded as %s's own but as a program's, and a program reviews "+
+				"nothing. Decide with your own sign-in, or with a token issued to you with --person", d.Credential, d.Name)
+		}
 		return fmt.Errorf("%s is a program's credential, not a person: a service token reviews nothing. "+
 			"Decide with your own sign-in", d.Name)
 	}

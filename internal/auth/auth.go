@@ -747,6 +747,21 @@ type Token struct {
 	// minutes.
 	SignIn bool `json:"sign_in,omitempty"`
 
+	// Kind is whose hands the token is for, as whoever issued it said:
+	// KindPerson for somebody's own, which they use themselves, and
+	// KindProgram for a CI job's, an integration's or an agent's (see
+	// Person). A session carries the kind of the token it was exchanged
+	// from, and one a passkey or an identity provider signed somebody in to
+	// is a person's.
+	//
+	// It was guessed from the name. A token named "cli", or one with an @
+	// in it, was a person's and every other a program's, so the first
+	// administrator's token, issued as the install guide says ("first"),
+	// could not start an access review, and the posture scan called a
+	// token an agent's for having "mcp" in its name. Empty on a token
+	// issued before this was recorded.
+	Kind string `json:"kind,omitempty"`
+
 	// StepUp, when set, says why this session must prove its person before
 	// it may do anything else: an automation judged a sign-in, or something
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
@@ -802,6 +817,55 @@ type Token struct {
 	Methods []string `json:"methods,omitempty"`
 	AAL     int      `json:"aal,omitempty"`
 	AuthAt  int64    `json:"auth_at,omitempty"`
+}
+
+// Whose hands a token is for (Token's Kind).
+const (
+	// KindPerson is somebody's own token, which they use themselves: at a
+	// keyboard, on the command line or signing in to the admin.
+	KindPerson = "person"
+	// KindProgram is a program's: a CI job, an integration, an agent.
+	KindProgram = "program"
+)
+
+// Person reports whether the token is a person's own, as recorded when it
+// was issued (Kind), or as a session a passkey or an identity provider
+// signed somebody in to.
+//
+// A token issued before the kind was recorded says nothing, and is judged
+// as it was then, by its name: "cli", or an address, the way people named
+// their own. Judging it a program's instead would have taken from
+// everybody whose own token predates the record what it did the day
+// before (an access review, a connected account), and nobody re-issues a
+// working credential to keep what it already does. Every token issued
+// since says which it is, and is never judged by its name.
+func (t Token) Person() bool {
+	switch t.Kind {
+	case KindPerson:
+		return true
+	case KindProgram:
+		return false
+	}
+	if t.Session {
+		return true
+	}
+	return strings.EqualFold(t.Name, "cli") || strings.Contains(t.Name, "@")
+}
+
+// RecordKind records whose hands a token is for (Token's Kind).
+func (ts *TokenStore) RecordKind(id, kind string) error {
+	if kind != KindPerson && kind != KindProgram {
+		return fmt.Errorf("a token is a %s's or a %s's, not a %q's", KindPerson, KindProgram, kind)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].Kind = kind
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
 }
 
 // How a session was signed in to.
@@ -1068,13 +1132,20 @@ func (ts *TokenStore) IssueSession(name, principal string, role Role,
 	}
 	secret, t, err = ts.issue(name, principal, role, resource, ttl, issuerRole, Scope{},
 		true)
-	if err != nil || len(methods) == 0 {
+	if err != nil {
 		return secret, t, err
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == t.ID {
+			// Somebody a passkey or an identity provider vouched for: a
+			// person, signed in.
+			ts.Tokens[i].Kind = KindPerson
+			t = ts.Tokens[i]
+			if len(methods) == 0 {
+				continue
+			}
 			ts.Tokens[i].Methods = append([]string(nil), methods...)
 			ts.Tokens[i].AAL = LevelOf(methods)
 			ts.Tokens[i].AuthAt = time.Now().Unix()
@@ -1292,6 +1363,9 @@ func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource st
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
 		Key:   thumbprint,
+		// Whose hands it is in is whose the token it came from is: a
+		// person's own token exchanged for a session is still theirs.
+		Kind: parent.Kind,
 		// A token is one factor, and a session made from one is too, until
 		// its person proves themselves another way (see Level).
 		Methods: []string{MethodToken}, AAL: 1, AuthAt: now.Unix(),
@@ -1876,6 +1950,9 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		m.SignIn = m.SignIn || s.SignIn
 		if m.Bound == "" {
 			m.Bound = s.Bound
+		}
+		if m.Kind == "" {
+			m.Kind = s.Kind
 		}
 		if s.LastUsed > m.LastUsed {
 			m.LastUsed = s.LastUsed

@@ -121,7 +121,7 @@ func reviewInputs(root string, events []audit.Event, now time.Time) (accessrevie
 }
 
 func reviewer(c *Caller) accessreview.Decider {
-	return accessreview.Decider{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model}
+	return accessreview.Decider{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model, Credential: c.Credential}
 }
 
 // reviewStart takes the snapshot and opens a review over it.
