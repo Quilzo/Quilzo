@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +38,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(listedDeciders(root, set))
+		b, err := mcpJSON(listedDeciders(root, set))
 		return string(b), err
 	})
 
@@ -101,7 +100,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		recordAsk(root, caller, res, a["state"])
-		b, err := json.Marshal(res)
+		b, err := mcpJSON(res)
 		return string(b), err
 	})
 }

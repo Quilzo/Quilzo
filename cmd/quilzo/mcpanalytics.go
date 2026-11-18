@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/analytics"
@@ -41,7 +40,7 @@ func registerAnalyticsOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, err
 		}
 		s := analytics.Summarise(d)
-		b, err := json.Marshal(map[string]any{"days": days, "views": s.Views, "visitors": s.Visitors,
+		b, err := mcpJSON(map[string]any{"days": days, "views": s.Views, "visitors": s.Visitors,
 			"prefetched": s.Prefetch, "pages": s.Pages, "referrers": s.Referrers,
 			"goals": s.Goals})
 		return string(b), err

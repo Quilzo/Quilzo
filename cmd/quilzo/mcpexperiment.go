@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/analytics"
@@ -39,7 +38,7 @@ func registerExperimentOps(srv *mcp.Server, root string, caller *Caller) {
 		for _, e := range set.Experiments {
 			out = append(out, experiment.Measure(e, days))
 		}
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 }

@@ -122,7 +122,7 @@ func saveGatewayState(root string, st *gatewayState, now time.Time) error {
 		kept = kept[len(kept)-maxHeld:]
 	}
 	st.Held = kept
-	b, err := json.Marshal(st)
+	b, err := mcpJSON(st)
 	if err != nil {
 		return err
 	}

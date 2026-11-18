@@ -154,9 +154,7 @@ func (w *Writer) JSON(v any) bool {
 	// iterating the answer failed where it had no work to do. Here rather
 	// than at each of them, so the next listing cannot forget. An untyped
 	// nil is left as null: that is a command saying there is no such thing.
-	if rv := reflect.ValueOf(v); rv.IsValid() {
-		v = emptyLists(rv, map[onPath]bool{}).Interface()
-	}
+	v = EmptyLists(v)
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
@@ -177,6 +175,21 @@ func (w *Writer) JSON(v any) bool {
 // any command whose stdout was a full disk, exited 0 with nothing written, so
 // a script read the empty output as its answer.
 func (w *Writer) Failed() bool { return w.failed }
+
+// EmptyLists is v as JSON writes it here: with every nil slice and map in
+// it empty, so an empty list is [] and not null (emptyLists).
+//
+// For a document written somewhere other than a Writer. The machine
+// interface answers an agent with JSON it encodes for itself, and went on
+// answering null for an empty list after the command line had stopped:
+// shield_status on a store with nothing in force said "active": null.
+func EmptyLists(v any) any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return v
+	}
+	return emptyLists(rv, map[onPath]bool{}).Interface()
+}
 
 var (
 	jsonMarshaler = reflect.TypeFor[json.Marshaler]()

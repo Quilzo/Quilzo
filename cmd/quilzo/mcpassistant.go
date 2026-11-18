@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -71,7 +70,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		record(root, caller.auditRecord("assistant.gaps.read", "/ask/"+name, audit.Success,
 			map[string]string{"assistant": name, "groups": fmt.Sprint(len(out)), "via": "mcp"}))
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 
@@ -87,7 +86,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Assistants)
+		b, err := mcpJSON(set.Assistants)
 		return string(b), err
 	})
 
@@ -147,7 +146,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			srcs = append(srcs, src{i + 1, h.Page, h.Header()})
 		}
 		out["sources"] = srcs
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 

@@ -48,7 +48,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		for k, v := range extra {
 			out[k] = v
 		}
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	}
 
@@ -259,7 +259,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			}
 			out = append(out, entry)
 		}
-		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
+		b, err := mcpJSON(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
 			"days": days, "services": out})
 		return string(b), err
 	})
@@ -290,7 +290,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 				EndDate: str("end_date"), Until: str("until"), Venue: str("venue"), Online: str("online"),
 				Price: str("price"), Status: str("status")})
 		}
-		b, err := json.Marshal(map[string]any{"events": true, "listing": name, "zone": listing.Zone().String(),
+		b, err := mcpJSON(map[string]any{"events": true, "listing": name, "zone": listing.Zone().String(),
 			"upcoming": out})
 		return string(b), err
 	})
@@ -331,7 +331,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			out = append(out, shown{ID: is.ID, Page: is.Page, Subject: is.Subject, State: is.State,
 				Sent: is.Sent, To: is.To})
 		}
-		b, err := json.Marshal(map[string]any{"subscribed": counts.Subscribed, "waiting": counts.Waiting,
+		b, err := mcpJSON(map[string]any{"subscribed": counts.Subscribed, "waiting": counts.Waiting,
 			"left": counts.Left, "issues": out, "problems": newsletterProblems(root)})
 		return string(b), err
 	})
@@ -353,7 +353,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return refuse(err)
 		}
-		b, err := json.Marshal(map[string]any{"issue": is.ID, "subject": is.Subject, "state": is.State,
+		b, err := mcpJSON(map[string]any{"issue": is.ID, "subject": is.Subject, "state": is.State,
 			"next": "a person sends it from the Newsletter screen after reading a test"})
 		return string(b), err
 	})
@@ -379,7 +379,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, err
 		}
 		whats, on := siteBlanks(pages, known)
-		b, err := json.Marshal(map[string]any{"blanks": whats, "on": on})
+		b, err := mcpJSON(map[string]any{"blanks": whats, "on": on})
 		return string(b), err
 	})
 
@@ -409,7 +409,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, draftRefusal(err)
 		}
-		b, err := json.Marshal(map[string]any{"filled": n, "pages": changed,
+		b, err := mcpJSON(map[string]any{"filled": n, "pages": changed,
 			"next": "The pages are in the draft, marked as an agent's words; a person publishes them."})
 		return string(b), err
 	})
