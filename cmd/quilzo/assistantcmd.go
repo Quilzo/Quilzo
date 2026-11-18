@@ -273,7 +273,14 @@ func assistantAdd(root string, args []string) error {
 		} else {
 			declare(&a, true)
 		}
-		return s.Put(a)
+		if err := s.Put(a); err != nil {
+			return err
+		}
+		// What is said below is what was kept, which Put may have
+		// tidied: a launcher's page named "delivery" is kept as
+		// /delivery, and --json printed it as it was typed.
+		a, _ = s.Get(a.Name)
+		return nil
 	})
 	if err != nil {
 		return err

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // A site with no chatbots lists none over the agent interface as it does
@@ -168,6 +170,34 @@ func TestRedeclaringAChatbotKeepsWhatItDoesNotName(t *testing.T) {
 	}
 	if a, _ = loadAssistant(root, "help"); a.KeepInstructions {
 		t.Error("--keep-instructions=false kept passages that address an AI")
+	}
+}
+
+// `assistant add --json` prints the chatbot as it was kept. The launcher's
+// pages are given their leading slash as they are kept (assistant.Set.Put),
+// and the command printed what it was typed, "delivery", for a chatbot whose
+// launcher was saved on /delivery.
+func TestADeclaredChatbotIsPrintedAsItWasKept(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	t.Cleanup(func(old *out.Writer) func() { return func() { w = old } }(w))
+	var b strings.Builder
+	w = &out.Writer{Mode: out.JSON, Out: &b, Err: io.Discard}
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--public", "--launcher",
+		"--launcher-pages", "delivery", "--nudge", "Delivery?", "--nudge-pages", "bread"}); err != nil {
+		t.Fatal(err)
+	}
+	var printed assistant.Assistant
+	if err := json.Unmarshal([]byte(b.String()), &printed); err != nil {
+		t.Fatalf("%q: %v", b.String(), err)
+	}
+	kept, _ := loadAssistant(root, "help")
+	if kept.Launcher == nil || printed.Launcher == nil {
+		t.Fatalf("printed %+v, kept %+v", printed.Launcher, kept.Launcher)
+	}
+	if got, want := strings.Join(printed.Launcher.Pages, ",")+" "+strings.Join(printed.Launcher.NudgePages, ","),
+		strings.Join(kept.Launcher.Pages, ",")+" "+strings.Join(kept.Launcher.NudgePages, ","); got != want {
+		t.Errorf("printed the launcher's pages as %s and kept them as %s", got, want)
 	}
 }
 
