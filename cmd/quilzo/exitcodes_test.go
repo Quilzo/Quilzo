@@ -308,3 +308,51 @@ func TestStderrIsNotColouredForStdout(t *testing.T) {
 		}
 	}
 }
+
+// A setter says what it set, and answers --json with it.
+//
+// Setting up the model route, the currency, a budget and a chatbot's action
+// printed nothing and exited 0, while `config set`, `decide set` and `agent
+// declare` each confirm; and the same commands answered --json with
+// nothing, so a script could not tell a change made from one not reached.
+func TestASetterSaysWhatItSet(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	if _, e, code := cliRun(t, root, "", "assistant", "add", "nyx", "--title", "Nyx"); code != 0 {
+		t.Fatalf("assistant add: %s", firstLines(e, 3))
+	}
+	for _, c := range []struct {
+		line []string
+		says string
+	}{
+		{[]string{"gateway", "currency", "GBP"}, "GBP"},
+		{[]string{"gateway", "route", "add", "studio", "--url", "http://127.0.0.1:19999/v1", "--model", "studio", "--personal"}, "studio"},
+		{[]string{"gateway", "budget", "agent:front-desk", "--tokens-per-day", "200000", "--money-per-day", "5.00"}, "agent:front-desk"},
+		{[]string{"gateway", "budget", "agent:front-desk", "--remove"}, "agent:front-desk"},
+		{[]string{"gateway", "route", "remove", "studio"}, "studio"},
+		{[]string{"assistant", "action", "nyx", "check-refund", "--kind", "link", "--target", "index", "--description", "how refunds work"}, "check-refund"},
+		{[]string{"assistant", "action", "nyx", "check-refund", "--remove"}, "check-refund"},
+		{[]string{"assistant", "remove", "nyx"}, "nyx"},
+	} {
+		name := strings.Join(c.line, " ")
+		// Under --json first, on a copy, so the line is run on the store
+		// as it stands for each.
+		dir := filepath.Join(t.TempDir(), "st")
+		copyTree(t, root, dir)
+		o, e, code := cliRun(t, dir, "", append([]string{"--json"}, c.line...)...)
+		var doc any
+		if code != 0 || json.Unmarshal([]byte(o), &doc) != nil || doc == nil {
+			t.Errorf("`quilzo --json %s` exited %d and answered %d bytes that are not a document: %s",
+				name, code, len(o), firstLines(e, 2))
+		}
+		o, e, code = cliRun(t, root, "", c.line...)
+		if code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", name, code, firstLines(e, 3))
+		}
+		if !strings.Contains(o, c.says) {
+			t.Errorf("`quilzo %s` said %q, nothing of what it set", name, firstLines(o, 2))
+		}
+	}
+}

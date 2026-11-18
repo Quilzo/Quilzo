@@ -295,6 +295,28 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error, 
 	record(root, audit.Record{Action: "gateway." + change, Resource: "/gateway/" + name,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
 		Verified: caller.Verified, Detail: detail})
+	// What was set, here for every change to the gateway: the currency, a
+	// route and a budget were each set without a word, exit 0, and under
+	// --json with nothing, while `config set` and `agent declare` confirm.
+	if w.JSON(map[string]any{"change": change, "name": name, "changed": detail}) {
+		return nil
+	}
+	switch change {
+	case "currency":
+		w.Human("the gateway's currency is %s\n", name)
+	case "route.add":
+		w.Human("route %s added\n", name)
+	case "route.remove":
+		w.Human("route %s removed\n", name)
+	case "budget":
+		if to := detail["to"]; to != "" && to != "none" {
+			w.Human("budget for %s: %s\n", name, to)
+		} else {
+			w.Human("%s has no budget of its own now\n", name)
+		}
+	default:
+		w.Human("gateway %s: %s\n", change, name)
+	}
 	return nil
 }
 
