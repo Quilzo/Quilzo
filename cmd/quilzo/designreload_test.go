@@ -450,7 +450,7 @@ func TestAConfigurationCaughtEmptyIsNotReadAsNoSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	editDraft(t, root, "index", "Published while the file was empty.")
-	commitLive(t, root)
+	commitLive(t, root, tpl)
 	protected("with a publish while the file was empty")
 	if w := served(rl, "/"); !strings.Contains(w.Body.String(), "Published while the file was empty.") {
 		t.Fatal("the publish was not served while the settings were kept")
@@ -687,12 +687,19 @@ func editDraft(t *testing.T, root, page, body string) {
 
 // commitLive moves the live ref to the draft without the gates, for a test
 // about what the site does when a publish arrives rather than about whether
-// one is allowed.
-func commitLive(t *testing.T, root string) {
+// one is allowed. Given a template directory, it records the design there
+// as the one the publish passed, as every publish does: the site takes only
+// a design a publish recorded.
+func commitLive(t *testing.T, root string, design ...string) {
 	t.Helper()
 	s, err := store.Open(root)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, dir := range design {
+		if _, _, err := markDesignPublished(root, dir); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := site.Publish(s, ""); err != nil {
 		t.Fatal(err)
