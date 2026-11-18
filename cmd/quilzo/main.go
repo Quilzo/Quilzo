@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: Apache-2.0
 
-// Command quilzo is the whole CMS: the command line, the admin interface, the
-// public site and the agent interface, in one binary.
+// Command quilzo is the whole AI agent platform: the command line, the admin
+// interface, the agent studio, the public site and the agent interface, in one
+// binary.
 //
 // The command line came first and that ordering was deliberate. A CMS whose
 // primitives only exist behind a web UI cannot be scripted, reviewed in a pull

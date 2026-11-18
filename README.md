@@ -5,10 +5,10 @@
   </picture>
 </h1>
 
-<p align="center"><strong>The self-hosted CMS for websites, chatbots and AI agents, with the governance built in.</strong></p>
+<p align="center"><strong>The self-hosted AI agent platform: a control plane, an agent studio, a CMS and chatbots in one Go binary.</strong></p>
 
 <p align="center">
-  One binary to build and run a website, the chatbots that answer its visitors and the agents that work on it.<br>
+  Run AI agents with a person in charge, build them in the studio, and publish the website and the chatbots they work on.<br>
   Every agent has an identity, a policy, a budget and a signed record, and a person approves the actions that matter.
 </p>
 

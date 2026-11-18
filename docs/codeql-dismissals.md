@@ -507,7 +507,7 @@ keep than a list of the ones that did not need it.
 
 ---
 
-## `go/clear-text-logging` — `cmd/quilzo/agentcmd.go:628` and `cmd/quilzo/agentearned.go:282`
+## `go/clear-text-logging` — `cmd/quilzo/agentcmd.go:651` (628 when first reported) and `cmd/quilzo/agentearned.go:282`
 
 **To be dismissed** as a *false positive*. The request is filed with the pull
 request that added the two lines (Quilzo/Quilzo#430); the alert numbers are
