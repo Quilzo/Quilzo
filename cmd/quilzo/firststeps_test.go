@@ -775,6 +775,67 @@ func TestWhatTemplateUseSaysNextPublishesThePage(t *testing.T) {
 	f.siteHome()
 }
 
+// CONTRIBUTING's two-minute path reaches the admin, signed in, and the
+// site.
+//
+// It granted a role and issued a token, and the token signs in to "Confirm
+// it's you" and nothing further: one factor, with no passkey to add the
+// second, and People, where a link that adds one is given, is behind the
+// same wall.
+func TestContributingsTwoMinutePathReachesTheAdminAndTheSite(t *testing.T) {
+	f := newWalk(t)
+	doc := readDoc(t, "CONTRIBUTING.md")
+	f.runAll(mdBlocks(t, doc, "Try it first, in about two minutes"))
+	if len(f.links) == 0 {
+		t.Fatalf("nothing in the two-minute path gives its reader a passkey\n%s", f.log.String())
+	}
+	f.enrolAndSignIn(f.links[len(f.links)-1])
+	f.siteHome()
+	// The addresses it says to open are the ones that work: a name for the
+	// admin, where a passkey can be used.
+	said := regexp.MustCompile("(?:admin is at|Open)\\s+`(http://[^`]+)`(?:,|\\s+for the admin)").FindAllStringSubmatch(doc, -1)
+	if len(said) == 0 {
+		t.Error("CONTRIBUTING no longer says where the admin is")
+	}
+	for _, m := range said {
+		if u := f.moved(m[1]); net.ParseIP(u.Hostname()) != nil {
+			t.Errorf("CONTRIBUTING says to open the admin at %s, where a passkey is refused", m[1])
+		}
+	}
+}
+
+// What the sign-in page says to do on a new store ends signed in.
+//
+// It said to grant a role and issue a token, and a token is one factor:
+// whoever followed it reached "Confirm it's you", with no passkey and
+// nobody to give them one.
+func TestTheSignInPagesInstructionsEndSignedIn(t *testing.T) {
+	f := newWalk(t)
+	f.run("quilzo init")
+	f.run("quilzo serve")
+	b := newTab(t, "http://"+f.moved("http://localhost:8080").Host)
+	_, _, page := b.get("/signin")
+	var named []string
+	for _, m := range regexp.MustCompile(`<code>(quilzo [^<]+)</code>`).FindAllStringSubmatch(page, -1) {
+		named = append(named, m[1])
+	}
+	first := ""
+	for _, c := range named {
+		if strings.HasPrefix(c, "quilzo init --admin") {
+			first = c
+		}
+	}
+	if first == "" {
+		t.Fatalf("the sign-in page names no way for the first person on a new store to get a passkey; "+
+			"it names %q", named)
+	}
+	f.run(strings.ReplaceAll(first, "NAME", "you"))
+	if len(f.links) == 0 {
+		t.Fatalf("`%s` gave no link\n%s", first, f.log.String())
+	}
+	f.enrolAndSignIn(f.links[0])
+}
+
 // image reads what a container of the image starts as from the Dockerfile:
 // the entrypoint, the command, the working directory, and the directories
 // it is seeded with.
