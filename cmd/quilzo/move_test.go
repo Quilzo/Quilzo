@@ -332,3 +332,96 @@ func TestTypeCheckShowsABindingWithNoPage(t *testing.T) {
 		t.Errorf("missing %v (%v): %s", got.Missing, err, buf.String())
 	}
 }
+
+// A moved page keeps its provenance: a move changes where a page is, not who
+// wrote it. The record is keyed by the page's name and bound to its bytes,
+// and the move carried the references and the menus and left the record
+// under the old name, so a page a model wrote went from "marked" to
+// "unrecorded" by being renamed, the publish gate offered the one-box waiver
+// it offers for hand-written pages, and once somebody used it the model's
+// words were served with no AI-generated mark at all.
+func TestAMovedPageKeepsItsProvenance(t *testing.T) {
+	root, _ := movable(t)
+	for _, page := range []string{"index", "blog/first", "blog/second"} {
+		if err := cmdProvenance(root, []string{"set", page, "--source", "humanEdits"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdProvenance(root, []string{"set", "returns",
+		"--source", "trainedAlgorithmicMedia", "--reviewed-by", "rae"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPublish(root, []string{"--no-a11y-check", "--reason", "this fixture has no templates"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	was, _ := before.Get("returns")
+
+	if err := cmdMove(root, []string{"returns", "legal/returns"}); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, ok := idx.Get("legal/returns")
+	if !ok {
+		t.Fatal("the moved page has no provenance: a model's page reads as unrecorded once renamed")
+	}
+	if now.ContentHash != was.ContentHash || now.SourceType != was.SourceType || now.ReviewedBy != was.ReviewedBy {
+		t.Errorf("the moved page's record is %+v, not the one it had: %+v", now, was)
+	}
+	// The live site still serves the old name until the move is published,
+	// and its mark with it.
+	if old, ok := idx.Get("returns"); !ok || old.ContentHash != was.ContentHash {
+		t.Error("the page still live under its old name lost its mark before anything was published")
+	}
+	s, _ := open(root)
+	if unmarked, err := unmarkedAt(root, s, s.GetRef(site.RefDraft)); err != nil || len(unmarked) > 0 {
+		t.Fatalf("after the move the publish gate finds %v without provenance (%v)", unmarked, err)
+	}
+	if err := cmdPublish(root, []string{"--no-a11y-check", "--reason", "this fixture has no templates"}); err != nil {
+		t.Fatalf("the move did not publish as it was: %v", err)
+	}
+
+	// And a branch carries every page's record beneath it.
+	if err := cmdMove(root, []string{"blog", "writing"}); err != nil {
+		t.Fatal(err)
+	}
+	idx, _ = loadProvenance(root)
+	for _, page := range []string{"writing/first", "writing/second"} {
+		if _, ok := idx.Get(page); !ok {
+			t.Errorf("%s has no provenance after its branch moved", page)
+		}
+	}
+}
+
+// A move names the command that keeps each old address working. It pointed
+// at `quilzo site --redirects redirects.json`, a file it never wrote, while
+// the store keeps a redirect list of its own that the running site serves at
+// once: every moved address answered 404 until somebody worked out the
+// redirects by hand, one for each page in a folder.
+func TestAMoveNamesTheRedirectThatKeepsTheOldAddress(t *testing.T) {
+	root, _ := movable(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+	if err := cmdMove(root, []string{"blog", "writing"}); err != nil {
+		t.Fatal(err)
+	}
+	said := buf.String()
+	for _, want := range []string{"quilzo redirect add /blog/first /writing/first",
+		"quilzo redirect add /blog/second /writing/second"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the move does not say %q:\n%s", want, said)
+		}
+	}
+	if strings.Contains(said, "redirects.json") {
+		t.Errorf("the move still points at a file it never wrote:\n%s", said)
+	}
+}
