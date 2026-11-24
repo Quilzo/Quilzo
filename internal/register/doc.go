@@ -87,7 +87,9 @@
 // authentication evidence), unchanged records skipped, one commit for the
 // batch, an audit entry and a Receipt whose digest is in that entry. A
 // model never writes: an Actor of kind audit.KindAI is refused (ErrModel),
-// and a statement about a control is a person's. On the command line a
+// as is one that is neither a person nor a service, and a statement about a
+// control is a person's. An approval made alone is a team of one's: with
+// anybody else eligible, the person who asked is not the one who agrees. On the command line a
 // module writes like this:
 //
 //	r, by, err := registerWriter(root, caller) // cmd/quilzo/registercmd.go
@@ -108,7 +110,10 @@
 //
 // The generic record surfaces refuse every sec_ name
 // (collection.Reserved), and a test walks them; a module never writes the
-// register any other way.
+// register any other way. Nor does a generic surface read it: one that
+// reads whatever ref or commit it is told to asks Holds first, so the
+// site's export refuses the register, and the history and a replica's ref
+// ask about Area as the register's own surfaces do.
 //
 // # Registering a module's surfaces
 //

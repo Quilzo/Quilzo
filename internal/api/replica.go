@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/replica"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -94,6 +95,17 @@ func (s *Server) replicaRef(w http.ResponseWriter, r *http.Request) {
 			Detail: "refs holding another peer's head are not served on. " +
 				"Pair with that peer directly"})
 		return
+	}
+	// The security register's refs are its records, which are read where
+	// the register is: a credential for the whole site is not one for the
+	// compliance area's records, and the ref's commit is what every one of
+	// them is fetched from.
+	if register.Holds(s.Store, name) {
+		if err := s.may(r, auth.ActView, register.Area); err != nil {
+			writeError(w, http.StatusForbidden, Error{Error: "not permitted", Detail: err.Error(),
+				Fix: "the register is replicated with a credential that may read it"})
+			return
+		}
 	}
 	oid := s.Store.GetRef(name)
 	if oid == "" {

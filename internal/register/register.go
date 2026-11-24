@@ -356,6 +356,31 @@ func (r *Register) Census() ([]Census, error) {
 // record as it is now. Empty for a register nothing was written to.
 func (r *Register) Head() string { return r.Store.GetRef(Ref) }
 
+// Holds reports whether a ref, or a commit named in a ref's place, is the
+// register's: one of its two refs, or a commit either of them made, which
+// says so in its metadata.
+//
+// The register is read by its own surfaces, which ask about Area. A surface
+// that reads whatever ref or commit it is told to (the site's export, the
+// history, the ref a replica asks for) asks this first, and does not read
+// the register as though it were a site: told "register", the export asked
+// whether a reader of the site might read its data, and wrote every risk
+// out for them.
+func Holds(s *store.Store, refOrCommit string) bool {
+	switch refOrCommit {
+	case "":
+		return false
+	case Ref, ProposalsRef:
+		return true
+	}
+	commit := s.GetRef(refOrCommit)
+	if commit == "" {
+		commit = refOrCommit
+	}
+	c, err := s.GetCommit(commit)
+	return err == nil && c.Meta["register"] != ""
+}
+
 // sortedKeys is a map's keys in order.
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))

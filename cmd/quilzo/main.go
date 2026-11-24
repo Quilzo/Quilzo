@@ -2567,6 +2567,9 @@ func cmdLog(root string, args []string) error {
 	if head == "" {
 		return errNotFound{fmt.Errorf("no ref %q", *ref)}
 	}
+	if err := mayReadRegisterAt(root, s, *ref); err != nil {
+		return err
+	}
 	live := s.GetRef(site.RefLive)
 	hist, err := s.History(head, *limit)
 	if err != nil {

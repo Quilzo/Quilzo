@@ -129,6 +129,21 @@ func registerWriter(root string, c *Caller) (*register.Register, register.Actor,
 	return r, by, nil
 }
 
+// mayReadRegisterAt is nil unless ref names the register, and then asks
+// whether the caller may read it, as its own surfaces ask. A command that
+// reads whatever ref it is told to (`quilzo log --ref`) asks this first: the
+// register's history is what was written, why and under whose pseudonym,
+// and a reader of the site reading it read the compliance area's records.
+func mayReadRegisterAt(root string, s *store.Store, ref string) error {
+	if !register.Holds(s, ref) {
+		return nil
+	}
+	if err := authorise(root, resolveCaller(root, flagToken), auth.ActView, register.Area); err != nil {
+		return errBlocked{err}
+	}
+	return nil
+}
+
 // registerError is an error of the register as the command line answers
 // it: a refusal by the access policy, or a model's write, exits 3 as every
 // refusal by a gate does; a record that is not there exits 4; the rest are
