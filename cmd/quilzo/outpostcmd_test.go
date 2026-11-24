@@ -68,7 +68,11 @@ func publicHost(t *testing.T, internal string) (pub string, srv *httptest.Server
 	if err := runInit(pub, []string{"--profile", "public", "--pin", headKeysPath(internal)}); err != nil {
 		t.Fatal(err)
 	}
+	// Served as serve serves it, which takes this process offline; the
+	// internal instance in the same test process is put back at once.
+	before := egress.Current()
 	h, _, err := publicHandler(pub)
+	_ = egress.SetMode(before)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -369,3 +369,21 @@ func TestAManifestLaidOutForReadingStillVerifies(t *testing.T) {
 		t.Fatalf("an indented manifest does not verify: %v", err)
 	}
 }
+
+// The watcher is asked from every request at once.
+func TestTheWatcherIsSafeFromManyRequests(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := Save(path, secured(t, newClock())); err != nil {
+		t.Fatal(err)
+	}
+	get := Watch(path)
+	done := make(chan bool)
+	for i := 0; i < 8; i++ {
+		go func() { done <- len(get().Off()) == len(Catalogue()) }()
+	}
+	for i := 0; i < 8; i++ {
+		if !<-done {
+			t.Error("a request saw another profile")
+		}
+	}
+}

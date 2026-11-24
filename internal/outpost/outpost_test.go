@@ -327,3 +327,38 @@ func TestAnInstanceHoldsOnlyThePinnedKeyAndTheProjection(t *testing.T) {
 		t.Error("an instance was pinned to a key that is not one")
 	}
 }
+
+// Transfers posted at once while the page is being read are taken one at
+// a time, and the page always serves one whole projection.
+func TestConcurrentTransfersAndReadsAreSafe(t *testing.T) {
+	internal := key(t, 1)
+	in := instance(t, internal)
+	h := in.Handler()
+	var bodies [][]byte
+	for i := 0; i < 4; i++ {
+		b, err := Pack(projection(t, goodFiles(t, internal), when.Add(time.Duration(i)*time.Minute), internal))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, b)
+	}
+	done := make(chan struct{})
+	for _, b := range bodies {
+		go func(b []byte) {
+			defer func() { done <- struct{}{} }()
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, IntakePath, bytes.NewReader(b)))
+		}(b)
+		go func() {
+			defer func() { done <- struct{}{} }()
+			_ = get(t, h, "/")
+			_ = get(t, h, "/heads.json")
+		}()
+	}
+	for i := 0; i < 2*len(bodies); i++ {
+		<-done
+	}
+	if st := in.Status(); st.Served == nil {
+		t.Error("none of the transfers was taken")
+	}
+}
