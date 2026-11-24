@@ -1061,10 +1061,11 @@ func TestAPageNameTheStoreCannotHoldIsRefusedAs400(t *testing.T) {
 			t.Errorf("PUT %s: the refusal says no fix: %s", path, w.Body)
 		}
 	}
-	// A name the store holds is still written.
+	// A name the store holds is still written. If-None-Match: * creates it;
+	// If-Match: * is true only of a page that exists (RFC 9110 §13.1.1).
 	w := req(t, s, "PUT", "/api/v1/pages/docs/About_Us.v1", tok, map[string]any{"title": "T"},
-		map[string]string{"If-Match": "*"})
-	if w.Code != http.StatusOK {
+		map[string]string{"If-None-Match": "*"})
+	if w.Code != http.StatusCreated {
 		t.Errorf("a name the store holds answered %d: %s", w.Code, w.Body)
 	}
 }

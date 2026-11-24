@@ -127,3 +127,29 @@ func TestTheAdminsDoorsRecordATokensUse(t *testing.T) {
 		t.Error("the admin's /mcp does not record a token's use")
 	}
 }
+
+// The admin's API, the one that writes records, records a deletion as one.
+//
+// It recorded it through OnWrite: api.write for the record, with no commit,
+// which is what it recorded for the write that made the record, so nothing
+// in the log said a record had been deleted. internal/api tells a deletion
+// to OnDelete, and to OnWrite only where a host has no OnDelete.
+func TestTheAdminsAPIRecordsADeletionAsOne(t *testing.T) {
+	body, err := os.ReadFile("serve.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	start := strings.Index(src, "apiSrv := &api.Server{")
+	if start < 0 {
+		t.Fatal("no API server is constructed in serve.go")
+	}
+	block := src[start:]
+	if end := strings.Index(block, "\n\t}\n"); end > 0 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "OnDelete:") || !strings.Contains(block, `"api.delete"`) {
+		t.Error("the admin's /api/v1 records a deleted record as a write, " +
+			"with no word of the deletion")
+	}
+}

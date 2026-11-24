@@ -120,10 +120,11 @@ func TestARecordIDThatAddressesNothingIsRefusedAs400(t *testing.T) {
 			t.Errorf("PUT a record %s answered %d, not 400: %s", id, w.Code, w.Body)
 		}
 	}
-	// A record id that can address one is still written.
+	// A record id that can address one is still written, and made by the
+	// write (RFC 9110 §9.3.4).
 	w := req(t, srv, "PUT", "/api/v1/records/samples/"+strings.Repeat("b", 32), tok,
-		map[string]any{"name": "x"}, map[string]string{"If-Match": "*"})
-	if w.Code != http.StatusOK {
+		map[string]any{"name": "x"}, map[string]string{"If-None-Match": "*"})
+	if w.Code != http.StatusCreated {
 		t.Errorf("a usable record id answered %d: %s", w.Code, w.Body)
 	}
 }

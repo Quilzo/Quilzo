@@ -377,8 +377,13 @@ func cmdSite(root string, args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "  %sapi: /api/v1, %s%s\n", noteDim, mode, noteReset)
 		if *apiWritable {
-			fmt.Fprintf(os.Stderr, "  %severy write needs If-Match, and goes "+
-				"through the same content-type gate as the CLI%s\n", noteDim, noteReset)
+			// If-None-Match: * named beside If-Match, because If-Match: *
+			// is true only of a page that exists (RFC 9110 §13.1.1) and no
+			// longer creates one: this said every write needs If-Match, and
+			// a page made by it was refused 412.
+			fmt.Fprintf(os.Stderr, "  %severy write needs If-Match, or "+
+				"If-None-Match: * to create a page, and goes through the same "+
+				"content-type gate as the CLI%s\n", noteDim, noteReset)
 		}
 	}
 

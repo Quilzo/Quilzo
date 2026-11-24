@@ -50,8 +50,8 @@ func errorsFor(codes ...string) map[string]any {
 		"403": "The token's holder may not do this here.",
 		"404": "There is no such thing, or the caller may not know it exists.",
 		"409": "It changed since it was read: read it again, then write with its new ETag.",
-		"412": "If-Match did not match the current ETag.",
-		"428": "A write without If-Match is refused.",
+		"412": "A precondition did not hold: If-Match did not match the current ETag, or If-None-Match did.",
+		"428": "A write with neither If-Match nor If-None-Match: * is refused.",
 		"429": "Too many requests; Retry-After says when to try again.",
 	}
 	for _, c := range codes {
@@ -85,6 +85,20 @@ func OpenAPI() map[string]any {
 	id := param("id", "path", "the record's id", true, str)
 	ifMatch := param("If-Match", "header", "the ETag the write is based on", true, str)
 	ifNone := param("If-None-Match", "header", "an ETag already held: answered 304 when it is still current", false, str)
+	// A PUT takes either: If-Match to replace what was read, or
+	// If-None-Match: * to create where there is nothing (RFC 9110 §13.1).
+	// If-Match was required, so a client written from this could not create
+	// at all, and the server told it to send If-Match: *, which is true only
+	// of something that exists.
+	putIfMatch := param("If-Match", "header", "the ETag the write is based on, to replace what is there; "+
+		"* is any that exists. Required unless If-None-Match is *", false, str)
+	putIfNone := param("If-None-Match", "header", "*: write only where there is nothing yet, which is how one is "+
+		"created without overwriting one", false, str)
+	// The draft read, which is what a page write replaces (readRef).
+	ref := param("ref", "query", "draft: the page as the draft holds it, which is what a write replaces and "+
+		"whose ETag If-Match is compared with; for a caller who may write the page, on a server that takes "+
+		"writes. live, or none: as it is published", false,
+		map[string]any{"type": "string", "enum": []any{"live", "draft"}})
 	return map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
@@ -92,8 +106,10 @@ func OpenAPI() map[string]any {
 			"version": "1",
 			"description": "Pages and records as published, and written where the server allows it. Every " +
 				"answer carries an ETag, the content's hash; every write needs If-Match with the ETag it is based on, " +
-				"so two writers never overwrite each other unseen. What a token may read or write is its holder's " +
-				"permissions, the same as in the admin and on the command line.",
+				"or If-None-Match: * to create where there is nothing, so two writers never overwrite each other " +
+				"unseen. A page is written to the draft, and read as the draft holds it with ref=draft. What a " +
+				"token may read or write is its holder's permissions, the same as in the admin and on the " +
+				"command line.",
 		},
 		"servers":  []any{map[string]any{"url": "/"}},
 		"security": []any{map[string]any{"bearer": []any{}}},
@@ -103,11 +119,12 @@ func OpenAPI() map[string]any {
 					map[string]any{"200": answer("A page of pages, and where the next is.", schemaRef("Listing"))}, "400"),
 			},
 			"/api/v1/pages/{name}": map[string]any{
-				"get": op("Read a page", "getPage", []any{name, ifNone}, nil,
-					map[string]any{"200": answer("The page.", schemaRef("Page")), "304": answer("Not modified.", nil)}, "404"),
-				"put": op("Write a page to the draft", "putPage", []any{name, ifMatch},
+				"get": op("Read a page", "getPage", []any{name, ifNone, ref}, nil,
+					map[string]any{"200": answer("The page.", schemaRef("Page")), "304": answer("Not modified.", nil)}, "400", "404"),
+				"put": op("Write a page to the draft", "putPage", []any{name, putIfMatch, putIfNone},
 					jsonBody(map[string]any{"type": "object", "description": "the page's fields"}),
-					map[string]any{"200": answer("Written; the new ETag is in the answer.", schemaRef("Page"))},
+					map[string]any{"200": answer("Replaced; the new ETag is in the answer.", schemaRef("Page")),
+						"201": answer("Created; the new ETag is in the answer.", schemaRef("Page"))},
 					"400", "404", "409", "412", "428"),
 			},
 			"/api/v1/collections": map[string]any{
@@ -127,8 +144,9 @@ func OpenAPI() map[string]any {
 			"/api/v1/records/{collection}/{id}": map[string]any{
 				"get": op("Read a record", "getRecord", []any{coll, id, ifNone}, nil,
 					map[string]any{"200": answer("The record.", map[string]any{"type": "object"}), "304": answer("Not modified.", nil)}, "404"),
-				"put": op("Replace a record", "putRecord", []any{coll, id, ifMatch}, jsonBody(map[string]any{"type": "object"}),
-					map[string]any{"200": answer("Replaced.", map[string]any{"type": "object"})}, "400", "404", "409", "412", "428"),
+				"put": op("Replace a record", "putRecord", []any{coll, id, putIfMatch, putIfNone}, jsonBody(map[string]any{"type": "object"}),
+					map[string]any{"200": answer("Replaced.", map[string]any{"type": "object"}),
+						"201": answer("Created, at the id given.", map[string]any{"type": "object"})}, "400", "404", "409", "412", "428"),
 				"delete": op("Delete a record", "deleteRecord", []any{coll, id, ifMatch}, nil,
 					map[string]any{"204": answer("Deleted.", nil)}, "404", "409", "412", "428"),
 			},

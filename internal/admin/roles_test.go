@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -239,6 +240,66 @@ func TestAReadOnlyTokenCannotWriteThroughTheInterface(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "read-only") {
 		t.Error("the refusal does not say the token is read-only, so somebody " +
 			"will go asking for a wider role they already have")
+	}
+}
+
+// A read-only token's write to the content API is refused in the API's own
+// words: JSON, in its one shape for an error.
+//
+// The refusal of a read-only credential sits in front of every route here,
+// the API mounted at /api/ among them, and it answered every refusal with
+// this interface's page: 45 KB of HTML titled "Not permitted", to a program
+// that had sent JSON and parses JSON back. A token issued --api is
+// read-only, so the integration the flag is for met it on its first write.
+func TestAReadOnlyTokensAPIWriteIsRefusedInTheAPIsShape(t *testing.T) {
+	srv, _ := setup(t)
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{
+		Principal: "ada", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	ts := &auth.TokenStore{}
+	secret, _, err := ts.IssueScoped("ci", "ada", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Policy, srv.Tokens = pol, ts
+	srv.MFAFrom = time.Now().Add(time.Hour)
+	reached := false
+	srv.API = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPut, "/api/v1/pages/index"},
+		{http.MethodPost, "/api/v1/records/samples"},
+		{http.MethodDelete, "/api/v1/records/samples/" + strings.Repeat("a", 32)},
+	} {
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{"title":"x"}`))
+		req.Header.Set("Authorization", "Bearer "+secret)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		var e struct{ Error, Detail, Fix string }
+		if w.Code != http.StatusForbidden ||
+			!strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") ||
+			json.Unmarshal(w.Body.Bytes(), &e) != nil || e.Error == "" {
+			t.Errorf("%s %s with a read-only token answered %d %q, %d bytes: %.80s",
+				c.method, c.path, w.Code, w.Header().Get("Content-Type"), w.Body.Len(), w.Body.String())
+			continue
+		}
+		if !strings.Contains(e.Detail, "read-only") || e.Fix == "" {
+			t.Errorf("%s %s: the refusal does not say why or what to do: %+v", c.method, c.path, e)
+		}
+	}
+	if reached {
+		t.Error("a read-only token's write reached the API")
+	}
+	// Its reads still go through.
+	if w := get(t, srv, "/api/v1/pages", secret); w.Code != http.StatusTeapot {
+		t.Errorf("a read-only token's read answered %d", w.Code)
 	}
 }
 

@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,5 +156,51 @@ func TestAnInvalidWriteIsRefusedAndNotRecorded(t *testing.T) {
 	}
 	if types.Validated("note", fields) {
 		t.Error("content the gate refused was recorded as validated")
+	}
+}
+
+// The help, and the site as it starts with a writable API, say how a page is
+// created over it.
+//
+// Both said every write needs If-Match, which was so while If-Match: *
+// created a page that did not exist. The API now takes If-Match as RFC 9110
+// does, true only of a page that exists, and refuses a create that carries
+// it with 412; a page is created with If-None-Match: *, which neither said,
+// so somebody making a page by the help was refused on the first try.
+func TestTheHelpSaysHowThePageAPICreatesAPage(t *testing.T) {
+	_, h := apiStore(t)
+	put := func(header string) int {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/pages/fresh",
+			strings.NewReader(`{"title":"Fresh"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(header, "*")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := put("If-Match"); code != http.StatusPreconditionFailed {
+		t.Fatalf("a create carrying If-Match: * answered %d", code)
+	}
+	if code := put("If-None-Match"); code != http.StatusCreated {
+		t.Fatalf("a create carrying If-None-Match: * answered %d", code)
+	}
+
+	site, err := os.ReadFile("site.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for where, text := range map[string]string{
+		"the help": helpText(t), "quilzo site, as it starts,": string(site),
+	} {
+		_, after, ok := strings.Cut(text, "every write needs If-Match")
+		if !ok {
+			t.Errorf("%s no longer states the write rule", where)
+			continue
+		}
+		if line, _, _ := strings.Cut(after, "\n\n"); !strings.Contains(
+			strings.Join(strings.Fields(line), " "), "If-None-Match: *") {
+			t.Errorf("%s says every write needs If-Match and not that a page "+
+				"is created with If-None-Match: *", where)
+		}
 	}
 }

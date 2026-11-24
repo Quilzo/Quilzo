@@ -123,10 +123,13 @@ func (s *Server) playgroundRoutes() []Route {
 		{Method: "PUT", Path: "/api/v1/pages/index",
 			Summary: "replace a page",
 			Body:    "{\n  \"title\": \"Home\",\n  \"body\": \"Edited from the playground.\"\n}",
+			// Not "send * to create": If-Match: * is true only of a page
+			// that exists (RFC 9110 §13.1.1), and the API now says so.
 			Note: "this needs If-Match. Without it you get 428: a write with " +
 				"no validator overwrites whatever is there now, including " +
-				"somebody else's edit. Send * to create a page that does not " +
-				"exist yet"},
+				"somebody else's edit. If-Match: * replaces a page that " +
+				"exists; a page that does not exist yet is created with " +
+				"If-None-Match: *"},
 	}
 }
 

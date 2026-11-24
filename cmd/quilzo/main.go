@@ -663,7 +663,8 @@ interface
                                              changes, and on SIGHUP
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
       --api                                 content API at /api/v1, read-only
-      --api-writable                        allow PUT; every write needs If-Match.
+      --api-writable                        allow PUT; every write needs If-Match,
+                                            or If-None-Match: * to create a page.
                                             Needs --confine=false: the confined site
                                             cannot write the draft, so it refuses this
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
