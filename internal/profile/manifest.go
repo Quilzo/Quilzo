@@ -90,6 +90,35 @@ func (m Manifest) Off() []Entry {
 	return out
 }
 
+// Says reports whether the manifest says what st runs: the same profile,
+// and every feature in the same state. The gates read the state and not the
+// manifest, so a state changed outside the record (a file edited by hand, a
+// restore that missed it, a write cut off between the two files) leaves a
+// manifest that still verifies and is no longer true; it is evidence only
+// while this holds. The error names the first feature that differs.
+func (m Manifest) Says(st *State) error {
+	if m.Profile != st.Name() {
+		return fmt.Errorf("it is of the %s profile, and the %s profile is in force", m.Profile, st.Name())
+	}
+	said := map[string]string{}
+	for _, e := range m.Features {
+		said[e.Name] = e.State
+	}
+	for _, f := range Catalogue() {
+		runs := "off"
+		if st.On(f.Name) {
+			runs = "on"
+		}
+		switch got, ok := said[f.Name]; {
+		case !ok:
+			return fmt.Errorf("it does not say how %s stands, and %s is %s", f.Name, f.Name, runs)
+		case got != runs:
+			return fmt.Errorf("it says %s is %s, and %s is %s", f.Name, got, f.Name, runs)
+		}
+	}
+	return nil
+}
+
 // Signed is a manifest as it was signed: the exact bytes, their digest and
 // the signature over them.
 //

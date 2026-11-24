@@ -41,5 +41,7 @@
 // to CM-7 in Quilzo's own OSCAL component (Annotate). It is evidence an
 // auditor can check offline: which features were off, since when, which were
 // switched back on, by whom and why, and that nobody edited the list after
-// it was signed.
+// it was signed. It is attached only while it says what the gates enforce
+// (Manifest.Says): the gates read the state, and a state changed outside the
+// record leaves a manifest that verifies and is no longer true.
 package profile

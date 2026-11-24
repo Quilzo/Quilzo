@@ -1155,7 +1155,10 @@ screen's download) attaches it to CM-7, least functionality, in Quilzo's own
 OSCAL component: the manifest's digest, the key, and each feature that is
 off. `quilzo profile manifest` hands the manifest out and `quilzo profile
 verify FILE --keys head.pub.json` checks it anywhere. A manifest edited by
-hand does not verify and is not attached.
+hand does not verify and is not attached, and nor is one that no longer says
+what runs: the gates read `profile.json`, and when that file is changed or
+removed outside `quilzo profile` the manifest is left off CM-7 and every
+surface that shows it says so.
 
 The internal instance never faces the internet: the admin says at start when
 it listens on every interface or on a public address. The public faces are

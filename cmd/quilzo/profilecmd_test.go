@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/admin"
@@ -307,6 +308,56 @@ func TestManifestSignedAndInOSCAL(t *testing.T) {
 	}
 	if strings.Contains(readFile(t, out), sm.Digest) {
 		t.Error("a manifest changed after it was signed was attached to CM-7")
+	}
+}
+
+// The manifest is evidence of what runs only while it says what runs. The
+// gates read profile.json, and a file changed or removed outside quilzo
+// profile (by hand, by a restore that missed it, by a write cut off between
+// the two files) leaves a manifest that verifies and says features are off
+// that are on. Such a manifest is not attached to CM-7, and every surface
+// that shows it says why.
+func TestAManifestThatNoLongerSaysWhatRunsIsNotEvidence(t *testing.T) {
+	for name, change := range map[string]func(root string){
+		"commerce switched on by hand": func(root string) {
+			st, err := profile.Load(profilePath(root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			st.Changes = append(st.Changes, profile.Change{Feature: "commerce", On: true, Reason: "mine",
+				By: "mallory", At: st.Since.Add(time.Minute)})
+			if err := profile.Save(profilePath(root), st); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the profile removed": func(root string) {
+			if err := os.Remove(profilePath(root)); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := securedStore(t)
+			sm, _ := readManifest(t, root)
+			change(root)
+			if err := profileRefuses(root, "pay"); err != nil {
+				t.Fatalf("the change did not reach the gate, so the test proves nothing: %v", err)
+			}
+			out := filepath.Join(t.TempDir(), "component.json")
+			if err := complianceComponent(root, []string{"-o", out}); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(readFile(t, out), sm.Digest) {
+				t.Error("a manifest that says commerce is off, while it runs, was attached to CM-7")
+			}
+			v, err := viewProfile(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(v.Problem, "no longer says what runs") {
+				t.Errorf("the profile's view does not say the manifest is not evidence: %q", v.Problem)
+			}
+		})
 	}
 }
 

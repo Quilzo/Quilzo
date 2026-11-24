@@ -169,6 +169,30 @@ func TestApplyingTheProfileAgainStartsFromIt(t *testing.T) {
 	}
 }
 
+// A manifest says what runs while the state it was built from is the one
+// in force, and stops saying it at the first feature that differs, or when
+// another profile is.
+func TestAManifestSaysWhatRunsOnlyWhileItDoes(t *testing.T) {
+	c := newClock()
+	st := secured(t, c)
+	m := Build(st, "0.1.0", c.now())
+	if err := m.Says(st); err != nil {
+		t.Fatalf("a manifest does not say what the state it was built from runs: %v", err)
+	}
+	if _, err := st.Switch("commerce", true, "the conference sells tickets", "dana", c.now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Says(st); err == nil || !strings.Contains(err.Error(), "commerce") {
+		t.Errorf("a manifest saying commerce is off says what runs with commerce on: %v", err)
+	}
+	if err := m.Says(&State{}); err == nil || !strings.Contains(err.Error(), Standard) {
+		t.Errorf("a manifest of the security profile says what the standard profile runs: %v", err)
+	}
+	if err := Build(st, "0.1.0", c.now()).Says(st); err != nil {
+		t.Errorf("the manifest built after the change does not say what runs: %v", err)
+	}
+}
+
 // The manifest is signed, verifies with the key that signed it and with no
 // other, notices a change of one byte, and is CM-7 evidence in Quilzo's own
 // OSCAL component.

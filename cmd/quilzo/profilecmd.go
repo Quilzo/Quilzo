@@ -173,11 +173,29 @@ func storedManifest(root string) (*profile.Signed, *profile.Manifest, error) {
 	return &sm, &m, nil
 }
 
-// profileEvidence attaches the store's manifest to CM-7, when there is one
-// and it verifies. One that does not verify is not evidence, and is left
-// off with a note rather than attached.
+// manifestSaysWhatRuns is the error that says a manifest which verifies no
+// longer says what the gates enforce (profile.Manifest.Says), nil while it
+// does.
+func manifestSaysWhatRuns(m profile.Manifest, st *profile.State) error {
+	if err := m.Says(st); err != nil {
+		return fmt.Errorf("the signed feature manifest no longer says what runs: %w. %s was changed outside "+
+			"quilzo profile; quilzo profile apply %s --reason WHY signs one that does", err,
+			filepath.Base(profilePath("")), st.Name())
+	}
+	return nil
+}
+
+// profileEvidence attaches the store's manifest to CM-7, when there is one,
+// it verifies and it says what runs. One that does not is not evidence, and
+// is left off with a note rather than attached.
 func profileEvidence(root string, cd *oscal.ComponentDefinition) error {
 	sm, m, err := storedManifest(root)
+	if err == nil && sm != nil {
+		var st *profile.State
+		if st, err = profile.Load(profilePath(root)); err == nil {
+			err = manifestSaysWhatRuns(*m, st)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("the feature manifest is not attached to CM-7: %w", err)
 	}
@@ -329,9 +347,12 @@ func viewProfile(root string) (profileView, error) {
 		}
 		v.Features = append(v.Features, fv)
 	}
-	sm, _, merr := storedManifest(root)
+	sm, m, merr := storedManifest(root)
 	if sm != nil {
 		v.Manifest, v.Key = sm.Digest, sm.Signature.KeyID
+	}
+	if merr == nil && m != nil {
+		merr = manifestSaysWhatRuns(*m, st)
 	}
 	if merr != nil {
 		v.Problem = merr.Error()
