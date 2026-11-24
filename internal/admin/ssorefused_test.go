@@ -225,3 +225,34 @@ func TestAnAddressSignsInWhateverItsCase(t *testing.T) {
 		t.Errorf("a SAML sign-in signed in as %q", tok.Principal)
 	}
 }
+
+// An address is taken for a name in the access policy when they differ in
+// the case of ASCII letters, and in nothing else (policyName).
+//
+// They were compared with strings.EqualFold, which folds whatever Unicode
+// folds: the Kelvin sign (U+212A) is a k to it and the long s (U+017F) an
+// s. So an address a provider had verified with either in it, a mailbox of
+// its own and not the person's, signed in as somebody whose address had
+// the ASCII letter there. A verified address is all that stands between
+// whoever signed up at a public provider and the name they claim.
+func TestOnlyALettersCaseIsPassedOverInAnAddress(t *testing.T) {
+	srv, _ := oidcServer(t)
+	for _, who := range []string{"kate@acme.com", "sam@acme.com"} {
+		if err := srv.Policy.Grant(auth.Binding{Principal: who, Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	signIn := func(who string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		srv.finishOIDC(w, httptest.NewRequest(http.MethodGet, "/auth/callback", nil), who, ssoProof{MFA: true}, "")
+		return w
+	}
+	for _, who := range []string{"Kate@acme.com", "ſam@acme.com", "KATE@ACME.COM"} {
+		if sessionOf(signIn(who)) != nil {
+			t.Errorf("%+q was signed in as somebody in the access policy", who)
+		}
+	}
+	if tok := sessionToken(t, srv, signIn("KATE@Acme.COM")); tok.Principal != "kate@acme.com" {
+		t.Errorf("KATE@Acme.COM signed in as %q", tok.Principal)
+	}
+}

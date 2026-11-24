@@ -617,13 +617,19 @@ func (s *Server) knownPrincipal(name string) bool {
 // principals to it, and choosing between them is guessing, so neither is
 // chosen, as an event about an address chooses neither (subjectPrincipal
 // in cmd/quilzo).
+//
+// The case passed over is an ASCII letter's (sameBarCase), and no other.
+// strings.EqualFold folds whatever Unicode folds, so the Kelvin sign
+// (U+212A) was a k and the long s (U+017F) an s: an address a provider had
+// verified with one of them in it, which is a mailbox of its own, signed in
+// as the person whose address had the letter instead.
 func (s *Server) policyName(name string) string {
 	if name == "" || s.knownPrincipal(name) {
 		return name
 	}
 	one := ""
 	for _, p := range s.Policy.Principals() {
-		if strings.EqualFold(p, name) {
+		if sameBarCase(p, name) {
 			if one != "" {
 				return name
 			}
@@ -634,6 +640,30 @@ func (s *Server) policyName(name string) string {
 		return name
 	}
 	return one
+}
+
+// sameBarCase reports whether two names are the same bytes but for the
+// case of ASCII letters: the case an address's domain is compared without
+// (DNS), and the case providers pass over in its local part. Every other
+// byte is compared exactly, so no character outside ASCII stands in for
+// one inside it (policyName).
+func sameBarCase(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if 'A' <= x && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if 'A' <= y && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }
 
 // roleFor returns the role the session token carries.
