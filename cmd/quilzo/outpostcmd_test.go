@@ -190,6 +190,66 @@ func TestPublishIsL4(t *testing.T) {
 	}
 }
 
+// Sending again is one administrator's, and sends only what two published:
+// a draft changed since is not what `quilzo public send` carries. And an
+// approval is for the place that was proposed: one given after the public
+// instance's address changed sends nothing, there or anywhere.
+func TestSendingAgainSendsOnlyWhatTwoPublished(t *testing.T) {
+	root, tokens := internalStore(t)
+	_, srv, posts := publicHost(t, root)
+	if err := cmdPublic(root, []string{"target", srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	flagToken = tokens["dana"]
+	if err := cmdAttest(root, []string{"publish", "--reason", "the 2025 report is in"}); err != nil {
+		t.Fatal(err)
+	}
+	req := waitingRequest(t, root)
+	flagToken = tokens["sam"]
+	if err := cmdPending(root, []string{"approve", req.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed := held()
+	changed.Policies = append(changed.Policies, attest.Policy{Title: "Access control policy", Version: "3.0", Approved: "2026-03-02"})
+	body, _ := changed.Encode()
+	file := filepath.Join(t.TempDir(), "changed.json")
+	if err := os.WriteFile(file, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flagToken = tokens["dana"]
+	if err := cmdAttest(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPublic(root, []string{"send", "--reason", "a fresh head"}); err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 2 {
+		t.Fatalf("sending again made %d posts in all, want two", posts.Load())
+	}
+	for _, path := range []string{"/", "/attestations.json"} {
+		if _, got := getURL(t, srv.URL+path); strings.Contains(got, "Access control policy") {
+			t.Errorf("one administrator sending again put a draft nobody approved on %s", path)
+		}
+	}
+
+	if err := cmdAttest(root, []string{"publish", "--reason", "add the access control policy"}); err != nil {
+		t.Fatal(err)
+	}
+	req = waitingRequest(t, root)
+	elsewhere := t.TempDir()
+	if err := cmdPublic(root, []string{"target", elsewhere}); err != nil {
+		t.Fatal(err)
+	}
+	flagToken = tokens["sam"]
+	if err := cmdPending(root, []string{"approve", req.ID}); err == nil {
+		t.Error("an approval sent a publication after the public instance's address changed")
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) > 0 || posts.Load() != 2 {
+		t.Errorf("a refused approval sent something: %d posts, %d transfers written", posts.Load(), len(entries))
+	}
+}
+
 // With one administrator, publication goes out as it is asked for, and the
 // record says it was approved alone.
 func TestPublishAloneIsRecordedAsAlone(t *testing.T) {
