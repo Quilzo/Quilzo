@@ -4,12 +4,16 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/vector"
 )
 
 // A token limited to content types or locales writes the pages it may read
@@ -68,5 +72,69 @@ func TestATokenLimitedToTypesOrLocalesWritesOnlyWhatItMayRead(t *testing.T) {
 	}
 	if code := put(byLocale, "about", map[string]any{"title": "Qui", "locale": "fr"}); code != http.StatusNotFound {
 		t.Errorf("a token limited to French was answered %d, not 404, for a page it may not read", code)
+	}
+}
+
+// Somebody granted part of the site, or holding a token confined to it, is
+// listed and searched that part.
+//
+// The listing and the search by meaning asked for view on "/", which a grant
+// on /blog does not cover and a token issued `--on /blog` does not reach, so
+// both were refused 403 although each leaves out every page the caller may
+// not read. They ask now whether the caller may read somewhere in the
+// content, and still answer each page by itself.
+func TestPartOfTheSiteIsListedOverTheAPI(t *testing.T) {
+	s, _, _ := setup(t)
+	pages, err := site.PagesAt(s.Store, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["blog/first"] = map[string]any{"title": "First", "body": "Hello from the blog."}
+	if _, err := site.SaveDraft(s.Store, pages, "blog", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	idx := vector.Build(s.Store.GetRef(site.RefLive), pages, strings.Fields)
+	s.Vectors = func() *vector.Index { return idx }
+	s.Tokenise = strings.Fields
+	if err := s.Policy.Grant(auth.Binding{Principal: "bea", Role: auth.RoleReader, Resource: "/blog"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Policy.Grant(auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: auth.AreaSecurity}); err != nil {
+		t.Fatal(err)
+	}
+	issue := func(who, on string) string {
+		secret, _, err := s.Tokens.Issue("t-"+who+on, who, auth.RoleReader, on, time.Hour, auth.RoleAdmin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+	for _, tc := range []struct{ who, on string }{{"bea", "/"}, {"reader", "/blog"}} {
+		tok := issue(tc.who, tc.on)
+		w := req(t, s, "GET", "/api/v1/pages", tok, nil, nil)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s on %s was refused the listing: %d %s", tc.who, tc.on, w.Code, w.Body)
+			continue
+		}
+		var l Listing
+		if err := json.Unmarshal(w.Body.Bytes(), &l); err != nil {
+			t.Fatal(err)
+		}
+		if l.Total != 1 || len(l.Pages) != 1 || l.Pages[0].Name != "blog/first" {
+			t.Errorf("%s on %s was listed %+v", tc.who, tc.on, l)
+		}
+		w = req(t, s, "GET", "/api/v1/search/vector?q=hello", tok, nil, nil)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s on %s was refused the search: %d %s", tc.who, tc.on, w.Code, w.Body)
+		} else if strings.Contains(w.Body.String(), "pricing") || strings.Contains(w.Body.String(), "about") {
+			t.Errorf("%s on %s was answered a page outside /blog: %s", tc.who, tc.on, w.Body)
+		}
+	}
+	// Somebody with nothing in the content is refused, as before.
+	if w := req(t, s, "GET", "/api/v1/pages", issue("sam", "/"), nil, nil); w.Code != http.StatusForbidden {
+		t.Errorf("somebody with nothing in the content was listed: %d", w.Code)
 	}
 }

@@ -1893,17 +1893,21 @@ func readableDiff(root string, s *store.Store, from, to string) ([]site.Change, 
 	if err != nil {
 		return nil, err
 	}
-	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	caller := resolveCaller(root, "")
+	may, err := pageCheck(root, caller, auth.ActView)
 	if err != nil {
 		return nil, err
 	}
+	// The records are the whole site's: shown to whoever may read it, now
+	// that somebody who may read only part of it may run this as well.
+	whole := authorise(root, caller, auth.ActView, "/") == nil
 	kept := changes[:0]
 	for _, c := range changes {
 		id := c.After
 		if id == "" {
 			id = c.Before
 		}
-		if s.IsTree(id) || may(c.Path) {
+		if tree := s.IsTree(id); (tree && whole) || (!tree && may(c.Path)) {
 			kept = append(kept, c)
 		}
 	}
@@ -2562,7 +2566,7 @@ func cmdLog(root string, args []string) error {
 		return errNotFound{fmt.Errorf("no ref %q", *ref)}
 	}
 	live := s.GetRef(site.RefLive)
-	hist, err := s.History(head, *limit)
+	hist, err := readableHistory(root, s, head, *limit)
 	if err != nil {
 		return err
 	}
@@ -2583,6 +2587,64 @@ func cmdLog(root string, args []string) error {
 		fmt.Printf("  %s  %-10s %s%s\n", short(h.ID), h.Commit.Author, h.Commit.Message, mark)
 	}
 	return nil
+}
+
+// readableHistory is the commits a log shows the caller: the whole history
+// to whoever may read the whole site, and to somebody who may read only part
+// of it the commits that changed pages of that part and nothing else.
+//
+// A commit's message and author say what it changed, and its changes are
+// the whole site's when they reach a page out of the caller's reach or the
+// records, so a commit that touched one is left out whole rather than shown
+// with its message. As many commits as were asked for are shown when there
+// are that many to show.
+func readableHistory(root string, s *store.Store, head string, limit int) ([]struct {
+	ID     string
+	Commit store.Commit
+}, error) {
+	caller := resolveCaller(root, "")
+	if authorise(root, caller, auth.ActView, "/") == nil {
+		return s.History(head, limit)
+	}
+	may, err := pageCheck(root, caller, auth.ActView)
+	if err != nil {
+		return nil, err
+	}
+	// Bounded, so a long history with little of it readable is not walked
+	// to its first commit, each with a diff.
+	all, err := s.History(head, limit*20)
+	if err != nil {
+		return nil, err
+	}
+	kept := all[:0]
+	for _, h := range all {
+		if len(kept) == limit {
+			break
+		}
+		parent := ""
+		if len(h.Commit.Parents) > 0 {
+			parent = h.Commit.Parents[0]
+		}
+		changes, err := site.Diff(s, parent, h.ID)
+		if err != nil {
+			return nil, err
+		}
+		readable := len(changes) > 0
+		for _, c := range changes {
+			id := c.After
+			if id == "" {
+				id = c.Before
+			}
+			if s.IsTree(id) || !may(c.Path) {
+				readable = false
+				break
+			}
+		}
+		if readable {
+			kept = append(kept, h)
+		}
+	}
+	return kept, nil
 }
 
 func cmdRender(root string, args []string) error {

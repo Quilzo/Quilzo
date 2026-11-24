@@ -552,6 +552,37 @@ func (s *Server) may(r *http.Request, act auth.Action, resource string) error {
 	return nil
 }
 
+// mayInContent is may for a listing or a search, which then asks may of
+// every page it answers: whether the caller may act somewhere in the site's
+// content, through their credential.
+//
+// Both asked about "/", which a grant on /blog does not cover and a token
+// issued `--on /blog` does not reach, so whoever held part of the site was
+// refused the listing and the search of it. The content and not the areas
+// (auth.Policy.Anywhere), and the credential asked about its own path
+// rather than about "/". The refusal is the one may gives for "/".
+func (s *Server) mayInContent(r *http.Request, act auth.Action) error {
+	err := s.may(r, act, "/")
+	if err == nil {
+		return nil
+	}
+	tok := tokenFrom(r)
+	if tok == nil {
+		return err
+	}
+	within := strings.TrimSpace(tok.Resource)
+	if within == "" {
+		within = "/"
+	}
+	if auth.CheckCredential(tok.Role, tok.Resource, tok.Scope, act, within) != nil {
+		return err
+	}
+	if s.Policy != nil && !s.Policy.Anywhere(tok.Principal, act) {
+		return err
+	}
+	return nil
+}
+
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, Error{
 		Error: "no such endpoint",
@@ -623,7 +654,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayInContent(r, auth.ActView); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -1311,7 +1342,7 @@ func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
 		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayInContent(r, auth.ActView); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return

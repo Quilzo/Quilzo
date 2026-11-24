@@ -83,6 +83,14 @@ type need struct {
 	// them. Taking the area in addition, and not in place of "/", keeps
 	// every reader who ran them before.
 	alsoIn []string
+	// inContent marks a command that lists pages and leaves out each one
+	// the caller may not act on, so asked about the whole site it is also
+	// let through for somebody who may act somewhere in the site's content,
+	// through their credential (mayInContent). diff, log, find and the
+	// lists of locks, checks and notes asked for view on "/", which a grant
+	// on /blog does not cover and a token issued `--on /blog` does not
+	// reach, so whoever held part of the site was refused every list of it.
+	inContent bool
 }
 
 // installing is the permission whose work the feature commands that read
@@ -101,8 +109,8 @@ var agentWork = []auth.Action{auth.ActManageAgents, auth.ActRunAgents, auth.ActA
 var commandNeeds = map[string]need{
 	// -- reading. A reader role, so a store with access control does not leak
 	// its contents to anybody with a shell on the box.
-	"diff":   {action: auth.ActView},
-	"log":    {action: auth.ActView},
+	"diff":   {action: auth.ActView, inContent: true},
+	"log":    {action: auth.ActView, inContent: true},
 	"render": {action: auth.ActView},
 	"export": {action: auth.ActView},
 	// Reading published content and hashing it. The identifier of a public
@@ -529,7 +537,7 @@ var commandNeeds = map[string]need{
 	"sections": {action: auth.ActEditDraft},
 	// Reading. The settings half asks for grant separately inside the command,
 	// because a key's summary describes a control and the rest is content.
-	"find": {action: auth.ActView},
+	"find": {action: auth.ActView, inContent: true},
 	// Reading which pages name which is reading the content and the types.
 	"links": {action: auth.ActView},
 	// Moving a page rewrites content, so it is an author's act — and the
@@ -547,10 +555,10 @@ var commandNeeds = map[string]need{
 	// Reading them is reading about the draft, which a reader may: the
 	// machine interface's list_checked and list_notes answer a reader, and
 	// these refused the same token on the command line.
-	"checked list": {action: auth.ActView},
-	"checked due":  {action: auth.ActView},
-	"note list":    {action: auth.ActView},
-	"notes list":   {action: auth.ActView},
+	"checked list": {action: auth.ActView, inContent: true},
+	"checked due":  {action: auth.ActView, inContent: true},
+	"note list":    {action: auth.ActView, inContent: true},
+	"notes list":   {action: auth.ActView, inContent: true},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
@@ -592,8 +600,8 @@ var commandNeeds = map[string]need{
 	"sections kinds":  {action: auth.ActView},
 	"templates list":  {action: auth.ActView},
 	"templates show":  {action: auth.ActView},
-	"lock list":       {action: auth.ActView},
-	"locks list":      {action: auth.ActView},
+	"lock list":       {action: auth.ActView, inContent: true},
+	"locks list":      {action: auth.ActView, inContent: true},
 	"review status":   {action: auth.ActView},
 	"schedule list":   {action: auth.ActView},
 	"media formats":   {action: auth.ActView},
@@ -1482,7 +1490,7 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) &&
-			!mayInArea(root, caller, n) {
+			!mayInArea(root, caller, n) && !(n.inContent && resource == "/" && mayInContent(root, caller, n.action)) {
 			var u *errUnverified
 			if errors.As(err, &u) {
 				err = errBlocked{u.named(sub)}
@@ -1551,6 +1559,30 @@ func mayInArea(root string, c *Caller, n need) bool {
 		}
 	}
 	return false
+}
+
+// mayInContent reports whether the caller may perform an action somewhere in
+// the site's content, for a row that lists pages and leaves out each one the
+// caller may not act on (need.inContent).
+//
+// The content and not the areas (auth.Policy.Anywhere), so an analyst's grant
+// on /@security does not open a list of pages. The credential's own limits
+// are asked in full, except its path, which is asked about itself rather
+// than about "/": a token issued `--on /blog` does not reach "/", and that
+// is the question the list then asks of each page.
+func mayInContent(root string, c *Caller, action auth.Action) bool {
+	if !c.Verified {
+		return false
+	}
+	p, err := loadPolicy(root)
+	if err != nil {
+		return false
+	}
+	within := strings.TrimSpace(c.Scope)
+	if within == "" {
+		within = "/"
+	}
+	return p.Anywhere(c.Name, action) && auth.CheckCredential(c.Role, c.Scope, c.Limits, action, within) == nil
 }
 
 // bootstrapIssue reports whether this is the first token being issued to a
@@ -1686,6 +1718,10 @@ func commandArea(cmd string, args []string) (string, bool) {
 // to a reader and the bare commands still asked for authoring, so the same
 // list was refused a reader under its shortest spelling.
 //
+// `lock` and `locks` list the claims when run bare, and took the row for
+// claiming a page, asked of the whole site, so the list was refused
+// whoever may read it and not claim a page.
+//
 // `assistant` lists the chatbots when run bare, and took the row for
 // declaring one, a publisher's: a reader and an author were refused the
 // list that `assistant list`, list_assistants and the Chatbots screen give
@@ -1698,7 +1734,7 @@ func commandArea(cmd string, args []string) (string, bool) {
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
 	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
-	"template": "list", "templates": "list", "assistant": "list",
+	"template": "list", "templates": "list", "assistant": "list", "lock": "list", "locks": "list",
 	"framework": "list", "assurance": "report", "engagement": "list", "entity": "tree"}
 
 // layoutHint is said after a refusal to write a layout.
