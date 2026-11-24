@@ -161,6 +161,34 @@ func TestEveryPlaygroundRouteIsUsable(t *testing.T) {
 	}
 }
 
+// The playground says what the console's own API answers a page write. That
+// API takes none: `quilzo serve` mounts it read-only for pages, so a PUT
+// answers 405 "this API is read-only" with the command that turns page
+// writes on.
+//
+// The note said only that the write needs If-Match or gets 428, so somebody
+// who followed it, pasted the ETag and sent, met a 405 the console had not
+// mentioned, and took the API, or the console, to be broken.
+func TestThePlaygroundSaysWhatTheConsolesAPIAnswersAPageWrite(t *testing.T) {
+	s, _ := setup(t)
+	puts := 0
+	for _, rt := range s.playgroundRoutes() {
+		if rt.Method != "PUT" || !strings.HasPrefix(rt.Path, "/api/v1/pages/") {
+			continue
+		}
+		puts++
+		for _, want := range []string{"405", "read-only",
+			"quilzo site --api --api-writable --confine=false", "If-Match"} {
+			if !strings.Contains(rt.Note, want) {
+				t.Errorf("%s %s: the note does not say %q: %s", rt.Method, rt.Path, want, rt.Note)
+			}
+		}
+	}
+	if puts == 0 {
+		t.Fatal("the playground offers no page write to check")
+	}
+}
+
 func fetchPlayground(t *testing.T) (string, http.Header) {
 	t.Helper()
 	s, tok := setup(t)

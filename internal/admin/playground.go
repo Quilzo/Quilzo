@@ -120,10 +120,17 @@ func (s *Server) playgroundRoutes() []Route {
 			Summary: "one page, with its ETag",
 			Note: "the ETag is the content hash, so If-None-Match answers " +
 				"exactly the question it appears to ask"},
+		// Offered here although this console's API takes no page writes,
+		// so the answer a write gets is shown and not guessed at, and the
+		// note says what that answer is. It said only that the write needs
+		// If-Match or gets 428, and the 405 that came back was a surprise.
 		{Method: "PUT", Path: "/api/v1/pages/index",
 			Summary: "replace a page",
 			Body:    "{\n  \"title\": \"Home\",\n  \"body\": \"Edited from the playground.\"\n}",
-			Note: "this needs If-Match. Without it you get 428: a write with " +
+			Note: "this console's API is read-only for pages, so here this " +
+				"answers 405, with the command that turns page writes on: " +
+				"quilzo site --api --api-writable --confine=false. There, " +
+				"this needs If-Match. Without it you get 428: a write with " +
 				"no validator overwrites whatever is there now, including " +
 				"somebody else's edit. Send * to create a page that does not " +
 				"exist yet"},
