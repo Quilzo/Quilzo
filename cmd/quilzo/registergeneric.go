@@ -365,7 +365,7 @@ func expireSide(root string, r *register.Register, who string, kind audit.Kind) 
 // side store's retention, enforced every quarter of an hour, so a kind's
 // declared period is a thing the program does and not a sentence.
 func registerJobs(root string) []upkeep.Job {
-	return []upkeep.Job{{Name: "register-retention", Do: func(time.Time) (int, error) {
+	return []upkeep.Job{{Name: "register-retention", Do: func(now time.Time) (int, error) {
 		if _, err := os.Stat(filepath.Join(root, "side")); errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
@@ -373,6 +373,9 @@ func registerJobs(root string) []upkeep.Job {
 		if err != nil {
 			return 0, err
 		}
+		// The upkeep loop's moment is the sweep's, so the sweep is the
+		// same on a test's clock as on the server's.
+		r.Now = func() time.Time { return now }
 		return expireSide(root, r, "upkeep", audit.KindService)
 	}}}
 }

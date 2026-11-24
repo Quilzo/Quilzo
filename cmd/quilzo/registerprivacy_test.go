@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // PLAN theme 7: registerWriter names the caller in the record by their
@@ -340,5 +342,52 @@ func TestRegisterOperationsAreOffForOutsideApps(t *testing.T) {
 	}
 	if _, rerr := callTool(t, buildMCP(root, s, app, "templates"), "quilzo_read", "register_kinds", nil); rerr != nil {
 		t.Errorf("with the setting on, the app was refused: %s", rerr.Message)
+	}
+}
+
+// PLAN theme 7: retention is enforced by the server's upkeep. The
+// register's job, which the admin server runs every quarter of an hour
+// with its own, deletes the raw file a fact was read from once its kind's
+// period has passed on the clock it is given, records that in the audit
+// log, and leaves a file inside its period alone.
+func TestTheUpkeepJobEnforcesRetention(t *testing.T) {
+	root, _ := accessStore(t)
+	r := registerOn(t, root)
+	start := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return start }
+	raw, err := r.PutRaw(testPerson, register.KindObservation, "application/json", []byte(`{"user":"a fact as it came"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job upkeep.Job
+	for _, j := range moduleJobs(root) {
+		if j.Name == "register-retention" {
+			job = j
+		}
+	}
+	if job.Do == nil {
+		t.Fatal("no module registers the register's retention job with the server's upkeep")
+	}
+	if n, err := job.Do(start.Add(399 * 24 * time.Hour)); err != nil || n != 0 {
+		t.Fatalf("inside its period the sweep deleted %d (%v)", n, err)
+	}
+	if r.RawOf(raw).State != register.TextHeld {
+		t.Fatal("a raw file inside its period went")
+	}
+	if n, err := job.Do(start.Add(401 * 24 * time.Hour)); err != nil || n != 1 {
+		t.Fatalf("past its period the sweep deleted %d (%v)", n, err)
+	}
+	if st := r.RawOf(raw); st.State != register.TextErased || st.Erased.Basis != "retention" {
+		t.Errorf("past its period the raw file is %+v", st)
+	}
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, ev := range events {
+		if ev.Action == "register.expire" && ev.Detail["entries"] == "1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the sweep is not in the audit log")
 	}
 }
