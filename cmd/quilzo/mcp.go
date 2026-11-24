@@ -194,7 +194,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if op.Area != "" {
 			return authoriseUnder(root, caller, action, op.Area)
 		}
-		return authorise(root, caller, action, "/")
+		err = authorise(root, caller, action, "/")
+		for _, area := range op.AlsoIn {
+			if err != nil && authorise(root, caller, action, area) == nil {
+				return nil
+			}
+		}
+		return err
 	}
 
 	// -- reading ------------------------------------------------------------

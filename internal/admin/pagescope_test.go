@@ -218,8 +218,12 @@ func TestTheListingIsWhatTheReaderMayRead(t *testing.T) {
 		t.Error("the pages screen does not list blog/first, which is the one " +
 			"page this author is scoped to")
 	}
+	// By the address a row links to and the value it selects, and not by the
+	// bare word: an author of /blog is offered "New page at", whose example
+	// address is about-us, which names no page here.
 	for _, hidden := range []string{"legal/terms", "about"} {
-		if strings.Contains(body, hidden) {
+		if strings.Contains(body, `/page/`+hidden+`"`) || strings.Contains(body, `value="`+hidden+`"`) ||
+			strings.Contains(body, `name-`+hidden+`"`) {
 			t.Errorf("the pages screen names %s to an author scoped to /blog", hidden)
 		}
 	}
