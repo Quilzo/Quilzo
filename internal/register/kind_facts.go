@@ -135,6 +135,11 @@ type Observation struct {
 	Value  Scalar `json:"value" reg:"required" about:"what the source said: text, a number or a yes or no"`
 	Grade  Grade  `json:"grade" reg:"required" about:"how the fact reached the record"`
 	Raw    Digest `json:"raw,omitempty" about:"the sealed raw evidence the fact was read from"`
+	// Place is where in the raw file the fact was read: a cell, a row, or
+	// a JSON pointer. Taint says it was read from a part of the file that
+	// a person opening it would not see.
+	Place string `json:"place,omitempty" reg:"label" about:"where in the raw file it was read: a cell, a row or a JSON pointer"`
+	Taint Taint  `json:"taint,omitempty" about:"the part of the file it was read from that a person opening it would not see"`
 }
 
 func (Observation) Kind() Kind { return KindObservation }

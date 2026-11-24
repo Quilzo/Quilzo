@@ -244,6 +244,10 @@ type Evidence struct {
 	Outcome  Outcome `json:"outcome" reg:"required" about:"how the control stood"`
 	Grade    Grade   `json:"grade" reg:"required" about:"how the facts behind it reached the record"`
 	Raw      Digest  `json:"raw,omitempty" about:"the sealed raw evidence behind a statement"`
+	// Place and Taint are where in the raw file it was read, and whether
+	// that was a part a person opening the file would not see.
+	Place string `json:"place,omitempty" reg:"label" about:"where in the raw file it was read: a cell, a row or a JSON pointer"`
+	Taint Taint  `json:"taint,omitempty" about:"the part of the file it was read from that a person opening it would not see"`
 }
 
 const KindEvidence Kind = "Evidence"
