@@ -591,3 +591,64 @@ func TestASignInIsWrittenDownAsTheSessionsFirstUse(t *testing.T) {
 		t.Errorf("signing in with a passkey wrote the session's use as %d, not now", at)
 	}
 }
+
+// The idle clock holds across a restart at the doors that do not answer
+// with the admin's screens too: the content API the admin mounts and
+// /mcp, which ask it through IdleEnded with the session as it is stored,
+// and a use there is written down as a use at the screens is.
+//
+// The clock was kept in the admin's memory alone, so after a restart a
+// session nobody had used for longer than session.idle began a fresh
+// period at its first request there, as it did at the screens. The
+// restart test above goes in by the screens' door only, and went on
+// passing with this one starting every session it had not seen afresh,
+// and with it writing down no use made here.
+func TestTheIdleClockHoldsAcrossARestartAtTheContentAPI(t *testing.T) {
+	srv, _ := setup(t)
+	withSettings(t, srv, map[string]string{"session.idle": "10m"})
+	earlier := func(d time.Duration) int64 { return time.Now().Add(-d).Unix() }
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pages", nil)
+	stored := func(active int64) *auth.Token {
+		t.Helper()
+		secret, tok, err := srv.Tokens.IssueSession("passkey:editor", "editor", auth.RoleAdmin, "/",
+			time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		asStored(t, srv, tok.ID, map[string]int64{"created_at": earlier(2 * time.Hour), "active": active})
+		used, err := srv.Tokens.Authenticate(secret, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return used
+	}
+
+	// Left eleven minutes before the restart, and first sent after it.
+	if !srv.IdleEnded(req, stored(earlier(11*time.Minute))) {
+		t.Error("a session nobody used for eleven minutes before a restart still works at the content API")
+	}
+	// Used two minutes before it: still signed in, and this use is written
+	// down in turn, or a session used only here would be idle from its
+	// last use at the screens after the next restart.
+	var file []byte
+	srv.SaveTokens = func(ts *auth.TokenStore) error {
+		b, err := json.Marshal(ts)
+		file = b
+		return err
+	}
+	busy := stored(earlier(2 * time.Minute))
+	if srv.IdleEnded(req, busy) {
+		t.Error("a session used two minutes before a restart was ended at the content API")
+	}
+	var written struct {
+		Tokens []auth.Token `json:"tokens"`
+	}
+	if err := json.Unmarshal(file, &written); err != nil {
+		t.Fatalf("a use at the content API was not written down: %v", err)
+	}
+	for _, k := range written.Tokens {
+		if k.ID == busy.ID && time.Since(time.Unix(k.Active, 0)) > time.Minute {
+			t.Errorf("a use at the content API is written down as %d, not now", k.Active)
+		}
+	}
+}
