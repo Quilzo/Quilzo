@@ -80,6 +80,12 @@ type Receipt struct {
 	// their identifiers; Unchanged counts the rest.
 	Written   []Written `json:"written"`
 	Unchanged int       `json:"unchanged"`
+	// Approved is the hash of what was approved, for each record written
+	// that carries an approval: the surface the approvers were shown and
+	// their passkeys signed. It is in the receipt, and in the audit entry,
+	// so the hash on the page, the receipt and the log can be laid side by
+	// side.
+	Approved []Digest `json:"approved,omitempty"`
 	// Digest is SHA-256 over everything above, as JSON.
 	Digest Digest `json:"digest"`
 }
@@ -287,6 +293,9 @@ func (r *Register) write(ref string, by Actor, why string, recs []Record, prop *
 			blob := store.ObjectID(store.KindBlob, payload)
 			changes = append(changes, store.Change{Path: path, Value: st})
 			rc.Written = append(rc.Written, Written{Kind: it.spec.Kind, ID: it.id, Object: blob, New: !exists})
+			if a := approvalOf(it.rec); a != nil && ref == Ref {
+				rc.Approved = append(rc.Approved, a.Surface)
+			}
 		}
 		if len(changes) == 0 {
 			return nil
@@ -317,10 +326,18 @@ func (r *Register) write(ref string, by Actor, why string, recs []Record, prop *
 	if rc.Commit == "" {
 		return rc, nil
 	}
-	if err := r.audited(by, ref, audit.Success, map[string]string{
+	detail := map[string]string{
 		"commit": rc.Commit, "written": strconv.Itoa(len(rc.Written)), "unchanged": strconv.Itoa(rc.Unchanged),
 		"kinds": kindsOf(rc.Written), "receipt": string(rc.Digest), "why": why,
-	}); err != nil {
+	}
+	if len(rc.Approved) > 0 {
+		var surfaces []string
+		for _, d := range rc.Approved {
+			surfaces = append(surfaces, string(d))
+		}
+		detail["approved"] = strings.Join(surfaces, ",")
+	}
+	if err := r.audited(by, ref, audit.Success, detail); err != nil {
 		return rc, fmt.Errorf("%w: %v", ErrUnrecorded, err)
 	}
 	return rc, nil
