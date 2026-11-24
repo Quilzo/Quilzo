@@ -540,8 +540,14 @@ func TestTheProfileIsOnEverySurface(t *testing.T) {
 	if err := cmdProfile(root, []string{"disable", "experiments", "--reason", "the test ended"}); err != nil {
 		t.Fatal(err)
 	}
+	// Refused as switched off, and not answered as an experiment nobody
+	// started: an answer of either kind is an error, and only the words
+	// tell the two apart.
 	text, mErr = callTool(t, mcpSrv, "quilzo_read", "experiment_report", map[string]any{"name": "signup"})
-	if mErr == nil && !strings.Contains(text, "switched off") {
-		t.Errorf("experiment_report answered with experiments switched off: %s", text)
+	if mErr != nil {
+		text = mErr.Message
+	}
+	if !strings.Contains(text, "switched off") {
+		t.Errorf("experiment_report is not refused as switched off with experiments off: %s", text)
 	}
 }
