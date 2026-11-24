@@ -2658,7 +2658,12 @@ than for one that has to be described.
   position.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
-  removed. Identifiers are pseudonymised unless somebody explicitly asks for
+  removed. In OCSF, evidence of a control (`control.operated`,
+  `control.failed`, `control.not-observed`) is a Compliance Finding, class
+  2003, with the control and Pass, Fail or Warning in its compliance object,
+  so a failed control reaches the SOC as a finding about the control and
+  never as a refused request; a request that was refused is still API
+  Activity, and a refused sign-in still Authentication. Identifiers are pseudonymised unless somebody explicitly asks for
   them, and asking is itself recorded. Every export of the log is recorded the
   same way, as `auditlog.export` with its format, how many events, their
   range and whether identifiers were asked for: `quilzo siem`, the export on
