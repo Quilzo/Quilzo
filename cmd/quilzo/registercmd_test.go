@@ -228,6 +228,19 @@ func TestTheRegisterWriterAsksThePolicyAndRecordsTheWrite(t *testing.T) {
 	if !ok || !refused {
 		t.Errorf("the audit log holds the write %v and the refusal %v", ok, refused)
 	}
+
+	// While this store's audit log cannot take an entry, nothing is
+	// written: a write nobody can show was made by whom is not evidence.
+	head := r.Head()
+	noteAuditWrite(root, errors.New("no space left on device"))
+	if _, err := r.Put(by, "a control, with the log full",
+		register.Control{Ref: "AC-03", Title: "Backups tested", Domain: "resilience", Owner: testOwner}); err == nil ||
+		!strings.Contains(err.Error(), "audit log") {
+		t.Errorf("a write with the audit log unable to take its entry was answered %v", err)
+	}
+	if r.Head() != head {
+		t.Error("the register moved while its audit log could not record it")
+	}
 }
 
 // A module's command answers the register's errors with the exits the help
