@@ -431,3 +431,33 @@ func TestAStaleSyncCannotUndoAConcurrentDeactivation(t *testing.T) {
 		t.Errorf("deactivated, she is suspended=%v and holds %v", f.suspended["ada@example.com"], f.held["ada@example.com"])
 	}
 }
+
+// A list filter's attribute name and operator are read in any case, as
+// RFC 7644 section 3.4.2.2 has them and as PATCH already reads attribute
+// names (attr). Matched exactly, a provider that writes `UserName eq` or
+// `userName EQ` to look somebody up before creating them was refused as
+// sending a filter not supported here, and did not provision them.
+func TestAListFilterIsReadInAnyCase(t *testing.T) {
+	f := newFixture(t)
+	f.do(t, http.MethodPost, "/Users", `{"userName":"ada@example.com","externalId":"x1"}`)
+	f.do(t, http.MethodPost, "/Groups", `{"displayName":"Editors"}`)
+	for _, q := range []string{
+		`/Users?filter=UserName%20eq%20%22ada@example.com%22`,
+		`/Users?filter=userName%20EQ%20%22ADA@example.com%22`,
+		`/Users?filter=USERNAME%20Eq%20%22ada@example.com%22`,
+		`/Users?filter=EXTERNALID%20eq%20%22x1%22`,
+		`/Groups?filter=DisplayName%20eq%20%22Editors%22`,
+	} {
+		code, list := f.do(t, http.MethodGet, q, "")
+		if code != 200 || list["totalResults"] != float64(1) {
+			t.Errorf("%s: %d %v", q, code, list)
+		}
+	}
+	// What is not offered is still refused: another operator, or an
+	// attribute a collection does not filter on.
+	for _, q := range []string{`/Users?filter=userName%20ne%20%22x%22`, `/Groups?filter=userName%20eq%20%22x%22`} {
+		if code, out := f.do(t, http.MethodGet, q, ""); code != 400 || out["scimType"] != "invalidFilter" {
+			t.Errorf("%s: %d %v", q, code, out)
+		}
+	}
+}
