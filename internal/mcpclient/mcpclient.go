@@ -475,6 +475,11 @@ func (c *Client) Approved(ctx context.Context, in agent.Integration, tool string
 // one it went out as it was until arguments were held to the schema; then
 // an order id, a postcode or a version that the tool takes as text was
 // refused as a number, and nothing a person could type made it text.
+//
+// The property is read within the whole schema, as the arguments are held
+// to it: one defined once and pointed at with $ref, read alone, said
+// nothing, and went as the type it looked like to be refused by its
+// definition.
 func (t Tool) Typed(name, text string, guessed any) any {
 	var schema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
@@ -483,7 +488,7 @@ func (t Tool) Typed(name, text string, guessed any) any {
 		return guessed
 	}
 	p, ok := schema.Properties[name]
-	if !ok || jsonschema.Check(p, guessed) == nil || jsonschema.Check(p, text) != nil {
+	if !ok || jsonschema.CheckPart(t.InputSchema, p, guessed) == nil || jsonschema.CheckPart(t.InputSchema, p, text) != nil {
 		return guessed
 	}
 	return text

@@ -234,3 +234,24 @@ func TestOnlyAToolThatSaysItChangesNothingIsReadOnly(t *testing.T) {
 		t.Errorf("a hint that is not a boolean was taken as read-only: %v %+v", err, h)
 	}
 }
+
+// An argument given as text is typed by its definition where the schema
+// defines it once and points at it, as generated schemas do.
+//
+// Arguments are held to the whole schema, which follows a $ref, so the type
+// an argument is given has to be read the same way: read from the property
+// alone, a $ref said nothing, order_id=42 went as the number 42, and the
+// call was refused for sending a number where the definition takes text.
+func TestAnArgumentDefinedOnceIsTypedByItsDefinition(t *testing.T) {
+	tool := Tool{InputSchema: json.RawMessage(`{"type":"object","$defs":{"id":{"type":"string"}},` +
+		`"properties":{"order_id":{"$ref":"#/$defs/id"},"count":{"type":"integer"}},"required":["order_id"]}`)}
+	if got := tool.Typed("order_id", "42", 42.0); got != "42" {
+		t.Errorf("order_id=42 is sent as %#v", got)
+	}
+	if got := tool.Typed("count", "3", 3.0); got != 3.0 {
+		t.Errorf("count=3 is sent as %#v", got)
+	}
+	if err := tool.takes(map[string]any{"order_id": tool.Typed("order_id", "42", 42.0)}); err != nil {
+		t.Errorf("what it was typed as is refused: %v", err)
+	}
+}
