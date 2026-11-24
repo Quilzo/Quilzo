@@ -3,16 +3,37 @@
 <p class="lead">How this installation is set up, checked against security and privacy rules.
   <a href="/security/frameworks">See results by framework</a> — FedRAMP, ISO 27001, SOC 2, GDPR, the EU AI Act and more.</p>
 
+{{/*
+  The headline is counts and coverage, and no score.
+
+  It was a numeral out of a hundred, coloured by band. A number like that
+  puts a world-readable key file and an input nobody supplied on one scale,
+  and it is the figure that gets reported and argued about instead of the
+  findings. So the screen opens on how many findings there are of each
+  severity, every severity said with its count, and on how many of the
+  scanner's rules ran on the input they need. The score is left to
+  `quilzo posture scan --json`, for the scripts that read it.
+*/}}
 <div class="posture-head">
-  <p class="score {{.Band}}"><strong>{{.Report.Score}}</strong><span class="outof">/100</span></p>
-  <p class="score-note">
-    {{if .Report.Findings}}
-      {{range $sev := severities}}{{with index $.Report.Counts $sev}}<span class="pill {{$sev}}">{{.}} {{$sev}}</span> {{end}}{{end}}
-    {{else}}
-      <span class="pill ok">No findings</span>
+  <div class="table-wrap tally-wrap">
+  <table class="tally">
+    <caption>Findings by severity, from the scan run {{.Ran}}</caption>
+    <thead><tr><th scope="col">Severity</th><th scope="col">Findings</th></tr></thead>
+    <tbody>
+    {{range .Tally}}
+    <tr>
+      <th scope="row"><span class="pill {{.Severity}}"><span class="wf-icon">{{icon .Icon}}</span>{{sentence .Severity}}</span></th>
+      <td class="tally-n">{{.Count}}</td>
+    </tr>
     {{end}}
-    <br>
-    <span class="help">{{.Report.Checked}} checks, run {{.Ran}}. Anything that couldn't be checked lowers the score too.</span>
+    </tbody>
+  </table>
+  </div>
+  <p class="tally-note">
+    {{if not .Report.Findings}}<span class="pill ok"><span class="wf-icon">{{icon "check_circle"}}</span>No findings</span><br>{{end}}
+    <strong>Coverage: {{.Counts.Coverage}}.</strong>
+    {{.Counts.NotChecked}} not checked, because their input was not supplied, so nothing is concluded about them.
+    {{if .Counts.Suppressed}}{{plural .Counts.Suppressed "accepted risk is" "accepted risks are"}} silenced until a date, listed below.{{end}}
   </p>
 </div>
 

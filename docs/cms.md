@@ -2633,7 +2633,13 @@ than for one that has to be described.
 - **`quilzo posture scan`** reads your actual deployment rather than a
   checklist, and every rule already names the NIST SP 800-53 controls it bears
   on and the OWASP category it belongs to. **57 controls have an automated
-  check.** `quilzo compliance controls` prints the map.
+  check.** `quilzo compliance controls` prints the map. It and the Security
+  screen open on the findings counted by severity, every severity with its
+  count, and on coverage, the rules that ran on the input they need of every
+  rule there is. Neither shows a score: one number out of a hundred puts a
+  world-readable key file and an input nobody supplied on one scale, and it
+  is the figure that gets argued about instead of the findings. `--json`
+  keeps the 0-100 `score` beside the same counts, for scripts that read it.
 - **OSCAL 1.2.3 assessment results**, generated from that scan. Not a claim of
   compliance — the output of an assessment, which is what the format is for and
   what an assessor can ingest.

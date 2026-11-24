@@ -577,19 +577,23 @@ func postureScan(root string, args []string) error {
 		return exitFor(rep, posture.Severity(*failOn))
 	}
 
+	// The score is here and only here, for the scripts and dashboards that
+	// read it; the tally beside it is what a person is shown.
+	tally := rep.Tally()
 	if w.Mode == out.JSON {
 		w.JSON(map[string]any{
 			"at": rep.At, "score": rep.Score, "findings": shown,
 			"counts": rep.Counts, "rules_checked": rep.Checked,
 			"not_checked": rep.NotChecked, "suppressed": len(rep.Suppressed),
+			"tally": tally,
 		})
 		return exitFor(rep, posture.Severity(*failOn))
 	}
 
-	w.Human("%sposture %d/100%s   %s\n", bold, rep.Score, reset,
-		summarise(rep))
-	w.Human("  %s%d rules, %d suppressed%s\n\n",
-		dim, rep.Checked, len(rep.Suppressed), reset)
+	// Counts and coverage, and no score: see posture.Tally for why.
+	w.Human("%sposture%s   %s\n", bold, reset, summarise(tally))
+	w.Human("  %s%s, %d not checked for want of their input, %d suppressed%s\n\n",
+		dim, tally.Coverage(), tally.NotChecked, tally.Suppressed, reset)
 
 	if len(shown) == 0 {
 		w.Human("  %snothing at %s or above%s\n", green, floor, reset)
@@ -656,17 +660,21 @@ func countAtLeast(rep posture.Report, s posture.Severity) int {
 	return n
 }
 
-func summarise(rep posture.Report) string {
-	if len(rep.Findings) == 0 {
-		return green + "no findings" + reset
-	}
+// summarise is the findings counted by severity, every severity said with
+// its count, zero included, so a line that reads "0 critical" was checked
+// and not left out. Colour marks a count that is not zero; the words say
+// the same without it.
+func summarise(t posture.Tally) string {
 	var parts []string
-	for _, s := range []posture.Severity{
-		posture.Critical, posture.High, posture.Medium, posture.Low} {
-		if n := rep.Counts[string(s)]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%s%d %s%s",
-				colourFor(s), n, s, reset))
+	for _, c := range t.Severities {
+		colour := green
+		if c.Count > 0 {
+			colour = colourFor(c.Severity)
 		}
+		parts = append(parts, fmt.Sprintf("%s%d %s%s", colour, c.Count, c.Severity, reset))
+	}
+	if t.Findings == 0 {
+		parts = append(parts, green+"(no findings)"+reset)
 	}
 	return strings.Join(parts, "  ")
 }

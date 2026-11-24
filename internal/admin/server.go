@@ -3427,10 +3427,18 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The headline is the tally, counts by severity and coverage, and the
+	// score is not passed: see posture.Tally for why.
+	counts := rep.Tally()
+	var tally []tallyRow
+	for _, c := range counts.Severities {
+		tally = append(tally, tallyRow{Severity: string(c.Severity), Count: c.Count, Icon: severityIcon(c.Severity)})
+	}
+
 	s.render(w, r, "security.html", map[string]any{
 		"Nav":   "security",
 		"Title": "Security", "Principal": p, "Low": low,
-		"Report": rep, "Controls": controls, "Band": band(rep.Score),
+		"Report": rep, "Controls": controls, "Tally": tally, "Counts": counts,
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
 		"Holders":     s.tokenHolders(rep.Findings),
 		"OpensShield": s.opens(p, "shield"), "OpensSignins": s.opens(p, "signins"),
@@ -3493,15 +3501,27 @@ func (s *Server) throttled() []throttle.Snapshot {
 	return s.Throttle.State()
 }
 
-// band turns the score into a class name, so the colour is decided once.
-func band(score int) string {
-	switch {
-	case score >= 90:
-		return "ok"
-	case score >= 60:
-		return "warn"
+// tallyRow is one severity in the Security screen's headline: its word,
+// how many findings the scan reported at it, and the symbol drawn beside
+// the word, so the colour is never all that says how bad it is.
+type tallyRow struct {
+	Severity string
+	Count    int
+	Icon     string
+}
+
+// severityIcon is the symbol for a severity: the same symbols the screens'
+// bands use for the same steps, from most serious to least.
+func severityIcon(s posture.Severity) string {
+	switch s {
+	case posture.Critical:
+		return "dangerous"
+	case posture.High:
+		return "warning"
+	case posture.Medium:
+		return "error"
 	default:
-		return "bad"
+		return "info"
 	}
 }
 

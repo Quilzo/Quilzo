@@ -610,7 +610,8 @@ type Report struct {
 	Counts     map[string]int `json:"counts"`
 	Checked    int            `json:"rules_checked"`
 	NotChecked []string       `json:"not_checked,omitempty"`
-	Score      int            `json:"score"`
+	// Score is 0-100, for the JSON only; see score and Tally.
+	Score int `json:"score"`
 	// Skipped are the rules whose input was not supplied, so their silence
 	// is not a pass. A framework view reads this to say "not checked".
 	Skipped  []string        `json:"skipped,omitempty"`
@@ -778,6 +779,11 @@ func missing(s State) []string {
 // into a claim of health. NIST SP 800-137 is a document about *awareness*;
 // under it, not knowing is a deficiency rather than a neutral state, so it
 // costs points like one.
+//
+// It is kept for the machine-readable report alone, where scripts and
+// dashboards already read it. No surface a person reads shows it: they are
+// shown the Tally, counts by severity and coverage, for the reason the
+// Tally's comment gives.
 func score(r Report) int {
 	total := 100
 	total -= 40 * r.Counts[string(Critical)]
