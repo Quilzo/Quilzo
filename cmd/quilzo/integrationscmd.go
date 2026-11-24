@@ -357,7 +357,14 @@ func integrationsPin(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	want := map[string]bool{}
+	// The tools named, when some are, and which of them the server still
+	// offers. Two sets, because one set struck off as each tool was found
+	// is empty once the last one named is, and an empty set reads as no
+	// names at all: every tool listed after it was pinned with it, so
+	// re-approving the one changed tool a person had read approved,
+	// unseen, a redefinition of the next.
+	named := len(args) > 1
+	want, found := map[string]bool{}, map[string]bool{}
 	for _, t := range args[1:] {
 		want[t] = true
 	}
@@ -368,10 +375,10 @@ func integrationsPin(root string, args []string) error {
 	pinned := 0
 	var looked []string
 	for _, t := range tools {
-		if !t.Allowed || (len(want) > 0 && !want[t.Name]) {
+		if !t.Allowed || (named && !want[t.Name]) {
 			continue
 		}
-		delete(want, t.Name)
+		found[t.Name] = true
 		looked = append(looked, t.Name)
 		// Shown in full: this is what is being approved, and a model that
 		// chooses it is choosing what this says.
@@ -390,7 +397,9 @@ func integrationsPin(root string, args []string) error {
 		}
 	}
 	for t := range want {
-		return fmt.Errorf("%s does not use %q, or the server no longer offers it", in.Name, t)
+		if !found[t] {
+			return fmt.Errorf("%s does not use %q, or the server no longer offers it", in.Name, t)
+		}
 	}
 	if pinned > 0 {
 		set.Declared[idx] = in
