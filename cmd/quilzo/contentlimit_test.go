@@ -296,3 +296,71 @@ func TestATokenLimitedToTypesUnbindsNoPageOfAnotherType(t *testing.T) {
 		t.Error("a token limited to policy may write the product page")
 	}
 }
+
+// A token limited to content types or languages has the writing assistant
+// write only the pages it may write itself: each page the model proposes is
+// asked about as it stands and as it would be written, as the admin's
+// assistant asks each page before it accepts the proposal.
+//
+// `quilzo assist` was asked whether its caller may use the models on the
+// whole site, which is no one type or language, and then wrote every page
+// the model proposed, so a token issued `--types policy` had the model
+// rewrite the product page, and one issued `--locales fr` the French page
+// in English.
+func TestATokenLimitedToTypesOrLocalesHasTheAssistantWriteOnlyWhatItMay(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := typedStore(t)
+	// Both types with a language, so a write is refused for its limit or
+	// not at all.
+	reg := schema.NewRegistry()
+	for _, name := range []string{"product", "policy"} {
+		if err := reg.Add(schema.Type{Name: name, Fields: []schema.Field{
+			{Name: "title", Kind: schema.Text, Required: true}, {Name: "locale", Kind: schema.Text}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(filepath.Join(root, "types.json"), &schema.Store{Registry: reg,
+		Bound: map[string]string{"pen": "product", "returns": "policy"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	asOnly(t, root, "boss")
+	for _, tc := range []struct {
+		scope auth.Scope
+		reply string
+		may   bool
+		why   string
+	}{
+		{auth.Scope{Types: []string{"policy"}}, `{"pages":{"pen":{"title":"Rewritten"}}}`, false, "scoped to policy"},
+		{auth.Scope{Locales: []string{"fr"}}, `{"pages":{"returns":{"title":"Returns","locale":"en"}}}`, false,
+			"scoped to fr"},
+		{auth.Scope{Types: []string{"policy"}}, `{"pages":{"returns":{"title":"Retours","locale":"fr"}}}`, true, ""},
+	} {
+		limitedAs(t, root, "boss", tc.scope)
+		standInWritingAssistant(t, tc.reply)
+		args := []string{"rewrite it", "--author", "boss", "--templates", filepath.Join(t.TempDir(), "tpl")}
+		err := authoriseCommand(root, "assist", args)
+		if err == nil {
+			_, err = humanOutput(t, func() error { return cmdAssist(root, args) })
+		}
+		if tc.may && err != nil {
+			t.Errorf("limited to %s, the assistant could not write %s: %v", tc.scope, tc.reply, err)
+		}
+		if !tc.may && (err == nil || !strings.Contains(err.Error(), tc.why)) {
+			t.Errorf("limited to %s, the assistant wrote %s: %v", tc.scope, tc.reply, err)
+		}
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title, _ := pages["pen"].(map[string]any)["title"].(string); title != "Brass pen" {
+		t.Errorf("the product page reads %q after a token limited to policy had it rewritten", title)
+	}
+}

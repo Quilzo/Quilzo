@@ -234,3 +234,55 @@ func TestATokenLimitedToTypesOrLocalesImportsOnlyWhatItMayWrite(t *testing.T) {
 		}
 	}
 }
+
+// A credential limited to some languages accepts from the writing assistant
+// only pages in them: each page of the proposal is asked about as it would
+// be written, as well as about the page it would replace.
+//
+// Accepting asked each page as it stood (canPage) and not what the model
+// wrote, so a token issued `--locales fr` had the French page rewritten in
+// English, and an English page started, which saving the same page from
+// the editor refuses it.
+func TestATokenLimitedToALanguageAcceptsNoProposalInAnother(t *testing.T) {
+	srv, _ := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{
+		"index":   map[string]any{"title": "Home"},
+		"returns": map[string]any{"title": "Retours", "locale": "fr"},
+	}, "typed", "test"); err != nil {
+		t.Fatal(err)
+	}
+	srv.MFAFrom = time.Now().Add(time.Hour)
+	var saved []map[string]any
+	srv.Assist = &Assist{
+		Pages: func() (map[string]any, error) { return site.PagesAt(srv.Store, site.RefDraft) },
+		Save: func(pages map[string]any, _, _, _ string) error {
+			saved = append(saved, pages)
+			return nil
+		},
+		Record: func([]string, string, string) error { return nil },
+	}
+	secret, _, err := srv.Tokens.IssueScoped("fr", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{Locales: []string{"fr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		proposal string
+		may      bool
+	}{
+		{`{"pages":{"returns":{"title":"Returns","body":"In English.","locale":"en"}}}`, false},
+		{`{"pages":{"fresh":{"title":"Fresh","body":"In English.","locale":"en"}}}`, false},
+		{`{"pages":{"returns":{"title":"Retours","body":"En français.","locale":"fr"}}}`, true},
+	} {
+		saved = nil
+		form := "model=small-model&overwrite=1&proposal=" + url.QueryEscape(tc.proposal) +
+			"&seal=" + srv.sealProposal("editor", "small-model", tc.proposal)
+		w := postForm(t, srv, "/assist/accept", secret, form)
+		if tc.may && len(saved) == 0 {
+			t.Errorf("a token limited to French could not accept %s: %d %s", tc.proposal, w.Code, w.Header().Get("Location"))
+		}
+		if !tc.may && len(saved) != 0 {
+			t.Errorf("a token limited to French accepted %s: %d", tc.proposal, w.Code)
+		}
+	}
+}
