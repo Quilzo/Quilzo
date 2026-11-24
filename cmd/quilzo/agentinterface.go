@@ -172,11 +172,7 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 		OAuth:   oa,
 		Docs:    admin.DocURL("agent-interface"),
 		Limit: func(c *mcp.Caller) (bool, time.Duration) {
-			key := "principal:" + c.Principal
-			if tok, ok := c.Data.(auth.Token); ok && tok.ID != "" {
-				key = tok.ID
-			}
-			return limit.Allow(key, time.Now())
+			return limit.Allow(interfaceRateKey(c), time.Now())
 		},
 		Receipt: func(connection string) ([]byte, error) {
 			rf, err := buildAppReceipt(root, connection, time.Now())
@@ -231,9 +227,9 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 	srv.Federation = federation(root)
 }
 
-// interfaceRate is how fast one token may call the agent interface: the
-// content API's budget, api.rate.per_minute after a burst of api.rate.burst,
-// read when the server starts as /api/v1 reads it.
+// interfaceRate is how fast one credential (interfaceRateKey) may call the
+// agent interface: the content API's budget, api.rate.per_minute after a
+// burst of api.rate.burst, read when the server starts as /api/v1 reads it.
 //
 // A count of its own rather than the API's, so an integration busy on one
 // is not stopped on the other, and the same numbers, because the settings
@@ -249,6 +245,22 @@ func interfaceRate(cfg *config.Config) *rate.Limiter {
 		burst = 20
 	}
 	return &rate.Limiter{Every: time.Minute / time.Duration(per), Burst: burst, MaxKeys: 65536}
+}
+
+// interfaceRateKey is whose allowance a call at the agent interface is
+// counted against: the credential that lasts, and not each token minted
+// from it (auth.Token's RateKey), or the person, for a caller with no
+// token to count by.
+//
+// It was each token. An app is given a new access token at every refresh,
+// so refreshing was a fresh burst, and six refreshes in a third of a
+// second gave one connection six bursts; exchanging a token for sessions
+// did the same.
+func interfaceRateKey(c *mcp.Caller) string {
+	if tok, ok := c.Data.(auth.Token); ok && tok.ID != "" {
+		return tok.RateKey()
+	}
+	return "principal:" + c.Principal
 }
 
 // appCallRecord is the record of one call at the agent interface. It is

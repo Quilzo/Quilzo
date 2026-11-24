@@ -259,6 +259,101 @@ func TestTheAgentInterfaceHoldsATokenToTheAPIsRate(t *testing.T) {
 	}
 }
 
+// An app's allowance at the agent interface is its connection's, not each
+// access token's, and a session exchanged from a token shares the token's.
+//
+// The limit was kept per token, and a connected app is given a new access
+// token at every refresh, so refreshing was a fresh burst: six refreshes in
+// a third of a second gave one connection six bursts of twenty calls. A
+// program exchanging its token for sessions (RFC 8693) got a burst for
+// each the same way.
+func TestAnAppsRateIsItsConnectionsWhateverItRefreshes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	old := flagToken
+	flagToken = ""
+	t.Cleanup(func() { flagToken = old })
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "mcp.remote", "true", "--accept-risk", "agents reach it"}); err != nil {
+		t.Fatal(err)
+	}
+	// One more a minute after the burst, so that nothing comes back while
+	// the test runs, however slowly.
+	setConfigs(t, root, map[string]string{"admin.base_url": "http://localhost:8080", "api.rate.per_minute": "1"})
+	seedPolicy(t, root, [2]string{"rae", "reader"})
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	// What a refresh does: another access token under the same grant.
+	app := func(grant string) string {
+		t.Helper()
+		secret, _, err := toks.IssueForGrant("rae", auth.RoleReader, auth.Scope{}, "https://app.example/client.json",
+			grant, "http://localhost:8080/mcp", time.Hour, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+	refreshed, another := []string{app("gr_1"), app("gr_1")}, app("gr_2")
+	var exchanged []string
+	parent, _, err := toks.Issue("ci", "rae", auth.RoleReader, "/", 72*time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		secret, _, err := toks.Exchange(parent, auth.RoleReader, "/", time.Hour, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exchanged = append(exchanged, secret)
+	}
+	srv, err := admin.New(s, pol, toks, render.Layouts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireInterface(root, s, srv, nil, t.TempDir())
+	h := srv.Handler()
+	call := func(secret string) int {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+secret)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for name, pair := range map[string][]string{"refreshed": refreshed, "exchanged": exchanged} {
+		for i := range 20 {
+			if code := call(pair[0]); code != http.StatusOK {
+				t.Fatalf("%s: call %d with the first token answered %d", name, i+1, code)
+			}
+		}
+		if code := call(pair[1]); code != http.StatusTooManyRequests {
+			t.Errorf("%s: the next token after a burst of twenty was answered %d, a fresh allowance", name, code)
+		}
+	}
+	// The token the sessions came from has spent what they spent, and
+	// another connection of the same person's has spent nothing.
+	if code := call(parent); code != http.StatusTooManyRequests {
+		t.Errorf("the token its sessions were exchanged from was answered %d after their burst", code)
+	}
+	if code := call(another); code != http.StatusOK {
+		t.Errorf("another connection was answered %d for the first one's calls", code)
+	}
+}
+
 // Each person's client is an agent of its own. Every call made with a
 // person's own token was recorded as one principal, mcp-client, so thirteen
 // people's clients each finding out once what they might do were one agent

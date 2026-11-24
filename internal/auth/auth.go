@@ -992,6 +992,27 @@ func (ts *TokenStore) BindSession(id, bound string) error {
 // sign-in an identity provider or passkey vouched for.
 func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
 
+// RateKey is the name a rate limit counts this token's requests under: the
+// credential that lasts, and not each token minted from it. An app's access
+// tokens are counted under its connection (the grant), a session exchanged
+// from a token under that token, and any other token under its own id.
+//
+// Each door counted by the token's own id. An app is given a new access
+// token at every refresh, and a token is exchanged for a session as often
+// as its holder likes, so each was a caller the limit had never seen and
+// took a whole burst: six refreshes in a third of a second gave one
+// connection six bursts at the agent interface, and the content API's
+// limit held nobody who exchanged. The rule is here, once, for both doors.
+func (t Token) RateKey() string {
+	switch {
+	case t.Grant != "":
+		return "grant:" + t.Grant
+	case t.Parent != "":
+		return t.Parent
+	}
+	return t.ID
+}
+
 // SignedIn reports whether this is a session somebody signed in to the
 // admin with, by passkey, identity provider or token: what the admin
 // signs out once nobody has used it for session.idle. That clock is kept

@@ -233,7 +233,10 @@ var settings = []Setting{
 			"integration. At least 1: there is no turning it off, and zero " +
 			"was taken and read as the default, so somebody who set it to " +
 			"mean off still had 120. The agent interface (/mcp) holds each " +
-			"token to the same rate and burst, counted apart from the API's.",
+			"token to the same rate and burst, counted apart from the API's. " +
+			"A session shares the allowance of the token it was exchanged " +
+			"from, and an app's access tokens share their connection's, so " +
+			"neither an exchange nor a refresh is a fresh one.",
 		Weaker: atMost(6000, "%s a minute is high enough that one token can "+
 			"saturate the server, which is a denial of service with a "+
 			"credential attached"),
