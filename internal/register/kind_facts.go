@@ -156,7 +156,9 @@ type LinkOn string
 // Values lists the identifiers a link may be made on. An e-mail address is
 // never one of them: a link on people is made on the hash of their address,
 // which a source reports in place of it, so the address is not kept here.
-func (LinkOn) Values() []string { return []string{"serial", "hostname", "cloud-id", "upn", "email-hash"} }
+func (LinkOn) Values() []string {
+	return []string{"serial", "hostname", "cloud-id", "upn", "email-hash"}
+}
 
 // Link says two records from two sources are the same thing, because they
 // carry the same identifier, exactly. Code makes a link and nothing else
