@@ -55,6 +55,8 @@ var shapes = map[string]*regexp.Regexp{
 	"nist-ai-rmf":      regexp.MustCompile(`^(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+$`),
 	"iso-42001":        regexp.MustCompile(`^A\.\d+\.\d+(\.\d+)?$`),
 	"owasp-llm":        regexp.MustCompile(`^LLM(0[1-9]|10)$`),
+	"owasp-asi":        regexp.MustCompile(`^ASI(0[1-9]|10)$`),
+	"nis2":             regexp.MustCompile(`^Art\. 21\(2\)\([a-j]\)$`),
 }
 
 // Every reference names a framework in the catalogue and is shaped like an

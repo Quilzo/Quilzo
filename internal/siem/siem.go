@@ -350,14 +350,17 @@ func isHandle(id string) bool {
 
 // OCSF class and activity identifiers.
 //
-// 3005 is Authentication; 6003 is API Activity. Named rather than inlined
-// because a wrong class id produces an export a SIEM files under the wrong
-// category, which is worse than one it rejects.
+// 3002 is Authentication, 6003 is API Activity and 2003 is Compliance
+// Finding. Named rather than inlined because a wrong class id produces an
+// export a SIEM files under the wrong category, which is worse than one it
+// rejects.
 const (
-	classAuthentication = 3002
-	classAPIActivity    = 6003
-	categoryIAM         = 3
-	categoryApplication = 6
+	classAuthentication    = 3002
+	classAPIActivity       = 6003
+	classComplianceFinding = 2003
+	categoryIAM            = 3
+	categoryApplication    = 6
+	categoryFindings       = 2
 )
 
 // The record_integrity profile, and why this log is the unusual case that
@@ -537,6 +540,9 @@ func renderOCSF(events []audit.Event, opt Options, env Envelope) (string, error)
 		for k, v := range e.Detail {
 			rec["unmapped"].(map[string]any)["detail_"+k] = v
 		}
+		if controlEvent(e) {
+			asComplianceFinding(rec, e)
+		}
 
 		line, err := json.Marshal(rec)
 		if err != nil {
@@ -570,6 +576,9 @@ func apiOf(e audit.Event, opt Options) map[string]any {
 // identity and access, as the act is. The name it was written with is what
 // the export carries.
 func classFor(e audit.Event) int {
+	if controlEvent(e) {
+		return classComplianceFinding
+	}
 	a := audit.Canonical(e.Action)
 	if strings.HasPrefix(a, "auth") || strings.HasPrefix(a, "token") ||
 		strings.HasPrefix(a, "signin") {
@@ -579,14 +588,22 @@ func classFor(e audit.Event) int {
 }
 
 func categoryFor(e audit.Event) int {
-	if classFor(e) == classAuthentication {
+	switch classFor(e) {
+	case classAuthentication:
 		return categoryIAM
+	case classComplianceFinding:
+		return categoryFindings
 	}
 	return categoryApplication
 }
 
 // activityFor maps to OCSF API Activity: 1 Create, 2 Read, 3 Update, 4 Delete.
+// Evidence of a control is a Compliance Finding, whose activity 1 is Create:
+// each occasion is a new finding, never an update of an earlier one.
 func activityFor(e audit.Event) int {
+	if controlEvent(e) {
+		return 1
+	}
 	// A call through the agent interface is a read unless it went through
 	// the write tool or the publish tool: an agent's reading is most of what
 	// it does, and an export that called every one an update would bury the
@@ -634,12 +651,80 @@ func severityFor(e audit.Event) int {
 	return 1
 }
 
-// statusFor maps to OCSF: 1 Success, 2 Failure.
+// statusFor maps to OCSF: 1 Success, 2 Failure. A Compliance Finding's
+// status is the finding's own, and each is 1, New; what the control showed
+// is in its compliance object (asComplianceFinding).
 func statusFor(e audit.Event) int {
+	if controlEvent(e) {
+		return 1
+	}
 	if e.Outcome == audit.Success {
 		return 1
 	}
 	return 2
+}
+
+// controlEvent is whether an event is evidence of a control: that it
+// operated, failed or could not be observed on one occasion, as the
+// assurance package records it under control.*.
+func controlEvent(e audit.Event) bool {
+	return strings.HasPrefix(audit.Canonical(e.Action), "control.")
+}
+
+// asComplianceFinding files evidence of a control as OCSF's Compliance
+// Finding (class 2003) instead of API Activity.
+//
+// # Why
+//
+// A control that failed is written to the audit log as a denial, so the log
+// can be searched for the occasions something did not work, which is the
+// population an auditor samples from. Filed as API Activity, the same
+// record reached a SIEM as a refused request: a backup that did not restore
+// looked like an authorisation failure, and went to whoever triages access
+// rather than whoever owns the control, while the real refusals it sat
+// among were diluted. A Compliance Finding is what OCSF has for "an
+// evaluation against a control", so that is what it is filed as, and a
+// refused request is left exactly as it was.
+//
+// # What it carries
+//
+// The compliance object, which the class requires: the control, and its
+// result as OCSF's status: Pass for operated, Fail for failed, and Warning
+// for a check that could not tell, which the schema defines as "did not
+// yield a result due to missing information". finding_info, which every
+// finding requires: the event's own hash as its uid, so it is unique and
+// links to the chain, and a title written here from the control and its
+// result, never from what the evidence says of itself. The finding's status
+// is New, since each occasion is a finding of its own. The API object goes,
+// because no request was made.
+//
+// Each attribute was checked against the OCSF 1.9.0 schema the metadata
+// names: compliance and finding_info are required, compliance.status_id is
+// 1 Pass, 2 Warning, 3 Fail, and a finding's status_id is 1 New.
+func asComplianceFinding(rec map[string]any, e audit.Event) {
+	control := e.Detail["control"]
+	result, statusID, said := "Warning", 2, "could not be observed"
+	switch audit.Canonical(e.Action) {
+	case "control.operated":
+		result, statusID, said = "Pass", 1, "operated"
+	case "control.failed":
+		result, statusID, said = "Fail", 3, "failed"
+	}
+	compliance := map[string]any{"status_id": statusID, "status": result}
+	title := "A control " + said
+	if control != "" {
+		compliance["control"] = control
+		title = "Control " + control + " " + said
+	}
+	rec["compliance"] = compliance
+	rec["finding_info"] = map[string]any{
+		"uid":          e.Hash,
+		"title":        title,
+		"created_time": msFrom(e.At),
+	}
+	rec["status"] = "New"
+	delete(rec, "api")
+	rec["resources"] = []any{map[string]any{"uid": e.Resource, "type": "control"}}
 }
 
 func actorType(k audit.Kind) string {

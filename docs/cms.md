@@ -1645,8 +1645,8 @@ not reach what it was pointed at covers nothing — counting those windows as
 covered is the easiest way to make a gap disappear. A quarterly control with
 one occurrence in six months has been shown to have happened, not to operate.
 A control with forty passes and no failure is either one that always works or
-a check that cannot report one, and internal/detect refuses a rule that has
-never matched for the same reason. There is no percentage: a compliance score
+a check that cannot report one, for the reason a detection rule that has
+never matched is not trusted to catch anything. There is no percentage: a compliance score
 is controls-passing over controls-in-scope, and scope is chosen by whoever
 wants the number.
 
@@ -2633,7 +2633,22 @@ than for one that has to be described.
 - **`quilzo posture scan`** reads your actual deployment rather than a
   checklist, and every rule already names the NIST SP 800-53 controls it bears
   on and the OWASP category it belongs to. **57 controls have an automated
-  check.** `quilzo compliance controls` prints the map.
+  check.** `quilzo compliance controls` prints the map. It and the Security
+  screen open on the findings counted by severity, every severity with its
+  count, and on coverage, the rules that ran on the input they need of every
+  rule there is. Neither shows a score: one number out of a hundred puts a
+  world-readable key file and an input nobody supplied on one scale, and it
+  is the figure that gets argued about instead of the findings. `--json`
+  keeps the 0-100 `score` beside the same counts, for scripts that read it.
+- **`quilzo posture frameworks`** and the Frameworks screen read the same
+  scan against each framework, among them NIS2's Article 21(2), points (a)
+  to (j), OWASP's Top 10 for LLM Applications in its renumbered 2026
+  edition, and OWASP's Top 10 for Agentic Applications, ASI01 to ASI10.
+  Those three lists are carried whole, so each requirement is named as well
+  as numbered, and each is pinned in the tests to a copy of the published
+  list, with each check's citation pinned to the title it means: a list
+  renumbered under a citation fails the build instead of quietly pointing a
+  reader at another risk.
 - **OSCAL 1.2.3 assessment results**, generated from that scan. Not a claim of
   compliance — the output of an assessment, which is what the format is for and
   what an assessor can ingest.
@@ -2643,7 +2658,12 @@ than for one that has to be described.
   position.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
-  removed. Identifiers are pseudonymised unless somebody explicitly asks for
+  removed. In OCSF, evidence of a control (`control.operated`,
+  `control.failed`, `control.not-observed`) is a Compliance Finding, class
+  2003, with the control and Pass, Fail or Warning in its compliance object,
+  so a failed control reaches the SOC as a finding about the control and
+  never as a refused request; a request that was refused is still API
+  Activity, and a refused sign-in still Authentication. Identifiers are pseudonymised unless somebody explicitly asks for
   them, and asking is itself recorded. Every export of the log is recorded the
   same way, as `auditlog.export` with its format, how many events, their
   range and whether identifiers were asked for: `quilzo siem`, the export on

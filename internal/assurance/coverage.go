@@ -96,8 +96,8 @@ func (c Coverage) Proven() bool {
 
 // Untested reports whether a run of passes is long enough to be suspicious.
 //
-// The same argument internal/detect makes about a rule that has never
-// matched: an automated check with four hundred passes and no failure is
+// The same argument holds of a detection rule that has never matched: an
+// automated check with four hundred passes and no failure is
 // indistinguishable from one pointed at the wrong thing.
 func (c Coverage) Untested() bool {
 	return c.Observations >= MinForUntested && c.Failures == 0

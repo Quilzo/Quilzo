@@ -25,8 +25,9 @@
 //
 // Each case is run k times and counts only if every run met it. An agent
 // right on a case eight times in ten is wrong on it every fifth morning, and
-// pass^k is the number that says so. internal/analyst measures its triage
-// agent this way; this is the same measurement for every agent.
+// pass^k is the number that says so. A triage agent in a security team's
+// own tools is best measured this way; this is the same measurement for
+// every agent.
 //
 // # Planted instructions
 //

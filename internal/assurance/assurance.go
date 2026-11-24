@@ -21,9 +21,10 @@
 //
 // # A control that has never failed has not been tested
 //
-// internal/detect refuses a rule that matches none of its own fixtures, on
-// the grounds that a detection that cannot fire is not a detection. The same
-// argument applies here and almost nobody makes it: an automated check that
+// A detection rule that matches none of its own fixtures is refused by any
+// careful security team, on the grounds that a detection that cannot fire is
+// not a detection. The same argument applies here and almost nobody makes it:
+// an automated check that
 // has returned "pass" four hundred times and "fail" never is
 // indistinguishable from a check that is broken, a check pointed at the wrong
 // thing, or a check whose failure path was never written.
@@ -157,9 +158,9 @@ type Control struct {
 	Owner string `json:"owner,omitempty"`
 	// Maps are the framework references this control answers to:
 	// "SOC2:CC6.1", "ISO27001:A.8.2". Carried for navigation and never
-	// summed into a coverage figure — see the package comment, and see
-	// internal/detect on why an ATT&CK coverage percentage is dishonest for
-	// exactly the same reason.
+	// summed into a coverage figure — see the package comment. An ATT&CK
+	// coverage percentage is dishonest for exactly the same reason: it counts
+	// techniques named, not techniques a rule has been shown to catch.
 	Maps []string `json:"maps,omitempty"`
 	// Entity is the company that operates this control. Empty means the
 	// group, and a group control covers the companies beneath it.
@@ -273,8 +274,8 @@ func (e Evidence) Validate() error {
 	}
 	if e.Kind == audit.KindAI {
 		// A model may summarise evidence and may not be the one attesting
-		// to it. The same rule internal/finding applies to closing findings
-		// and internal/vuln to marking something not affected, and here the
+		// to it. The same rule holds wherever a model's word would close a
+		// finding or mark a flaw not affecting a product, and here the
 		// artefact goes to an auditor with the organisation's name on it.
 		return fmt.Errorf(
 			"%s: this evidence is attested by a model. An artefact going to "+
