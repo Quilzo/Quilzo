@@ -4,8 +4,9 @@
 // Package waiting is the one list of what waits for a person to decide:
 // what agents are waiting on, tool calls held for a second person, an
 // install or a feature an agent drafted, the change to the site waiting
-// for approvals, a newsletter issue an agent proposed, and memories held
-// until somebody confirms them.
+// for approvals, a newsletter issue an agent proposed, memories held
+// until somebody confirms them, and records proposed for the security
+// register.
 //
 // It was written twice, once for `quilzo approvals` and once for the
 // admin's Approvals and Today, and the two drifted. A question asked too
@@ -53,8 +54,8 @@ import (
 // list are left out when empty, so a script reading the old keys reads
 // the same thing.
 type Item struct {
-	// Source is where it waits: run, gateway, feature, review, newsletter
-	// or memory.
+	// Source is where it waits: run, gateway, feature, review, newsletter,
+	// memory or register.
 	Source string `json:"source"`
 	// Kind is what sort of wait a run's item is (agent.WaitAsk and the
 	// rest); empty for the other sources.
@@ -148,6 +149,31 @@ type Sources struct {
 	Review   func() (*Review, error)
 	Issues   func() ([]newsletter.Issue, error)
 	Memories func(memory.Filter) ([]memory.Entry, error)
+	// Register is what waits on the security register's proposals ref
+	// (internal/register): records a crew, a model or a person proposed,
+	// which no figure reads until a person accepts them.
+	Register func() ([]Proposed, error)
+}
+
+// Proposed is a record proposed for the security register, waiting for a
+// person to accept or reject it.
+//
+// It carries what the list says and nothing the proposal holds: not its
+// title or its values, which a model may have written, because the list is
+// a security surface and a model's words do not become a name on one. The
+// record itself is read where it is decided.
+type Proposed struct {
+	// ID is the record's identifier, and Kind its kind: Control, Risk.
+	ID, Kind string
+	// By is the agent that proposed it, by its machine name, or the
+	// pseudonym of the person who did; Why is the line the proposing code
+	// gave, which code writes and a person reads.
+	By, Why string
+	// Resource is what deciding it is asked about: the kind's place in the
+	// register's area, where the permission to approve records of that
+	// kind is held.
+	Resource string
+	At       time.Time
 }
 
 func (src Sources) may(act auth.Action, resource string) bool {
@@ -270,6 +296,29 @@ func List(src Sources, now time.Time) ([]Item, error) {
 						Commits: "writes", Since: e.Created, Href: "/memory", Decide: "quilzo memory confirm " + e.ID})
 				}
 			}
+		}
+	}
+	// A record proposed for the security register, for whoever may approve
+	// records of its kind there, and not for the agent or the principal
+	// that proposed it under their own name. A person's proposal names them
+	// by their pseudonym, which this list cannot yet tell is the person
+	// looking: until the map from pseudonym to person exists it is offered
+	// to them, and the register refuses their decision (register.Accept).
+	if src.Register != nil {
+		list, _ := src.Register()
+		for _, p := range list {
+			if !src.may(auth.ActApprove, p.Resource) || auth.SamePerson(p.By, src.Name) {
+				continue
+			}
+			why := "proposed by " + firstNonEmpty(p.By, "somebody unnamed")
+			if p.Why != "" {
+				why += ": " + clip(p.Why, 160)
+			}
+			out = append(out, Item{Source: "register", ID: p.ID, Agent: p.By,
+				What:    "Accept or reject a proposed " + p.Kind + " record",
+				Why:     why + "; nothing reaches the register until a person accepts it",
+				Commits: "writes", Since: p.At, Href: "/register/proposals#p-" + p.ID,
+				Decide: "quilzo register proposals"})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Since.Before(out[j].Since) })

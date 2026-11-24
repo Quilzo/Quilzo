@@ -367,6 +367,7 @@
   ],
   "regexp": [
    "*",
+   "api",
    "boards",
    "chatbots",
    "forms",

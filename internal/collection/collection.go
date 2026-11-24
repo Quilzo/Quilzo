@@ -35,6 +35,7 @@ package collection
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -76,6 +77,41 @@ func ValidName(s string) error {
 	if s == "pages" {
 		return fmt.Errorf(
 			"%q is reserved: it is where the site's pages live", s)
+	}
+	return nil
+}
+
+// ReservedPrefix begins the names of the collections the security register
+// owns: sec_control, sec_evidence and the rest (internal/register).
+const ReservedPrefix = "sec_"
+
+// ErrReserved is a write refused because the collection is the security
+// register's. It is a refusal, not a failure: no retry writes it.
+var ErrReserved = errors.New("reserved for the security register")
+
+// Reserved refuses a write to a collection the security register owns, and
+// answers nil for any other name. The refusal is ErrReserved, so a surface
+// answers it as a refusal: 403 from the content API, exit 3 from the
+// command line.
+//
+// The register's records are evidence, and each is written one way: through
+// register.Put, which runs the kind's invariants, asks the policy gate,
+// checks the approval of a decision and records the write. A record put
+// into sec_control by `quilzo records add`, the content API or the agent
+// interface would have passed none of that and would look, in the tree,
+// exactly like one that had. So every write in this package asks here
+// first, and since every generic surface writes through this package, none
+// of them can write a register collection.
+//
+// It is the writes that are refused. A store that already holds a
+// collection of its own called sec_something can still read and export it,
+// which is how its owner moves it to another name.
+func Reserved(name string) error {
+	if strings.HasPrefix(name, ReservedPrefix) {
+		return fmt.Errorf(
+			"%q is %w: names beginning %s belong to it, "+
+				"and its records are written through the register and read with quilzo register",
+			name, ErrReserved, ReservedPrefix)
 	}
 	return nil
 }

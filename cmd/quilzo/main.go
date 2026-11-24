@@ -93,7 +93,7 @@ var version = "dev"
 
 func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
-func usage() { fmt.Print(usageText) }
+func usage() { fmt.Print(fullHelp()) }
 
 // lockPatience is how long a command waits for a lock another process
 // holds: QUILZO_LOCK_WAIT when it is set, a length of time as every other
@@ -1294,6 +1294,12 @@ func main() {
 			usage()
 		}
 	default:
+		// A security module's command, registered from the module's own
+		// file (modules.go) rather than written into this switch.
+		if m, ok := moduleCommand(cmd); ok {
+			err = m.run(root, cmdArgs)
+			break
+		}
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
 		os.Exit(2)
@@ -2560,6 +2566,9 @@ func cmdLog(root string, args []string) error {
 	head := s.GetRef(*ref)
 	if head == "" {
 		return errNotFound{fmt.Errorf("no ref %q", *ref)}
+	}
+	if err := mayReadRegisterAt(root, s, *ref); err != nil {
+		return err
 	}
 	live := s.GetRef(site.RefLive)
 	hist, err := s.History(head, *limit)

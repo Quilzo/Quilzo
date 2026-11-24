@@ -143,6 +143,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/replica/ref/", s.replicaRef)
 	mux.HandleFunc("/api/v1/replica/object/", s.replicaObject)
 	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
+	// The security modules' routes, each registered from its own file
+	// (modules.go) rather than written into this list.
+	s.mountModules(mux)
 	mux.HandleFunc("/api/v1/", s.notFound)
 	// Everything else this handler is given is not found here either, and
 	// says so in JSON. Left to the mux, /api/v1 was redirected to /api/v1/
@@ -572,7 +575,8 @@ func (s *Server) allow(p string) string {
 	vectors := s.Vectors != nil && s.Tokenise != nil
 	switch {
 	case p == "/api/v1/openapi.json", p == "/api/v1/pages",
-		strings.HasPrefix(p, "/api/v1/replica/ref/"), strings.HasPrefix(p, "/api/v1/replica/object/"):
+		strings.HasPrefix(p, "/api/v1/replica/ref/"), strings.HasPrefix(p, "/api/v1/replica/object/"),
+		moduleRoute(p):
 		return reads
 	case p == "/api/v1/collections":
 		if records {

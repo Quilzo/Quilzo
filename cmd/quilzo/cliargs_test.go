@@ -313,7 +313,7 @@ func everyCommandLine(t *testing.T) [][]string {
 	}
 	// And the subcommands the help names, for the commands whose switch is
 	// in a function the dispatch does not call directly, as blog's is.
-	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) ([a-z][a-z0-9-]*)(?: |$)`).FindAllStringSubmatch(usageText, -1) {
+	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) ([a-z][a-z0-9-]*)(?: |$)`).FindAllStringSubmatch(fullHelp(), -1) {
 		if c, sub := m[1], m[2]; tried[c] && !tried[c+" "+sub] {
 			asks, tried[c+" "+sub] = append(asks, []string{c, sub}), true
 		}
@@ -322,7 +322,7 @@ func everyCommandLine(t *testing.T) [][]string {
 	// network remove` is the third word of an alternative on geo's line, and
 	// it dropped a second prefix while every line above refused.
 	deeper := 0
-	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) (.+?)(?:   .*)?$`).FindAllStringSubmatch(usageText, -1) {
+	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) (.+?)(?:   .*)?$`).FindAllStringSubmatch(fullHelp(), -1) {
 		c := m[1]
 		if !tried[c] {
 			continue

@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/export"
+	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -59,6 +60,13 @@ func exportSite(root string, caller *Caller, opts exportOptions) (*exported, err
 	s, err := open(root)
 	if err != nil {
 		return nil, err
+	}
+	// The security register is not a site, and is read by its own
+	// surfaces, which ask about its area: exported as one, its records went
+	// to whoever may read the site's data.
+	if register.Holds(s, opts.Ref) {
+		return nil, errBlocked{fmt.Errorf("%s is the security register's, which is not a site and is not exported "+
+			"as one; quilzo register reads it", clip(opts.Ref, 64))}
 	}
 	pages, err := site.PagesAt(s, opts.Ref)
 	if err != nil {

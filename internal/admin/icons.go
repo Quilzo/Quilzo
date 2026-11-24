@@ -67,6 +67,9 @@ func filledFor(key string) string {
 	if p := readPath("assets/icons/" + key + ".fill.svg"); p != "" {
 		return p
 	}
+	if p := moduleFilled[key]; p != "" {
+		return p
+	}
 	return iconPath[key]
 }
 

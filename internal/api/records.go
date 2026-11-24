@@ -153,6 +153,16 @@ func (s *Server) records(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A write to one of the security register's collections is refused
+	// before anything is read for it, and as a refusal: it was answered 500,
+	// "the write failed", which a client retries, about a write that no
+	// retry will make. The register's records are written through the
+	// register and read at /api/v1/register (collection.Reserved).
+	if err := collection.Reserved(name); err != nil && !readMethod(r) {
+		writeError(w, http.StatusForbidden, Error{Error: "reserved", Detail: err.Error(),
+			Fix: "GET /api/v1/register/kinds reads the register; its records are written by the modules that own them"})
+		return
+	}
 	switch {
 	case id == "" && readMethod(r):
 		s.listRecords(w, r, name)

@@ -1,0 +1,85 @@
+{{/*
+  The security kit: the parts the security screens are made of.
+
+  Each part is a named template given one of internal/seckit's values, and
+  writes nothing that value did not carry: every number is a seckit.Figure,
+  which only code can make and which cannot be made without its source, its
+  time, its hash and its grade; every status is a seckit.Badge, a word with
+  an icon that has its own text alternative, so nothing is said by colour
+  alone. A figure's provenance is behind a disclosure a keyboard opens,
+  never a hover. No part writes a script or a style attribute, so each works
+  with scripts off and under the admin's policy, and each reflows to 320
+  pixels (the "security kit" section of style.css).
+
+  An approval request that is not whole (seckit.Approval.Valid) is said to
+  be so, and offers no button: the hash beside the button is what a
+  person's authentication is bound to.
+
+  A part's headings: the header is the page's one h1; the approval request
+  and the error summary are h2, because each is a section of the page they
+  are on; nothing else writes a heading, so a part never breaks the order
+  of the screen it is placed in.
+*/}}
+
+{{define "kit-header"}}<div class="kit-header"><h1>{{.Title}}</h1>{{with .Lead}}<p class="lead">{{.}}</p>{{end}}</div>{{end}}
+
+{{define "kit-badge"}}<span class="kit-badge kit-{{.Tone}}"><span class="kit-badge-icon" role="img" aria-label="{{.IconWord}}">{{icon .Icon}}</span><span class="kit-badge-word">{{.Word}}</span></span>{{end}}
+
+{{define "kit-figure"}}{{if .Zero}}<span class="kit-none">Not measured</span>{{else}}<details class="kit-prov">
+<summary><span class="kit-count"><span class="kit-n">{{.N}}</span>{{if .HasOf}} of <span class="kit-of">{{.Of}}</span>{{end}}</span> <span class="kit-unit">{{.Unit}}</span>{{if .Stale}} {{template "kit-badge" .Freshness}}{{end}}<span class="chev">{{icon "expand_more"}}</span></summary>
+<dl class="kit-facts">
+<dt>From</dt><dd>{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{if $s.Href}}<a href="{{$s.Href}}">{{$s.Name}}</a>{{else}}{{$s.Name}}{{end}}{{end}}</dd>
+<dt>Facts as of</dt><dd><time datetime="{{.Stamp}}">{{.When}}</time>, {{.Age}} old when this page was drawn</dd>
+{{with .Grade}}<dt>Grade</dt><dd>{{.}}</dd>{{end}}
+<dt>Hash</dt><dd><code class="kit-hash">{{.Hash}}</code></dd>
+</dl></details>{{end}}{{end}}
+
+{{define "kit-tile"}}<div class="kit-tile">
+<p class="kit-tile-label">{{if .Href}}<a href="{{.Href}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}</p>
+<div class="kit-tile-figure">{{template "kit-figure" .Figure}}</div>
+{{if not .Status.Zero}}<p class="kit-tile-status">{{template "kit-badge" .Status}}</p>{{end}}
+</div>{{end}}
+
+{{define "kit-tiles"}}<div class="kit-tiles">{{range .}}{{template "kit-tile" .}}{{end}}</div>{{end}}
+
+{{define "kit-hash"}}<details class="kit-prov"><summary><code>{{.Short}}</code><span class="visually-hidden">, the whole hash</span><span class="chev">{{icon "expand_more"}}</span></summary><code class="kit-hash">{{.Hash}}</code></details>{{end}}
+
+{{define "kit-cell"}}{{if eq .Kind "figure"}}{{template "kit-figure" .Figure}}{{else if eq .Kind "badge"}}{{template "kit-badge" .Badge}}{{else if eq .Kind "link"}}<a href="{{.Href}}">{{.Text}}</a>{{else if eq .Kind "time"}}<time datetime="{{.Stamp}}">{{.When}}</time>{{else if eq .Kind "hash"}}{{template "kit-hash" .}}{{else if eq .Kind "none"}}<span class="kit-none">None</span>{{else}}{{.Text}}{{end}}{{end}}
+
+{{define "kit-table"}}<div class="table-wrap"><table class="kit-table">
+<caption>{{.Caption}}</caption>
+<thead><tr>{{range .Columns}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr><th scope="row">{{template "kit-cell" .Head}}</th>{{range .Cells}}<td>{{template "kit-cell" .}}</td>{{end}}</tr>{{end}}</tbody>
+</table></div>{{end}}
+
+{{define "kit-evidence"}}<ul class="kit-evidence">{{range .}}<li>
+<p class="kit-evidence-title">{{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}} {{template "kit-badge" .Status}}</p>
+<p class="kit-evidence-meta"><time datetime="{{.Stamp}}">{{.When}}</time>{{with .GradeWord}} · {{.}}{{end}}{{with .Source.Name}} · from {{.}}{{end}}</p>
+{{if .Hash}}{{template "kit-hash" .}}{{end}}
+</li>{{end}}</ul>{{end}}
+
+{{define "kit-approval"}}{{with .Valid}}<p class="notice warn">{{icon "warning"}} This approval request cannot be shown whole, so it cannot be decided here: {{.}}.</p>{{else}}<section class="kit-approval" aria-labelledby="kit-approval-{{.Short}}">
+<h2 id="kit-approval-{{.Short}}">{{.What}}</h2>
+<dl class="kit-facts">
+<dt>What you are shown</dt><dd>Exactly this page's record, with the evidence it cites, under the hash <code class="kit-hash">{{.Hash}}</code></dd>
+<dt>Who may approve</dt><dd>{{.Who}}</dd>
+<dt>Approvals needed</dt><dd>{{.Needed}} of {{.Of}} eligible</dd>
+</dl>
+{{if .Alone}}<p class="notice warn">{{template "kit-badge" .AloneBadge}} You are the only person eligible, so your approval will be recorded as made alone, and a review by somebody else will be due.</p>{{end}}
+{{if .Action}}<form method="post" action="{{.Action}}">{{range .Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+<p class="kit-approve-row"><button type="submit">{{.Button}}</button> <span class="hint">Your passkey signs the hash <code>{{.Short}}</code>, and the receipt carries it.</span></p>
+</form>{{else}}<p class="hint">This can't be decided from this page.</p>{{end}}
+</section>{{end}}{{end}}
+
+{{define "kit-timeline"}}<ol class="kit-timeline">{{range .}}<li><time datetime="{{.Stamp}}">{{.When}}</time> <span class="kit-event">{{.What}}</span>{{with .By}} <span class="hint">by {{.}}</span>{{end}}{{if not .Status.Zero}} {{template "kit-badge" .Status}}{{end}}{{if .Hash}} {{template "kit-hash" .}}{{end}}</li>{{end}}</ol>{{end}}
+
+{{define "kit-empty"}}<div class="kit-empty"><p class="kit-empty-title">{{.Title}}</p>{{with .Body}}<p>{{.}}</p>{{end}}{{if .Href}}<p><a href="{{.Href}}">{{.Action}}</a></p>{{end}}</div>{{end}}
+
+{{define "kit-errors"}}{{if .}}<div class="kit-errors" id="kit-errors" role="alert" aria-labelledby="kit-errors-title" tabindex="-1">
+<h2 id="kit-errors-title">{{if eq (len .) 1}}There is a problem{{else}}There are {{len .}} problems{{end}}</h2>
+<ul>{{range .}}<li><a href="#{{.Field}}">{{.Label}}: {{.Message}}</a></li>{{end}}</ul>
+</div>{{end}}{{end}}
+
+{{define "kit-field-error"}}{{if .Message}}<p class="kit-field-error" id="{{.Field}}-error"><span class="kit-badge-icon" role="img" aria-label="Error">{{icon "error"}}</span> {{.Message}}</p>{{end}}{{end}}
+
+{{define "kit-live"}}<div class="kit-live" role="status" aria-live="polite">{{.}}</div>{{end}}

@@ -224,3 +224,41 @@ func TestAWaitingInstallLinksToWhereMakeListsIt(t *testing.T) {
 		}
 	}
 }
+
+// A record proposed for the security register is offered to whoever may
+// approve records of its kind in the register's area, and to nobody else:
+// not to somebody who may approve elsewhere, and not to its proposer. The
+// item names the kind and the proposer and none of the record's own words.
+func TestARegisterProposalIsOfferedToWhoeverMayApproveItsKind(t *testing.T) {
+	now := time.Now()
+	const resource = "/@compliance/register/sec_control"
+	src := Sources{Name: "dana",
+		Register: func() ([]Proposed, error) {
+			return []Proposed{
+				{ID: "0123456789abcdef0123456789abcdef", Kind: "Control", By: "control-tester",
+					Why: "drafted from the access review", Resource: resource, At: now.Add(-time.Hour)},
+				{ID: "fedcba9876543210fedcba9876543210", Kind: "Risk", By: "Dana",
+					Resource: "/@compliance/register/sec_risk", At: now},
+			}, nil
+		}}
+	src.May = func(act auth.Action, res string) bool {
+		return act == auth.ActApprove && strings.HasPrefix(res, "/@compliance/register")
+	}
+	items, err := List(src, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("offered %+v; the proposer's own risk is not theirs to decide", items)
+	}
+	it := items[0]
+	if it.Source != "register" || it.Commits != "writes" || it.Decide != "quilzo register proposals" ||
+		!strings.Contains(it.What, "Control") || !strings.Contains(it.Why, "control-tester") ||
+		it.Href != "/register/proposals#p-0123456789abcdef0123456789abcdef" {
+		t.Errorf("the proposal is listed as %+v", it)
+	}
+	src.May = func(act auth.Action, res string) bool { return act == auth.ActApprove && res == "/" }
+	if items, _ := List(src, now); len(items) != 0 {
+		t.Errorf("approving on the site offered a register proposal: %+v", items)
+	}
+}

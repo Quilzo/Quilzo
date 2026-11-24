@@ -239,6 +239,11 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 	if err := collection.ValidName(coll); err != nil {
 		return nil, err
 	}
+	// Before the file is read: a dry run said it would bring records into
+	// a register collection, and a real one said it had, then refused.
+	if err := collection.Reserved(coll); err != nil {
+		return nil, err
+	}
 	t, st, err := collectionType(root, coll)
 	if err != nil {
 		return nil, err

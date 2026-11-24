@@ -512,7 +512,9 @@ func helpText(t *testing.T) string {
 	if end < 0 {
 		t.Fatal("the usage literal is not closed")
 	}
-	return rest[:end]
+	// With the lines each module wrote in its own file, which are printed
+	// with these (fullHelp) and are what somebody edits for that module.
+	return rest[:end] + moduleHelp()
 }
 
 // helpClaims reads what the help says each command can do.
@@ -654,6 +656,11 @@ func commandHandlers(t *testing.T, pkg map[string]*ast.File) map[string]string {
 		}
 		return true
 	})
+	// A module's command runs the function it registered, and its
+	// subcommands are read from that function's switch as any command's.
+	for _, m := range cliModules {
+		out[m.command] = funcName(m.run)
+	}
 	return out
 }
 

@@ -103,7 +103,7 @@ func helpAfter(cmd string, args []string) bool {
 		cmd = primary
 	}
 	subs, lines, onlyFlags := false, 0, true
-	for _, line := range strings.Split(usageText, "\n") {
+	for _, line := range strings.Split(fullHelp(), "\n") {
 		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
 		if !ok || rest == "" || rest[0] != ' ' {
 			continue
@@ -177,7 +177,7 @@ func helpAfterSub(cmd string, args []string) bool {
 		cmd = primary
 	}
 	named := false
-	for _, line := range strings.Split(usageText, "\n") {
+	for _, line := range strings.Split(fullHelp(), "\n") {
 		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
 		if !ok || rest == "" || rest[0] != ' ' {
 			continue
@@ -272,7 +272,7 @@ func helpSubcommandsOf(path []string) []string {
 	}
 	seen := map[string]bool{}
 	var words []string
-	for _, line := range strings.Split(usageText, "\n") {
+	for _, line := range strings.Split(fullHelp(), "\n") {
 		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
 		if !ok || rest == "" || rest[0] != ' ' {
 			continue
@@ -520,8 +520,9 @@ func commandHelp(cmd string, args []string) {
 	fmt.Printf("\n  %severy command, and the exit codes: quilzo help%s\n", dim, reset)
 }
 
-// helpFor is the entries of usageText about the command: each line that
-// names it, with the lines indented under it that go on to describe it.
+// helpFor is the entries of the help (fullHelp) about the command: each
+// line that names it, with the lines indented under it that go on to
+// describe it.
 func helpFor(cmd string, args []string) string {
 	if primary, ok := helpAliases[cmd]; ok {
 		cmd = primary
@@ -531,7 +532,7 @@ func helpFor(cmd string, args []string) string {
 		sub = args[0]
 	}
 	var all, ofSub []string
-	lines := strings.Split(usageText, "\n")
+	lines := strings.Split(fullHelp(), "\n")
 	for i := 0; i < len(lines); i++ {
 		rest, ok := strings.CutPrefix(lines[i], "  quilzo "+cmd)
 		if !ok || (rest != "" && rest[0] != ' ') {

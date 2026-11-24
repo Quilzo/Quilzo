@@ -1,0 +1,11 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Empty}}{{template "kit-empty" .}}{{else}}{{template "kit-table" .Table}}
+{{if or .Previous .Next}}<nav class="paging" aria-label="Pages of records">{{with .Previous}}<a href="{{.}}">Earlier records</a>{{end}} {{with .Next}}<a href="{{.}}">Later records</a>{{end}}</nav>{{end}}{{end}}
+<h2>Its fields</h2>
+<div class="table-wrap"><table>
+<caption>The schema of a {{.Spec.Kind}} record, which every write is held to</caption>
+<thead><tr><th scope="col">Field</th><th scope="col">Holds</th><th scope="col">Needed</th><th scope="col">What it is for</th></tr></thead>
+<tbody>{{range .Spec.Fields}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Type}}{{with .Ref}}, a {{.}}{{end}}{{with .Enum}}: one of {{range $i, $v := .}}{{if $i}}, {{end}}{{$v}}{{end}}{{end}}</td><td>{{if .Required}}Yes{{else}}No{{end}}</td><td>{{.About}}</td></tr>{{end}}</tbody>
+</table></div>
+{{template "foot" .}}

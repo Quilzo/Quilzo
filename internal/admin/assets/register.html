@@ -1,0 +1,7 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Empty}}{{template "kit-empty" .}}{{end}}
+<p>{{if .Waiting}}<a href="/register/proposals">{{plural .Waiting "proposal" "proposals"}} waiting for a person</a>{{else}}<a href="/register/proposals">Proposals</a>: nothing is waiting for a person{{end}}. A proposal is in no count on this page until somebody accepts it.</p>
+{{template "kit-table" .Table}}
+{{if .Head}}<p class="hint">Every count is of the register at <code class="kit-hash">{{.Head}}</code>. <code>quilzo register kinds</code> answers the same from a terminal.</p>{{end}}
+{{template "foot" .}}

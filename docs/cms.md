@@ -1430,7 +1430,16 @@ the media library, per row     re-read from disk -> read once per request
 a page over the wire           6,443 B -> 1,955 B  (70%, deflate at level 6)
 a second copy of a page        an ETag list is parsed as RFC 9110 says
 the sitemap and the feeds      1,054 B -> 304, and no body
+the security register's index  162,004 records as maps, about 200 MB ->
+                               80-byte typed rows, 12.4 MB (11.7 MB on disk)
+coverage over 1,000 controls   23.5 ms over maps -> 1.5 ms over typed rows
 ```
+
+The last two are of the register's scale probe (`internal/register`): ten
+thousand observations, a thousand controls and a hundred and fifty thousand
+test runs and pieces of evidence, made the same way every time, and the
+bounds the index was designed to, under 15 MB per 150,000 rows and under a
+second for coverage, are tests.
 
 Compression weakens an ETag to `W/`, because a compressed response is not the
 bytes a strong validator named — the same thing nginx does — and `Vary:

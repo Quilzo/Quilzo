@@ -3569,3 +3569,79 @@ td code, td .mono { overflow-wrap: break-word; }
 .trigger-add .trigger-when > label { display: inline; margin: 0; font: var(--label-lg); }
 .trigger-add .trigger-when select, .trigger-add .trigger-when input { width: auto; max-width: 100%; }
 .trigger-add .trigger-when .hint { flex-basis: 100%; }
+
+/* -- security kit ----------------------------------------------------------
+   The parts the security screens are made of (assets/seckit.html, whose
+   values are internal/seckit's). Colour is never the message here: every
+   status carries its word and an icon with a text alternative of its own,
+   so these rules choose tints and nothing a reader needs, and forced
+   colours draw them as borders. Every part wraps, so it reflows to 320 px
+   and at 400% zoom, a hash breaks anywhere rather than widening the page,
+   and nothing moves. The light and dark schemes are the tokens' own. */
+.kit-header { margin: 0 0 1rem; }
+.kit-header .lead { margin-top: .25rem; }
+.kit-tiles { display: grid; gap: .75rem; margin: 0 0 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.kit-tile { min-width: 0; padding: .75rem 1rem; border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-md); background: var(--surface-container-low); color: var(--on-surface); }
+.kit-tile-label { margin: 0 0 .25rem; font-weight: 600; }
+.kit-tile-status { margin: .5rem 0 0; }
+.kit-count { font-weight: 600; }
+.kit-n, .kit-of { font-variant-numeric: tabular-nums; }
+.kit-tile-figure { margin: .25rem 0 0; }
+.kit-tile .kit-count { font-size: 1.75rem; line-height: 1.2; }
+.kit-unit { color: var(--on-surface-variant); }
+.kit-none { color: var(--on-surface-variant); font-style: italic; }
+.kit-prov > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem;
+  min-height: 24px; cursor: pointer; list-style: none; }
+.kit-prov > summary::-webkit-details-marker { display: none; }
+.kit-prov > summary:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px;
+  border-radius: var(--shape-xs); }
+.kit-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem .75rem;
+  margin: .5rem 0 0; }
+.kit-facts dt { font-weight: 600; }
+.kit-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 30rem) {
+  .kit-facts { grid-template-columns: minmax(0, 1fr); }
+  .kit-facts dd { margin-bottom: .35rem; }
+}
+.kit-hash { font-family: var(--mono); overflow-wrap: anywhere; word-break: break-all; }
+.kit-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .05rem .55rem;
+  border: 1px solid transparent; border-radius: var(--shape-sm); font-weight: 500; }
+.kit-badge-word { overflow-wrap: anywhere; }
+.kit-badge-icon { display: inline-flex; flex: none; }
+.kit-badge-icon .icon { width: 18px; height: 18px; }
+.kit-good { background: var(--ok-container); color: var(--on-ok-container); }
+.kit-bad { background: var(--error-container); color: var(--on-error-container); }
+.kit-warn { background: var(--warning-container); color: var(--on-warning-container); }
+.kit-info { background: var(--primary-container); color: var(--on-primary-container); }
+.kit-neutral { background: var(--surface-container-high); color: var(--on-surface); }
+.kit-table th, .kit-table td { vertical-align: top; }
+.kit-evidence { margin: 0 0 1rem; padding: 0; list-style: none; }
+.kit-evidence > li { padding: .6rem 0; border-top: 1px solid var(--outline-variant); }
+.kit-evidence-title { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; margin: 0; }
+.kit-evidence-meta { margin: .2rem 0; color: var(--on-surface-variant); }
+.kit-approval { margin: 1rem 0; padding: 1rem; border: 2px solid var(--outline); border-radius: var(--shape-md); }
+.kit-approval h2 { margin-top: 0; }
+.kit-approve-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.kit-approve-row button { min-height: 44px; }
+.kit-timeline { margin: 0 0 1rem; padding: 0 0 0 1rem; border-left: 2px solid var(--outline-variant); list-style: none; }
+.kit-timeline > li { margin: 0 0 .6rem; overflow-wrap: anywhere; }
+.kit-event { font-weight: 500; }
+.kit-empty { padding: 1rem; border: 1px dashed var(--outline); border-radius: var(--shape-md); }
+.kit-empty-title { margin-top: 0; font-weight: 600; }
+.kit-errors { margin: 0 0 1rem; padding: .75rem 1rem; border: 3px solid var(--error); border-radius: var(--shape-md); }
+.kit-errors:focus { outline: 3px solid var(--primary); outline-offset: 2px; }
+.kit-errors h2 { margin-top: 0; }
+.kit-errors a { color: var(--error); font-weight: 600; }
+.kit-field-error { display: flex; align-items: center; gap: .3rem; margin: .25rem 0; color: var(--error); font-weight: 600; }
+/* The live region is never hidden: one that is not displayed when its
+   words arrive is not announced by every screen reader, and an empty one
+   takes no room. */
+.kit-live { margin: .5rem 0; }
+.kit-live:empty { margin: 0; }
+@media (forced-colors: active) {
+  .kit-tile, .kit-badge, .kit-approval, .kit-empty { border: 1px solid CanvasText; }
+  .kit-errors { border-color: CanvasText; }
+  .kit-prov > summary:focus-visible, .kit-errors:focus { outline: 3px solid Highlight; }
+}
