@@ -55,6 +55,13 @@ import (
 // The digest finds damage. It is not a signature: somebody who can write the
 // file can write its digest. Anything that has to stand up to that reader,
 // a bundle or a verification, calls Rebuild, which reads the store itself.
+//
+// A store encrypted at rest keeps no file. A row is in plain bytes, and
+// who owns each risk, how likely and how bad it is and when the
+// organisation knew of an incident are what the store's encryption is there
+// to keep from whoever reads its disk; so its index is built from the sealed
+// objects in each process, and a file left from before it was encrypted is
+// removed.
 
 // Row is one record as the index holds it. What About, Via, At, N, M, State
 // and Grade mean is the kind's own: for Evidence they are the control, the
@@ -237,8 +244,13 @@ func (r *Register) Index() (*Index, error) {
 		return r.ix, nil
 	}
 	prev, discarded := r.ix, ""
-	if prev == nil {
+	kept := !r.Store.Encrypted()
+	switch {
+	case prev != nil:
+	case kept:
 		prev, discarded = r.loadIndex()
+	default:
+		_ = os.Remove(r.indexPath())
 	}
 	if prev != nil && prev.Head == head {
 		r.ix = prev
@@ -251,7 +263,9 @@ func (r *Register) Index() (*Index, error) {
 	ix.Discarded = discarded
 	// Kept for the next process. A store on a disk that cannot be written
 	// is still read: the index is then built each time, and is as right.
-	_ = r.saveIndex(ix)
+	if kept {
+		_ = r.saveIndex(ix)
+	}
 	r.ix = ix
 	return ix, nil
 }

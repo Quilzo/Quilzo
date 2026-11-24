@@ -4,12 +4,19 @@
 package register
 
 import (
+	"bytes"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // A decision made alone is one only the person who was the only one
@@ -182,4 +189,59 @@ func mustIndex(t testing.TB, b *bench) *Index {
 		t.Fatal(err)
 	}
 	return ix
+}
+
+// A store encrypted at rest keeps no part of the register in the clear.
+// The index file beside the store held a row of every record, in plain
+// bytes: who owns each risk, how likely and how bad, which incidents are
+// privileged and when the organisation knew. For such a store the index is
+// built from the sealed objects in each process and is not kept, and a
+// file left from before the store was encrypted is removed.
+func TestAnEncryptedStoresIndexIsNotKeptInTheClear(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "store")
+	plain, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := newBench(t)
+	b.Register = &Register{Store: plain, Audit: b.Audit, Now: b.Now}
+	risk := Risk{Ref: "R-1", Title: "Payments outage", Owner: owner, Raised: owner, Likelihood: 4, Impact: 5, Status: "open"}
+	mustPut(t, b, dana, risk)
+	if _, err := b.Index(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(b.indexPath()); err != nil {
+		t.Fatalf("a plaintext store keeps its index: %v", err)
+	}
+
+	kr, err := vault.NewKeyring("k1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := &bench{Register: &Register{Store: sealed.WithKeys(kr), Audit: b.Audit, Now: b.Now}, clock: b.clock}
+	mustPut(t, enc, dana, control("AC-01"))
+	ix, err := enc.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ix.Rows(KindControl)) != 1 || len(ix.Rows(KindRisk)) != 1 {
+		t.Errorf("the encrypted store's index holds %d controls and %d risks", len(ix.Rows(KindControl)), len(ix.Rows(KindRisk)))
+	}
+	if _, err := os.Stat(enc.indexPath()); !os.IsNotExist(err) {
+		t.Errorf("an encrypted store keeps its index in the clear beside it (%v)", err)
+	}
+	id := mustID(t, risk).bytes()
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.Contains(p, string(filepath.Separator)+"objects"+string(filepath.Separator)) {
+			return nil
+		}
+		if body, _ := os.ReadFile(p); bytes.Contains(body, id[:]) {
+			t.Errorf("%s holds a risk's identifier in the clear", p)
+		}
+		return nil
+	})
 }
