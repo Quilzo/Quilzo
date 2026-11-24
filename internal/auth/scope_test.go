@@ -353,3 +353,35 @@ func TestASessionKeepsItsParentsScope(t *testing.T) {
 		t.Error("the session and its parent share their type list")
 	}
 }
+
+// A credential limited to content types reaches the records of those types
+// and no others, on every surface that asks CheckCredential.
+//
+// CheckCredential read the read-only dimension of the scope and passed the
+// type and locale on as empty, so the limit was enforced by the content API's
+// own records handler and nowhere else: an administrator's token issued
+// `--types policy` wrote the products collection from the command line, the
+// admin and /mcp, each of which asks about auth.DataResource and trusts this
+// answer.
+func TestATypeLimitReachesTheCollectionsOfThatTypeOnly(t *testing.T) {
+	limited := Scope{Types: []string{"policy"}}
+	if err := CheckCredential(RoleAdmin, "/", limited, ActEditDraft, DataResource("products")); err == nil {
+		t.Error("a token limited to policy may write the products collection")
+	}
+	if err := CheckCredential(RoleAdmin, "/", limited, ActView, DataResource("products")); err == nil {
+		t.Error("a token limited to policy may read the products collection")
+	}
+	if err := CheckCredential(RoleAdmin, "/", limited, ActEditDraft, DataResource("policy")); err != nil {
+		t.Errorf("a token limited to policy may not write the policy collection: %v", err)
+	}
+	// The collections as a whole are not one type: listing them is allowed,
+	// and each surface leaves out the collections the token may not read.
+	if err := CheckCredential(RoleAdmin, "/", limited, ActView, AreaData); err != nil {
+		t.Errorf("a token limited to policy may not list the collections: %v", err)
+	}
+	// A locale says nothing about a collection, whose records have none.
+	if err := CheckCredential(RoleAdmin, "/", Scope{Locales: []string{"fr"}}, ActEditDraft,
+		DataResource("products")); err != nil {
+		t.Errorf("a token limited to French may not write records, which have no language: %v", err)
+	}
+}

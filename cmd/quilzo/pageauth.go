@@ -5,8 +5,10 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -40,11 +42,57 @@ func pageCheck(root string, c *Caller, action auth.Action) (func(page string) bo
 	if err != nil {
 		return nil, err
 	}
+	limits := contentLimits(root, c)
 	return func(page string) bool {
 		res := pageResource(page)
 		d := p.Evaluate(c.Name, action, res)
-		return d.Allowed && auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, res) == nil
+		return d.Allowed && auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, res) == nil &&
+			limits(action, res) == ""
 	}, nil
+}
+
+// contentLimits answers, for a caller whose credential is limited to some
+// content types or languages, why a page is out of its reach: "" when it is
+// not. The type is the one the page is bound to and the language the one
+// its own fields give, in the draft or else on the live site, which is how
+// the content API and an agent run read both.
+//
+// Asked by authorise and pageCheck because nothing else here asked it. A
+// token issued `--types policy` wrote the product pages from a terminal and
+// over /mcp, and one issued `--locales fr` the English ones, while the
+// content API refused the same token the same pages. A resource that is not
+// a page is not asked: a collection is asked by auth.CheckCredential, and the
+// whole site and the areas are no one type or language.
+func contentLimits(root string, c *Caller) func(action auth.Action, resource string) string {
+	if c == nil || !c.Limits.LimitsContent() {
+		return func(auth.Action, string) string { return "" }
+	}
+	var (
+		loaded      bool
+		bound       map[string]string
+		draft, live map[string]any
+	)
+	return func(action auth.Action, resource string) string {
+		if auth.IsArea(resource) || strings.Trim(resource, "/") == "" {
+			return ""
+		}
+		if !loaded {
+			loaded = true
+			if st, err := schema.Load(root); err == nil && st != nil {
+				bound = st.Bound
+			}
+			if s, err := open(root); err == nil {
+				draft, _ = site.PagesAt(s, site.RefDraft)
+				live, _ = site.PagesAt(s, site.RefLive)
+			}
+		}
+		page := strings.Trim(resource, "/")
+		fields, ok := draft[page]
+		if !ok {
+			fields = live[page]
+		}
+		return c.Limits.Why(action, bound[page], auth.PageLocale(fields))
+	}
 }
 
 // visiblePages keeps the pages a caller may read.

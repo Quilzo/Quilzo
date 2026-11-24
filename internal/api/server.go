@@ -989,6 +989,20 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		}
 
 		_, exists := pages[name]
+		// A token limited to some content types or languages writes only
+		// what it may read: the page as it stands, answered as get answers
+		// it, and the page as it would be, whose language is the body's. A
+		// read was asked this and a write was not, so a token issued
+		// `--types policy` replaced the product page it was answered 404
+		// for, and one issued `--locales fr` wrote a page as English.
+		if visible, _ := s.visibleTo(tok, name, pages[name]); exists && !visible {
+			status, conflict = http.StatusNotFound, &Error{Error: "no such page"}
+			return nil
+		}
+		if visible, why := s.visibleTo(tok, name, fields); !visible {
+			status, conflict = http.StatusForbidden, &Error{Error: "not permitted", Detail: why}
+			return nil
+		}
 		current := ""
 		if exists {
 			tree, err := s.tree(draft)

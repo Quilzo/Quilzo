@@ -922,7 +922,11 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	// administrator's reader-capped credential still cannot, because their
 	// approve comes from the role.
 	d := s.Policy.Evaluate(p.Name, act, resource)
-	if err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource); err != nil {
+	err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource)
+	if why := s.contentLimit(p, act, resource); err == nil && why != "" {
+		err = errors.New(why)
+	}
+	if err != nil {
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot do that",
@@ -948,7 +952,42 @@ func (s *Server) allows(p principal, act auth.Action, resource string) bool {
 		return true
 	}
 	d := s.Policy.Evaluate(p.Name, act, resource)
-	return d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource) == nil
+	return d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource) == nil &&
+		s.contentLimit(p, act, resource) == ""
+}
+
+// contentLimit is why a credential limited to some content types or
+// languages may not act on a page, or "" when it may: by the type the page
+// is bound to and the language its own fields give, in the draft or else on
+// the live site, as the content API reads both.
+//
+// can and allows asked CheckCredential, which can answer for a collection
+// and not for a page, whose type and language only the store holds. So an
+// administrator's token issued `--types policy` saved the product pages
+// here, and one issued `--locales fr` the English ones, while the content
+// API refused the same token the same pages. The whole site and the areas
+// are no one type or language, and are not asked.
+func (s *Server) contentLimit(p principal, act auth.Action, resource string) string {
+	if !p.Limits.LimitsContent() || auth.IsArea(resource) || strings.Trim(resource, "/") == "" {
+		return ""
+	}
+	page := strings.Trim(resource, "/")
+	typeName := ""
+	if s.Types != nil && s.Types.Load != nil {
+		if st, err := s.Types.Load(); err == nil && st != nil {
+			typeName = st.Bound[page]
+		}
+	}
+	fields, ok := any(nil), false
+	if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
+		fields, ok = pages[page]
+	}
+	if !ok {
+		if pages, err := site.PagesAt(s.Store, site.RefLive); err == nil {
+			fields = pages[page]
+		}
+	}
+	return p.Limits.Why(act, typeName, auth.PageLocale(fields))
 }
 
 // Asking the authorisation question about the page, and not about the site.

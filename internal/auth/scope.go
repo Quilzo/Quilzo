@@ -284,7 +284,57 @@ func CheckCredential(role Role, resource string, scope Scope, action Action,
 	if !scope.AllowsAction(action) {
 		return fmt.Errorf("%s", scope.Why(action, "", ""))
 	}
+	// A collection is content of the type it is named for, as the content
+	// API's records handler has always read it, so a limit to some types
+	// is asked of it here, where every surface asks about a collection.
+	//
+	// It was asked nowhere else. This read the read-only dimension and gave
+	// the type and the locale as empty, so an administrator's token issued
+	// `--types policy` wrote the products collection from the command line,
+	// the admin and /mcp, which ask about auth.DataResource and trust this
+	// answer. A page's type and language are known only to whoever holds
+	// the page, and each surface asks those (Scope.Why).
+	if name, ok := collectionOf(target); ok && !scope.AllowsType(name) {
+		return fmt.Errorf("this credential is limited to the content types %s, and the %s "+
+			"collection is not one of them", strings.Join(scope.Types, ", "), name)
+	}
 	return nil
+}
+
+// collectionOf is the collection a resource names, when it names one: the
+// first part of the path under AreaData. AreaData itself names them all,
+// which is no one type.
+func collectionOf(resource string) (string, bool) {
+	rest, ok := strings.CutPrefix(normalise(resource), AreaData+"/")
+	if !ok || rest == "" {
+		return "", false
+	}
+	name, _, _ := strings.Cut(rest, "/")
+	return name, true
+}
+
+// LimitsContent reports whether the scope limits which content it reaches,
+// by type or by language, which only a surface that holds the content can
+// ask about a page.
+func (s Scope) LimitsContent() bool { return len(s.Types) > 0 || len(s.Locales) > 0 }
+
+// PageLocale is a page's language as a scope reads it: its own locale, lang
+// or language field, the first of them that is set.
+//
+// One reading for every surface, because a locale is a property of the
+// content rather than of its type, and two readings of it are how one
+// surface comes to refuse a page another serves.
+func PageLocale(fields any) string {
+	m, ok := fields.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"locale", "lang", "language"} {
+		if v, ok := m[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // CheckGranted is CheckCredential for a decision already made: a grant of a
