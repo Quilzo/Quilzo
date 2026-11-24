@@ -105,3 +105,30 @@ func TestWhatEachCallCostReachesTheRun(t *testing.T) {
 		t.Fatal("charged for a call nobody priced")
 	}
 }
+
+// A tool withheld from the run, because whoever started it may only read,
+// is never offered, and asked for anyway goes to the gate, which refuses
+// it saying why. As a tool nobody offered it ended the run with the model
+// "could not be asked", and nothing said the caller was read-only.
+func TestAWithheldToolIsNotOfferedAndGoesToTheGate(t *testing.T) {
+	s := agent.NewSession(agent.Manifest{
+		Name: "poster", Kind: agent.KindTask, Purpose: "posts",
+		Capabilities: []string{"list_pages"}, Autonomy: agent.AutonomyPropose,
+		Withheld: map[string]string{"post_update": "post_update writes to social.example, and this run only reads"},
+		Budget:   agent.Budget{Steps: 10, Tools: 2, Duration: agent.Duration(time.Minute)},
+	}, nil)
+	d := Decider{Session: s, Tools: []ToolChoice{{Name: "post_update", Purpose: "post", Args: []string{"text"}}}}
+	a, err, system := choose(t, `{"op":"tool:post_update","input":{"text":"hello"}}`, d)
+	if err != nil || a.Tool != "post_update" || len(a.Input) != 0 {
+		t.Fatalf("%+v %v", a, err)
+	}
+	if strings.Contains(system, "post_update") {
+		t.Fatalf("a withheld tool was offered:\n%s", system)
+	}
+	if err := s.MayCallTool(a.Tool, ""); err == nil || !strings.Contains(err.Error(), "only reads") {
+		t.Fatalf("the gate: %v", err)
+	}
+	if _, err, _ := choose(t, `{"op":"tool:delete_project","input":{}}`, d); err == nil {
+		t.Fatal("a tool nobody declared was taken")
+	}
+}

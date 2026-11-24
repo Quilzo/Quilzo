@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/export"
 )
 
 // A site brought from the file its last home exported.
@@ -63,23 +65,33 @@ func Detect(head []byte) string {
 
 // -- WordPress ----------------------------------------------------------------
 
-type wxrDoc struct {
+// WordPressExport is a WordPress export (WXR) as it is written, read here
+// for every reader of one: `quilzo site import`, which makes a site of it
+// (FromWordPress), and `quilzo import`, which makes pages of it
+// (internal/importer). Each had a parser of its own, and they named the same
+// pages differently: on WordPress's default plain links (/?page_id=11) site
+// import named every page alike and refused the export, while quilzo import
+// read it.
+type WordPressExport struct {
 	Channel struct {
-		Title       string      `xml:"title"`
-		Link        string      `xml:"link"`
-		Description string      `xml:"description"`
-		BaseSite    string      `xml:"base_site_url"`
-		Authors     []wxrAuthor `xml:"author"`
-		Items       []wxrItem   `xml:"item"`
+		Title       string            `xml:"title"`
+		Link        string            `xml:"link"`
+		Description string            `xml:"description"`
+		BaseSite    string            `xml:"base_site_url"`
+		Authors     []WordPressAuthor `xml:"author"`
+		Items       []WordPressItem   `xml:"item"`
 	} `xml:"channel"`
 }
 
-type wxrAuthor struct {
+// WordPressAuthor is an author an export names.
+type WordPressAuthor struct {
 	Login   string `xml:"author_login"`
 	Display string `xml:"author_display_name"`
 }
 
-type wxrItem struct {
+// WordPressItem is one item of an export: a page, a post, an attachment, a
+// menu entry or one of WordPress's internals.
+type WordPressItem struct {
 	Title   string `xml:"title"`
 	Link    string `xml:"link"`
 	Creator string `xml:"creator"`
@@ -89,11 +101,14 @@ type wxrItem struct {
 		XMLName xml.Name
 		Value   string `xml:",chardata"`
 	} `xml:"encoded"`
-	ID         string `xml:"post_id"`
-	Date       string `xml:"post_date"`
-	Modified   string `xml:"post_modified"`
-	Name       string `xml:"post_name"`
-	Status     string `xml:"status"`
+	ID       string `xml:"post_id"`
+	Date     string `xml:"post_date"`
+	Modified string `xml:"post_modified"`
+	Name     string `xml:"post_name"`
+	Status   string `xml:"status"`
+	// Password is the password WordPress asked a reader for before it
+	// showed the item (post_password), "" when it asked for none.
+	Password   string `xml:"post_password"`
 	Parent     string `xml:"post_parent"`
 	MenuOrder  int    `xml:"menu_order"`
 	Type       string `xml:"post_type"`
@@ -112,7 +127,7 @@ type wxrItem struct {
 	} `xml:"comment"`
 }
 
-func (it wxrItem) meta(key string) string {
+func (it WordPressItem) meta(key string) string {
 	for _, m := range it.Meta {
 		if m.Key == key {
 			return strings.TrimSpace(m.Value)
@@ -121,7 +136,7 @@ func (it wxrItem) meta(key string) string {
 	return ""
 }
 
-func (it wxrItem) encoded(space string) string {
+func (it WordPressItem) encoded(space string) string {
 	for _, e := range it.Encoded {
 		if strings.Contains(e.XMLName.Space, space) {
 			return e.Value
@@ -130,20 +145,145 @@ func (it wxrItem) encoded(space string) string {
 	return ""
 }
 
+// Content is the item's content, as HTML (content:encoded).
+func (it WordPressItem) Content() string { return it.encoded("content") }
+
+// Excerpt is the item's excerpt (excerpt:encoded).
+func (it WordPressItem) Excerpt() string { return it.encoded("excerpt") }
+
+// Held says why WordPress did not show the item to everybody, or "" when
+// nothing in the export says it was kept back: its status is anything but
+// published (private, a draft, waiting for review, scheduled, in the trash),
+// or it is published behind a password. An item with no status at all is one
+// WordPress did not write, and nothing marks it.
+//
+// Every reader of an export asks this before it brings an item, because what
+// is brought is published with the rest of the site. `quilzo site import`
+// left such items out; `quilzo import` brought each as an ordinary page with
+// a field, status: draft, that nothing reads, and the owner who published as
+// the import told them to served a private post's words to anybody. Neither
+// read the password: a members-only recipe behind one has the status publish,
+// and came in as a public post through both. The password itself is never
+// part of the answer.
+func (it WordPressItem) Held() string {
+	switch status := strings.TrimSpace(it.Status); status {
+	case "publish", "":
+		if it.Protected() {
+			return "behind a password"
+		}
+		return ""
+	case "private":
+		return "private"
+	case "draft", "auto-draft":
+		return "a draft"
+	case "pending":
+		return "waiting for review"
+	case "future":
+		return "scheduled and not yet published"
+	case "trash":
+		return "in the trash"
+	default:
+		return "not published (its status is " + clip(status, 40) + ")"
+	}
+}
+
+// Protected says whether WordPress asked a reader for a password before it
+// showed the item.
+func (it WordPressItem) Protected() bool { return strings.TrimSpace(it.Password) != "" }
+
+// PageName is the name the item's page is given, by every reader of an
+// export: WordPress's own slug for it (post_name); else its link's path,
+// when that names a page rather than the home with a query, as the plain
+// links of a fresh install do (/?page_id=11); else its title. Each is made a
+// page name by export.Slug, the rule every page an import names is held to,
+// and a path as a crawled page's is (pageName). It is "" for an item with
+// none of the three.
+//
+// Unifying that rule with sheet.Slug, which a sheet's rows and a crawled
+// page's address are named by, changes names `quilzo import` gives today
+// (an apostrophe is a break in one and not the other), and is the owner's
+// to decide. Both spell a letter outside ASCII the same way
+// (asciifold.Spell), so "Naïve café" is naive-cafe by either.
+//
+// An item none of the three can name, one in a script with no spelling in
+// ASCII (Arabic, Hebrew, Chinese), is page-<its number>, as a post with no
+// title is post-<its number>: it was not brought at all, "an item with no
+// title or slug", for want of letters.
+func (it WordPressItem) PageName() string {
+	if n := export.Slug(it.Slug()); n != "" {
+		return n
+	}
+	if u, err := url.Parse(strings.TrimSpace(it.Link)); err == nil && strings.Trim(u.Path, "/") != "" {
+		if n := pageName(u); n != "index" && n != "page" {
+			return n
+		}
+	}
+	if n := export.Slug(html.UnescapeString(it.Title)); n != "" {
+		return n
+	}
+	if id := export.Slug(it.ID); id != "" {
+		return "page-" + id
+	}
+	return ""
+}
+
+// Slug is WordPress's own slug for the item (post_name), as its letters.
+//
+// WordPress stores a slug in another alphabet percent-encoded, and the
+// escapes were read as the slug: ürünlerimiz is %c3%bcr%c3%bcnlerimiz in
+// an export, and came in as the page c3bcrc3bcnlerimiz and the post
+// c3-bc-r-c3-bc-nlerimiz. A slug that does not decode is as it was written.
+func (it WordPressItem) Slug() string {
+	if dec, err := url.PathUnescape(it.Name); err == nil {
+		return dec
+	}
+	return it.Name
+}
+
+// ReadWordPress reads a WordPress export, and refuses one that does not
+// parse as one (NotWordPress). How large an export may be is the reader's
+// to bound.
+func ReadWordPress(body []byte) (*WordPressExport, error) {
+	var doc WordPressExport
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	// Strict, and with no entity table: an entity the document declares is
+	// an error, never text expanded from somewhere else (see
+	// internal/importer for the attack this is). A parser that passes &xxe;
+	// through is a parser handing the payload to whatever reads its output
+	// next.
+	dec.Strict = true
+	if err := dec.Decode(&doc); err != nil {
+		return nil, NotWordPress(err)
+	}
+	return &doc, nil
+}
+
+// NotWordPress is why a file that does not parse as a WordPress export is
+// refused, said the same way by every reader of one.
+//
+// An entity the file declares is named for what it is. `quilzo import` said
+// so, and `quilzo site import` said only "invalid character entity" about the
+// same file, which reads as a broken export rather than as the attack that hit
+// WordPress twice (CVE-2021-29447, and again in 5.7).
+func NotWordPress(err error) error {
+	if strings.Contains(err.Error(), "invalid character entity") {
+		return fmt.Errorf("the export declares XML entities, which are "+
+			"not resolved here. If this file is a legitimate export, the "+
+			"entities are being used for text and can be replaced; if it is "+
+			"not, this is the attack that has hit WordPress twice: %w", err)
+	}
+	return fmt.Errorf("this does not read as a WordPress export: %w", err)
+}
+
 // FromWordPress reads a WordPress export (WXR): its published pages and
 // posts, their main pictures, its main menu, and what it left behind.
 func FromWordPress(body []byte, origin string) (*Site, error) {
 	if len(body) > MaxExportBytes {
 		return nil, fmt.Errorf("the export is larger than %d MB", MaxExportBytes>>20)
 	}
-	var doc wxrDoc
-	dec := xml.NewDecoder(bytes.NewReader(body))
-	// Strict, and with no entity table: an entity the document declares is
-	// an error, never text expanded from somewhere else (see
-	// internal/importer for the attack this is).
-	dec.Strict = true
-	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("this does not read as a WordPress export: %w", err)
+	doc, err := ReadWordPress(body)
+	if err != nil {
+		return nil, err
 	}
 	ch := doc.Channel
 	home, err := url.Parse(strings.TrimSpace(ch.Link))
@@ -181,7 +321,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		}
 		titles[it.ID] = it.Title
 	}
-	held, other, comments, shortcodes := 0, map[string]int{}, 0, 0
+	held, protected, other, comments, shortcodes := 0, 0, map[string]int{}, 0, 0
 	var pages []Page
 	homeAt := -1
 	type menuItem struct {
@@ -226,28 +366,37 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 			held++
 			continue
 		}
+		// Published, to whoever has its password: the same kind of keeping
+		// back as a private status, and moving it must not undo it. Counted
+		// apart, because the owner may not know which posts these are.
+		if it.Protected() {
+			protected++
+			continue
+		}
 		comments += len(it.Comments)
 		link, err := url.Parse(strings.TrimSpace(it.Link))
 		if err != nil || link.Host == "" {
-			link = home.ResolveReference(&url.URL{Path: "/" + it.Name + "/"})
+			link = home.ResolveReference(&url.URL{Path: "/" + it.Slug() + "/"})
 		}
-		content, n := wpContent(it.encoded("content"))
+		content, n := wpContent(it.Content())
 		shortcodes += n
 		read := Read([]byte("<main>"+content+"</main>"), link)
 		if it.Type == "page" {
-			pg := Page{URL: link, Title: title, Blocks: append([]Block{{Kind: "h1", Text: title}}, read.Blocks...),
-				Left: read.Left}
-			if excerpt := plainText(it.encoded("excerpt")); excerpt != "" {
+			pg := Page{URL: link, Name: it.PageName(), Title: title,
+				Blocks: append([]Block{{Kind: "h1", Text: title}}, read.Blocks...), Left: read.Left}
+			if excerpt := plainText(it.Excerpt()); excerpt != "" {
 				pg.Description = clip(excerpt, 300)
 			}
 			pages = append(pages, pg)
-			if homeAt < 0 && (strings.TrimSuffix(link.Path, "/") == strings.TrimSuffix(home.Path, "/") ||
+			// The home's address, without a query: on plain links every
+			// page is at the home's path, and the first was taken for it.
+			if homeAt < 0 && ((link.RawQuery == "" && strings.TrimSuffix(link.Path, "/") == strings.TrimSuffix(home.Path, "/")) ||
 				it.Name == "home" || strings.EqualFold(title, "home")) {
 				homeAt = len(pages) - 1
 			}
 			continue
 		}
-		pst := Post{URL: link, Title: title, Slug: it.Name, Published: day(it.Date), Blocks: read.Blocks,
+		pst := Post{URL: link, Title: title, Slug: it.Slug(), Published: day(it.Date), Blocks: read.Blocks,
 			Byline: authors[it.Creator]}
 		if pst.Title == "" {
 			// WordPress shows a post with no title; so does this.
@@ -256,13 +405,19 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 				pst.Slug = "post-" + it.ID
 			}
 		}
+		// A post neither its slug nor its title can link, in a script with
+		// no spelling in ASCII, is linked by its number, as one with no
+		// title is. It was not brought: a post needs a link.
+		if slugOf(pst.Slug) == "" && slugOf(pst.Title) == "" && it.ID != "" {
+			pst.Slug = "post-" + it.ID
+		}
 		if pst.Byline == "" {
 			pst.Byline = it.Creator
 		}
 		if m := day(it.Modified); m > pst.Published {
 			pst.Revised = m
 		}
-		pst.Summary = clip(plainText(it.encoded("excerpt")), 300)
+		pst.Summary = clip(plainText(it.Excerpt()), 300)
 		if a, ok := attachments[it.meta("_thumbnail_id")]; ok {
 			if u, err := link.Parse(a.url); err == nil {
 				pst.Image, pst.Alt = u, a.alt
@@ -325,6 +480,10 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 	if held > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d draft, private, pending or scheduled post(s) and page(s) were not "+
 			"brought: only what was published", held))
+	}
+	if protected > 0 {
+		s.Notes = append(s.Notes, fmt.Sprintf("%d password-protected post(s) and page(s) were not brought: a page here "+
+			"is public, and moving them must not make them so", protected))
 	}
 	if comments > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d comment(s) were not brought: posts here take none yet", comments))

@@ -111,6 +111,53 @@ func TestEveryPageACommandNamesIsChecked(t *testing.T) {
 	}
 }
 
+// A flag before the page does not hide the page from a deny on it.
+//
+// The gate reads the page a command is about by where it stands: the first
+// word after `lock`, the first after `note add`. It stopped reading at the
+// first flag, which was right while the commands did too, and answered "the
+// whole store" for a line it could not read. Then the commands took flags
+// before their names, and `lock --note x legal/terms` was asked about "/",
+// which a deny on /legal does not cover, and locked the page: every command
+// here was a way round every deny below the root, by writing a flag first.
+// `records add --id ID secret name=x` and `agent run -- bot` had always been.
+func TestAFlagBeforeTheNameDoesNotHideItFromADeny(t *testing.T) {
+	root := scopedStore(t,
+		auth.Binding{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "alice", Role: auth.RoleAuthor, Resource: "/legal", Deny: true},
+		auth.Binding{Principal: "alice", Role: auth.RoleAuthor, Resource: auth.DataResource("secret"), Deny: true},
+	)
+	for _, line := range [][]string{
+		{"lock", "--note", "x", "legal/terms"},
+		{"lock", "--", "legal/terms"},
+		{"lock", "release", "--", "legal/terms"},
+		{"note", "add", "--field", "title", "legal/terms", "x"},
+		{"checked", "set", "--note", "ok", "legal/terms"},
+		{"section", "add", "--at", "0", "legal/terms", "hero"},
+		{"section", "remove", "--", "legal/terms", "0"},
+		{"section", "item", "--", "add", "legal/terms", "0", "links"},
+		{"provenance", "set", "--source", "humanEdits", "--author", "alice", "legal/terms"},
+		{"type", "bind", "--", "legal/terms", "article"},
+		{"records", "add", "--id", "0123456789abcdef0123456789abcdef", "secret", "name=x"},
+		{"records", "delete", "--", "secret", "0123456789abcdef0123456789abcdef"},
+		{"records", "import", "--dry-run", "secret", "rows.csv"},
+	} {
+		if err := authoriseCommand(root, line[0], line[1:]); err == nil {
+			t.Errorf("`quilzo %s` passed a deny on what it names, by a flag written first", strings.Join(line, " "))
+		}
+	}
+	// The same lines about something nothing denies still run, flags first.
+	for _, line := range [][]string{
+		{"lock", "--note", "x", "blog/first"},
+		{"note", "add", "--field", "title", "blog/first", "x"},
+		{"records", "add", "--id", "0123456789abcdef0123456789abcdef", "open", "name=x"},
+	} {
+		if err := authoriseCommand(root, line[0], line[1:]); err != nil {
+			t.Errorf("`quilzo %s` was refused: %v", strings.Join(line, " "), err)
+		}
+	}
+}
+
 // What the gate reads out of a command's arguments.
 func TestWhatTheGateReadsAsThePage(t *testing.T) {
 	for _, tc := range []struct {
@@ -155,6 +202,19 @@ func TestWhatTheGateReadsAsThePage(t *testing.T) {
 		{"add", []string{"index=a.json", "nonsense"}, []string{"/"}},
 		{"add", []string{"index=a.json", "--remove"}, []string{"/"}},
 		{"add", nil, []string{"/"}},
+
+		// A flag before the page. The gate has no flag set to tell a flag's
+		// value from the name after it, so each word the command may yet read
+		// as the page is asked about, with the whole store.
+		{"lock", []string{"--note", "x", "legal/terms"}, []string{"/", "/x", "/legal/terms"}},
+		{"note", []string{"add", "--field", "title", "legal/terms", "text"},
+			[]string{"/", "/title", "/legal/terms", "/text"}},
+		{"checked", []string{"set", "--every=168h", "index"}, []string{"/", "/index"}},
+		{"section", []string{"item", "add", "--", "about", "0", "links"},
+			[]string{"/", "/about", "/0", "/links"}},
+		// After "--" every word is a name, one that begins with a dash too.
+		{"section", []string{"list", "--", "legal/terms", "--x"}, []string{"/", "/legal/terms"}},
+		{"lock", []string{"--note", "x"}, []string{"/", "/x"}},
 	} {
 		got := commandResources(tc.cmd, tc.args)
 		if !reflect.DeepEqual(got, tc.want) {

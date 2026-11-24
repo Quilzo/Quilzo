@@ -3,7 +3,10 @@
 
 package search
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // Folding a plural onto its singular, and nothing more ambitious than that.
 //
@@ -47,7 +50,7 @@ import "strings"
 // Applied at both ends, so the index and the query agree by construction
 // rather than by two functions being kept in step.
 func indexTerms(text string) []string {
-	out := Tokenise(text)
+	out := Tokenise(FoldLetters(text))
 	for i, t := range out {
 		out[i] = fold(t)
 	}
@@ -81,3 +84,66 @@ func fold(term string) string {
 	}
 	return term
 }
+
+// FoldLetters is text in lower case with the marks taken off its letters,
+// for matching a word however it was typed: "Çılbır", "ÇILBIR" and "cilbir"
+// are one word to it.
+//
+// # Why not strings.ToLower
+//
+// Lowering alone is case-insensitive for every language but the one whose
+// capital I is not the capital of i. Turkish has a dotted and a dotless i,
+// and I lowers to i, never to ı, so a Turkish heading typed in capitals,
+// as headings there often are, never met the same word in lower case:
+// HAKKINDA did not find "Hakkında". And a word typed without its marks, on a
+// keyboard that has none, did not find the word with them. So the i's are
+// one letter here and a letter's marks are dropped, at both ends of a
+// search, as the site's own addresses already drop them.
+//
+// The standard library has no decomposition tables, so the marks are taken
+// off by a table of the Latin letters that carry them, and a combining mark
+// written separately is dropped. A letter outside the table is only lowered.
+// Over-folding is the risk this accepts, and it is small: two words that
+// differ only by a mark are rarely two different things somebody is looking
+// for on one site.
+//
+// Applied to the text before it is split into words, so a mark written as
+// its own character does not split the word it belongs to.
+func FoldLetters(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x80 {
+			b.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		r = unicode.ToLower(r)
+		if to, ok := unmarked[r]; ok {
+			b.WriteString(to)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// unmarked is each lower-case Latin letter with a mark, as the letter
+// without it.
+var unmarked = func() map[rune]string {
+	m := map[rune]string{'æ': "ae", 'œ': "oe", 'ß': "ss"}
+	for base, marked := range map[string]string{
+		"a": "àáâãäåāăą", "c": "çćĉċč", "d": "ďđ", "e": "èéêëēĕėęě",
+		"g": "ĝğġģ", "h": "ĥħ", "i": "ìíîïĩīĭįı", "j": "ĵ", "k": "ķ",
+		"l": "ĺļľŀł", "n": "ñńņň", "o": "òóôõöøōŏő", "r": "ŕŗř",
+		"s": "śŝşšș", "t": "ţťŧț", "u": "ùúûüũūŭůűų", "w": "ŵ",
+		"y": "ýÿŷ", "z": "źżž",
+	} {
+		for _, r := range marked {
+			m[r] = base
+		}
+	}
+	return m
+}()

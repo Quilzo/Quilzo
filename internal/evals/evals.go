@@ -344,8 +344,6 @@ func held(s agent.Step) string {
 	return ""
 }
 
-// oneLine is s on one line, at most n bytes with the mark that says it was
-// cut.
 func oneLine(s string, n int) string {
 	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }
@@ -387,9 +385,13 @@ type Report struct {
 	At    time.Time `json:"at"`
 	By    string    `json:"by"`
 	K     int       `json:"k"`
-	// Model is what chose the actions; empty means the manifest was walked,
-	// which no plant can steer, so planted runs are not made.
+	// Model is what chose the actions, by the name its provider gives it;
+	// empty means the manifest was walked, which no plant can steer, so
+	// planted runs are not made. Route is the gateway's route it was
+	// reached by, empty without the gateway. Together they are what the
+	// evaluation measured, and what it earns holds only while they drive.
 	Model    string  `json:"model,omitempty"`
+	Route    string  `json:"route,omitempty"`
 	Cases    int     `json:"cases"`
 	Reliable int     `json:"reliable"`
 	PassK    float64 `json:"pass_k"`

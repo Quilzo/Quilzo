@@ -113,7 +113,7 @@ func dialSessionBus() (*conn, error) {
 		}
 	}
 	if path == "" {
-		return nil, fmt.Errorf("the session bus address %q names no socket path", plaintext.Clip(addr, 80, "…"))
+		return nil, fmt.Errorf("the session bus address %q names no socket path", clipStr(addr, 80))
 	}
 	c, err := netDial("unix", path)
 	if err != nil {
@@ -587,3 +587,5 @@ func decodeStrings(body []byte) ([]string, error) {
 	s, _ := v.(string)
 	return []string{s}, nil
 }
+
+func clipStr(s string, n int) string { return plaintext.Clip(s, n, "…") }

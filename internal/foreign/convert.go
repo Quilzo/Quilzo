@@ -610,8 +610,7 @@ func fieldsRead(src string) []string {
 	return out
 }
 
-// excerpt shortens a construct for a message, on one line, to at most 90
-// bytes with the mark that says it was cut.
+// excerpt shortens a construct for a message, on one line.
 func excerpt(s string) string {
 	return "`" + plaintext.Clip(strings.Join(strings.Fields(s), " "), 90, "…") + "`"
 }

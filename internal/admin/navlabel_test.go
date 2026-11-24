@@ -3,7 +3,13 @@
 
 package admin
 
-import "testing"
+import (
+	"html"
+	"net/http"
+	"regexp"
+	"strings"
+	"testing"
+)
 
 // Every label in the menu fits on one line.
 //
@@ -68,5 +74,44 @@ func TestEveryNavLabelFitsOnOneLine(t *testing.T) {
 		if w := labelWidth(d.Label); w > labelRoom {
 			t.Errorf("%q is about %d pixels wide and the menu has %d: it would take two lines", d.Label, w, labelRoom)
 		}
+	}
+}
+
+// Every screen has one name: the menu's label, its heading and the tab's
+// title say the same thing. The menu's Chatbots opened a tab called
+// Assistants, Your accounts a screen called Connected accounts, Log one
+// called Audit log and API one called API playground, so whoever followed
+// the menu, or read a screen's name aloud, found a different one.
+func TestEveryScreenIsCalledWhatTheMenuCallsIt(t *testing.T) {
+	srv, token := fullyWired(t)
+	wirePosture(srv, true)
+	title := regexp.MustCompile(`(?s)<title>(.*?)</title>`)
+	heading := regexp.MustCompile(`(?s)<h1[^>]*>(.*?)</h1>`)
+	tags := regexp.MustCompile(`<[^>]+>`)
+	checked := 0
+	for _, d := range destinations {
+		w := get(t, srv, d.Path, token)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s answered %d", d.Path, w.Code)
+			continue
+		}
+		body := w.Body.String()
+		var tab, h1 string
+		if m := title.FindStringSubmatch(body); m != nil {
+			tab = html.UnescapeString(m[1])
+		}
+		if m := heading.FindStringSubmatch(body); m != nil {
+			h1 = strings.TrimSpace(html.UnescapeString(tags.ReplaceAllString(m[1], "")))
+		}
+		if h1 != d.Label {
+			t.Errorf("the menu's %q opens a screen headed %q", d.Label, h1)
+		}
+		if tab != d.Label+" — Quilzo" {
+			t.Errorf("the menu's %q opens a tab called %q", d.Label, tab)
+		}
+		checked++
+	}
+	if checked < 40 {
+		t.Fatalf("only %d screens checked", checked)
 	}
 }

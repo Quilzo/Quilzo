@@ -34,18 +34,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/personalise"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/etag"
@@ -90,6 +95,11 @@ type Site struct {
 	// publish window is deliberately not part of it.
 	pageMu  sync.Mutex
 	pageSet *pageSet
+	// lastMu, lastHead and lastAt memoise LastChanged's answer for one
+	// commit, for the same reason (see lastChanged).
+	lastMu   sync.Mutex
+	lastHead string
+	lastAt   map[string]time.Time
 	// Layouts is every template this site can render a page through. A page
 	// names one in its own body; one that names none renders through the
 	// default. Resolution happens in internal/render, which is also where the
@@ -218,8 +228,10 @@ type Site struct {
 	// Nil means a single-language site and nothing about this feature appears
 	// in the output.
 	Locales *i18n.Config
-	// LastChanged supplies each page's real modification time.
-	LastChanged func() (map[string]time.Time, error)
+	// LastChanged supplies each page's real modification time at the commit
+	// head, which is the commit the site serves. Asked once per commit
+	// (lastChanged).
+	LastChanged func(head string) (map[string]time.Time, error)
 	// Listings resolves the queries a page embeds. Nil means a page naming one
 	// fails to assemble rather than rendering without it — a listing-shaped
 	// hole is not noticed until somebody asks why the table is empty.
@@ -278,6 +290,9 @@ type Site struct {
 	ToolsTrial string
 	// IconStyle is how the icons a page names are drawn, from the theme.
 	IconStyle string
+	// Scheme is the colour scheme the theme draws the site in: both, dark
+	// or light. Empty is both.
+	Scheme string
 	// Share is where the operating system's share sheet delivers, or nil.
 	//
 	// The one deep OS integration this product can offer without client
@@ -385,7 +400,11 @@ func (st *Site) Handler() http.Handler {
 	// nlweb.go. Exact patterns, so they sit beside the chatbots at /ask/.
 	mux.HandleFunc("GET /ask", st.nlwebAsk)
 	mux.HandleFunc("POST /ask", st.nlwebAsk)
-	mux.HandleFunc("POST /mcp", st.nlwebMCP)
+	mux.HandleFunc("OPTIONS /ask", st.nlwebPreflight)
+	// Every method, so a GET looking for a stream is told there is none
+	// rather than given a page; a page the site has at /mcp is still
+	// served to whoever asks for a page (nlwebMCP).
+	mux.HandleFunc("/mcp", st.nlwebMCP)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/agent.css", st.agentStylesheet)
 	mux.HandleFunc("/ask-live.js", st.askLiveScript)
@@ -506,25 +525,66 @@ func (st *Site) licenceURL() string {
 // Served from memory rather than from disk on each request, and never resolved
 // against a caller-supplied path: a public server that maps a URL onto a
 // filename is one traversal bug away from serving the token store. There is one
-// stylesheet, it was loaded at startup, and the route returns it or 404s.
+// stylesheet, read with the design when the site was built, and the route
+// returns it or 404s.
 func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	if st.Stylesheet == "" {
 		http.NotFound(w, r)
 		return
 	}
-	// The stylesheet changes only when the operator restarts, so it can be
-	// cached hard — but it is validated by ETag anyway, so a proxy that ignores
-	// max-age still cannot serve a stale one after a redeploy.
+	// Asked for again with every page, as the page is, and answered 304 by
+	// its ETag when it has not changed. It was kept for an hour, on the
+	// reasoning that it changed only when the operator restarted; the site
+	// now takes the design with each publish (designreload.go), and a reader
+	// who had opened a page in the hour before one was handed the published
+	// page over the stylesheet from before it.
+	//
+	// Set before the 304 too, so a browser holding a copy stored under the
+	// hour takes this policy with its next answer.
 	sum := sha256.Sum256([]byte(st.Stylesheet))
 	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, st.Stylesheet)
+}
+
+// lastChanged is each page's date at the commit head, worked out once per
+// commit and remembered until the site serves another.
+//
+// LastChanged walks back through up to five thousand commits of history and
+// reads the tree of each, and the sitemap asked it on every request: about
+// 11 ms for a one-page site after five hundred publishes and rising with
+// every publish, on the address crawlers ask for most, which anybody may
+// ask for as often as they like. The answer is a fact about the commit, as
+// fixed as the commit is, so the key is the commit, as it is for the
+// decoded pages (pagecache.go): a publish moves the ref, the next request
+// asks with a different head, and nothing remembered for the old one can
+// answer it.
+//
+// Under the lock, so the requests that arrive together after a publish walk
+// once between them. A walk that fails is not remembered, and the sitemap
+// goes without dates, as it did. The map is shared between callers, who
+// only read it.
+func (st *Site) lastChanged(head string) map[string]time.Time {
+	if st.LastChanged == nil || head == "" {
+		return nil
+	}
+	st.lastMu.Lock()
+	defer st.lastMu.Unlock()
+	if st.lastAt != nil && st.lastHead == head {
+		return st.lastAt
+	}
+	changed, err := st.LastChanged(head)
+	if err != nil {
+		return nil
+	}
+	st.lastHead, st.lastAt = head, changed
+	return changed
 }
 
 // sitemap lists the live pages with the date each last actually changed.
@@ -551,10 +611,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var changed map[string]time.Time
-	if st.LastChanged != nil {
-		changed, _ = st.LastChanged()
-	}
+	changed := st.lastChanged(live)
 
 	names := make([]string, 0, len(pages))
 	for name := range pages {
@@ -570,6 +627,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]seo.Entry, 0, len(names))
 	var standsFor []string
+	variants := st.variants(pages)
 	for _, name := range names {
 		// A page that stands for records is no address of its own: each
 		// record's page is, and is listed below.
@@ -579,8 +637,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		// Not a page that asks to be left out, nor a copy of one elsewhere.
-		if !seo.InSitemap(base, name, st.Index, pages[name]) {
+		// Not a page that asks to be left out, nor a copy of one elsewhere,
+		// nor a version of one here that a test or a rule serves.
+		if !Listed(base, name, st.Index, pages[name], variants) {
 			continue
 		}
 		loc := base + "/" + name
@@ -595,7 +654,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		// sends a reader to a page that is not there.
 		if st.Locales != nil {
 			_, page := st.Locales.Split(name)
-			for _, a := range st.Locales.Alternates(page, base, present) {
+			for _, a := range st.alternates(page, present) {
 				e.Alternates = append(e.Alternates, seo.Alternate{
 					Locale: string(a.Locale), Href: a.Href})
 			}
@@ -634,8 +693,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	// held, like a page, because a new page should be crawlable now and not
 	// in an hour.
 	// And the minute, when what it lists depends on the clock: an event's
-	// page goes when the event is over, with nothing published.
-	if tag := st.timedTag(st.contentTag("sitemap"), timed); tag != "" {
+	// page goes when the event is over, with nothing published. And the
+	// variants, which a test starting or stopping changes the same way.
+	if tag := st.timedTag(st.contentTag("sitemap"+variantsTag(variants)), timed); tag != "" {
 		h.Set("ETag", tag)
 		h.Set("Cache-Control", "public, max-age=0, must-revalidate")
 		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
@@ -1094,6 +1154,28 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		if st.detailRoute(w, r, pages, name) {
 			return
 		}
+		// The site's agent interface, asked for by any method but the POST
+		// it takes (nlwebMCP). Its transport has a client open GET /mcp for
+		// messages from the server and requires a server with none to answer
+		// 405, as the admin's endpoint does. This answered the site's HTML
+		// 404, which a client takes for a server that is gone, and counted
+		// the site's own address as somebody hunting for the admin's. Here,
+		// after the redirects and the pages, so a page published at /mcp is
+		// still served there.
+		//
+		// A browser asking for a page is still told there is none by the
+		// site's own page (nlwebMCP), and is not counted as hunting either:
+		// while the site has the tool, the address is its own.
+		if r.URL.Path == "/mcp" && st.searchIndex() != nil {
+			if asksFor(r, "text/html") && !asksFor(r, "text/event-stream") {
+				st.notFoundPage(w, r)
+				return
+			}
+			w.Header().Set("Allow", http.MethodPost)
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "the site's agent interface takes POST only", http.StatusMethodNotAllowed)
+			return
+		}
 		// The site's own 404, not Go's plain-text one. This is the route a
 		// visitor reaches from a stale link; the asset and JSON routes above
 		// keep the plain response, because a stylesheet request answered with
@@ -1104,17 +1186,21 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 
 	// An experiment on this page serves the variant's content at this
 	// address. See experiments.go.
-	served, inExperiment := name, false
+	served, inExperiment, personal := name, false, false
 	if forMembers {
 		// No experiment and no personalisation on a members' page: both
 		// choose between public pages.
-	} else if v, vbody, ok := st.personalFor(r, name, pages); ok {
+	} else if v, vbody, ok, ruled := st.personalFor(r, name, pages); ok {
 		// A rule decides first. An experiment on the same page is not run
 		// for this visitor: their version was chosen by who they are, and
 		// counting them in a random split would bias it.
 		served, body, inExperiment = v, vbody, true
 	} else if v, vbody, ok := st.variantFor(r, name, pages); ok {
 		served, body, inExperiment = v, vbody, true
+	} else {
+		// No rule picked this visitor out, but one is on the page: what
+		// they are served is the page for those it does not pick out.
+		personal = ruled
 	}
 
 	// The ETag is the content hash. Not derived from it — it is it.
@@ -1153,6 +1239,18 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	if signup {
 		tag = strings.TrimSuffix(tag, `"`) + map[bool]string{true: "-nl1", false: "-nl0"}[st.newsletterReady()] + `"`
 	}
+	// A variant's canonical link names the page it is served at, which a
+	// test starting or stopping changes with nothing published.
+	if of, ok := st.variants(pages)[name]; ok {
+		tag = strings.TrimSuffix(tag, `"`) + "-v" + variantsTag(map[string]string{name: of}) + `"`
+	}
+	// The language it is served in and the languages it links, which a
+	// translation published or taken down changes with this page untouched.
+	lang := st.languageOf(name, served, pages)
+	if lt := lang.tag(); lt != "" {
+		tag = strings.TrimSuffix(tag, `"`) + "-l" + lt + `"`
+	}
+	lang.announce(w.Header())
 	w.Header().Set("ETag", tag)
 	// Left out of search results when it asks to be, on the response a
 	// crawler reads as well as in the page.
@@ -1192,9 +1290,15 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Vary", "Cookie")
 		w.Header().Set("X-Robots-Tag", "noindex")
-	} else if inExperiment {
+	} else if inExperiment || personal {
 		// Private: a shared cache holding one visitor's variant would hand
 		// it to everybody, which ends the experiment and ruins its data.
+		//
+		// And on a page a rule is on, for the visitors it does not pick out
+		// too. Their answer was "public", with nothing saying it depended on
+		// their language, device, referrer or the hour, so a CDN in front of
+		// the site kept the first one and handed it to the French, the phone
+		// and the out-of-hours visitors after it, and no rule was ever seen.
 		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
@@ -1210,22 +1314,21 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// showed its listing in preview rendered without it for readers —
 		// silently, because a missing section looks like a section with
 		// nothing in it. Found by publishing the page and looking at it.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, nil, "this page could not be assembled")
 		return
 	}
 	// One context builder, shared with the accessibility gate, the preview and
 	// every export. They used to build their own and disagree: the gate that
 	// refuses a publish was judging a page with no navigation and no listings
 	// in it, which is not the page anybody is served.
-	ctx, cerr := st.sources().For(name, body, args)
+	ctx, cerr := st.sourcesFor(r).For(name, body, args)
 	if cerr != nil {
 		// A page whose listings cannot be resolved is a broken page, not a
 		// page with an empty section. Rendering it without them would ship a
 		// listing-shaped hole that nobody notices until somebody asks why the
-		// table is empty.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		// table is empty. A value in the address a listing refuses is not
+		// that: see unassembled.
+		unassembled(w, cerr, "this page could not be assembled")
 		return
 	}
 
@@ -1235,17 +1338,17 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// not a page to render through something else. Rendering it through the
 		// default would serve a document nobody designed with no message
 		// anywhere saying so.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, lerr, "this page could not be assembled")
 		return
 	}
 	html, err := tmpl.Render(layout, ctx)
 	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
+		unassembled(w, err, "template error")
 		return
 	}
 
 	html = st.injectHead(html, name, tree[served], body)
+	html = lang.in(html)
 	if live {
 		html = insertBeforeHead(html, liveScript())
 	}
@@ -1259,12 +1362,44 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
+// unassembled answers a page that could not be built for this request.
+//
+// A value in the address that a listing on the page refuses, a capital
+// letter or a space in a slug or a stray character, is the visitor's
+// mistake: 400, naming the parameter but not repeating the value, as
+// /catalogue.json already answers it. It was answered 500 "this page could
+// not be assembled", which monitoring counts as the site failing, from a
+// link a newsletter wrote with a capital letter. Anything else is this
+// site's trouble and stays a 500. Neither is kept by any cache or answers
+// to the page's ETag: the headers set for the page it was to be no longer
+// describe what is sent.
+func unassembled(w http.ResponseWriter, err error, problem string) {
+	h := w.Header()
+	h.Del("ETag")
+	h.Del("Content-Language")
+	h.Set("Cache-Control", "no-store")
+	var bad *listing.BadArg
+	if errors.As(err, &bad) {
+		http.Error(w, "this address gives "+bad.Param+" a value this page cannot use",
+			http.StatusBadRequest)
+		return
+	}
+	http.Error(w, problem, http.StatusInternalServerError)
+}
+
 // injectHead adds the manifest link and the provenance marking.
 //
 // Inserted before </head> rather than asked of the template author, because a
 // legal marking that depends on every template remembering to include a partial
 // is a marking that will be missing from the one template nobody checked.
 func (st *Site) injectHead(html, page, hash string, body any) string {
+	return st.injectHeadAt(html, page, "", hash, body)
+}
+
+// injectHeadAt is injectHead for the page of one record that page draws,
+// the record named by key in its address (/page/key); "" for the page
+// itself.
+func (st *Site) injectHeadAt(html, page, key, hash string, body any) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
 	b.WriteString(st.iconLink())
@@ -1301,18 +1436,36 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// Where this page lives, and whether a search engine may list it. The
 	// canonical link only when the layout wrote none: a layout that names
 	// one has decided.
-	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		!strings.Contains(strings.ToLower(html), `rel="canonical"`) {
+	//
+	// Looked for in the page itself, its ASCII letters folded as HTML folds
+	// them. strings.ToLower of the page copied the whole of every page served
+	// on a site with an address, which was 5 to 7 per cent of the CPU of
+	// serving the fullest starter page once the tag searches stopped lowering
+	// it, and it read rel="canonİcal", which names no canonical, as one, so
+	// the page went out without its address.
+	//
+	// A variant names the page a test or a rule serves it at (Variants).
+	pages, _, perr := st.pages()
+	c := seo.Canonical(st.BaseURL, page, st.Index, body)
+	if key != "" {
+		c = st.recordURL(page, key)
+	} else if perr == nil {
+		c = st.canonicalIn(page, body, st.variants(pages))
+	}
+	if c != "" && asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {
 		b.WriteString(`<meta name="robots" content="noindex">` + "\n")
 	}
 	// Its words alone, for a reader's agent.
-	if pages, _, perr := st.pages(); perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
+	if perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
 		mdName := page
 		if page == st.Index {
 			mdName = "index"
+		}
+		if key != "" {
+			mdName = page + "/" + url.PathEscape(key)
 		}
 		b.WriteString(`<link rel="alternate" type="text/markdown" href="/` + escape(mdName) + `.md">` + "\n")
 	}
@@ -1345,11 +1498,14 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 // wrong. Prepending when there is no head is worse than nothing — it would put
 // meta tags outside the document — so the page is served as it is and the
 // absence shows up in `provenance check` rather than being papered over.
+//
+// Found in the page itself, not in strings.ToLower of it: a Turkish title
+// lowered a byte shorter for every İ, and the marking went inside </title>.
 func insertBeforeHead(html, markup string) string {
 	if markup == "" {
 		return html
 	}
-	head := strings.Index(strings.ToLower(html), "</head>")
+	head := asciifold.Index(html, "</head>")
 	if head < 0 {
 		return html
 	}
@@ -1368,15 +1524,16 @@ func firstColour(configured, fallback string) string {
 func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
 		"name":             st.Name,
-		"short_name":       plaintext.Clip(st.Name, 12, ""),
+		"short_name":       shorten(st.Name),
 		"description":      st.Description,
 		"start_url":        "/",
 		"scope":            "/",
 		"display":          "standalone",
 		"background_color": firstColour(st.Background, "#ffffff"),
 		"theme_color":      firstColour(st.ThemeColour, "#0b5c6b"),
-		// An installable app has to work offline, and this is the page that
-		// makes that true rather than a promise.
+		// What an installed site is shown as, so it is not a letter on a
+		// tile the platform chose (icon.go). The comment here said this made
+		// the app work offline; nothing here does (serviceWorker).
 		"icons": st.iconManifest(),
 	}
 	// Shortcuts, from the site's own navigation.
@@ -1446,7 +1603,17 @@ func (st *Site) shortcuts() []map[string]any {
 	return out
 }
 
-// serviceWorker caches published pages so the site survives losing the network.
+// serviceWorker is the worker a page may register to keep the pages it has
+// read for when the network is lost.
+//
+// No page of this site registers it. A worker runs only once a page calls
+// navigator.serviceWorker.register, which takes a script, and the site's
+// policy allows none that does (script-src 'none'; worker-src falls back to
+// it). The site and its start banner offered this address as the offline
+// mode, and a visitor who lost the network got the browser's error, never a
+// page they had read nor /offline. The address keeps answering, and says so
+// in its first lines, for a layout that registers it under a policy that
+// allows that script and worker-src 'self'.
 //
 // Deliberately small and deliberately conservative. A service worker is the one
 // piece of script a quilzo site ships, and a caching bug in one is uniquely
@@ -1460,7 +1627,16 @@ func (st *Site) shortcuts() []map[string]any {
 func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
 	js := `// quilzo service worker. Network-first: publishing must take effect at once,
 // and a stale page is worse than a slow one.
-const CACHE = 'quilzo-v1';
+//
+// No page of this site registers this worker: registering one takes a script,
+// and the site's policy allows none that does (script-src 'none'). A layout
+// that registers it needs a policy that allows that script and worker-src
+// 'self'.
+//
+// quilzo-v2, not v1: the worker that filled quilzo-v1 kept every answer, a
+// booking, a conversation and a members' page among them. Activating deletes
+// every cache but this one, which is how what it kept leaves the device.
+const CACHE = 'quilzo-v2';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {
@@ -1483,7 +1659,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        if (res.ok) {
+        // An answer the site marks no-store or private (a booking with its
+        // cancel link, a conversation, a shared draft, a members' page) and
+        // an address with a query (one visitor's search or sign-up) are
+        // that visitor's alone, and are not kept on a device the next
+        // person may open.
+        const cc = (res.headers.get('Cache-Control') || '').toLowerCase();
+        const mine = cc.includes('no-store') || cc.includes('private') || url.search !== '';
+        if (res.ok && !mine) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }
@@ -1503,6 +1686,14 @@ self.addEventListener('fetch', (e) => {
 func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 	// Plain, self-contained, and accessible: it is shown to somebody who has
 	// already lost the network, so it cannot fetch anything.
+	//
+	// It promises only what the worker that shows it does (serviceWorker).
+	// It said the page asked for "has not been visited on this device" and
+	// that "pages you have already opened remain available": the worker
+	// keeps no booking, conversation, search or members' page, so it shows
+	// this to somebody going back to one they opened a minute ago, and no
+	// page of the site registers the worker, so whoever opens this address
+	// was promised copies that nothing keeps.
 	html := `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1510,8 +1701,9 @@ func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 <style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem;
 line-height:1.6}h1{font-size:1.5rem}</style></head>
 <body><main><h1>You are offline</h1>
-<p>This page has not been visited on this device, so there is no copy stored here.
-Pages you have already opened remain available.</p>
+<p>No copy of this page is kept on this device. Where this site keeps pages for
+reading offline, it keeps the ones opened here, and never a booking, a
+conversation, a search or a members' page.</p>
 <p><a href="/">Try the home page</a></p></main></body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
@@ -1592,7 +1784,19 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 			"each event's own page carries schema.org Event data.\n\n")
 	}
 	fmt.Fprintf(w, "## Pages\n\n")
+	base := strings.TrimSuffix(st.BaseURL, "/")
+	variants := st.variants(pages)
 	for _, n := range names {
+		// What the sitemap lists, by the sitemap's rule. A page records are
+		// drawn with is no page of its own (its copy was a heading or
+		// nothing: /product.md, two bytes), and a page that asks to be left
+		// out of search results, or copies one elsewhere, was listed here
+		// for every model while the sitemap left it out. A record's page is
+		// linked from the copy of the listing that shows it, and offers its
+		// own copy there; a variant's is the page it is served at.
+		if _, ok := detailOf(pages[n]); ok || !Listed(base, n, st.Index, pages[n], variants) {
+			continue
+		}
 		title := n
 		if m, ok := pages[n].(map[string]any); ok {
 			if t, ok := m["title"].(string); ok && t != "" {
@@ -1605,6 +1809,45 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, "- [%s](/%s.md)\n", title, md)
 	}
+}
+
+// shorten is the manifest's short name: what an installed site is labelled
+// under its icon, where about twelve characters fit.
+//
+// Whole words of the name, as many as fit, and the first twelve bytes only
+// when its first word alone is longer, cut where a character ends. It was
+// the first twelve bytes whatever was there: "Brasserie Léon" was labelled
+// "Brasserie L" and half an é, which every platform draws as U+FFFD, and
+// "Sample restaurant" was labelled "Sample resta". A word with no letter or
+// digit in it is not left at the end, so "Smith & Jones Ltd" is "Smith"
+// rather than "Smith &".
+func shorten(name string) string {
+	const fits = 12
+	if utf8.RuneCountInString(name) <= fits {
+		return name
+	}
+	words := strings.Fields(name)
+	kept, n := 0, 0
+	for i, w := range words {
+		size := utf8.RuneCountInString(w)
+		if i > 0 {
+			size++
+		}
+		if n+size > fits {
+			break
+		}
+		n += size
+		kept = i + 1
+	}
+	for kept > 0 && !strings.ContainsFunc(words[kept-1], func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	}) {
+		kept--
+	}
+	if kept == 0 {
+		return plaintext.Clip(strings.TrimSpace(name), fits, "")
+	}
+	return strings.Join(words[:kept], " ")
 }
 
 func escapeText(s string) string { return textReplacer.Replace(s) }
@@ -1693,6 +1936,21 @@ func (st *Site) tracks(id string) []any {
 	return out
 }
 
+// mediaInfo answers what a stored file is: a picture or a recording, whether
+// a recording has sound, and its description. A backdrop is drawn from the
+// first, and a silent recording's text alternative from the other two.
+func (st *Site) mediaInfo(id string) (render.MediaInfo, bool) {
+	if st.MediaStat == nil {
+		return render.MediaInfo{}, false
+	}
+	f, err := st.MediaStat(id)
+	if err != nil {
+		return render.MediaInfo{}, false
+	}
+	sound, known := f.SoundKnown()
+	return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
+}
+
 // poster answers where a still from a recording is served.
 func (st *Site) poster(id string) string {
 	if st.MediaStat == nil {
@@ -1762,9 +2020,54 @@ func (st *Site) formData(name string) map[string]any {
 	return data
 }
 
+// sources is what a template may see of the site as it is served now.
 func (st *Site) sources() render.Sources {
-	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
-		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
+	pages, _, err := st.pages()
+	if err != nil {
+		pages = nil
+	}
+	return st.Sources(pages)
+}
+
+// sourcesFor is sources for one request: for a static copy's (CopyHeader),
+// a form's stamp is when the version being copied was made rather than when
+// this page was rendered.
+//
+// The stamp is the time a page was served, for a form's timing check, and a
+// static copy has no server to serve it or to take what its forms send. As
+// the render time it made every copy of a site with a form different bytes,
+// every second: `quilzo ipfs verify` told somebody a correct upload made two
+// seconds earlier did not match, and content_id gave three identifiers in
+// three seconds for one site, the opposite of what an identifier computed
+// from the content is for.
+func (st *Site) sourcesFor(r *http.Request) render.Sources {
+	src := st.sources()
+	if r.Header.Get(CopyHeader) != "" {
+		at := time.Unix(0, 0)
+		if c, err := st.Store.GetCommit(st.Store.GetRef(st.ref())); err == nil {
+			at = time.Unix(c.At, 0)
+		}
+		src.Now = func() time.Time { return at }
+	}
+	return src
+}
+
+// Sources is what a template may see when it renders one of pages: the one
+// context, which this site serves, `quilzo render` draws, the admin's
+// preview shows and both publish gates judge. Each listing, post and event
+// in it is read where the site's listings read, so one built to render a
+// commit is given listings at that commit's tree (renderSiteFor in
+// cmd/quilzo, and the admin's own when it is not handed this).
+//
+// There were three. The command line's had the icon, members, buttons and
+// pictures and no forms, boards, bookings, newsletter, events or posts; the
+// admin's had menus, listings and pictures only. So on a page naming a form
+// `quilzo render` and the gate in `quilzo publish` drew no form, the preview
+// drew neither the form nor the icon a visitor gets, and no gate ever judged
+// the form markup a visitor is served.
+func (st *Site) Sources(pages map[string]any) render.Sources {
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Scheme: st.Scheme, Listings: st.Listings, Pages: pages,
+		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
 	if _, ok := st.iconFile(); ok {
@@ -1779,9 +2082,6 @@ func (st *Site) sources() render.Sources {
 		// A navigation that cannot be read is a site with no navigation, not a
 		// page that fails to render: one unreadable file must not take the
 		// whole site down when the page itself is fine.
-	}
-	if pages, _, err := st.pages(); err == nil {
-		src.Pages = pages
 	}
 	return src
 }

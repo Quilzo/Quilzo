@@ -240,6 +240,10 @@ func TestExpiredAndRevokedTokensStopWorking(t *testing.T) {
 	if _, err := ts.Revoke(tok.ID); err != nil {
 		t.Errorf("revoking an expired token should still work: %v", err)
 	}
+	// One nobody issued is named as not there, for the command line's 4.
+	if _, err := ts.Revoke("nope"); !errors.Is(err, ErrNoToken) || err.Error() != "no token nope" {
+		t.Errorf("revoking a token nobody issued: %v", err)
+	}
 }
 
 func TestLastUsedIsRecorded(t *testing.T) {
@@ -790,6 +794,42 @@ func TestMergingTokenStoresNeverUndoesAStepUp(t *testing.T) {
 	}
 }
 
+// A session marked as one somebody signed in to the admin with stays
+// marked when a copy of the store read before the mark is written.
+//
+// The copy being written says what was meant for everything the merge
+// does not name, so a command line that read the store, and saved it
+// after the admin marked a pasted session, wrote the session back
+// unmarked: a server that keeps no idle clock took it again. A mark is
+// only ever set, as a revocation is.
+func TestMergingTokenStoresNeverUnmarksASignIn(t *testing.T) {
+	now := time.Now()
+	stored := &TokenStore{}
+	parent, _, err := stored.Issue("ci", "dana", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, sess, err := stored.Exchange(parent, RoleNone, "", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if err := stored.MarkSignIn(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	stale.MergeInto(stored, now)
+	if tok, err := stored.Authenticate(secret, now); err != nil || !tok.SignedIn() {
+		t.Fatalf("a stale copy written back unmarked the session: %v", err)
+	}
+	// And a copy that holds the mark gives it to a store that does not.
+	marked := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	fresh := &TokenStore{Tokens: append([]Token(nil), stale.Tokens...)}
+	marked.MergeInto(fresh, now)
+	if tok, err := fresh.Authenticate(secret, now); err != nil || !tok.SignedIn() {
+		t.Fatalf("the mark was not written: %v", err)
+	}
+}
+
 // Authorization schemes are case-insensitive (RFC 9110 section 11.1), and
 // every reader of the header reads it here.
 func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {
@@ -808,6 +848,148 @@ func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {
 	} {
 		if tok, scheme := Presented(header); tok != want[0] || scheme != want[1] {
 			t.Errorf("%q: %q %q", header, tok, scheme)
+		}
+	}
+}
+
+// The role somebody holds on a path leaves out a grant that has ended, and
+// within a path counts what they hold on anything inside it; a token is
+// shown as the lesser of its own role and that.
+//
+// A grant that had ended still counted, so a token took by default, and
+// was allowed to name, a role its holder had only until yesterday. And a
+// token was held to the role on the path it names, so one over the whole
+// site was shown as an author's for somebody who publishes /blog.
+func TestTheStrongestRoleIsOneStillHeldAndWithinAPathCountsInsideIt(t *testing.T) {
+	p := &Policy{}
+	ended := time.Now().Add(-time.Hour).Unix()
+	for _, b := range []Binding{
+		{Principal: "kim", Role: RoleAuthor, Resource: "/"},
+		{Principal: "kim", Role: RolePublisher, Resource: "/blog"},
+		{Principal: "kim", Role: RoleAdmin, Resource: "/", Deny: true},
+		{Principal: "ana", Role: RoleAdmin, Resource: AreaSecurity},
+		{Principal: "tam", Role: RoleReader, Resource: "/"},
+		{Principal: "tam", Role: RolePublisher, Resource: "/", Expires: ended, Note: "cover"},
+	} {
+		// Appended, as an ended grant beside a live one is in a policy.
+		p.Bindings = append(p.Bindings, b)
+	}
+	for _, c := range []struct {
+		who, on        string
+		held, within   Role
+		token, carries Role
+	}{
+		{"kim", "/", RoleAuthor, RolePublisher, RolePublisher, RolePublisher},
+		{"kim", "/", RoleAuthor, RolePublisher, RoleAdmin, RolePublisher},
+		{"kim", "/blog", RolePublisher, RolePublisher, RoleReader, RoleReader},
+		{"kim", "/blog/2026", RolePublisher, RolePublisher, RolePublisher, RolePublisher},
+		{"kim", "/blogroll", RoleAuthor, RoleAuthor, RolePublisher, RoleAuthor},
+		{"ana", "/", RoleNone, RoleAdmin, RoleAdmin, RoleAdmin},
+		{"ana", "/blog", RoleNone, RoleNone, RoleAuthor, RoleAuthor},
+		{"tam", "/", RoleReader, RoleReader, RolePublisher, RoleReader},
+		{"nobody", "/", RoleNone, RoleNone, RoleAdmin, RoleAdmin},
+	} {
+		if got := p.StrongestRole(c.who, c.on); got != c.held {
+			t.Errorf("%s holds %q on %s, want %q", c.who, got, c.on, c.held)
+		}
+		if got := p.StrongestWithin(c.who, c.on); got != c.within {
+			t.Errorf("%s holds %q within %s, want %q", c.who, got, c.on, c.within)
+		}
+		if got := p.Carries(c.who, c.token, c.on); got != c.carries {
+			t.Errorf("%s's %s token on %s carries %q, want %q", c.who, c.token, c.on, got, c.carries)
+		}
+	}
+}
+
+// The part of the site a credential reaches is no wider than its holder's
+// roles there: the path it names when a role covers it, the narrowest path
+// holding the roles inside it, and nothing when they hold roles only
+// elsewhere. Somebody granted no role keeps the credential's path.
+//
+// A run was bounded at the token's path alone, so a token over the whole
+// site for an author of /about ran an agent that wrote the returns page.
+func TestThePartOfTheSiteHeldIsNoWiderThanTheRolesGranted(t *testing.T) {
+	ended := time.Now().Add(-time.Hour).Unix()
+	p := &Policy{Bindings: []Binding{
+		{Principal: "dana", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "dana", Permission: ActRunAgents, Resource: AreaAgents},
+		{Principal: "dana", Role: RoleAdmin, Resource: "/", Deny: true},
+		{Principal: "dana", Role: RolePublisher, Resource: "/returns", Expires: ended},
+		{Principal: "kim", Role: RoleAuthor, Resource: "/docs/setup"},
+		{Principal: "kim", Role: RoleAuthor, Resource: "/docs/api/v2"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/blog"},
+		{Principal: "ana", Role: RoleAdmin, Resource: AreaSecurity},
+		{Principal: "sam", Role: RoleAdmin, Resource: "/"},
+		{Principal: "pat", Permission: ActRunAgents, Resource: AreaAgents},
+	}}
+	for _, c := range []struct{ who, on, part string }{
+		{"dana", "/", "/about"},
+		{"dana", "", "/about"},
+		{"dana", "/about/team", "/about/team"},
+		{"dana", "/returns", ""},
+		{"kim", "/", "/docs"},
+		{"kim", "/docs/api", "/docs/api/v2"},
+		{"lee", "/", "/"},
+		{"ana", "/", AreaSecurity},
+		{"ana", "/blog", ""},
+		{"sam", "/blog", "/blog"},
+		{"pat", "/blog", "/blog"},
+		{"nobody", "/blog", "/blog"},
+	} {
+		if got := p.PartWithin(c.who, c.on); got != c.part {
+			t.Errorf("%s within %q holds %q, want %q", c.who, c.on, got, c.part)
+		}
+	}
+}
+
+// The role held throughout a part of the site is the one granted on it or
+// above it, below a role or permission denied there: not a role granted on
+// only some of it, a grant that has ended, a permission, or a role a
+// guarded area does not let reach it.
+//
+// A run is one role over one part, and was bounded at the highest held
+// anywhere in it, so a reader of the site who is an author of /about ran
+// an agent that wrote the returns page as an author.
+func TestTheRoleHeldThroughoutAPartIsOneHeldOnEveryPageOfIt(t *testing.T) {
+	ended := time.Now().Add(-time.Hour).Unix()
+	p := &Policy{Bindings: []Binding{
+		{Principal: "dana", Role: RoleReader, Resource: "/"},
+		{Principal: "dana", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/blog"},
+		{Principal: "ana", Role: RoleAdmin, Resource: "/"},
+		{Principal: "ana", Role: RoleAuthor, Resource: "/", Deny: true},
+		{Principal: "kim", Role: RoleAdmin, Resource: "/"},
+		{Principal: "kim", Role: RolePublisher, Resource: "/legal", Deny: true},
+		{Principal: "lou", Role: RoleAdmin, Resource: "/"},
+		{Principal: "lou", Permission: ActPublish, Resource: "/", Deny: true},
+		{Principal: "pat", Permission: ActRunAgents, Resource: AreaAgents},
+		{Principal: "pat", Permission: ActPublish, Resource: "/"},
+		{Principal: "sam", Role: RoleAdmin, Resource: "/", Expires: ended},
+	}}
+	for _, c := range []struct {
+		who, on string
+		held    Role
+	}{
+		{"dana", "/", RoleReader},
+		{"dana", "/about", RoleAuthor},
+		{"dana", "/about/team", RoleAuthor},
+		{"dana", AreaSecurity, RoleNone},
+		{"lee", "/", RoleNone},
+		{"lee", "/blog", RoleAuthor},
+		{"ana", "/", RoleReader},
+		{"ana", "/blog", RoleReader},
+		// A role denied only inside the part is not one it can leave out.
+		{"kim", "/", RoleAdmin},
+		{"kim", "/legal", RoleAuthor},
+		{"lou", "/", RoleAuthor},
+		{"pat", "/", RoleNone},
+		{"sam", "/", RoleNone},
+		{"nobody", "/", RoleNone},
+	} {
+		if got := p.HeldThroughout(c.who, c.on); got != c.held {
+			t.Errorf("%s holds %q throughout %s, want %q", c.who, got, c.on, c.held)
 		}
 	}
 }

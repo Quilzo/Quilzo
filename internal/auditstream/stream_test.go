@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -166,6 +167,95 @@ func TestAReceiverThatLostRecordsIsSentThemAgain(t *testing.T) {
 	}
 	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 3 || r.recv.Holds() != 5 {
 		t.Fatalf("sent again: %d %v, holds %d", n, err, r.recv.Holds())
+	}
+}
+
+// A receiver that says it holds records past the end of this log holds
+// another log, or has lost track: what it says is refused, the cursor stays,
+// and the refusal shows. Taken, it moved the cursor past the end of the log,
+// counted the refused batch as sent, and every round after sent nothing and
+// reported success, so the log stopped leaving the machine without a word.
+func TestAReceiverClaimingMoreThanTheLogHoldsIsRefused(t *testing.T) {
+	r := newRig(t)
+	r.write(t, 3)
+	liar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"holds":999999}`)
+	}))
+	defer liar.Close()
+	honest := r.sender.URL
+	r.sender.URL = liar.URL + "/ingest"
+	n, err := r.sender.Push(context.Background(), now)
+	if err == nil || !strings.Contains(err.Error(), "999999") {
+		t.Errorf("a receiver past the end of the log was believed: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("%d records counted as sent to a receiver that took none", n)
+	}
+	if c, _ := r.sender.Status(); c.Sent != 0 || c.Failures != 1 || c.Error == "" {
+		t.Errorf("cursor %+v", c)
+	}
+
+	// The same receiver set right gets the whole log.
+	r.sender.URL = honest
+	r.write(t, 1)
+	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 4 || r.recv.Holds() != 4 {
+		t.Fatalf("after: %d %v, holds %d", n, err, r.recv.Holds())
+	}
+
+	// A receiver ahead of the cursor but within the log moves it there, as a
+	// lost cursor needs, and is not counted as sent this round.
+	if err := os.Remove(r.sender.CursorPath); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 0 {
+		t.Errorf("a receiver already holding the log: %d %v", n, err)
+	}
+	if c, _ := r.sender.Status(); c.Sent != 4 || c.Error != "" {
+		t.Errorf("cursor after a lost one %+v", c)
+	}
+}
+
+// A cursor past the end of the log is a failed round, however it got
+// there: entries removed from the end of the log, a store put back from an
+// older copy, or a receiver believed before it was refused. Batch found
+// nothing waiting, so nothing was sent, ever, the records written next took
+// the numbers already sent, and every round reported success.
+func TestACursorPastTheEndOfTheLogIsAFailure(t *testing.T) {
+	r := newRig(t)
+	r.write(t, 5)
+	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 5 {
+		t.Fatalf("first push: %d %v", n, err)
+	}
+
+	// The two newest removed, and one written after.
+	path := filepath.Join(filepath.Dir(r.sender.CursorPath), "audit.jsonl")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(path, []byte(strings.Join(lines[:3], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := audit.New(audit.Options{Path: path, Source: "test-host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+		Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := r.sender.Push(context.Background(), now)
+	if err == nil || !strings.Contains(err.Error(), "ends at 4") || n != 0 {
+		t.Errorf("a cursor past the end of the log: %d %v", n, err)
+	}
+	if c, _ := r.sender.Status(); c.Sent != 5 || c.Failures != 1 || c.Error == "" {
+		t.Errorf("cursor %+v", c)
+	}
+	if r.recv.Holds() != 5 || len(r.took) != 1 {
+		t.Errorf("the receiver was sent more: holds %d, %d batches", r.recv.Holds(), len(r.took))
 	}
 }
 

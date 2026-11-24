@@ -4,7 +4,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -89,12 +91,21 @@ func loadBlocklist(root string) (*Blocklist, error) {
 
 // fediverseBlock refuses a host or an actor, and drops it if it was following.
 func fediverseBlock(root string, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf(
-			"usage: quilzo fediverse block HOST-OR-ACTOR\n" +
-				"  a host — example.social — covers every account on it")
+	// One at a time. `fediverse block a.example b.example` refused the first
+	// and said nothing of the second, which went on being served.
+	fs := flag.NewFlagSet("fediverse block", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	yes := fs.Bool("yes", false, "refuse it, and drop its follows; at a terminal, without this, only say what would go")
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return err
 	}
-	target := strings.TrimSpace(args[0])
+	if len(pos) == 0 {
+		return errMisused{fmt.Errorf(
+			"usage: quilzo fediverse block HOST-OR-ACTOR [--yes]\n" +
+				"  a host — example.social — covers every account on it")}
+	}
+	target := strings.TrimSpace(pos[0])
 	list, err := loadBlocklist(root)
 	if err != nil {
 		return err
@@ -117,6 +128,11 @@ func fediverseBlock(root string, args []string) error {
 		list.Hosts = append(list.Hosts, host)
 		sort.Strings(list.Hosts)
 	}
+	// Unblocking lets them in again; the follows it drops are gone.
+	if erasureHeld(*yes, fmt.Sprintf("this would refuse %s and drop whoever follows the site from there",
+		onOneLine(target))) {
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(blockPath(root)), 0o700); err != nil {
 		return err
 	}
@@ -133,6 +149,11 @@ func fediverseBlock(root string, args []string) error {
 		"/", audit.Success, map[string]string{
 			"target": target, "dropped": fmt.Sprint(dropped),
 		}))
+	// What is refused and who stopped following, under --json; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"blocked": target, "followers_removed": dropped}) {
+		return nil
+	}
 	w.Human("%s is refused\n", target)
 	if dropped > 0 {
 		w.Human("  %s%d follower(s) from there removed%s\n", dim, dropped, reset)
@@ -144,8 +165,12 @@ func fediverseBlock(root string, args []string) error {
 
 // fediverseUnblock takes one back off the list.
 func fediverseUnblock(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")
+		return errMisused{fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")}
 	}
 	target := strings.TrimSpace(args[0])
 	list, err := loadBlocklist(root)
@@ -156,14 +181,17 @@ func fediverseUnblock(root string, args []string) error {
 	list.Hosts = without(list.Hosts, target)
 	list.Actors = without(list.Actors, target)
 	if len(list.Hosts)+len(list.Actors) == before {
-		return fmt.Errorf("%s is not on the list; `quilzo fediverse blocked` "+
-			"shows what is", target)
+		return errNotFound{fmt.Errorf("%s is not on the list; `quilzo fediverse blocked` "+
+			"shows what is", target)}
 	}
 	if err := saveJSON(blockPath(root), list); err != nil {
 		return err
 	}
 	record(root, resolveCaller(root, flagToken).auditRecord("fediverse.unblock",
 		"/", audit.Success, map[string]string{"target": target}))
+	if w.JSON(map[string]any{"unblocked": target}) {
+		return nil
+	}
 	w.Human("%s is no longer refused\n", target)
 	w.Human("  %sthey are not following again by themselves; a block removes "+
 		"the follow and unblocking does not put it back%s\n", dim, reset)

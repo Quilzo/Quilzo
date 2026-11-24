@@ -27,7 +27,7 @@ func cmdScan(root string, args []string) error {
 	failOn := fs.String("fail-on", "high",
 		"severity that makes this exit non-zero, for CI")
 	rulesOnly := fs.Bool("rules", false, "list the rules and stop")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *rulesOnly {
@@ -239,7 +239,7 @@ func cmdCSP(root string, args []string) error {
 	fs := flag.NewFlagSet("csp", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefLive, "which content to read")
 	mode := fs.String("mode", "", "enforce | report-only | off (default from config)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

@@ -5,6 +5,7 @@ package agentwatch
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -303,5 +304,93 @@ func TestARunsRefusalIsReadWhereTheRunRecordsIt(t *testing.T) {
 	r := Look(events, now)
 	if len(r) != 1 || r[0].Counts[Escalation] != 2 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// Every call at the agent interface is one action, mcp.call on /mcp, and
+// the request is the operation it named. Keyed on the action and resource
+// alone, a client that tried six different operations once each was told
+// "the same request has now been refused 6 times", and the first of them,
+// "is author on /; grant needs admin", was not seen as reaching above its
+// role because the refusal said "needs admin" rather than "role".
+func TestDifferentOperationsAtTheInterfaceAreDifferentRequests(t *testing.T) {
+	var events []audit.Event
+	for i, op := range []string{"verify_store", "inventory", "policy_status", "agent_activity", "scan_content", "site_report"} {
+		events = append(events, ev(int64(i+1), "p_dana", "mcp.call", "/mcp", audit.Denied, time.Hour,
+			map[string]string{"tool": "quilzo_read", "operation": op, "on_behalf_of": "p_dana",
+				"error": "p_dana is author on /; grant needs admin"}))
+	}
+	r := Look(events, now)[0]
+	if r.Counts[RepeatedRefusal] != 0 || r.Counts[Escalation] != 6 {
+		t.Fatalf("six different operations, each refused once: %v", r.Counts)
+	}
+	// The same operation again is the same request.
+	events = append(events, ev(7, "p_dana", "mcp.call", "/mcp", audit.Denied, time.Hour,
+		map[string]string{"tool": "quilzo_read", "operation": "inventory", "on_behalf_of": "p_dana",
+			"error": "p_dana is author on /; grant needs admin"}))
+	if r := Look(events, now)[0]; r.Counts[RepeatedRefusal] != 1 {
+		t.Fatalf("the same operation refused twice: %v", r.Counts)
+	}
+	// A credential, or an app's consent, too small for an operation is
+	// reaching above it too.
+	for i, why := range []string{"this credential carries reader and edit-draft needs author",
+		"this app was given reader access, and this needs author"} {
+		esc := []audit.Event{ev(int64(i+1), "p_client", "mcp.call", "/mcp", audit.Denied, time.Hour,
+			map[string]string{"tool": "quilzo_write", "operation": "write_page", "error": why})}
+		if r := Look(esc, now)[0]; r.Counts[Escalation] != 1 {
+			t.Errorf("%q: %v", why, r.Counts)
+		}
+	}
+	// A refusal naming only what is needed is not about the role held: a
+	// bearer token too long-lived for a publish from another machine.
+	proof := []audit.Event{ev(1, "p_client", "mcp.call", "/mcp", audit.Denied, time.Hour,
+		map[string]string{"tool": "quilzo_publish", "operation": "publish",
+			"error": "this needs publisher, and from another machine that takes a token bound to the program's key"})}
+	if r := Look(proof, now)[0]; r.Counts[Escalation] != 0 {
+		t.Errorf("a token too long-lived was read as reaching above its role: %v", r.Counts)
+	}
+}
+
+// An app many people connected asks for each of them: the same operation
+// refused to two people is not one request asked twice.
+func TestTheSameOperationForTwoPeopleIsTwoRequests(t *testing.T) {
+	var events []audit.Event
+	for i, who := range []string{"p_dana", "p_lee", "p_sam", "p_ana", "p_kai", "p_bo"} {
+		e := ev(int64(i+1), "p_app", "mcp.call", "/mcp", audit.Denied, time.Hour,
+			map[string]string{"tool": "quilzo_read", "operation": "inventory", "on_behalf_of": who,
+				"error": "not now"})
+		e.Model = "https://app.example.com/meta"
+		events = append(events, e)
+	}
+	for _, s := range Look(events, now)[0].Strikes {
+		if strings.Contains(s.Why, "the same request") {
+			t.Fatalf("an operation refused once for each of six people was read as one asked again: %s", s.Why)
+		}
+	}
+}
+
+// A report on a client holding a person's own token names the client and
+// the person it acted for, so the case the shield opens says whose client
+// it was: the log's handle alone means nothing to whoever reads the case.
+func TestAReportSaysWhoAClientActedFor(t *testing.T) {
+	e := ev(1, "p_dana", "mcp.call", "/mcp", audit.Success, time.Hour,
+		map[string]string{"tool": "quilzo_read", "operation": "list_pages", "on_behalf_of": "p_dana"})
+	e.Model = "mcp-client"
+	if s := Look([]audit.Event{e}, now)[0].Subject(); s != "mcp-client for p_dana" {
+		t.Fatalf("subject %q", s)
+	}
+	// An app is named as before, by what an administrator disconnects, on
+	// a call through the gateway as on one at the interface.
+	g := ev(1, "p_app", "mcp.gateway", "/integrations/crm", audit.Success, time.Hour,
+		map[string]string{"tool": "lookup", "on_behalf_of": "p_dana"})
+	g.Model = "https://app.example.com/meta"
+	if s := Look([]audit.Event{g}, now)[0].Subject(); s != "app:https://app.example.com/meta" {
+		t.Errorf("an app through the gateway: %q", s)
+	}
+	// The writing assistant names whom it wrote for, and acts for many:
+	// it is named as itself, not after the last person it wrote for.
+	w := ev(1, "p_assistant", "assist", "/", audit.Success, time.Hour, map[string]string{"on_behalf_of": "p_dana"})
+	if s := Look([]audit.Event{w}, now)[0].Subject(); s != "p_assistant" {
+		t.Errorf("the writing assistant: %q", s)
 	}
 }

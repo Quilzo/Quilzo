@@ -132,7 +132,7 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 		fmt.Fprintf(&out, "%s: %v (confidence %.2f)\n", ans.Question, ans.Value, ans.Confidence)
 		settled = append(settled, agent.Settled{Name: ans.Question, Value: ans.Value, Confidence: ans.Confidence})
 		if ans.Why != "" {
-			fmt.Fprintf(&out, "  %s\n", plaintext.Clip(ans.Why, 300, "…"))
+			fmt.Fprintf(&out, "  %s\n", clip(ans.Why, 300))
 		}
 	}
 	if len(questions) > 0 {
@@ -189,3 +189,5 @@ func (c charged) Complete(ctx context.Context, system, user string) (string, err
 	}
 	return c.m.Complete(ctx, system, user)
 }
+
+func clip(s string, n int) string { return plaintext.Clip(s, n, "…") }

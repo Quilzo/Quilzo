@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -350,5 +351,44 @@ func TestHeaderValuesAreDecodedStrictly(t *testing.T) {
 		if _, err := decodeHeaderValue(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// A body over the limit is told the limit that stopped it.
+//
+// The admin bounds every POST at 2 MiB before this transport reads a byte,
+// and the refusal named MaxBody, 4 MiB, whatever had stopped the read: an
+// agent writing a 3 MB page was told 4 MiB was the limit, tried again at
+// 3.5 MB, and never learned the one it was under.
+func TestATooLargeBodyIsToldTheLimitThatStoppedIt(t *testing.T) {
+	e, _ := endpoint(t)
+	send := func(h http.Handler, size int) (int, Response) {
+		t.Helper()
+		c := modern("tools/list", "", `"pad":"`+strings.Repeat("a", size)+`"`)
+		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(c.body))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer writer")
+		r.Header.Set("MCP-Protocol-Version", Modern)
+		r.Header.Set("Mcp-Method", "tools/list")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		var resp Response
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		return w.Code, resp
+	}
+	// In front of it, a tighter bound, as the admin's is.
+	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
+		e.ServeHTTP(w, r)
+	})
+	code, resp := send(outer, 2<<10)
+	if code != http.StatusRequestEntityTooLarge || resp.Error == nil || !strings.Contains(resp.Error.Message, "at most 1024 bytes") {
+		t.Fatalf("over the bound in front: %d %+v", code, resp.Error)
+	}
+	// On its own, its own.
+	code, resp = send(e, MaxBody)
+	if code != http.StatusRequestEntityTooLarge || resp.Error == nil ||
+		!strings.Contains(resp.Error.Message, fmt.Sprintf("at most %d bytes", MaxBody)) {
+		t.Fatalf("over its own: %d %+v", code, resp.Error)
 	}
 }

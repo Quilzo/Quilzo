@@ -6,6 +6,7 @@ package main
 import (
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
@@ -106,5 +107,42 @@ func TestAListIsTypedAsJSON(t *testing.T) {
 		if typed(s) != s {
 			t.Errorf("%q became %#v", s, typed(s))
 		}
+	}
+}
+
+// The pages the blog and the events install pass the checks this program
+// makes of every page. Each had a list headed by an h2 and nothing above it,
+// so a site that installed them was told at every publish that its blog and
+// its events had headings and no h1.
+func TestTheBlogAndEventsPagesHaveAnH1(t *testing.T) {
+	root, design := siteStore(t)
+	if _, err := installStarter(design, "sections"); err != nil {
+		t.Fatal(err)
+	}
+	if err := blogCmd(root, []string{"setup"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if err := eventsCmd(root, []string{"setup"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports, err := checkAccessibility(root, s, s.GetRef(site.RefDraft), design)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, r := range reports {
+		seen[r.Page] = true
+		for _, f := range r.Findings {
+			if (r.Page == "blog" || r.Page == "events") && (f.Rule == "no-h1" || f.Severity == a11y.Blocking) {
+				t.Errorf("%s: %s (%s) %s", r.Page, f.Rule, f.Criterion, f.Detail)
+			}
+		}
+	}
+	if !seen["blog"] || !seen["events"] {
+		t.Fatalf("the blog and events pages were not checked: %v", seen)
 	}
 }

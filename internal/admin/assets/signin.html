@@ -72,12 +72,14 @@
                autocomplete="current-password"{{if not .SSO}} autofocus{{end}}
                aria-describedby="tok-help" required
                placeholder="qz_…">
-        <p id="tok-help" class="help">Create one with
+        <p id="tok-help" class="help">A token is for the command line and
+          for programs. Create one with
           <code>quilzo auth grant you admin</code>, then
           <code>quilzo token issue you --principal you --role admin</code>.
           Both: the grant is what gives you a role, the token is how you prove
-          you are you, and a token on its own signs in and is then refused by
-          every screen.</p>
+          you are you, and a token without the grant signs in and is then
+          refused by every screen. Here a token is one factor, so signing in
+          with one asks for your passkey next.</p>
       </div>
       <button type="submit">Sign in</button>
     </form>
@@ -87,6 +89,11 @@
       have registered one. It cannot be read off a screen or sent to somebody
       by mistake, and your browser will not offer it to any site but this
       one.</p>
+    <p class="help">New here? A passkey is added from a link, once: an
+      administrator gives you one with <code>quilzo auth enrol NAME</code>,
+      and on a new store <code>quilzo init --admin NAME</code> makes NAME its
+      first administrator and prints theirs. Open it here, add a passkey, and
+      sign in with it.</p>
 
     <p class="help">
       Submitted as a POST, so the token never reaches the address bar, the
@@ -110,12 +117,17 @@
 
     <h2>What this is</h2>
     <ul>
+      <li>The self-hosted AI agent platform: a control plane, an agent
+        studio, a CMS and chatbots in one Go binary. Every agent has an
+        identity, a policy, a budget and a signed record, and a person
+        approves the actions that matter.</li>
       <li>Content addressed by the hash of its own bytes, so history is free
-        and rollback is a pointer move.</li>
-      <li>Nothing executes: no plugin runtime, no scripting in templates, no
-        expressions in queries, no JavaScript in this interface.</li>
-      <li>No third-party dependencies at all, in an image built from scratch
-        with no shell, no package manager and no libc in it.</li>
+        and rollback is a pointer move. What people write does not execute:
+        no plugin runtime, no scripting in templates, no expressions in
+        queries.</li>
+      <li>No third-party dependencies, and a distroless image with no shell,
+        no package manager and no libc in it. The scripts this interface
+        runs are its own, served from here; passkeys need them.</li>
     </ul>
     <p class="help">
       Repeated failures here are slowed rather than locked out — a hard lockout

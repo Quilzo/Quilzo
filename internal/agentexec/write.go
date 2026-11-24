@@ -90,6 +90,13 @@ type Writer struct {
 	// commit attributed to whoever happened to start the run is a commit whose
 	// history lies about who wrote it.
 	Author string
+	// For is the person who started the run, as its record names them, and
+	// the commit's message says so (collab.AgentMessage). Not the author:
+	// the agent wrote it. But it was written for them, and with a count of
+	// approvals set the approval of the person who started the run counted
+	// for its change while nothing said whose run it was. Empty says
+	// nobody, as a commit made before this does.
+	For string
 
 	// Propose records a proposal for a commit, for the publish operation. Nil
 	// means this deployment has no review queue wired in, and publish is then
@@ -100,6 +107,13 @@ type Writer struct {
 	// page's provenance can say a model wrote it. Nil means nobody records
 	// it, and the publish gate then refuses the page as unmarked.
 	Written func(page string)
+	// Claimed is what to say of a claim somebody else holds on a page this
+	// run just wrote, and "" when nobody does. An outside agent's write_page
+	// was told "pat has claimed pricing"; a run here writes through this
+	// instead, and its model read "wrote pricing" and went on over the
+	// afternoon's rewrite. Advisory, like the claim: asked after the write,
+	// and never a reason to refuse it. Nil says nothing.
+	Claimed func(page string) string
 }
 
 // Perform is the agent.Perform for a session's write operations.
@@ -207,7 +221,7 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 	// whatever the numeric threshold says. A commit message that did not say
 	// so would put an agent's work in front of reviewers labelled as somebody's
 	// own — which is the one thing that rule exists to prevent.
-	msg := fmt.Sprintf("%s%s wrote %s", AgentCommitPrefix, s.Manifest().Name, name)
+	msg := collab.AgentMessage(s.Manifest().Name, name, wr.For)
 	cid, err := site.SaveDraftFrom(wr.Store, pages, msg, wr.Author, base)
 	if err != nil {
 		// A conflict is returned as it is. The model does not get a retry
@@ -219,7 +233,13 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 	if wr.Written != nil {
 		wr.Written(name)
 	}
-	return fmt.Sprintf("wrote %s in %s", name, shortID(cid)), cid, nil
+	said := fmt.Sprintf("wrote %s in %s", name, shortID(cid))
+	if wr.Claimed != nil {
+		if claim := wr.Claimed(name); claim != "" {
+			said += ". " + claim
+		}
+	}
+	return said, cid, nil
 }
 
 // publish records a proposal for the draft, and does not move the live ref.

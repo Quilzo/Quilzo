@@ -36,14 +36,14 @@ func cmdFind(root string, args []string) error {
 	ref := fs.String("ref", site.RefDraft,
 		"which pages to search: draft or live")
 	rest, flags := leadingArgs(args, len(args))
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	query := strings.TrimSpace(strings.Join(rest, " "))
 	if query == "" {
-		return fmt.Errorf("usage: quilzo find WORDS [--ref live] [--limit N]\n" +
+		return errMisused{fmt.Errorf("usage: quilzo find WORDS [--ref live] [--limit N]\n" +
 			"  words, not a query: there is no syntax here and a colon or a " +
-			"quote is a character in a word")
+			"quote is a character in a word")}
 	}
 
 	src, err := findSources(root, *ref, query)

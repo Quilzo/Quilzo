@@ -270,10 +270,15 @@ func (p Package) Verify(v *audit.HeadVerifier) error {
 func (i Item) agrees() error {
 	for _, f := range []struct{ name, entry, evidence string }{
 		{"control", i.Entry.Detail["control"], i.Evidence.Control},
+		// As the log wrote them, without the credentials an address
+		// carries (audit.WithoutCredentials), so evidence named by an
+		// address with a key agrees with the entry that recorded it; or as
+		// they were given, as an entry written before the log left the
+		// credentials out holds them.
 		{"reference", i.Entry.Detail["ref"], i.Evidence.Ref},
 		{"source", i.Entry.Detail["source"], i.Evidence.Source},
 	} {
-		if f.entry != f.evidence {
+		if f.entry != f.evidence && f.entry != audit.WithoutCredentials(f.evidence) {
 			return fmt.Errorf(
 				"the proof for %s is real and is attached to a different "+
 					"act: the log says the %s was %q and the evidence says "+

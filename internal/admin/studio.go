@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The studio: declaring an agent, seeing what it may reach, trying it, and
@@ -64,6 +64,13 @@ type agentMap struct {
 	Heads []mapBox
 	// Says describes the drawing in a sentence, for whoever cannot see it.
 	Says string
+}
+
+func clipText(s string, n int) string {
+	if len(s) > n {
+		return plaintext.Clip(s, n-1, "…")
+	}
+	return s
 }
 
 // drawAgent lays a declaration out: what it reads, the agent, what it may
@@ -159,21 +166,21 @@ func drawAgent(m agent.Manifest) agentMap {
 		coreY = top
 	}
 	core := mapBox{X: midX, Y: coreY, W: colW, H: coreH, TX: midX + 12,
-		TY: coreY + 26, Label: plaintext.Clip(m.Name, 24, "…"),
+		TY: coreY + 26, Label: clipText(m.Name, 24),
 		Sub: string(m.Kind) + " · " + string(m.Autonomy), Class: "core"}
 	for n, it := range reads {
 		y := top + n*(boxH+gap)
 		out.Boxes = append(out.Boxes, mapBox{X: leftX, Y: y, W: colW, H: boxH,
-			TX: leftX + 10, TY: y + 15, Label: plaintext.Clip(it.label, 30, "…"),
-			Sub: plaintext.Clip(it.sub, 36, "…"), Class: it.class})
+			TX: leftX + 10, TY: y + 15, Label: clipText(it.label, 30),
+			Sub: clipText(it.sub, 36), Class: it.class})
 		out.Lines = append(out.Lines, mapLine{leftX + colW, y + boxH/2,
 			midX, coreY + coreH/2, "edge"})
 	}
 	for n, it := range does {
 		y := top + n*(boxH+gap)
 		out.Boxes = append(out.Boxes, mapBox{X: rightX, Y: y, W: colW, H: boxH,
-			TX: rightX + 10, TY: y + 15, Label: plaintext.Clip(it.label, 30, "…"),
-			Sub: plaintext.Clip(it.sub, 36, "…"), Class: it.class})
+			TX: rightX + 10, TY: y + 15, Label: clipText(it.label, 30),
+			Sub: clipText(it.sub, 36), Class: it.class})
 		class := "edge"
 		if it.class == "write" {
 			class = "edge write"
@@ -262,6 +269,7 @@ func (s *Server) editData(data map[string]any, m agent.Manifest, isNew bool,
 
 	data["M"], data["New"] = m, isNew
 	data["Map"] = drawAgent(m)
+	data["EarnMin"], data["EarnMax"] = agent.MinEarnAfter, agent.MaxEarnAfter
 	var known []string
 	if s.Agents.Known != nil {
 		known = s.Agents.Known()
@@ -570,6 +578,21 @@ func manifestFromForm(r *http.Request, base agent.Manifest) (agent.Manifest, err
 	if _, ok := r.Form["model"]; ok {
 		m.Model = strings.TrimSpace(r.FormValue("model"))
 	}
+	// earn_after, which only the declaration's text could set: the form
+	// keeps what it does not show, so a person using it could neither see
+	// nor change how soon a kind of action stops asking. Empty is 0, asking
+	// every time; the range is the declaration's, checked where it is.
+	if _, ok := r.Form["earn_after"]; ok {
+		m.EarnAfter = 0
+		if v := strings.TrimSpace(r.FormValue("earn_after")); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return m, fmt.Errorf("approvals in a row is a whole number from %d to %d, "+
+					"or empty to ask every time", agent.MinEarnAfter, agent.MaxEarnAfter)
+			}
+			m.EarnAfter = n
+		}
+	}
 	return m, nil
 }
 
@@ -786,7 +809,7 @@ func (s *Server) agentCurrency() string {
 func runRows(in []agent.Record, now time.Time) []runRow {
 	var out []runRow
 	for _, r := range in {
-		row := runRow{ID: r.ID, Agent: r.Agent, Goal: plaintext.Clip(r.Goal, 120, "…"),
+		row := runRow{ID: r.ID, Agent: r.Agent, Goal: clipText(r.Goal, 120),
 			By: r.By, Model: r.Model, When: agoText(now.Sub(r.Started)),
 			Outcome: r.OutcomeAt(now), Did: r.Receipt.Did,
 			Refused: r.Receipt.Refused, Failed: r.Receipt.Failed,
@@ -1047,7 +1070,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(st.Action.Input) > 0 {
 			if b, jerr := json.Marshal(st.Action.Input); jerr == nil {
-				sr.Input = plaintext.Clip(string(b), 600, "…")
+				sr.Input = clipText(string(b), 600)
 			}
 		}
 		switch {
@@ -1088,7 +1111,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if in := wt.Action.Shown(); len(in) > 0 {
 			if b, jerr := json.MarshalIndent(in, "", "  "); jerr == nil {
-				pend.Input = plaintext.Clip(string(b), 8000, "…")
+				pend.Input = clipText(string(b), 8000)
 			}
 			pend.Fields = readableInput(in)
 		}
@@ -1178,7 +1201,7 @@ func (s *Server) handleRunAct(w http.ResponseWriter, r *http.Request,
 			answers = map[string]string{}
 			for k, vs := range r.PostForm {
 				if name, ok := strings.CutPrefix(k, "a."); ok && len(vs) > 0 && len(answers) < 16 {
-					answers[name] = plaintext.Clip(vs[0], 200, "…")
+					answers[name] = clipText(vs[0], 200)
 				}
 			}
 		}

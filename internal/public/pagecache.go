@@ -186,6 +186,31 @@ func (s *pageSet) visibleAt(now time.Time) (map[string]any, map[string]string) {
 	return out, visible
 }
 
+// VisibleAt is the pages of a published set that a visitor who is not
+// signed in sees at one moment, with the blocks they reuse expanded: what
+// visibleAt serves, from a set read some other way. Not a block, not a
+// members-only page, and not a page outside its publish window or whose
+// window cannot be read.
+//
+// For the owner's chatbot, which read every published page: the test
+// console, ask, eval and the gap check answered from members-only and
+// not-yet-started pages that the visitors' chatbot never reads, so the gap
+// loop closed a visitor's question as answered while visitors still could
+// not get an answer to it.
+func VisibleAt(pages map[string]any, now time.Time) map[string]any {
+	out := make(map[string]any, len(pages))
+	for name, body := range pages {
+		if site.IsBlock(body) || membersOnly(body) {
+			continue
+		}
+		if wnd, err := site.WindowOf(body); err != nil || !wnd.Public(now) {
+			continue
+		}
+		out[name], _ = site.ExpandBlocks(body, pages)
+	}
+	return out
+}
+
 // membersAt is the members-only pages as they stand at one moment, under
 // the same publish window as every other page. Only the page handler and
 // the account page ask for these, and only for a signed-in member.

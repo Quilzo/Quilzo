@@ -341,6 +341,34 @@ func TestAdminHuntingCountsDistinctAddresses(t *testing.T) {
 	}
 }
 
+// One stale conversation link asked for again is not guessing.
+//
+// A visitor is told their conversation's address is the only way back to
+// it. One who opens it after it has expired, and reloads it, asked for one
+// wrong address three times; and the page's own script, asking every few
+// seconds, did the same by itself when a conversation ended under it. Both
+// were slowed on the whole site as somebody guessing, though the
+// playbook's own words are that only several wrong addresses are.
+func TestConversationGuessingCountsDistinctAddresses(t *testing.T) {
+	var guess Playbook
+	for _, pb := range Builtins() {
+		if pb.Name == "conversation-guessing" {
+			guess = pb
+		}
+	}
+	r := newRig(t, guess)
+	for i := 0; i < 20; i++ {
+		if got := r.see("conversation-guess", "203.0.113.9", "help 0123456789abcdef"); len(got) != 0 {
+			t.Fatalf("one stale address asked for again was taken as guessing: %+v", got)
+		}
+	}
+	r.see("conversation-guess", "203.0.113.9", "help 1111111111111111")
+	got := r.see("conversation-guess", "203.0.113.9", "help 2222222222222222")
+	if len(got) != 1 || !strings.Contains(got[0].Did[0], "on the site") {
+		t.Fatalf("three different wrong addresses: %+v", got)
+	}
+}
+
 func TestBlocksNeedSignalsNobodyCanRaiseForSomebodyElse(t *testing.T) {
 	pb := injection()
 	pb.On.Count = 1

@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -31,7 +32,7 @@ import (
 func cmdStudio(root string, args []string) error {
 	fs := flag.NewFlagSet("studio", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8084", "listen address")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -43,27 +44,34 @@ func cmdStudio(root string, args []string) error {
 		// Said before it is a mystery. A capture surface nobody can sign in
 		// to looks broken, and the reason is one command away.
 		fmt.Fprintf(os.Stderr, "  %sno tokens exist yet, so nobody can sign "+
-			"in:%s\n", dim, reset)
+			"in:%s\n", noteDim, noteReset)
 		fmt.Fprintf(os.Stderr, "  %squilzo token issue you --principal you "+
-			"--role author%s\n", dim, reset)
+			"--role author%s\n", noteDim, noteReset)
 	}
 
 	fmt.Fprintf(os.Stderr, "studio on http://%s\n", *addr)
 	fmt.Fprintf(os.Stderr, "  %sit records the screen and stores the result; "+
-		"there is no editor here%s\n", dim, reset)
+		"there is no editor here%s\n", noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sa separate origin because it runs a script, "+
-		"which the admin does not%s\n", dim, reset)
+		"which the admin does not%s\n", noteDim, noteReset)
 	if _, ok := media.HaveFFmpeg(); !ok {
 		fmt.Fprintf(os.Stderr, "  %sno ffmpeg here, so a recording is stored "+
-			"without its length or a poster frame%s\n", dim, reset)
+			"without its length or a poster frame%s\n", noteDim, noteReset)
 	}
 
 	server := &http.Server{Addr: *addr, Handler: srv.Handler()}
 	// A recording is large and the upload is the whole point, so neither the
 	// request nor the response is given a fixed deadline; what bounds this
 	// server is the idle deadline and the connection limit. The headers still
-	// have ten seconds. See internal/listen.
-	return listen.Uploads().Serve(server)
+	// have ten seconds, a recording the time its size takes, and the sign-in
+	// form what a form has on the public site. See internal/listen.
+	//
+	// It believes no proxy, so this machine is the one peer that is many
+	// visitors: the browser recording on it, and anything in front.
+	lim := listen.Uploads()
+	lim.Files = studio.FileBody
+	lim.Shared = clientip.ThisMachine
+	return lim.Serve(server)
 }
 
 // studioServer is the capture surface over a store.

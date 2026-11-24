@@ -610,7 +610,9 @@ func ReadJudgment(answer []byte) (winner, reason string, err error) {
 		return "", "", fmt.Errorf("%q is not a judgement", v.Winner)
 	}
 	reason = strings.TrimSpace(plaintext.Clean(v.Reason))
-	reason = plaintext.Clip(reason, MaxJudgeReason, "")
+	if len(reason) > MaxJudgeReason {
+		reason = clipUTF8(reason, MaxJudgeReason)
+	}
 	return v.Winner, reason, nil
 }
 
@@ -642,6 +644,9 @@ func stripFences(s string) string {
 	}
 	return strings.TrimSuffix(strings.TrimSpace(s), "```")
 }
+
+// clipUTF8 cuts a string to at most n bytes at a character boundary.
+func clipUTF8(s string, n int) string { return plaintext.Clip(s, n, "") }
 
 // Duplicates names the existing ideas a new one repeats, if any.
 //

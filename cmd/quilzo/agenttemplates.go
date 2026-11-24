@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Templates of this store's own: archetypes a person authors, so the
@@ -149,9 +150,29 @@ func cmdAgentTemplate(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadCustomTemplates(root)
 		if err != nil {
 			return err
+		}
+		// One document under --json, as `agent templates` answers: reachable
+		// now, this list is a read like the others.
+		if w.Mode == out.JSON {
+			rows := []map[string]any{}
+			var kinds []string
+			for k := range set {
+				kinds = append(kinds, string(k))
+			}
+			sort.Strings(kinds)
+			for _, k := range kinds {
+				t := set[agent.Kind(k)]
+				rows = append(rows, map[string]any{"kind": k, "summary": t.Summary, "when": t.When,
+					"capabilities": t.Manifest.Capabilities, "autonomy": t.Manifest.Autonomy})
+			}
+			w.JSON(map[string]any{"templates": rows})
+			return nil
 		}
 		if len(set) == 0 {
 			fmt.Printf("  no templates of this store's own. `quilzo agent template save FILE` declares one —\n")
@@ -176,16 +197,16 @@ func cmdAgentTemplate(root string, args []string) error {
 		return nil
 	case "save":
 		if len(args) != 2 {
-			return errors.New("quilzo agent template save FILE")
+			return errMisused{errors.New("quilzo agent template save FILE")}
 		}
 		return saveCustomTemplate(root, args[1])
 	case "remove":
 		if len(args) != 2 {
-			return errors.New("quilzo agent template remove KIND")
+			return errMisused{errors.New("quilzo agent template remove KIND")}
 		}
 		return removeCustomTemplate(root, args[1])
 	}
-	return fmt.Errorf("unknown template command %q; try list, save or remove", args[0])
+	return errMisused{fmt.Errorf("unknown template command %q; try list, save or remove", args[0])}
 }
 
 func saveCustomTemplate(root, file string) error {
@@ -236,7 +257,7 @@ func removeCustomTemplate(root, kind string) error {
 	}
 	path := filepath.Join(templatesDir(root), kind+".json")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return fmt.Errorf("there is no template called %s", kind)
+		return errNotFound{fmt.Errorf("there is no template called %s", kind)}
 	}
 	// A kind is only known while its template exists, so agents of it would
 	// stop validating and stop running the moment it went.

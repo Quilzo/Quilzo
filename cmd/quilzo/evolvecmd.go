@@ -68,7 +68,7 @@ A weight counts a metric toward the score; a negative weight counts it
 against, which minimises it (--weight time=-1). --memory is per process.
 `)
 		if cmd != "" {
-			return fmt.Errorf("unknown evolve command %q", cmd)
+			return errMisused{fmt.Errorf("unknown evolve command %q", cmd)}
 		}
 		return nil
 	}
@@ -99,7 +99,7 @@ func evolveRun(root string, args []string, caller *Caller) (err error) {
 		"how many generations, at most %d", evolve.MaxGenerations))
 	population := fs.Int("population", 8, fmt.Sprintf(
 		"how many programs to keep, between 2 and %d", evolve.MaxPopulation))
-	timeout := fs.Duration("timeout", 2*time.Minute, "each run's time limit, at most 30m")
+	timeout := flagDuration(fs, "timeout", 2*time.Minute, "each run's time limit, at most 30m")
 	memory := fs.Int("memory", 2048, "each process's memory limit in MB")
 	disk := fs.Int("disk", 512, "each run's disk in MB, its workspace and home together")
 	var inputs, evalInputs, testInputs, testEvalInputs, weights multiFlag
@@ -110,7 +110,7 @@ func evolveRun(root string, args []string, caller *Caller) (err error) {
 	fs.Var(&testEvalInputs, "test-eval-input",
 		"a file the evaluator receives for the test set, never used to choose (repeatable)")
 	fs.Var(&weights, "weight", "NAME=NUMBER, how a metric counts; negative counts against (repeatable; default: the mean)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	// Both: a search runs programs in the box, as a research run does, and
@@ -317,7 +317,7 @@ func evolveFinish(root string, caller *Caller, dir, id string, seed int64, out, 
 	outcome := audit.Success
 	if runErr != nil {
 		outcome = audit.Failure
-		details["error"] = plaintext.Clip(runErr.Error(), 300, "…")
+		details["error"] = clampStr(runErr.Error(), 300)
 	}
 	if best.Digest != "" {
 		details["best"], details["digest"] = best.ID, best.Digest
@@ -401,6 +401,9 @@ func fileDigest(path string) (string, bool) {
 	}
 	return evolve.DigestOf(data), true
 }
+
+// clampStr cuts a string for a record.
+func clampStr(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // boxRunner runs candidates and the evaluator in boxes of their own.
 //

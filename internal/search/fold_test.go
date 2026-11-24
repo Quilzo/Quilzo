@@ -105,3 +105,30 @@ func TestTokeniseIsUnchangedByFolding(t *testing.T) {
 		}
 	}
 }
+
+// Turkish has two letters i, and its capital I is the capital of the dotless
+// ı, so a word typed in capitals never met its lowercase form: HAKKINDA did
+// not find "Hakkında" and ÇILBIR did not find "Çılbır". Nor did a word typed
+// without its diacritics on a keyboard that has none. Case and marks fold
+// away at both ends, as the site's addresses already drop them.
+func TestATurkishWordIsFoundInCapitalsAndWithoutItsMarks(t *testing.T) {
+	idx := Build("c1", map[string]any{
+		"tr/about": map[string]any{"title": "Marginalia Hakkında", "body": "Kim olduğumuz."},
+		"cilbir":   map[string]any{"title": "Çılbır", "body": "Yoğurtlu yumurta."},
+		"menu":     map[string]any{"title": "Menu", "body": "Everything we cook."},
+	})
+	for query, want := range map[string]string{
+		"hakkında": "tr/about", "HAKKINDA": "tr/about", "hakkinda": "tr/about",
+		"çılbır": "cilbir", "ÇILBIR": "cilbir", "cilbir": "cilbir", "Cilbir": "cilbir",
+		"YOĞURTLU": "cilbir", "yogurtlu": "cilbir",
+	} {
+		got := idx.Search(query, 5)
+		if len(got) == 0 || got[0].Page != want {
+			t.Errorf("%q found %v, want %s", query, got, want)
+		}
+	}
+	// And folding does not make unrelated words meet.
+	if got := idx.Search("cook", 5); len(got) != 1 || got[0].Page != "menu" {
+		t.Errorf("cook found %v", got)
+	}
+}

@@ -6,7 +6,6 @@ package foreign
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -320,22 +319,60 @@ var samples = map[string]string{
 <body><main id="main"><h1>Hello</h1><p>Ordinary markup.</p></main></body></html>`,
 }
 
-// A construct quoted in what could not be converted is cut where a
-// character starts, and still comes to 90 bytes with its mark. A theme's
-// fields are named in its author's language, and the quote is how somebody
-// finds the place to change by hand.
-func TestALongConstructIsQuotedBetweenCharacters(t *testing.T) {
-	// The lengths take the cut across every byte of the first characters,
-	// whatever the quote starts with.
-	for n := 66; n < 78; n++ {
-		r := Adopt("{% unless page." + strings.Repeat("a", n) + "中文中文 %}x{% endunless %}")
-		if len(r.Unsupported) == 0 {
-			t.Fatalf("an unless was converted with nothing reported")
+// A stylesheet from another host is removed and reported, whatever comes
+// before its address in the tag.
+//
+// The address was found in strings.ToLower of the tag and read from the tag
+// at that offset. A title with İ in it, two bytes that lower to one, moved
+// the read a byte early for each İ: the address came back as `="https://…`,
+// which names no host, so a stylesheet the policy would refuse was kept and
+// nothing said so.
+func TestAStylesheetFromElsewhereIsRemovedWhateverItsTitleSays(t *testing.T) {
+	for _, title := range []string{"İstanbul", "Yazı tipi: İnce", "300 \u212A"} {
+		r := Adopt(`<!doctype html><html lang="tr"><head><title>x</title>` +
+			`<link title="` + title + `" rel="stylesheet" href="https://fonts.example/css2.css">` +
+			`</head><body><h1>x</h1></body></html>`)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%q: the stylesheet was kept, or not reported:\n%s\n%v", title, r.Template, r.Removed)
 		}
-		said := r.Unsupported[0]
-		quoted := said[1 : 1+strings.IndexByte(said[1:], '`')]
-		if !utf8.ValidString(quoted) || len(quoted) > 90 || !strings.HasSuffix(quoted, "…") {
-			t.Errorf("quoted %d bytes ending %q", len(quoted), quoted[max(0, len(quoted)-6):])
+	}
+}
+
+// The address a stylesheet is judged by is its own href, however the tag is
+// written: spaces around the equals sign, another attribute whose name ends
+// in href, or a title whose words happen to say href=.
+//
+// The address was read from the first "href=" anywhere in the tag. With
+// spaces there was none, and a decoy before the real one gave a local path
+// or the rest of a title, which names no host; either way the stylesheet
+// from elsewhere was kept and nothing said so. The other way round, a decoy
+// naming another host took a local stylesheet out.
+func TestAStylesheetIsJudgedByItsOwnHref(t *testing.T) {
+	adopt := func(link string) *Result {
+		return Adopt(`<!doctype html><html lang="en"><head><title>x</title>` + link +
+			`</head><body><h1>x</h1></body></html>`)
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" href = "https://fonts.example/a.css">`,
+		`<link rel="stylesheet"` + "\n\t" + `HREF=` + "\n" + `'https://fonts.example/a.css'>`,
+		`<link title="href=x" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link data-href="/x.css" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link rel=stylesheet href=https://fonts.example/a.css>`,
+	} {
+		r := adopt(link)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%s: the stylesheet was kept, or not reported:\n%s\n%v", link, r.Template, r.Removed)
+		}
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" title="see href=//fonts.example/" href="/site.css">`,
+		`<link rel="stylesheet" data-href="https://fonts.example/a.css" href="/site.css">`,
+	} {
+		r := adopt(link)
+		if !strings.Contains(r.Template, `href="/site.css"`) || len(r.Removed) != 0 {
+			t.Errorf("%s: a stylesheet of this site's own was taken out:\n%s\n%v", link, r.Template, r.Removed)
 		}
 	}
 }

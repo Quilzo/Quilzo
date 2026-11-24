@@ -99,11 +99,14 @@ what production serves is the bytes that were checked — not a copy of them.</p
   <tr>
     <th scope="row">{{when .Entry.At}}</th>
     <td data-label="Commit"><code>{{short .Entry.Commit}}</code></td>
-    <td data-label="By">{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}</td>
+    <td data-label="By">{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}{{if .Entry.UnmarkedReason}}<div class="hint">publishes pages with no provenance, because: {{.Entry.UnmarkedReason}}</div>{{end}}</td>
     <td>
       {{if .Stale}}<span class="warn">stale — the draft has moved to
         {{short .Current}} since this was scheduled, so it describes content
         nobody has looked at since</span>
+      {{else if le .Entry.At $.Now}}<span class="warn">overdue — not published{{if $.CannotPublish}}:
+        this server cannot publish it{{if $.CanPromote}} ({{$.CannotPublish}}){{end}}{{else if not $.InServer}}:
+        nothing publishes it until <code class="cmd">quilzo schedule run</code> runs{{end}}</span>
       {{else}}<span class="ok">pending</span>{{end}}
     </td>
     {{if $.CanPromote}}
@@ -151,10 +154,15 @@ what production serves is the bytes that were checked — not a copy of them.</p
          placeholder="48h or 2026-09-01T09:00:00Z"></span>
   <span class="pair"><label for="s-note">Note</label>
   <input id="s-note" name="note" placeholder="why, for whoever finds this next week"></span>
+  <span class="pair"><label for="s-reason">Reason to publish pages with no provenance</label>
+  <input id="s-reason" name="reason" placeholder="recorded with the publish"></span>
   <button type="submit">Schedule</button>
 </form>
 <p class="hint">
-  {{if .InServer}}This server publishes it at that time, on your authority as it
+  {{if and .InServer .CannotPublish}}<strong>This server cannot publish it</strong>:
+  {{.CannotPublish}}. Nothing scheduled goes out until <code>quilzo serve</code>
+  runs with a token that may publish, or <code>quilzo schedule run</code> runs
+  with one.{{else if .InServer}}This server publishes it at that time, on your authority as it
   stands then: if you can no longer publish, it is refused.{{else}}Nothing
   publishes it until <code>quilzo schedule run</code> runs, because
   <code>schedule.in_server</code> is off on this server.{{end}}

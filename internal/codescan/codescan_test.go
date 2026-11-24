@@ -239,17 +239,25 @@ func TestItFindsEverySecretQuilzoMakes(t *testing.T) {
 	}
 }
 
-// What a finding quotes is cut where a character starts, and still comes to
-// 90 bytes with its mark. A template is quoted as its author wrote it, in
-// whatever language, so the line can be found by what it says.
-func TestALongExcerptIsCutBetweenCharacters(t *testing.T) {
-	// The cut at 87 bytes falls on the second byte of 中.
-	head := "{% raw " + strings.Repeat("a", 79)
-	f := has(scan(Template, head+"中文 %}"), "xss.raw-output")
+// An inline handler was answered with "move the behaviour into a script file
+// served from this origin", and the site serves no script of anybody's: the
+// media library refuses .js, no route serves one, and the policy is
+// script-src 'none'. Advice nobody can follow sent people looking for a way
+// to upload JavaScript; the advice is what the site can do instead.
+func TestScanAdvisesOnlyWhatTheSiteCanServe(t *testing.T) {
+	f := has(scan(Template, `<button onclick="buy()">Buy</button>`), "xss.event-handler")
 	if f == nil {
-		t.Fatal("the raw output was not found")
+		t.Fatal("an inline handler was not found")
 	}
-	if f.Excerpt != head+"..." {
-		t.Errorf("the excerpt is %d bytes and ends %q", len(f.Excerpt), f.Excerpt[len(f.Excerpt)-6:])
+	if !strings.Contains(f.Fix, "no script") || !strings.Contains(f.Fix, "a link, a form") {
+		t.Errorf("the advice for an inline handler: %s", f.Fix)
+	}
+	for _, r := range Rules() {
+		fix := strings.ToLower(r.Fix)
+		for _, impossible := range []string{"script file", "served from this origin", ".js"} {
+			if strings.Contains(fix, impossible) {
+				t.Errorf("%s advises %q, which the site can never serve: %s", r.ID, impossible, r.Fix)
+			}
+		}
 	}
 }

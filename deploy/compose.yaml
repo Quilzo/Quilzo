@@ -39,10 +39,18 @@ name: quilzo
 # replaces a service's command: a --root written in it went with it, and every
 # setup step looked for a store in the read-only working directory instead.
 x-quilzo: &quilzo
-  # The release's image by default. QUILZO_IMAGE names one you built
-  # yourself (deploy/README.md), under a name of its own: an image built here
-  # and tagged as the release's would be taken for it.
-  image: ${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:${QUILZO_VERSION:-latest}
+  # The image .env names, and no default.
+  #
+  # It defaulted to ghcr.io/quilzo/quilzo:latest.
+  # No release is published yet, so that is an image the registry refuses to
+  # hand anybody, and the first setup step failed; and once there is a
+  # release, latest is whatever was pushed under that name last, which
+  # nobody here checked and which changes under a running stack at the next
+  # pull. So compose refuses to start until .env names an image: the one
+  # deploy/README.md builds from this checkout, under a name of its own (an
+  # image built here and tagged as the release's would be taken for it), or
+  # a release's by its digest.
+  image: ${QUILZO_IMAGE:?set QUILZO_IMAGE in deploy/.env}:${QUILZO_VERSION:?set QUILZO_VERSION in deploy/.env}
   restart: unless-stopped
   read_only: true
   cap_drop: [ALL]
@@ -66,8 +74,14 @@ services:
     # its group: they read the log, submit records over its socket, and
     # computing the chain is the writer's alone, so they cannot forge a
     # history either (internal/logd).
+    #
+    # It signs heads and statements for the admin only: for an account
+    # connecting as group 65532, which the site does not (below). It signed
+    # for every account that may submit, and the site is the admin's uid,
+    # so anything that could run code as the public site could have a
+    # feature package or a research plan signed with the log's key.
     user: "65533:65532"
-    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532"]
+    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532", "--sign-gid", "65532"]
     volumes:
       - audit:/srv/audit
     # A socket is all it serves, so it has no network at all.
@@ -125,6 +139,17 @@ services:
 
   site:
     <<: *quilzo
+    # The admin's uid, as the store is shared and every file in it is the
+    # one account's, and a group of its own, 65531, so the log writer can
+    # tell the site from the admin and signs nothing for it. In the
+    # writer's group as well, to read the log and reach its socket with
+    # its records. A uid of its own would take every file in the store
+    # changing hands, and is not done here. The group holds only while the
+    # site cannot gain privileges (no-new-privileges, in x-quilzo above):
+    # without that, a set-group-ID copy of the binary it made itself
+    # connected as the admin's group and had a head signed.
+    user: "65532:65531"
+    group_add: ["65532"]
     command:
       - site
       - --addr

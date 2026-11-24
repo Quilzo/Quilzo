@@ -179,7 +179,11 @@ func excerpt(r Rule, m string) string {
 		}
 		return "<redacted>"
 	}
-	return plaintext.Clip(strings.TrimSpace(m), 90, "...")
+	m = strings.TrimSpace(m)
+	if len(m) > 90 {
+		return plaintext.Clip(m, 87, "...")
+	}
+	return m
 }
 
 // Worst returns the highest severity present, for an exit code.

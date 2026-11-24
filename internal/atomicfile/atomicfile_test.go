@@ -5,6 +5,7 @@ package atomicfile
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,5 +172,55 @@ func TestALockIsHeldByOneAtATimeAndFreedByItsHolder(t *testing.T) {
 	case <-got:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the lock was not freed")
+	}
+}
+
+// A lock another process holds is waited for as the policy says: said once
+// when the wait has gone on a second, and given up after the patience with
+// an error that names the lock. A lock let go of in a moment is taken with
+// nothing said. Behind a stopped holder, every write hung without a word.
+func TestAWaitForALockIsSaidAndBounded(t *testing.T) {
+	t.Cleanup(func() { SetWaitPolicy(WaitPolicy{}) })
+	var mu sync.Mutex
+	var said []string
+	SetWaitPolicy(WaitPolicy{Patience: 1500 * time.Millisecond, Notice: func(path string) {
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, path)
+	}})
+	path := filepath.Join(t.TempDir(), "refs.lock")
+	unlock, err := Lock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = Lock(path)
+	var held *HeldError
+	if !errors.As(err, &held) || held.Path != path || !strings.Contains(err.Error(), path) {
+		t.Errorf("a lock held past the patience: %v", err)
+	}
+	if waited := time.Since(start); waited < 1500*time.Millisecond || waited > 5*time.Second {
+		t.Errorf("gave up after %s, for a patience of 1.5s", waited)
+	}
+	mu.Lock()
+	if len(said) != 1 || said[0] != path {
+		t.Errorf("the wait was said %d times: %v", len(said), said)
+	}
+	said = nil
+	mu.Unlock()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		unlock()
+	}()
+	again, err := Lock(path)
+	if err != nil {
+		t.Fatalf("a lock let go of in a moment was not taken: %v", err)
+	}
+	again()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(said) != 0 {
+		t.Errorf("a wait of a moment was said: %v", said)
 	}
 }

@@ -137,28 +137,47 @@ func absPath(p string) string {
 
 func cmdBackup(root string, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: quilzo backup key | create FILE [--templates DIR] | verify FILE | restore FILE --into DIR")
+		return errMisused{errors.New("usage: quilzo backup key | create FILE [--templates DIR] | verify FILE | restore FILE --into DIR")}
 	}
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "key":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		k, err := backup.NewKey()
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s\n\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
+		// The key as one document under --json. This printed its paragraph
+		// whatever was asked for, so a script making a key had to cut the
+		// one thing it needed out of prose.
+		if w.JSON(map[string]string{"key": backup.EncodeKey(k)}) {
+			return nil
+		}
+		// The key alone on stdout and its paragraph on stderr, so `backup
+		// key > bk.key` writes a file QUILZO_BACKUP_KEY_FILE can name. The
+		// file held the paragraph too, and the backup was refused: "a
+		// backup key is 32 bytes, base64".
+		fmt.Println(backup.EncodeKey(k))
+		w.Notes().Human("\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
 			"and give it to Quilzo as %s or in the file %s names. Without it no backup can be read.\n",
-			backup.EncodeKey(k), backupKeyEnv, backupKeyFileEnv)
+			backupKeyEnv, backupKeyFileEnv)
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
 		templates := fs.String("templates", "templates", "the layouts beside the store")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
-			return errors.New("usage: quilzo backup create FILE [--templates DIR]")
+			return errMisused{errors.New("usage: quilzo backup create FILE [--templates DIR]")}
+		}
+		// A backup of a --root that is no store, an unmounted volume's, was
+		// "backed up and checked: 0 files".
+		if err := needStore(root); err != nil {
+			return err
 		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return err
@@ -178,7 +197,7 @@ func cmdBackup(root string, args []string) error {
 		return nil
 	case "verify":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo backup verify FILE")
+			return errMisused{errors.New("usage: quilzo backup verify FILE")}
 		}
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return err
@@ -206,11 +225,11 @@ func cmdBackup(root string, args []string) error {
 		fs := flag.NewFlagSet("backup restore", flag.ContinueOnError)
 		into := fs.String("into", "", "an empty directory to restore into")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 || *into == "" {
-			return errors.New("usage: quilzo backup restore FILE --into DIR")
+			return errMisused{errors.New("usage: quilzo backup restore FILE --into DIR")}
 		}
 		key, err := backupKey()
 		if err != nil {
@@ -241,7 +260,7 @@ func cmdBackup(root string, args []string) error {
 			restored, filepath.Join(*into, "templates"))
 		return nil
 	}
-	return fmt.Errorf("unknown backup command %q; try key, create, verify or restore", args[0])
+	return errMisused{fmt.Errorf("unknown backup command %q; try key, create, verify or restore", args[0])}
 }
 
 // backupJob makes a backup a day into backup.dir, checks it, and keeps the

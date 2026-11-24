@@ -105,5 +105,5 @@ func warnContainerLayer(root string) {
 	}
 	fmt.Fprintf(dst, "  %sthe store is in this container's own filesystem, which goes when the container does: "+
 		"with --rm, as soon as this command ends.\n  Mount a volume on it to keep it: docker run -v quilzo:%s ...%s\n",
-		yellow, abs, reset)
+		noteYellow, abs, noteReset)
 }

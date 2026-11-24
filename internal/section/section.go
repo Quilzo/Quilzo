@@ -69,9 +69,11 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "What you get", "columns": "3",
 			"items": []any{
-				map[string]any{"icon": "bolt", "title": "First thing", "body": "Say what it is and why it matters."},
-				map[string]any{"icon": "shield", "title": "Second thing", "body": "Two sentences is usually enough."},
-				map[string]any{"icon": "schedule", "title": "Third thing", "body": "Three cards read better than four."},
+				// A picture is optional, and empty here so the field is there
+				// to fill and the picker appears beside it, as on a split.
+				map[string]any{"icon": "bolt", "title": "First thing", "body": "Say what it is and why it matters.", "image": "", "alt": ""},
+				map[string]any{"icon": "shield", "title": "Second thing", "body": "Two sentences is usually enough.", "image": "", "alt": ""},
+				map[string]any{"icon": "schedule", "title": "Third thing", "body": "Three cards read better than four.", "image": "", "alt": ""},
 			},
 		},
 	},
@@ -373,10 +375,22 @@ var kinds = []Kind{
 	},
 }
 
-// Kinds returns the catalogue, in reading order.
+// Kinds returns the catalogue, in reading order, a group at a time.
+//
+// A group at a time because every list of them is read under its group's
+// heading, and kinds added later were added at the end: events and posts
+// after booking, so `quilzo section kinds` printed "data" and "closing"
+// twice. Grouped here rather than by moving them in the slice, whose order
+// also decides which kind an entry naming two of them is read as.
 func Kinds() []Kind {
-	out := make([]Kind, len(kinds))
-	copy(out, kinds)
+	out := make([]Kind, 0, len(kinds))
+	for _, g := range Groups() {
+		for _, k := range kinds {
+			if k.Group == g {
+				out = append(out, k)
+			}
+		}
+	}
 	return out
 }
 
@@ -429,6 +443,9 @@ type Placed struct {
 	Label string `json:"label,omitempty"`
 	// Items is how many entries it holds, for the kinds that hold a list.
 	Items int `json:"items,omitempty"`
+	// Backdrop is true when the section is drawn over a backdrop picture or
+	// video: its surface is "media".
+	Backdrop bool `json:"backdrop,omitempty"`
 	// Unknown is true when the page names a kind the catalogue does not have.
 	// Reported rather than hidden: it is either a kind somebody removed from a
 	// layout or a typo, and both are things to see.
@@ -458,6 +475,7 @@ func On(body any) []Placed {
 			p.Unknown = true
 		}
 		if inner != nil {
+			p.Backdrop = hasBackdrop(inner)
 			p.Label = label(inner)
 			if items, isList := inner["items"].([]any); isList {
 				p.Items = len(items)
@@ -522,6 +540,18 @@ func reused(m map[string]any) (string, bool) {
 	}
 	name, _ := ref["page"].(string)
 	return name, name != ""
+}
+
+// onlyReuse is whether a section is nothing but a reuse and its id, which is
+// the only form a renderer replaces with the block (site.BlockRef); a reuse
+// with anything else beside it is checked as the section it otherwise is.
+func onlyReuse(m map[string]any) bool {
+	for k := range m {
+		if k != BlockKind && k != IDField {
+			return false
+		}
+	}
+	return true
 }
 
 // InsertBlock puts a section reusing the block named at a position.
@@ -763,6 +793,16 @@ func Validate(body any) (blocking []Problem, advisory []Problem) {
 			blocking = append(blocking, Problem{i, "is empty, so it names no kind"})
 			continue
 		}
+		// A reuse of a block is no kind of the catalogue, and is not one to
+		// check here: the block's own sections are put in its place before a
+		// page is rendered, and they are checked where the block is. Read as
+		// an unknown kind, every page that reused a block was refused at
+		// publish as rendering nothing. Whether the page it names is a block
+		// a page may show is a question about the whole draft, so the publish
+		// gate asks it (site.CanReuse), not this.
+		if _, ok := reused(m); ok && onlyReuse(m) {
+			continue
+		}
 		name, inner := discriminator(m)
 		kind, known := Lookup(name)
 		if !known {
@@ -800,8 +840,87 @@ func Validate(body any) (blocking []Problem, advisory []Problem) {
 			}
 		}
 		advisory = append(advisory, unknownFields(i, kind, inner)...)
+		advisory = append(advisory, mediaAdvice(i, kind.Name, inner)...)
 	}
 	return blocking, advisory
+}
+
+// mediaAdvice is what is worth saying about a section's pictures that is not
+// wrong enough to refuse: a media surface with nothing behind it, and a card
+// picture with no description, which the page reads as decoration.
+func mediaAdvice(at int, kind string, inner map[string]any) []Problem {
+	var out []Problem
+	if hasBackdrop(inner) {
+		if v, _ := inner[BackdropField].(string); strings.TrimSpace(v) == "" {
+			out = append(out, Problem{at, fmt.Sprintf("%s asks for a media surface and "+
+				"names no backdrop_url, so it is drawn plain", kind)})
+		}
+	}
+	out = append(out, waiting(at, kind, inner)...)
+	if kind != "features" {
+		return out
+	}
+	items, _ := inner["items"].([]any)
+	for i, it := range items {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		img, _ := m["image"].(string)
+		alt, _ := m["alt"].(string)
+		if strings.TrimSpace(img) != "" && strings.TrimSpace(alt) == "" {
+			out = append(out, Problem{at, fmt.Sprintf("card %d has a picture and no alt, "+
+				"so it is read as decoration. Say what it shows if the card's title "+
+				"does not", i+1)})
+		}
+	}
+	return out
+}
+
+// Waiting lists what a page's sections still wait for: a video section's
+// video, a gallery's pictures. The publish lists these as advice, and the
+// admin's preview says them beside the section they belong to.
+func Waiting(body any) []Problem {
+	list, _ := sectionsOf(body)
+	var out []Problem
+	for i, entry := range list {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, inner := discriminator(m); inner != nil {
+			out = append(out, waiting(i, name, inner)...)
+		}
+	}
+	return out
+}
+
+// waiting is what one section still waits for. Not refused: a page may go
+// out before its video is chosen, as a split section may leave its picture
+// out. But it is said, because the layout told every reader "No video
+// chosen yet. Send one to the bot and pick it here", an instruction for
+// whoever was editing the page, and a publish said nothing at all.
+func waiting(at int, kind string, inner map[string]any) []Problem {
+	var out []Problem
+	switch kind {
+	case "video":
+		if src, _ := inner["src"].(string); strings.TrimSpace(src) == "" {
+			out = append(out, Problem{at, "video has no video chosen yet, so readers see " +
+				"its heading and nothing to play. Choose one on Arrange sections, or " +
+				"with quilzo section set"})
+		}
+	case "gallery":
+		items, _ := inner["items"].([]any)
+		for i, it := range items {
+			if m, ok := it.(map[string]any); ok {
+				if img, _ := m["image"].(string); strings.TrimSpace(img) == "" {
+					out = append(out, Problem{at, fmt.Sprintf("gallery picture %d has no "+
+						"image yet, so readers see only its caption", i+1)})
+				}
+			}
+		}
+	}
+	return out
 }
 
 // unknownFields reports fields the stub for this kind does not mention.
@@ -851,4 +970,7 @@ var allowedAnywhere = map[string]bool{
 	"eyebrow": true, "intro": true, "title": true, "cta_label": true,
 	"cta_href": true, "transcript_href": true, "transcript_label": true,
 	"poster": true, "caption": true, "alt": true, "state": true,
+	// A backdrop behind the section: its surface, and the picture or
+	// recording (backdrop.go).
+	"surface": true, BackdropField: true,
 }

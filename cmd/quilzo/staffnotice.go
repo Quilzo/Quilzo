@@ -60,7 +60,11 @@ func noticeTypes(root string) map[event.Type]bool {
 	}
 	out := map[event.Type]bool{}
 	for _, t := range mustConfig(root).Strings("notify.events") {
-		out[event.Type(strings.TrimSpace(t))] = true
+		// Read by either spelling, as the setting takes it: "published"
+		// and page.published are one event.
+		if e, ok := event.Parse(strings.TrimSpace(t)); ok {
+			out[e] = true
+		}
 	}
 	return out
 }
@@ -131,7 +135,10 @@ func staffNotice(events []event.Event, held int, admin string) (subject, body st
 		lines = append(lines, "", "Open the admin: "+admin)
 	}
 	lines = append(lines, "", "Sent by Quilzo. It says which chatbot or form, never who or what they wrote.")
-	subject = plaintext.Clip("Quilzo: "+onOneLine(lines[0]), 120, "...")
+	subject = "Quilzo: " + onOneLine(lines[0])
+	if len(subject) > 120 {
+		subject = plaintext.Clip(subject, 117, "...")
+	}
 	return subject, strings.Join(lines, "\n")
 }
 
@@ -264,5 +271,5 @@ func redact(msg, secret string) string {
 
 // sayNoticeError is how the server's log hears a notice failed.
 func sayNoticeError(err error) {
-	fmt.Fprintf(os.Stderr, "  %snotifying staff: %v%s\n", dim, err, reset)
+	fmt.Fprintf(os.Stderr, "  %snotifying staff: %v%s\n", noteDim, err, noteReset)
 }

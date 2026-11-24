@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
@@ -488,7 +489,8 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 	if !strings.Contains(g.Body.String(), "Your table is at 7pm &lt;b&gt;tonight&lt;/b&gt;.") || g.Header().Get("Refresh") != "" {
 		t.Fatalf("%s", g.Body.String())
 	}
-	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Person}
+	secret, _, _ := handoff.NewSecret()
+	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Person, Conversation: secret}
 	if g := get(st, where, nil); !strings.Contains(g.Body.String(), "A person needs to look at this") {
 		t.Fatalf("%s", g.Body.String())
 	}
@@ -510,6 +512,203 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 	tok := assistant.SignVisitor(map[string]string{"customer": "c-1042"}, key, time.Now().Add(time.Hour))
 	if w := post(url.Values{"action": {"orders"}, "v": {tok}}); w.Code != http.StatusSeeOther || asked[len(asked)-1].Token != tok {
 		t.Errorf("a signed visitor: %d", w.Code)
+	}
+}
+
+// What a visitor gives an agent action is bounded at the start of a
+// character, so the request carries nothing they did not write.
+//
+// A field was cut at its 300th byte wherever that fell. One written in a
+// script of several bytes to the character was handed on with part of a
+// character at its end, which the request's file keeps as U+FFFD: the agent
+// was asked about, and a person holding the request read, a character
+// nobody typed.
+func TestAVisitorsFieldIsCutBetweenCharacters(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	whole := strings.Repeat("a", MaxActArg-1)
+	form := url.Values{"action": {"booking"}, "a_booking_ref": {whole + "é and more"}}
+	req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "198.51.100.9:1234"
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther || len(asked) != 1 {
+		t.Fatalf("%d, %d asked", w.Code, len(asked))
+	}
+	if got := asked[0].Args["booking_ref"]; got != whole {
+		t.Errorf("the field was cut inside a character: %q", got[len(got)-4:])
+	}
+}
+
+// counting scripts a model that writes no answer and offers one action, and
+// counts how often it was asked.
+type counting struct {
+	action string
+	asked  *int
+}
+
+func (counting) Name() string { return "counting" }
+func (c counting) Complete(context.Context, string, string) (string, error) {
+	*c.asked++
+	return `{"answer": "", "action": {"name": "` + c.action + `", "args": {"booking_ref": "HB-2201"}}}`, nil
+}
+
+// A visitor who asks for something the chatbot can do, in words no page
+// shares, is offered it: the form to check and confirm, filled in. One the
+// page cannot offer them is told the site does not say, not that there is
+// something to press.
+//
+// "Please look up HB-2201" was answered "I could not find that on this
+// site" before the model was asked, so the action was never offered.
+func TestAVisitorIsOfferedAnActionNoPageIsAbout(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.IdentitySecret = "shop-visitors"
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+		{Name: "orders", Kind: assistant.Agent, Target: "orders", Description: "Check your order", Identity: true, Fields: []string{"booking_ref"}},
+	}
+	st, audited := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	st.Assistants.VisitorKey = func(assistant.Assistant) []byte { return []byte("a key the shop and the chatbot share") }
+	asked := 0
+	offers := "booking"
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{offers, &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	for _, want := range []string{`action="/ask/help/act"`, `name="a_booking_ref"`, `value="HB-2201"`,
+		"Look up your booking", assistant.OfferText, "It only looks things up"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q:\n%s", want, body)
+		}
+	}
+	if asked != 1 || len(unanswered) != 0 || len(*audited) != 1 || !(*audited)[0] {
+		t.Errorf("asked the model %d times, kept %v as unanswered, audited %v", asked, unanswered, *audited)
+	}
+
+	// An action only for a visitor the host site vouches for cannot be
+	// offered to this one, and the page does not say it can.
+	offers = "orders"
+	body = askPost(st, "help", "Please look up HB-2201").Body.String()
+	if strings.Contains(body, assistant.OfferText) || strings.Contains(body, `action="/ask/help/act"`) ||
+		!strings.Contains(body, "I could not find that on this site.") {
+		t.Errorf("an offer the page cannot make:\n%s", body)
+	}
+	if len(unanswered) != 1 {
+		t.Errorf("kept as unanswered: %v", unanswered)
+	}
+
+	// The answer above the search results has no place for an offer, so a
+	// search no page covers asks no model whether there is one.
+	asked = 0
+	if body := get(st, "/search?q=where%20is%20HB-2201%3f", nil).Body.String(); strings.Contains(body, `class="answer"`) {
+		t.Errorf("an answer above the results:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("a search asked the model %d times for an offer it cannot show", asked)
+	}
+}
+
+// With nothing taking requests, no model is asked whether a visitor wants
+// an agent action: there is no offer the page could make of one.
+//
+// A request no page covers is put to the model only to see whether it
+// offers something to do. With the admin server stopped the offer is taken
+// off again, so on a site served on its own every question no page answers
+// cost a call to the model and came back as the refusal it would have been
+// without one; and a model told of the action could write "I can look that
+// up" about something that cannot be done just now.
+func TestNoModelIsAskedForAnOfferNothingTakes(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	taking := false
+	st.Assistants.Taking = func() bool { return taking }
+	asked := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	if !strings.Contains(body, "I could not find that on this site.") || strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("with nothing taking requests:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("the model was asked %d times for an offer nothing could take", asked)
+	}
+	if len(unanswered) != 1 {
+		t.Errorf("kept as unanswered: %v", unanswered)
+	}
+
+	// Once something takes requests again, it is asked, and the offer made.
+	taking = true
+	body = askPost(st, "help", "Please look up HB-2201").Body.String()
+	if asked != 1 || !strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("asked %d times once requests are taken:\n%s", asked, body)
+	}
+}
+
+// On a page the owner designed, which has no place for an offer, a request
+// no page covers is the refusal it reads as: no model is asked for an
+// offer, and the question is counted and kept as one the site did not
+// answer.
+//
+// The model was asked, its offer taken off again where the page is drawn,
+// and the page said "I could not find that on this site" while the answer
+// had already been counted as given: the audit record and the conversion
+// said the chatbot had answered, and the question was not kept among those
+// the site should answer, although the visitor had been told it could not.
+func TestAnOwnersPageCountsAnOfferItCannotShowAsUnanswered(t *testing.T) {
+	const layout = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title>
+</head><body><h1>{{ ask.title }}</h1><p id="q">{{ ask.question }}</p><div id="a">{{ ask.answer }}</div></body></html>`
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, audited := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	asked := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+	pages, err := site.PagesAt(st.Store, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["ask"] = map[string]any{"title": "Ask us"}
+	if _, err := site.SaveDraft(st.Store, pages, "an ask page", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(st.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	st.Layouts = render.OneLayout(layout)
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	if !strings.Contains(body, `<p id="q">`) {
+		t.Fatalf("the owner's ask page was not used:\n%s", body)
+	}
+	if !strings.Contains(body, "I could not find that on this site.") || strings.Contains(body, assistant.OfferText) {
+		t.Errorf("the owner's page:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("the model was asked %d times for an offer the page has no place for", asked)
+	}
+	if len(*audited) != 1 || (*audited)[0] || len(unanswered) != 1 {
+		t.Errorf("a refusal counted as answered: audited %v, kept as unanswered %v", *audited, unanswered)
 	}
 }
 
@@ -580,6 +779,207 @@ func TestAChatbotOnTheSiteFindsAPassageByMeaning(t *testing.T) {
 	askPost(st, "help", q)
 	if built != 2 {
 		t.Fatalf("not built again when its vectors changed: %d", built)
+	}
+}
+
+// A request that waits for a person says so, on a page that links to
+// itself and asks again now and then, and shows the outcome there once the
+// person has answered; another visitor's page shows nothing of it.
+//
+// The page stopped at "A person needs to look at this, and will." for
+// good, with nothing to come back to, so a visitor never learnt the outcome
+// on the page they asked on.
+func TestAVisitorWaitingForAPersonSeesTheOutcomeOnTheirOwnPage(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Move your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	results := map[string]chatact.Result{}
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		for _, r := range asked {
+			if r.ID == id {
+				res, ok := results[id]
+				return res, ok, true
+			}
+		}
+		return chatact.Result{}, false, false
+	}
+	ask := func(ref, embed string) string {
+		form := url.Values{"action": {"booking"}, "a_booking_ref": {ref}}
+		if embed != "" {
+			form.Set("embed", embed)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("asking: %d %s", w.Code, w.Body.String())
+		}
+		return w.Header().Get("Location")
+	}
+	mine, theirs := ask("HB-1", ""), ask("HB-2", "1")
+	me, them := asked[0].ID, asked[1].ID
+
+	results[me] = chatact.Result{ID: me, State: chatact.Waiting}
+	g := get(st, mine, nil)
+	body := g.Body.String()
+	if !strings.Contains(body, "A person needs to look at this") || !strings.Contains(body, "shown on this page") {
+		t.Errorf("the waiting page does not say a person will look and the answer comes here:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/ask/help/act/`+me+`">Check again</a>`) {
+		t.Errorf("the waiting page has no link back to itself:\n%s", body)
+	}
+	if g.Header().Get("Refresh") == "" {
+		t.Error("the waiting page never asks again")
+	}
+	results[them] = chatact.Result{ID: them, State: chatact.Waiting}
+	if b := get(st, theirs, nil).Body.String(); !strings.Contains(b, `href="/ask/help/act/`+them+`?embed=1">Check again</a>`) {
+		t.Errorf("an embedded waiting page does not stay embedded:\n%s", b)
+	}
+
+	results[me] = chatact.Result{ID: me, State: chatact.Done, Answer: "HB-1 is moved to Friday at 7pm."}
+	if g := get(st, mine, nil); !strings.Contains(g.Body.String(), "HB-1 is moved to Friday at 7pm.") || g.Header().Get("Refresh") != "" {
+		t.Errorf("the outcome is not shown on the visitor's page:\n%s", g.Body.String())
+	}
+	if b := get(st, theirs, nil).Body.String(); strings.Contains(b, "Friday") {
+		t.Errorf("another visitor's page shows this visitor's outcome:\n%s", b)
+	}
+}
+
+// A chatbot's page showing a question from its address is not offered to
+// search engines.
+//
+// /ask/NAME?q=ANYTHING prints the question back, as a heading and in the
+// hand-off form, and was indexable: anybody could link to the site's
+// address with their own words in it, for a crawler to fetch and file under
+// the business's name, running the chatbot each time. Every other page
+// made from what a request says is marked not to be indexed.
+func TestAChatbotsAnswerPageIsNotIndexed(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	const pitch = "Cheap pills at spam dot example"
+	w := get(st, "/ask/help?q="+url.QueryEscape(pitch), nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), pitch) {
+		t.Fatalf("the question was not answered: %d", w.Code)
+	}
+	if got := w.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") || !strings.Contains(got, "nofollow") {
+		t.Errorf("a question from the address was answered with X-Robots-Tag %q", got)
+	}
+	if got := askPost(st, "help", pitch).Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
+		t.Errorf("an asked question was answered with X-Robots-Tag %q", got)
+	}
+	// The chatbot's own page, with no question, is the owner's to have found.
+	if got := get(st, "/ask/help", nil).Header().Get("X-Robots-Tag"); got != "" {
+		t.Errorf("the chatbot's page was answered with X-Robots-Tag %q", got)
+	}
+}
+
+// A visitor whose request is held for a person is told where the person
+// answers, and is not told a person will look when nobody was asked to.
+//
+// The page said "A person needs to look at this, and will. You do not need
+// to ask again." and nothing put the request in front of anybody, and the
+// visitor had no way back to an answer. The admin now opens a conversation
+// in the Inbox for it, and the page leads to that conversation.
+func TestAVisitorHeldForAPersonIsToldWhereTheyAreAnswered(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Move your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	id, _ := chatact.NewID()
+	var res chatact.Result
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	st.Assistants.Answer = func(got string) (chatact.Result, bool, bool) { return res, got == id, got == id }
+
+	secret, _, _ := handoff.NewSecret()
+	res = chatact.Result{ID: id, State: chatact.Person, Conversation: secret}
+	body := get(st, "/ask/help/act/"+id+"?embed=1", nil).Body.String()
+	if !strings.Contains(body, `href="/ask/help/c/`+secret+`?embed=1"`) || !strings.Contains(body, "Keep") {
+		t.Errorf("the page does not lead to where a person answers:\n%s", body)
+	}
+	// Nobody was asked: the page says so, rather than that a person will.
+	res = chatact.Result{ID: id, State: chatact.Person}
+	body = get(st, "/ask/help/act/"+id, nil).Body.String()
+	if strings.Contains(body, "and will") || !strings.Contains(body, "could not be answered here") {
+		t.Errorf("a visitor nobody will answer is told a person will:\n%s", body)
+	}
+	// Nor is a conversation that is not one linked to.
+	res = chatact.Result{ID: id, State: chatact.Person, Conversation: "../../admin"}
+	if body = get(st, "/ask/help/act/"+id, nil).Body.String(); strings.Contains(body, "/c/") {
+		t.Errorf("the page links to a conversation that is not one:\n%s", body)
+	}
+}
+
+// With nothing taking requests, a visitor is not offered an agent action,
+// cannot make one, and one already made does not say "Working on it" for
+// good.
+//
+// Only the admin server runs a chatbot's agents. With it stopped (a site
+// served on its own, or the admin down for maintenance) the site still
+// offered the action and took the confirmation, and the page said "Working
+// on it" until the visitor gave up; the request then ran, with their words,
+// whenever an admin next started, up to a day later.
+func TestNoAgentActionIsOfferedWhenNothingTakesRequests(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		for _, r := range asked {
+			if r.ID == id {
+				return chatact.Result{}, false, true
+			}
+		}
+		return chatact.Result{}, false, false
+	}
+	taking := true
+	st.Assistants.Taking = func() bool { return taking }
+	n := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &n} }
+	if body := askPost(st, "help", "Please look up HB-2201").Body.String(); !strings.Contains(body, `action="/ask/help/act"`) {
+		t.Fatalf("the action is not offered while requests are taken:\n%s", body)
+	}
+	post := func() *httptest.ResponseRecorder {
+		form := url.Values{"action": {"booking"}, "a_booking_ref": {"HB-1"}}
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		return w
+	}
+	made := post()
+	if made.Code != http.StatusSeeOther {
+		t.Fatalf("asking: %d", made.Code)
+	}
+
+	taking = false
+	if body := askPost(st, "help", "Please look up HB-2201").Body.String(); strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("the action is offered with nothing to take it:\n%s", body)
+	}
+	if w := post(); w.Code != http.StatusServiceUnavailable || len(asked) != 1 {
+		t.Errorf("a request was taken with nothing to run it: %d, %d asked", w.Code, len(asked))
+	}
+	body := get(st, made.Header().Get("Location"), nil).Body.String()
+	if strings.Contains(body, "Working on it") || !strings.Contains(body, "cannot be done just now") {
+		t.Errorf("a request nothing will run says it is being worked on:\n%s", body)
+	}
+	// One taken when the dispatcher stopped will not finish.
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		return chatact.Result{ID: id, State: chatact.Working}, true, true
+	}
+	w := get(st, made.Header().Get("Location"), nil)
+	if strings.Contains(w.Body.String(), "Working on it") || w.Header().Get("Refresh") != "" {
+		t.Errorf("a request whose run stopped says it is being worked on:\n%s", w.Body.String())
 	}
 }
 

@@ -26,6 +26,7 @@ Every command below is run in this directory, in this order:
 cd deploy
 cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
 set -a; . ./.env; set +a       # so the steps below name the addresses in .env
+docker build -t "$QUILZO_IMAGE:$QUILZO_VERSION" ..   # the image .env names, from this checkout
 docker compose run --rm admin init
 docker compose run --rm admin auditlog dir /srv/audit
 docker compose run --rm admin config set network.trusted_proxies "$QUILZO_PROXY_ADDRESS"
@@ -40,6 +41,12 @@ docker compose up -d
 
 What each one is for:
 
+- `docker build` makes the image every Quilzo container runs, from this
+  checkout, under the name `.env` gives it (`quilzo:local`). No release is
+  published yet, so there is no image to pull, and `compose.yaml` names no
+  default: it refuses to start until `.env` names one. Built from `main` it
+  says it is `dev` (`quilzo version`), which is what it is. For a release's
+  image this step is left out (below).
 - `init` makes the store, on the `store` volume. Every Quilzo container
   names `/srv/store` in its entrypoint, so a command given to
   `docker compose run` cannot lose it; and every one is read-only, so a
@@ -47,7 +54,8 @@ What each one is for:
   container's own layer, which `--rm` would delete.
 - `auditlog dir` points the store at the audit log that `logd` writes. From
   then on the admin and the site hand it their records over a socket and
-  cannot open the log to change one; `quilzo logd status` says whether the
+  cannot open the log to change one, and `logd` signs the log's heads with a
+  key only it holds (below); `quilzo logd status` says whether the
   separation is in force. (`docker compose run` starts `logd` first, so it
   is running for every step after this one.)
 - `network.trusted_proxies` is Caddy's fixed address on the network it
@@ -72,20 +80,29 @@ What each one is for:
 - `init --admin you` makes `you` the first administrator and prints the link
   that adds their passkey. Open it once the stack is up; it works once.
 - `token issue first` is `you`'s token for the commands that come after
-  these (below), and is shown once. A store issues a token without being
+  these (below), and is shown once. As the store's first token, for its
+  only administrator, it is recorded as `you`'s own, so it can do what a
+  person does there, an access review among it. A store issues a token without being
   shown one only while it holds none at all, and signing in to the admin
   makes one, so the first is issued here, before the admin starts.
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
 
-To run an image you built from this checkout rather than a release, build
-it with the version it is, so that `quilzo version` and the bill of
-materials inside it say so (without `--build-arg VERSION` it is "dev"),
-then name it in `.env`:
+Once there is a release, run its image by the digest you checked, as
+[INSTALL](../INSTALL) says, so the stack runs that image and no other: in
+`.env`, `QUILZO_IMAGE=ghcr.io/quilzo/quilzo` and
+`QUILZO_VERSION=1.2.3@sha256:...`, and leave out the `docker build` step
+above, which would build `main` under the release's name (and is refused
+for a digest). A tag alone, `latest` above all, is whatever was pushed
+under it last. Or build a release's image yourself, from its tag and with
+the version it is, so that `quilzo version` and the bill of materials
+inside it say so (without `--build-arg VERSION` it is "dev"), under a name
+of its own:
 
 ```bash
-docker build --build-arg VERSION=v0.3.0 -t quilzo:0.3.0 ..
-# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=0.3.0
+git checkout v1.2.3
+docker build --build-arg VERSION=v1.2.3 -t quilzo:1.2.3 ..
+# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=1.2.3
 ```
 
 ### Reaching the admin
@@ -123,7 +140,51 @@ docker compose run --rm -e QUILZO_TOKEN admin logd status
 Tokens are made on the command line, with an administrator's token: the
 admin has no page for it. The first lasts a week (`token.ttl.default`), so
 make the next before it ends, and one for each person or program that needs
-one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
+one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`,
+with `--person` for a person's own, to use themselves; without it a token is
+recorded as a program's.
+
+### Scheduled publishing
+
+The admin publishes what is scheduled itself, as the identity it was started
+with, and this file starts it with none: once the store has an administrator,
+nothing scheduled goes out from it, and the Publishing screen says so where an
+entry is added and beside each one past its time. Fire them instead from a
+timer on this machine, every minute, with a publisher's token:
+
+```bash
+docker compose run --rm -e QUILZO_TOKEN admin schedule run
+```
+
+and turn the admin's own off (`config set schedule.in_server false`), so the
+screen names that timer as what publishes. Each entry still goes out on the
+authority of whoever scheduled it, checked when it fires.
+
+### Heads, receipts and the key that signs them
+
+`logd` holds the key that signs the audit log's heads, in the `audit` volume:
+`head.key`, which only `logd` can read, and `head.pub.json`, the public half,
+both made when it first starts. The admin cannot write that volume and never
+holds the key, so `auditlog head --save`, `agent receipt`, `apps receipt`, the
+audit stream, `engagement issue`, `feature export --sign` and research plans
+are all signed by `logd`, over its socket; `logd status` says so. It signs
+for the admin only (`--sign-gid 65532`): the site runs in a group of its own
+and hands `logd` its records, and nothing it asks for is signed. While
+`logd` is stopped none of them can be made, and each says to start it; so
+does `logd status`, and the admin's audit log screen. The heads
+`auditlog head --save` keeps are in the store.
+
+Hand `head.pub.json` to whoever checks a head or a receipt, and give them the
+receipt:
+
+```bash
+docker compose cp logd:/srv/audit/head.pub.json .
+docker compose run --rm -T -e QUILZO_TOKEN admin agent receipt RUN > receipt.json
+```
+
+They check it anywhere, against the keys you gave them rather than the ones
+the receipt brought: `quilzo agent verify-receipt receipt.json --keys
+head.pub.json`.
 
 ### What the containers do not do
 
@@ -155,8 +216,8 @@ make build
 sudo install -m 0755 bin/quilzo /usr/local/bin/quilzo
 ```
 
-Or take a release binary — it is static, so there is nothing to install
-alongside it.
+Once there is a release, its binary for this machine does as well: it is
+static, so there is nothing to install alongside it.
 
 ### 3. The store
 
@@ -228,7 +289,7 @@ Reach it over SSH instead:
 
 ```bash
 ssh -N -L 8080:127.0.0.1:8080 you@your-server
-# then open http://127.0.0.1:8080
+# then open http://localhost:8080: a passkey needs a name, not an address
 ```
 
 ### Except what the identity provider calls

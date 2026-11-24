@@ -20,7 +20,6 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/listing"
-	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -192,7 +191,7 @@ func readAsk(answer string, src askSources) (string, []AskCard, []string) {
 		Cards []AskCard `json:"cards"`
 	}
 	if err := json.Unmarshal([]byte(answer[start:end+1]), &raw); err != nil {
-		return "", nil, []string{"the model's answer was not a view: " + plaintext.Clip(err.Error(), 120, "…")}
+		return "", nil, []string{"the model's answer was not a view: " + clipText(err.Error(), 120)}
 	}
 	title := strings.TrimSpace(raw.Title)
 	if len(title) > 80 || reNotProse.MatchString(title) {
@@ -206,7 +205,7 @@ func readAsk(answer string, src askSources) (string, []AskCard, []string) {
 			break
 		}
 		if err := checkCard(&c, src); err != nil {
-			notes = append(notes, fmt.Sprintf("left out a %s card: %v", plaintext.Clip(c.Kind, 20, "…"), err))
+			notes = append(notes, fmt.Sprintf("left out a %s card: %v", clipText(c.Kind, 20), err))
 			continue
 		}
 		cards = append(cards, c)
@@ -547,7 +546,13 @@ func (s *Server) handleTodayAsk(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/today", http.StatusSeeOther)
 		return
 	}
-	question = plaintext.Clip(question, maxQuestion, "")
+	// Characters, as the box's maxlength counts them, and cut between two:
+	// cut at 300 bytes, a question in Japanese lost two thirds of what the
+	// box had taken, and one cut inside a character reached the model as
+	// text that is not text.
+	if rs := []rune(question); len(rs) > maxQuestion {
+		question = string(rs[:maxQuestion])
+	}
 	a := &asked{Question: question}
 	model := s.Ask.Model(p.Name)
 	src := s.sourcesFor(p)
@@ -558,7 +563,7 @@ func (s *Server) handleTodayAsk(w http.ResponseWriter, r *http.Request) {
 		answer, err := model.Complete(ctx, askSystem, askPrompt(src, question))
 		cancel()
 		if err != nil {
-			a.Problem = "The model did not answer: " + plaintext.Clip(err.Error(), 200, "…")
+			a.Problem = "The model did not answer: " + clipText(err.Error(), 200)
 		} else {
 			a.Title, a.Cards, a.Notes = readAsk(answer, src)
 			if len(a.Cards) == 0 && a.Problem == "" {

@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
@@ -23,29 +24,25 @@ func value(f schema.Field, cell, order string, decimalComma bool) (any, string) 
 	case schema.Number:
 		n, ok := number(s, decimalComma)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a number", plaintext.Clip(s, maxQuoted, "…"))
-
+			return nil, fmt.Sprintf("%q is not a number", clip(s))
 		}
 		return n, ""
 	case schema.Boolean:
 		b, ok := yesNo(s)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not yes or no", plaintext.Clip(s, maxQuoted, "…"))
-
+			return nil, fmt.Sprintf("%q is not yes or no", clip(s))
 		}
 		return b, ""
 	case schema.Date:
 		d, ok := date(s, order)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a date", plaintext.Clip(s, maxQuoted, "…"))
-
+			return nil, fmt.Sprintf("%q is not a date", clip(s))
 		}
 		return d, ""
 	case schema.Time:
 		t, ok := clock(s)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a time of day", plaintext.Clip(s, maxQuoted, "…"))
-
+			return nil, fmt.Sprintf("%q is not a time of day", clip(s))
 		}
 		return t, ""
 	case schema.List:
@@ -112,9 +109,12 @@ func plainNumber(s string) bool {
 	return true
 }
 
-// maxQuoted is how much of a cell a problem quotes, in bytes with its mark:
-// enough to find the cell by, not the whole of it again.
-const maxQuoted = 40
+func clip(s string) string {
+	if len(s) > 40 {
+		return plaintext.Clip(s, 37, "…")
+	}
+	return s
+}
 
 func reSlug(s string) bool {
 	if s == "" || s[0] == '-' || s[len(s)-1] == '-' || strings.Contains(s, "--") {
@@ -128,7 +128,10 @@ func reSlug(s string) bool {
 	return true
 }
 
-// Slug is a page link made from words: lower case, hyphens between.
+// Slug is a page link made from words: lower case, hyphens between. A
+// letter outside ASCII is spelled in ASCII (asciifold.Spell), so Ürünler is
+// urunler and Σχετικά schetika; it was a break between words, and Ürünler
+// was r-nler.
 func Slug(s string) string {
 	var b strings.Builder
 	dash := false
@@ -138,6 +141,7 @@ func Slug(s string) string {
 			b.WriteRune(r)
 			dash = false
 		case r == '\'' || r == '’':
+		case spelledInASCII(r, &b, &dash):
 		case !dash && b.Len() > 0:
 			b.WriteByte('-')
 			dash = true
@@ -467,4 +471,18 @@ func clock(s string) (string, bool) {
 		}
 	}
 	return fmt.Sprintf("%02d:%02d", h, m), true
+}
+
+// spelledInASCII writes r as asciifold.Spell spells it, and says whether it
+// had a spelling. A mark spelled as nothing joins the letters beside it.
+func spelledInASCII(r rune, b *strings.Builder, dash *bool) bool {
+	spelled, ok := asciifold.Spell(r)
+	if !ok {
+		return false
+	}
+	if spelled != "" {
+		b.WriteString(spelled)
+		*dash = false
+	}
+	return true
 }

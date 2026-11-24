@@ -481,17 +481,74 @@ func TestANewTabIsAnnounced(t *testing.T) {
 	}
 }
 
-// The markup a finding quotes is cut where a character starts, and still
-// comes to 120 bytes with its mark. It is quoted so the element can be found
-// in the page, by a name written in whatever language the page is in.
-func TestALongExcerptIsCutBetweenCharacters(t *testing.T) {
-	// The cut at 120 bytes falls inside 中.
-	head := `<img src="/` + strings.Repeat("a", 106)
-	r := Check("/", head+"a中文.png\">")
-	if len(r.Findings) != 1 {
-		t.Fatalf("%+v", r.Findings)
+// Text whose lower case is written in a different number of bytes does not
+// move where the scanner thinks a script ends.
+//
+// The end of a script was found in strings.ToLower of the rest of the page
+// and the page was resumed at that offset. İ is two bytes and lowers to i,
+// one, so seven of them in a script put the scanner seven bytes short of
+// </script>, on markup the script only holds as a string: an image that is
+// not on the page was reported as missing its alt. Ⱥ grows from two bytes to
+// three, so ten of them carried it past </script> and over the image after
+// it, which has no alt, and the gate passed it.
+func TestAScriptsEndIsFoundInThePageItself(t *testing.T) {
+	short := Check("p", page(`<script>const şehir = 'İİİİİİİ<img>';</script><p>Hoş geldiniz</p>`))
+	if hasRule(short, "image-missing-alt") {
+		t.Errorf("an image inside a script's string was read as one on the page: %v", short.Findings)
 	}
-	if got := r.Findings[0].Excerpt; got != head+"…" {
-		t.Errorf("the excerpt is %d bytes and ends %q", len(got), got[max(0, len(got)-6):])
+	long := Check("p", page(`<script>const x = '`+strings.Repeat("\u023A", 10)+`';</script><img src="a.png">`))
+	if !hasRule(long, "image-missing-alt") {
+		t.Errorf("the image after a script was skipped: %v", long.Findings)
+	}
+}
+
+// A link whose only content is an image is named by that image's alt, found
+// in the link's markup itself.
+//
+// The image and its alt were both found in a lowered copy: three İ in a
+// class before the image made a described picture read as no image at all,
+// and three in its title made alt="" read as a name.
+func TestAnImageLinksNameIsReadFromTheMarkupItself(t *testing.T) {
+	described := Check("p", page(`<a href="/"><span class="İİİ"></span><img src="a.png" alt="Ana sayfa"></a>`))
+	for _, f := range described.Findings {
+		if f.Rule == "link-has-no-text" || f.Rule == "image-link-has-no-name" {
+			t.Errorf("a link named by its image's alt was reported: %v", f)
+		}
+	}
+	decorative := Check("p", page(`<a href="/"><img title="İstanbul İzmir İzmit" src="a.png" alt=""></a>`))
+	if !hasRule(decorative, "image-link-has-no-name") {
+		t.Errorf("a link holding only a decorative image was not reported: %v", decorative.Findings)
+	}
+}
+
+// A tag or attribute whose name is not ASCII is not the one it would lower
+// to, because HTML lowers only A to Z in a name: a browser reads <scrİpt> as
+// an unknown element and shows what it holds, <tİtle> is no title, and
+// arİa-label names nothing.
+//
+// The scanner lowered names with strings.ToLower, which turns İ into i. It
+// took <scrİpt> for a script and looked for its </script>, which a search
+// folding only ASCII rightly does not find in </scrİpt>, so the scan stopped
+// there and the image after it was passed unread. A page titled only by
+// <tİtle>, and a link named only by arİa-label, passed the same way.
+func TestANameThatIsNotASCIIIsNotTheOneItLowersTo(t *testing.T) {
+	after := Check("p", page(`<scrİpt>x</scrİpt><img src="a.png">`))
+	if !hasRule(after, "image-missing-alt") {
+		t.Errorf("the image after <scrİpt> was not checked: %v", after.Findings)
+	}
+	untitled := Check("p", `<!doctype html><html lang="en"><head><tİtle>A page</tİtle></head>`+
+		`<body><h1>A page</h1></body></html>`)
+	if !hasRule(untitled, "no-title") {
+		t.Errorf("<tİtle> was read as the page's title: %v", untitled.Findings)
+	}
+	unnamed := Check("p", page(`<a href="/" arİa-label="Home"></a>`))
+	if !hasRule(unnamed, "link-has-no-text") {
+		t.Errorf("arİa-label was read as the link's name: %v", unnamed.Findings)
+	}
+	// ASCII in any case is still the element and the attribute.
+	named := Check("p", `<!doctype html><HTML LANG="en"><HEAD><TITLE>A page</TITLE></HEAD>`+
+		`<BODY><H1>A page</H1><SCRIPT>'<img>'</SCRIPT><A HREF="/" ARIA-LABEL="Home"></A></BODY></HTML>`)
+	if len(named.Findings) != 0 {
+		t.Errorf("upper-case ASCII names were misread: %v", named.Findings)
 	}
 }

@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/site"
@@ -67,23 +66,52 @@ func visiblePages(root string, c *Caller, pages map[string]any) (map[string]any,
 // when some of its pages are not the caller's to read. Refused rather than
 // left out: an export that silently lacks a section is a copy somebody
 // keeps believing is complete.
+//
+// The pages are counted and not named. list_pages, find and search leave a
+// page the caller may not read out as though it were not there, and this
+// refusal named them, so a reader denied /hr asking for an export was told
+// "hr/salaries": the one thing the deny was for, since a page's name often
+// says what it is about.
 func everyPage(root string, c *Caller, pages map[string]any) error {
 	may, err := pageCheck(root, c, auth.ActView)
 	if err != nil {
 		return err
 	}
-	var hidden []string
+	hidden := 0
 	for name := range pages {
 		if !may(name) {
-			hidden = append(hidden, name)
+			hidden++
 		}
 	}
-	if len(hidden) == 0 {
+	if hidden == 0 {
 		return nil
 	}
-	sort.Strings(hidden)
-	return fmt.Errorf("this reads every page, and %d of them are not %s's to read (%s)",
-		len(hidden), c.Name, nameSome(hidden))
+	return fmt.Errorf("this reads every page, and %s not %s's to read; an administrator can say which",
+		plural2(hidden, "one of them is", "of them are"), c.Name)
+}
+
+// readableOrCounted names the pages a caller may read among pages, and
+// only counts the rest, for a refusal: a page out of the caller's reach is
+// left out of everything they are shown, so a refusal is not where its
+// name may reach them either (everyPage).
+func readableOrCounted(pages []string, mayRead func(string) bool, who string) string {
+	var named []string
+	hidden := 0
+	for _, p := range pages {
+		if mayRead(p) {
+			named = append(named, p)
+		} else {
+			hidden++
+		}
+	}
+	if hidden == 0 {
+		return nameSome(named)
+	}
+	rest := plural2(hidden, "one page that is", "pages that are") + " not " + who + "'s to read"
+	if len(named) == 0 {
+		return rest
+	}
+	return nameSome(named) + " and " + rest
 }
 
 // changesTo are the pages publishing a commit would change: the draft when
@@ -121,6 +149,10 @@ func mayPublishChanges(root string, s *store.Store, c *Caller, to string) error 
 	if err != nil {
 		return err
 	}
+	mayRead, err := pageCheck(root, c, auth.ActView)
+	if err != nil {
+		return err
+	}
 	pages, err := changesTo(s, to)
 	if err != nil {
 		return err
@@ -135,7 +167,7 @@ func mayPublishChanges(root string, s *store.Store, c *Caller, to string) error 
 		return nil
 	}
 	return fmt.Errorf("publishing the draft would change %s, which %s may not publish",
-		nameSome(denied), c.Name)
+		readableOrCounted(denied, mayRead, c.Name), c.Name)
 }
 
 // everyDraftPage is everyPage over the draft as it stands.

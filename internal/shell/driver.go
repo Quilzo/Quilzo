@@ -156,8 +156,7 @@ func argv(a agent.Action) (string, []string, error) {
 // MaxCommand bounds a command's program and arguments together.
 const MaxCommand = 4096
 
-// Line is a command as a person reads it, cut for a list to at most 300
-// bytes with the mark that says it was cut.
+// Line is a command as a person reads it, cut for a list.
 func Line(program string, args []string) string {
 	return plaintext.Clip(FullLine(program, args), 300, "…")
 }
@@ -450,6 +449,25 @@ func (d *Driver) Weighs(a agent.Action) string {
 		}
 	}
 	return ""
+}
+
+// ReachesOut reports whether an action is a command that would reach the
+// network as its declaration stands: a program the declaration names, of a
+// kind that reaches it, with hosts to reach and a run that does not only
+// read. The rule run applies, said once for whatever else holds such a
+// command: a run nobody started holds it for a person whatever the
+// declaration asks (cmd/quilzo agentsends.go), and only asking about
+// "network" had, so a command posting to a declared host went ahead in a
+// run a page going live had started.
+func ReachesOut(a agent.Action, sh *agent.Shell) bool {
+	if a.Op != "shell_run" || a.Tool != "" || a.Delegate != "" || sh == nil || sh.ReadOnly || len(sh.Hosts) == 0 {
+		return false
+	}
+	program, args, err := argv(a)
+	if err != nil || !sh.Runs(program) {
+		return false
+	}
+	return Classify(program, args).Network
 }
 
 func nonEmpty(a, b string) string {

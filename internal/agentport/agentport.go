@@ -353,7 +353,7 @@ func (b *builder) purpose(s string) {
 		return
 	}
 	if len(s) > 300 {
-		s = plaintext.Clip(s, 300, "...")
+		s = plaintext.Clip(s, 297, "...")
 		b.changed("its description, cut to 300 characters as its purpose")
 	} else {
 		b.kept("its description, as its purpose")
@@ -412,7 +412,9 @@ func (b *builder) tool(name, host, purpose string, writes, ask bool) {
 	if purpose == "" {
 		purpose = "called by the agent as " + name
 	}
-	purpose = plaintext.Clip(purpose, 300, "...")
+	if len(purpose) > 300 {
+		purpose = plaintext.Clip(purpose, 297, "...")
+	}
 	if b.tools[name] {
 		return
 	}
@@ -682,7 +684,10 @@ func firstSentence(s string) string {
 			break
 		}
 	}
-	return plaintext.Clip(s, 300, "...")
+	if len(s) > 300 {
+		s = plaintext.Clip(s, 297, "...")
+	}
+	return s
 }
 
 // hostOf is the host a URL names, when it is an https URL with a plain

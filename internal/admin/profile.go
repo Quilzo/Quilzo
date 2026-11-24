@@ -139,7 +139,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			mine = append(mine, session{
-				ID: t.ID, Role: string(t.Role), Resource: t.Resource,
+				ID: t.ID, Role: string(s.carries(t)), Resource: t.Resource,
 				Issued: t.CreatedAt, Expires: t.ExpiresAt,
 				// Marked, so ending a session is a decision rather than a
 				// surprise. Signing yourself out of a list of eight identical
@@ -300,8 +300,8 @@ func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, p principal
 	// from the form. A profile screen that accepts "which account am I editing"
 	// as a parameter is a profile screen that edits somebody else's.
 	d := all[p.Name]
-	d.DisplayName = plaintext.Clip(strings.TrimSpace(r.FormValue("display_name")), MaxDetail, "")
-	d.Contact = plaintext.Clip(strings.TrimSpace(r.FormValue("contact")), MaxDetail, "")
+	d.DisplayName = clip(strings.TrimSpace(r.FormValue("display_name")), MaxDetail)
+	d.Contact = clip(strings.TrimSpace(r.FormValue("contact")), MaxDetail)
 	d.UpdatedAt = time.Now().Unix()
 	all[p.Name] = d
 
@@ -412,6 +412,8 @@ func presentedToken(r *http.Request) string {
 	}
 	return ""
 }
+
+func clip(s string, n int) string { return plaintext.Clip(s, n, "") }
 
 func (s *Server) profileRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
 	u := "/profile"

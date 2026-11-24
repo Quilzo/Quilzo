@@ -172,6 +172,42 @@ func TestPostureSaysWhoseTokenAFindingIsAbout(t *testing.T) {
 	}
 }
 
+// quilzo posture scan's fix for an administrator's token names the holder
+// it printed a line above, revokes the token it is about, and issues the
+// replacement under a name of its own.
+//
+// It said `fix: quilzo token issue deploy-bot --principal HOLDER --role
+// publisher` under "held by lee": run as printed it added a second token
+// named deploy-bot and left the administrator's working, so the finding
+// stayed.
+func TestPostureScansAdminTokenFixNamesTheHolderAndRevokes(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := ts.Issue("deploy-bot", "lee", "admin", "/", 30*24*time.Hour, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := humanOutput(t, func() error { return postureScan(root, []string{"--templates", t.TempDir()}) })
+	at := strings.Index(text, "the token deploy-bot can change the access policy itself")
+	if at < 0 {
+		t.Fatalf("no token.admin-role finding about deploy-bot:\n%s", text)
+	}
+	finding := text[at:min(len(text), at+600)]
+	if !strings.Contains(finding, "--principal lee --role publisher") || strings.Contains(finding, "HOLDER") ||
+		!strings.Contains(finding, "quilzo token revoke "+tok.ID) || strings.Contains(finding, "token issue deploy-bot ") {
+		t.Errorf("the fix does not name the holder, revoke the token, and issue another under its own name:\n%s", finding)
+	}
+}
+
 // quilzo posture frameworks says whose token a finding is about too, as
 // quilzo posture scan and the framework's page on the Security screen do.
 //

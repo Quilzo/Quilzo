@@ -245,14 +245,17 @@ func doorChat(ctx context.Context, root string, caller *Caller, client, shape, m
 	defer func() {
 		outcome := audit.Success
 		if err != nil {
-			outcome, detail["error"] = audit.Failure, plaintext.Clip(err.Error(), 300, "…")
+			outcome, detail["error"] = audit.Failure, clampString(err.Error(), 300)
 			var refused *admin.ModelRefusal
 			if errors.As(err, &refused) || errors.Is(err, gateway.ErrBudget) {
 				outcome = audit.Denied
 			}
 		}
 		detail["in"], detail["out"] = strconv.Itoa(total.In), strconv.Itoa(total.Out)
-		who, by := "model-client", "model-client"
+		// The person's client, for the person, as at the agent interface
+		// (interfaceClient): recorded as one principal, model-client, every
+		// person's client was one agent to the agent watch.
+		who, by := caller.Name, "model-client"
 		if client != "" {
 			who, by = "app:"+client, client
 		}
@@ -300,7 +303,7 @@ func doorChat(ctx context.Context, root string, caller *Caller, client, shape, m
 		}
 		if _, ok := set.Agents[name]; !ok {
 			return reply, &admin.ModelRefusal{Code: http.StatusNotFound,
-				Why: fmt.Sprintf("no agent called %q here; GET /v1/models lists what may be named", plaintext.Clip(name, 60, "…"))}
+				Why: fmt.Sprintf("no agent called %q here; GET /v1/models lists what may be named", clampString(name, 60))}
 		}
 		m, _, err := boundManifest(root, set, name, true, false, caller)
 		if err != nil {

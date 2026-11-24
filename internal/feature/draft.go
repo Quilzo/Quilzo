@@ -150,7 +150,7 @@ func readDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 	}
 	p := &Package{
 		Format: Format, Name: d.Name, Version: "1.0.0", Title: d.Title, Purpose: d.Purpose,
-		Made:  &Made{By: by, From: plaintext.Clip(from, 600, ""), At: now.UTC(), Model: model},
+		Made:  &Made{By: by, From: clip(from, 600), At: now.UTC(), Model: model},
 		Types: d.Types, Collections: d.Collections, Listings: d.Listings, Forms: d.Forms,
 		Menus: d.Menus, Chatbots: d.Chatbots,
 	}
@@ -183,3 +183,5 @@ func readDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 	}
 	return p, notes, nil
 }
+
+func clip(s string, n int) string { return plaintext.Clip(s, n, "") }

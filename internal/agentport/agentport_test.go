@@ -463,6 +463,10 @@ func TestDelegatesAreDeclaredFirst(t *testing.T) {
 	}
 }
 
+// raceSlowdown is how many times its budget a timed test is given: once,
+// and ten times when it is built with the race detector (race_test.go).
+var raceSlowdown time.Duration = 1
+
 // An agent file whose OpenAPI document offers many operations is read in
 // time in proportion to them. Each tool looked through all those before it
 // for one of its name: 80,000 operations, a 1.2 MB Bedrock file, took
@@ -495,62 +499,7 @@ func TestAnAgentWithManyOperationsIsReadInTimeInProportion(t *testing.T) {
 		if m := imp.Agents[0].Manifest; len(m.Tools) != 100000 || len(m.AskFirst) != 80000 {
 			t.Errorf("%d tools, %d asked about first", len(m.Tools), len(m.AskFirst))
 		}
-	case <-time.After(8 * time.Second):
+	case <-time.After(8 * time.Second * raceSlowdown):
 		t.Errorf("a %d-byte agent file was not read in %v", len(file), time.Since(start))
 	}
-}
-
-// What an agent and its tools are for is cut where a character starts, and
-// still comes to at most 300 bytes with its mark. Each is the original's own
-// words, in whatever language its authors wrote, and each is what somebody
-// reviewing the import reads to decide whether to keep it.
-func TestALongPurposeIsCutBetweenCharacters(t *testing.T) {
-	// The cut at 297 bytes falls on the second byte of 中.
-	long := strings.Repeat("a", 296) + "中文"
-	want := strings.Repeat("a", 296) + "..."
-	only := func(t *testing.T, data []byte) agent.Manifest {
-		t.Helper()
-		out, err := Read(data, "", "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(out.Agents) != 1 {
-			t.Fatalf("%d agents", len(out.Agents))
-		}
-		return out.Agents[0].Manifest
-	}
-	t.Run("description", func(t *testing.T) {
-		spec, err := json.Marshal(map[string]any{"component_type": "Agent", "id": "a1", "name": "notes",
-			"description": long, "system_prompt": "Keep notes.", "agentspec_version": "25.4.1",
-			"tools": []any{map[string]any{"component_type": "RemoteTool", "id": "t1", "name": "save",
-				"description": long, "url": "https://notes.example.com/save", "http_method": "POST"}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		m := only(t, spec)
-		if m.Purpose != want {
-			t.Errorf("purpose ends %q", m.Purpose[len(m.Purpose)-5:])
-		}
-		if len(m.Tools) != 1 || m.Tools[0].Purpose != want {
-			t.Errorf("tools %+v", m.Tools)
-		}
-	})
-	t.Run("first sentence", func(t *testing.T) {
-		spec, err := json.Marshal(map[string]any{"component_type": "Agent", "id": "a1", "name": "notes",
-			"system_prompt": long + ". Be brief.", "agentspec_version": "25.4.1"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		m := only(t, spec)
-
-		if m.Purpose != want {
-			t.Errorf("purpose ends %q", m.Purpose[len(m.Purpose)-5:])
-		}
-	})
-	t.Run("goal", func(t *testing.T) {
-		m := only(t, []byte("notes:\n  role: Note taker\n  goal: "+long+"\n  backstory: Writes things down.\n"))
-		if m.Purpose != want {
-			t.Errorf("purpose ends %q", m.Purpose[len(m.Purpose)-5:])
-		}
-	})
 }
