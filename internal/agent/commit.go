@@ -90,12 +90,16 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		// follows that hold's words, which name the agent and the hosts and
 		// say nothing of the command: a curl to api.remove.bg was shown to
 		// the person deciding it as a deletion.
+		//
+		// A command that destroys says so in those words (internal/shell),
+		// and is deleting whatever else it does, even when it also reaches
+		// the network.
 		said := why
 		if strings.HasPrefix(why, UnattendedPrefix) {
 			_, said, _ = strings.Cut(why, "; and ")
 		}
 		switch {
-		case reDeletes.MatchString(said):
+		case strings.Contains(said, RewritesHistory), reDeletes.MatchString(said):
 			return "deletes"
 		case reSends.MatchString(why) || strings.HasPrefix(why, UnattendedPrefix):
 			return "sends"
@@ -136,6 +140,13 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 
 // PaysPrefix begins the reason a paying tool call waits for a person.
 const PaysPrefix = "it pays "
+
+// RewritesHistory is the reason a command that deletes or rewrites history
+// waits for a person (internal/shell). The command is classed by these
+// exact words, not by reDeletes, so that the driver's wording and the class
+// cannot drift apart: a command that destroys is deleting, whatever else it
+// does, and deleting is never earned away.
+const RewritesHistory = "it deletes or rewrites history, which nothing brings back"
 
 // UnattendedPrefix begins the reason a triggered run's write to another
 // system, or its hands' reach out to one, waits for a person: what goes

@@ -158,6 +158,34 @@ func TestWhatACommandCommitsToIsWeighed(t *testing.T) {
 	}
 }
 
+// A command that destroys is weighed as deleting, which is never earned:
+// with writing asked about, approving git commands that only change the
+// workspace earns "shell_run git", and that must not let git push --force
+// (or rm -r, once rm is earned) go ahead without a person.
+func TestACommandThatDestroysIsNeverEarned(t *testing.T) {
+	d, _ := testDriver(t, &agent.Shell{Programs: []string{"git", "rm"}, Hosts: []string{"github.com"},
+		Ask: []string{"write", "network"}})
+	for _, argv := range [][]any{
+		{"push", "--force", "origin", "main"},
+		{"reset", "--hard", "HEAD~1"},
+	} {
+		a := agent.Action{Op: "shell_run", Input: map[string]any{"program": "git", "args": argv}}
+		why := d.Weighs(a)
+		if got := agent.CommitOf(a, why, agent.WaitAsk, false); got != "deletes" || agent.Earnable(a, why, agent.WaitAsk, false) {
+			t.Errorf("git %v (%q) commits to %q, and is earnable %v", argv, why, got, agent.Earnable(a, why, agent.WaitAsk, false))
+		}
+	}
+	rm := agent.Action{Op: "shell_run", Input: map[string]any{"program": "rm", "args": []any{"-r", "src"}}}
+	if why := d.Weighs(rm); agent.CommitOf(rm, why, agent.WaitAsk, false) != "deletes" || agent.Earnable(rm, why, agent.WaitAsk, false) {
+		t.Errorf("rm -r (%q) is earnable", why)
+	}
+	// What only changes the workspace is a write, and may be earned.
+	add := agent.Action{Op: "shell_run", Input: map[string]any{"program": "git", "args": []any{"add", "notes.md"}}}
+	if why := d.Weighs(add); why == "" || !agent.Earnable(add, why, agent.WaitAsk, false) {
+		t.Errorf("git add (%q) is not earnable", why)
+	}
+}
+
 // A command that goes over the workspace's quota while it runs is stopped
 // then, not found afterwards; and a reading command leaves nothing in the
 // run's home for a later one to find.
