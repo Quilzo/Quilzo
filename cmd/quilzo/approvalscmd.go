@@ -93,6 +93,8 @@ func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitl
 			return list.Issues()
 		},
 		Memories: memoryStore(root).List,
+		// Records proposed for the security register (registercmd.go).
+		Register: registerWaiting(root),
 	}
 }
 

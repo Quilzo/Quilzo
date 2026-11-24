@@ -35,25 +35,25 @@ type Record interface {
 // from the kind's own struct, so the schema a screen shows and the schema a
 // write is held to cannot be two things.
 type Spec struct {
-	Kind Kind
+	Kind Kind `json:"kind"`
 	// Collection is the name its records are filed under, which always
 	// begins with Prefix. The generic record surfaces refuse such a name.
-	Collection string
+	Collection string `json:"collection"`
 	// Summary says, in one sentence, what a record of this kind is.
-	Summary string
+	Summary string `json:"summary"`
 	// Class is how far a record of this kind may travel.
-	Class Class
+	Class Class `json:"class"`
 	// Fields is the schema, in the order the struct declares it.
-	Fields []Field
+	Fields []Field `json:"fields"`
 	// Signed says a record of this kind is a decision and must carry the
 	// approval that made it.
-	Signed bool
+	Signed bool `json:"signed,omitempty"`
 	// Immutable says a record of this kind is never changed once written:
 	// a decision that was minuted, a metric's value on a day.
-	Immutable bool
+	Immutable bool `json:"immutable,omitempty"`
 	// Unconfirmed marks a kind that holds what a model read out of a
 	// document. No figure, status or coverage is ever drawn from it.
-	Unconfirmed bool
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
 
 	typ reflect.Type
 }

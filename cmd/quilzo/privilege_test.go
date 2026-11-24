@@ -263,7 +263,9 @@ func dispatchedCommands(t *testing.T) []string {
 		}
 		return true
 	})
-	return out
+	// And the commands the security modules register from their own files,
+	// which are dispatched as surely as the switch's (modules.go).
+	return append(out, moduleCommands()...)
 }
 
 // -- and that the table is actually consulted --------------------------------

@@ -120,7 +120,7 @@ func TestProbeGeneratorDeterministic(t *testing.T) {
 	}
 	// Held to a known digest too, so a run next year, on another machine,
 	// measures the register this one measured.
-	const want = "93a8785d0a3d2b3a1c0689a81219952bd749c2e0dc8d1a53d4d1c955faace443"
+	const want = "a761782d0db6acd070ef146b48ec58d4ea90e51d1aaf630eb940ffa55b160066"
 	if one != want {
 		t.Errorf("the small probe is %s; it has always been %s", one, want)
 	}

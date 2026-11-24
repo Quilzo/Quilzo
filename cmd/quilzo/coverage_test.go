@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/admin"
 )
 
 // Every capability has to be reachable from the interface people actually use.
@@ -535,8 +537,9 @@ func TestEveryCommandIsReachableOrExplained(t *testing.T) {
 			"sees nothing passes", len(cmds))
 	}
 	var undeclared []string
+	rows := coverageRows()
 	for _, c := range cmds {
-		s, ok := coverage[c]
+		s, ok := rows[c]
 		if !ok {
 			undeclared = append(undeclared, c)
 			continue
@@ -585,7 +588,7 @@ func TestEveryClaimedRouteIsServed(t *testing.T) {
 	if len(served) < 10 {
 		t.Fatalf("found %d admin routes; the parse is wrong", len(served))
 	}
-	for cmd, s := range coverage {
+	for cmd, s := range coverageRows() {
 		if s.GUI == "" {
 			continue
 		}
@@ -608,7 +611,7 @@ func TestEveryClaimedMCPOperationIsRegistered(t *testing.T) {
 		t.Fatalf("found %d MCP operations; the parse is wrong and a test that "+
 			"sees nothing passes", len(registered))
 	}
-	for cmd, s := range coverage {
+	for cmd, s := range coverageRows() {
 		for _, op := range s.MCP {
 			if !registered[op] {
 				t.Errorf("%q claims the MCP server offers %q and nothing "+
@@ -626,7 +629,7 @@ func TestEveryClaimedMCPOperationIsRegistered(t *testing.T) {
 // tool is twenty lines and nobody has to draw a screen.
 func TestEveryRegisteredMCPOperationIsAccountedFor(t *testing.T) {
 	claimed := map[string]bool{}
-	for _, s := range coverage {
+	for _, s := range coverageRows() {
 		for _, op := range s.MCP {
 			claimed[op] = true
 		}
@@ -696,6 +699,11 @@ func registeredOperations(t *testing.T) map[string]bool {
 			out[m[1]] = true
 		}
 	}
+	// And what the modules registered from their own files, as they
+	// registered it on a server (registerCLI).
+	for _, op := range moduleOperations() {
+		out[op] = true
+	}
 	return out
 }
 
@@ -739,6 +747,10 @@ func adminRoutes(t *testing.T) []string {
 			continue
 		}
 		out = append(out, rest[start:start+end])
+	}
+	// And the screens the modules registered from their own files.
+	for _, routes := range admin.ModuleRoutes() {
+		out = append(out, routes...)
 	}
 	return out
 }
@@ -1014,7 +1026,7 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 // The help output is the index of this program. A command missing from it is
 // missing, whatever the tables say.
 func TestEveryCommandAppearsInTheHelp(t *testing.T) {
-	help := readFile(t, "main.go")
+	help := readFile(t, "main.go") + moduleHelp()
 	// The help text is a raw string literal in main.go, and every line in it
 	// begins "  quilzo ". Reading the source rather than running the command
 	// keeps this a source check like the others around it.

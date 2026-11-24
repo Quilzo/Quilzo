@@ -784,6 +784,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	registerSiteOps(srv, root, caller)
 	registerAnalyticsOps(srv, root, caller)
 	registerExperimentOps(srv, root, caller)
+	// And the security modules' own, each registered from its own file
+	// (modules.go), so that two modules built side by side edit no list.
+	registerModuleOps(srv, root, caller)
 
 	return srv
 }

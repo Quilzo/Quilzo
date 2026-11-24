@@ -57,6 +57,8 @@ func TestEveryOperationIsAnAgentsOrSaysWhyNot(t *testing.T) {
 		_, bridged := agentexec.Bridged[op.Name]
 		_, refused := agentexec.Refuses()[op.Name]
 		_, not := notForAgents[op.Name]
+		// A module says for all its operations, in its own file.
+		not = not || notForRuns(op.Name) != ""
 		switch {
 		case native[op.Name] && bridged:
 			t.Errorf("%s is performed twice over", op.Name)

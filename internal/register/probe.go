@@ -42,7 +42,7 @@ var FullProbe = Probe{Observations: 10_000, Controls: 1_000, Rows: 150_000}
 func probeDigest(word string, n int) Digest {
 	var b [8]byte
 	binary.BigEndian.PutUint64(b[:], uint64(n))
-	sum := sha256.Sum256(append([]byte("quilzo probe "+word+" "), b[:]...))
+	sum := sha256.Sum256(append([]byte("register probe "+word+" "), b[:]...))
 	return Digest("sha256:" + hex.EncodeToString(sum[:]))
 }
 
