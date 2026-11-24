@@ -1,0 +1,32 @@
+{
+ "@context": "https://openvex.dev/ns/v0.2.0",
+ "@id": "https://example.invalid/vex/2026-11",
+ "author": "Example Security",
+ "timestamp": "2026-11-20T10:00:00Z",
+ "version": 1,
+ "statements": [
+  {
+   "vulnerability": {
+    "name": "CVE-2021-23337"
+   },
+   "products": [
+    {
+     "@id": "pkg:npm/lodash@4.17.21"
+    }
+   ],
+   "status": "not_affected",
+   "justification": "vulnerable_code_not_in_execute_path"
+  },
+  {
+   "vulnerability": {
+    "name": "CVE-2024-45337"
+   },
+   "products": [
+    {
+     "@id": "pkg:golang/golang.org/x/crypto@v0.31.0"
+    }
+   ],
+   "status": "fixed"
+  }
+ ]
+}

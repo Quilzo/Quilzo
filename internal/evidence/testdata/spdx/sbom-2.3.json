@@ -1,0 +1,58 @@
+{
+ "spdxVersion": "SPDX-2.3",
+ "dataLicense": "CC0-1.0",
+ "SPDXID": "SPDXRef-DOCUMENT",
+ "name": "payments-api",
+ "documentNamespace": "https://example.invalid/spdx/payments-api-2.3.1",
+ "creationInfo": {
+  "created": "2026-11-20T10:00:00Z",
+  "creators": [
+   "Tool: syft-1.0.0"
+  ]
+ },
+ "packages": [
+  {
+   "SPDXID": "SPDXRef-Package-payments-api",
+   "name": "payments-api",
+   "versionInfo": "2.3.1",
+   "downloadLocation": "NOASSERTION",
+   "licenseConcluded": "Apache-2.0",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:github/example/payments-api@2.3.1"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-lodash",
+   "name": "lodash",
+   "versionInfo": "4.17.21",
+   "downloadLocation": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "MIT",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:npm/lodash@4.17.21"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-openssl",
+   "name": "openssl",
+   "versionInfo": "3.0.15",
+   "downloadLocation": "NOASSERTION",
+   "licenseConcluded": "Apache-2.0"
+  }
+ ],
+ "relationships": [
+  {
+   "spdxElementId": "SPDXRef-DOCUMENT",
+   "relationshipType": "DESCRIBES",
+   "relatedSpdxElement": "SPDXRef-Package-payments-api"
+  }
+ ]
+}

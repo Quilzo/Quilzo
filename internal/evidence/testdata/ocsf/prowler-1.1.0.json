@@ -1,0 +1,274 @@
+[
+ {
+  "message": "iam_root_mfa_enabled PASS",
+  "metadata": {
+   "event_code": "iam_root_mfa_enabled",
+   "product": {
+    "name": "Prowler",
+    "uid": "prowler",
+    "vendor_name": "Prowler",
+    "version": "4.0.0"
+   },
+   "profiles": [
+    "cloud",
+    "datetime"
+   ],
+   "tenant_uid": "",
+   "version": "1.1.0"
+  },
+  "severity_id": 4,
+  "severity": "High",
+  "status": "New",
+  "status_code": "PASS",
+  "status_detail": "iam_root_mfa_enabled is PASS",
+  "status_id": 1,
+  "unmapped": {
+   "related_url": "",
+   "categories": [
+    "identity"
+   ],
+   "depends_on": [],
+   "related_to": [],
+   "notes": "",
+   "compliance": {
+    "CIS-2.0": [
+     "1.5"
+    ],
+    "ISO27001-2013": [
+     "A.9.4"
+    ]
+   }
+  },
+  "activity_name": "Create",
+  "activity_id": 1,
+  "finding_info": {
+   "created_time": 1732400000,
+   "desc": "",
+   "product_uid": "prowler",
+   "title": "Ensure iam root mfa enabled",
+   "uid": "prowler-aws-iam_root_mfa_enabled-123456789012-eu-west-2-root"
+  },
+  "resources": [
+   {
+    "cloud_partition": "aws",
+    "region": "eu-west-2",
+    "data": {
+     "details": ""
+    },
+    "group": {
+     "name": "iam"
+    },
+    "labels": [],
+    "name": "root",
+    "type": "AwsIamUser",
+    "uid": "arn:aws:iam::123456789012:root"
+   }
+  ],
+  "category_name": "Findings",
+  "category_uid": 2,
+  "class_name": "Detection Finding",
+  "class_uid": 2004,
+  "cloud": {
+   "account": {
+    "name": "production",
+    "type": "AWS Account",
+    "type_id": 10,
+    "uid": "123456789012",
+    "labels": []
+   },
+   "org": {
+    "name": "",
+    "uid": ""
+   },
+   "provider": "aws",
+   "region": "eu-west-2"
+  },
+  "event_time": 1732400000,
+  "remediation": {
+   "desc": "",
+   "references": []
+  },
+  "risk_details": "",
+  "time": 1732400000,
+  "type_uid": 200401,
+  "type_name": "Create"
+ },
+ {
+  "message": "s3_bucket_public_access FAIL",
+  "metadata": {
+   "event_code": "s3_bucket_public_access",
+   "product": {
+    "name": "Prowler",
+    "uid": "prowler",
+    "vendor_name": "Prowler",
+    "version": "4.0.0"
+   },
+   "profiles": [
+    "cloud",
+    "datetime"
+   ],
+   "tenant_uid": "",
+   "version": "1.1.0"
+  },
+  "severity_id": 4,
+  "severity": "High",
+  "status": "New",
+  "status_code": "FAIL",
+  "status_detail": "s3_bucket_public_access is FAIL",
+  "status_id": 1,
+  "unmapped": {
+   "related_url": "",
+   "categories": [
+    "identity"
+   ],
+   "depends_on": [],
+   "related_to": [],
+   "notes": "",
+   "compliance": {
+    "CIS-2.0": [
+     "2.1.4"
+    ]
+   }
+  },
+  "activity_name": "Create",
+  "activity_id": 1,
+  "finding_info": {
+   "created_time": 1732400000,
+   "desc": "",
+   "product_uid": "prowler",
+   "title": "Ensure s3 bucket public access",
+   "uid": "prowler-aws-s3_bucket_public_access-123456789012-eu-west-2-evidence-bucket"
+  },
+  "resources": [
+   {
+    "cloud_partition": "aws",
+    "region": "eu-west-2",
+    "data": {
+     "details": ""
+    },
+    "group": {
+     "name": "iam"
+    },
+    "labels": [],
+    "name": "evidence-bucket",
+    "type": "AwsS3Bucket",
+    "uid": "arn:aws:s3:::evidence-bucket"
+   }
+  ],
+  "category_name": "Findings",
+  "category_uid": 2,
+  "class_name": "Detection Finding",
+  "class_uid": 2004,
+  "cloud": {
+   "account": {
+    "name": "production",
+    "type": "AWS Account",
+    "type_id": 10,
+    "uid": "123456789012",
+    "labels": []
+   },
+   "org": {
+    "name": "",
+    "uid": ""
+   },
+   "provider": "aws",
+   "region": "eu-west-2"
+  },
+  "event_time": 1732400000,
+  "remediation": {
+   "desc": "",
+   "references": []
+  },
+  "risk_details": "",
+  "time": 1732400000,
+  "type_uid": 200401,
+  "type_name": "Create"
+ },
+ {
+  "message": "cloudtrail_multi_region_enabled PASS",
+  "metadata": {
+   "event_code": "cloudtrail_multi_region_enabled",
+   "product": {
+    "name": "Prowler",
+    "uid": "prowler",
+    "vendor_name": "Prowler",
+    "version": "4.0.0"
+   },
+   "profiles": [
+    "cloud",
+    "datetime"
+   ],
+   "tenant_uid": "",
+   "version": "1.1.0"
+  },
+  "severity_id": 4,
+  "severity": "High",
+  "status": "New",
+  "status_code": "PASS",
+  "status_detail": "cloudtrail_multi_region_enabled is PASS",
+  "status_id": 1,
+  "unmapped": {
+   "related_url": "",
+   "categories": [
+    "identity"
+   ],
+   "depends_on": [],
+   "related_to": [],
+   "notes": "",
+   "compliance": {}
+  },
+  "activity_name": "Create",
+  "activity_id": 1,
+  "finding_info": {
+   "created_time": 1732400000,
+   "desc": "",
+   "product_uid": "prowler",
+   "title": "Ensure cloudtrail multi region enabled",
+   "uid": "prowler-aws-cloudtrail_multi_region_enabled-123456789012-eu-west-2-org-trail"
+  },
+  "resources": [
+   {
+    "cloud_partition": "aws",
+    "region": "eu-west-2",
+    "data": {
+     "details": ""
+    },
+    "group": {
+     "name": "iam"
+    },
+    "labels": [],
+    "name": "org-trail",
+    "type": "AwsCloudTrailTrail",
+    "uid": "arn:aws:cloudtrail:eu-west-2:123456789012:trail/org-trail"
+   }
+  ],
+  "category_name": "Findings",
+  "category_uid": 2,
+  "class_name": "Detection Finding",
+  "class_uid": 2004,
+  "cloud": {
+   "account": {
+    "name": "production",
+    "type": "AWS Account",
+    "type_id": 10,
+    "uid": "123456789012",
+    "labels": []
+   },
+   "org": {
+    "name": "",
+    "uid": ""
+   },
+   "provider": "aws",
+   "region": "eu-west-2"
+  },
+  "event_time": 1732400000,
+  "remediation": {
+   "desc": "",
+   "references": []
+  },
+  "risk_details": "",
+  "time": 1732400000,
+  "type_uid": 200401,
+  "type_name": "Create"
+ }
+]
