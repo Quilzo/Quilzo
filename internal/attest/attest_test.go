@@ -125,6 +125,44 @@ func TestBrandRefusesCompliantWithoutAttestation(t *testing.T) {
 	}
 }
 
+// A character that shows nothing does not hide a word or a figure: text
+// pasted from a word processor carries soft hyphens and zero-width spaces,
+// and "compliant" with one inside is the word a reader sees. A character
+// that turns the letters around it round is refused outright, since what
+// it shows is not what is written. Text in a right-to-left script, with the
+// marks it needs, is still taken.
+func TestAWordSplitByAnInvisibleCharacterIsStillRefused(t *testing.T) {
+	for name, change := range map[string]func(*File){
+		"compliant with a soft hyphen in a policy": func(f *File) { f.Policies[0].Title = "Com\u00adpliant access policy" },
+		"certified with a zero-width space in the organisation": func(f *File) {
+			f.Organisation = "Fernhollow, certi\u200bfied secure"
+		},
+		"certified with a word joiner in a report": func(f *File) {
+			f.Attestations[0].Scope = "Cer\u2060tified by our auditor"
+		},
+		"compliant with a variation selector in a policy": func(f *File) {
+			f.Policies[1].Title = "Compl\ufe0fiant suppliers"
+		},
+		"a percentage split by a zero-width space": func(f *File) { f.Attestations[0].Scope = "98\u200b% of controls passing" },
+		"compliant written backwards and turned round": func(f *File) {
+			f.Policies[0].Title = "Access policy \u202etnailpmoc\u202c"
+		},
+		"an isolate that turns text round": func(f *File) { f.Attestations[0].Issuer = "\u2067Ashby & Rowe LLP\u2069" },
+	} {
+		f := held()
+		change(f)
+		if err := f.Validate(today); err == nil {
+			t.Errorf("%s was taken", name)
+		}
+	}
+	f := held()
+	f.Organisation = "\u05e4\u05e8\u05e0\u05d4\u05d5\u05dc\u05d5\u05d5 \u05d1\u05e2\"\u05de\u200f"
+	f.Policies[0].Title = "Information security policy (\u05de\u05d3\u05d9\u05e0\u05d9\u05d5\u05ea \u05d0\u05d1\u05d8\u05d7\u05ea \u05de\u05d9\u05d3\u05e2)"
+	if err := f.Validate(today); err != nil {
+		t.Errorf("text in a right-to-left script was refused: %v", err)
+	}
+}
+
 // A file that is not one is refused whole, with what is wrong named.
 func TestAFileOfAttestationsIsCheckedWhole(t *testing.T) {
 	for name, change := range map[string]func(*File){

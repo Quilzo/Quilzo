@@ -188,8 +188,14 @@ func (f *File) Validate(now time.Time) error {
 				add("%s holds a control character", where)
 				break
 			}
+			if turnsRound(r) {
+				add("%s holds a character that sets the direction of the text after it, which can show "+
+					"letters in another order than they are written: what a reader sees would not be what "+
+					"was checked", where)
+				break
+			}
 		}
-		if m := reFigure.FindString(v); m != "" {
+		if m := reFigure.FindString(shown(v)); m != "" {
 			add("%s holds the figure %q: the public page carries attestations only, and an operational "+
 				"figure belongs where its context is, under a non-disclosure agreement", where, m)
 		}
@@ -274,6 +280,28 @@ func (f *File) Validate(now time.Time) error {
 	return fmt.Errorf("the attestations are not publishable:\n  %s", strings.Join(bad, "\n  "))
 }
 
+// shown is text as a reader sees it, without the characters that show
+// nothing: the format characters (a soft hyphen, a zero-width space, a word
+// joiner), the variation selectors and the combining grapheme joiner. Text
+// pasted from a word processor carries them, and one inside "compliant" or
+// between a figure and its percent sign would otherwise hide the word or
+// the figure from the checks, while the page showed it whole.
+func shown(v string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) || r == 0x34f {
+			return -1
+		}
+		return r
+	}, v)
+}
+
+// turnsRound reports a character that sets the direction of the text after
+// it: the embeddings and overrides (U+202A to U+202E) and the isolates
+// (U+2066 to U+2069). An override shows Latin letters backwards, so
+// "tnailpmoc" is read as the word it is not. The marks right-to-left text
+// needs (U+200E, U+200F and U+061C) turn no letter round, and are taken.
+func turnsRound(r rune) bool { return r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 }
+
 // Current reports whether an attestation is in force at now: a report once
 // issued, a certificate until it expires.
 func (a Attestation) Current(now time.Time) bool {
@@ -296,11 +324,13 @@ func (a Attestation) Current(now time.Time) bool {
 func (f *File) Claims(now time.Time) []brand.Finding {
 	rules := brand.AttestationRules()
 	var out []brand.Finding
+	// Checked as a reader sees each value (shown), so a character that
+	// shows nothing does not split a word past the rule.
 	out = append(out, rules.Check("the organisation", map[string]any{
-		"organisation": f.Organisation, "contact": f.Contact})...)
+		"organisation": shown(f.Organisation), "contact": shown(f.Contact)})...)
 	for _, a := range f.Attestations {
-		content := map[string]any{"title": a.Title, "framework": a.Framework, "issuer": a.Issuer,
-			"scope": a.Scope, "available": a.Available}
+		content := map[string]any{"title": shown(a.Title), "framework": shown(a.Framework),
+			"issuer": shown(a.Issuer), "scope": shown(a.Scope), "available": shown(a.Available)}
 		if a.Current(now) {
 			content[brand.AttestationNeeds] = a.ID
 			if a.Kind == Certificate {
@@ -311,7 +341,7 @@ func (f *File) Claims(now time.Time) []brand.Finding {
 	}
 	for _, p := range f.Policies {
 		out = append(out, rules.Check("policy "+clip(p.Title, 40), map[string]any{
-			"title": p.Title, "version": p.Version})...)
+			"title": shown(p.Title), "version": shown(p.Version)})...)
 	}
 	return out
 }
