@@ -781,6 +781,24 @@ var settings = []Setting{
 		},
 	},
 	{
+		Key: "register.mcp_for_apps", Kind: Bool, Default: "false",
+		Summary:  "let apps connected through OAuth read the security register over the agent interface",
+		Controls: []string{"AC-3", "AC-21"},
+		Why: "The security register holds restricted records: incidents, board " +
+			"decisions, risks and who was erased. An app a person connects with " +
+			"a click is a model's vendor reading them under that person's grant, " +
+			"and which records a model route may be sent is decided by data " +
+			"classes routes do not yet declare. Off, an app reads none of it; a " +
+			"person's own client, holding their own token, reads what their role " +
+			"allows, as on every other surface.",
+		Weaker: func(v string) (bool, string) {
+			if b, err := strconv.ParseBool(v); err == nil && b {
+				return true, "apps connected through OAuth read the register's restricted records under their person's grant"
+			}
+			return false, ""
+		},
+	},
+	{
 		Key: "today.brief", Kind: Bool, Default: "true",
 		Summary: "write a few sentences at the top of Today with the configured model",
 		Why: "Today lists what waits for each person and counts what is happening. " +

@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // A security module's commands and operations, registered from the module's
@@ -71,6 +72,10 @@ type cliModule struct {
 	// calls srv.Register and nothing else when it is called; the work is in
 	// the handlers.
 	ops func(srv *mcp.Server, root string, caller *Caller)
+	// jobs is the work the module needs done because time passed (a
+	// retention period ending), which the admin server runs on its upkeep
+	// timer with its own (upkeepJobs). Nil is none.
+	jobs func(root string) []upkeep.Job
 	// notForRuns says why an agent's run does not perform the module's
 	// operations through the agent interface, as an outside agent may.
 	// Empty, they are performed for a run like the store's own reads and
@@ -218,6 +223,18 @@ func registerModuleOps(srv *mcp.Server, root string, caller *Caller) {
 			m.ops(srv, root, caller)
 		}
 	}
+}
+
+// moduleJobs is every module's upkeep jobs, in the order of their
+// commands.
+func moduleJobs(root string) []upkeep.Job {
+	var out []upkeep.Job
+	for _, m := range cliModules {
+		if m.jobs != nil {
+			out = append(out, m.jobs(root)...)
+		}
+	}
+	return out
 }
 
 // fullHelp is the help as it is printed: usageText, with each module's

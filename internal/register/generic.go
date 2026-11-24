@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 )
 
@@ -295,18 +296,32 @@ func ExportColumns(spec Spec) []string {
 // side store, where they can be erased, and an export copied to a laptop
 // cannot be.
 func WriteCSV(w io.Writer, spec Spec, entries []Entry) error {
-	s, err := specFor(spec.Kind)
+	cols, rows, err := ExportRows(spec, entries)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalid, err)
+		return err
 	}
-	cols := ExportColumns(*s)
 	cw := csv.NewWriter(w)
 	if err := cw.Write(cols); err != nil {
 		return err
 	}
+	if err := cw.WriteAll(rows); err != nil {
+		return err
+	}
+	return cw.Error()
+}
+
+// ExportRows is the export of records of one kind as its columns and its
+// rows of cells, each cell already safe for a spreadsheet: what WriteCSV
+// writes, for a surface that answers in JSON.
+func ExportRows(spec Spec, entries []Entry) ([]string, [][]string, error) {
+	s, err := specFor(spec.Kind)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
 		if e.Kind != s.Kind {
-			return fmt.Errorf("%w: a %s in an export of %s records", ErrInvalid, e.Kind, s.Kind)
+			return nil, nil, fmt.Errorf("%w: a %s in an export of %s records", ErrInvalid, e.Kind, s.Kind)
 		}
 		values := valuesOf(e.Record)
 		row := []string{string(e.ID), stamp(e.Created), stamp(e.Updated), e.Object}
@@ -319,12 +334,9 @@ func WriteCSV(w io.Writer, spec Spec, entries []Entry) error {
 		for i := range row {
 			row[i] = FormulaSafe(row[i])
 		}
-		if err := cw.Write(row); err != nil {
-			return err
-		}
+		rows = append(rows, row)
 	}
-	cw.Flush()
-	return cw.Error()
+	return ExportColumns(*s), rows, nil
 }
 
 // FormulaSafe is a cell a spreadsheet shows as text and does not run.
@@ -386,3 +398,19 @@ func plainOf(v json.RawMessage) string {
 // out from the two typed numbers; nobody types it, and nothing a model
 // wrote is in it.
 func (r Risk) rating() int64 { return r.Likelihood * r.Impact }
+
+// Eligible is how many of a policy's principals may do act on resource:
+// how many people may decide something, for the N of M an approval
+// records.
+func Eligible(p *auth.Policy, act auth.Action, resource string) int {
+	if p == nil {
+		return 0
+	}
+	n := 0
+	for _, who := range p.Principals() {
+		if p.Evaluate(who, act, resource).Allowed {
+			n++
+		}
+	}
+	return n
+}
