@@ -27,10 +27,10 @@
 // transfer (internal/outpost). It is written by people, never by a model:
 // every value on the page is one a person typed and two people published.
 //
-// A later theme feeds it from the register (internal/register's Evidence
-// and Decision records, once they exist): the reports held become register
-// records with their periods and issuers, and this file becomes their
-// projection, made by code. The format is the contract between the two and
+// A later theme feeds it from the register, the security record's typed
+// store, once that is in this tree: the reports held become its Evidence
+// and Decision records, with their periods and issuers, and this file
+// becomes their projection, made by code. The format is the contract between the two and
 // is meant to stay as it is: a producer writes Format 1 and these fields,
 // and Validate is the check every producer's output passes before it is
 // published.
