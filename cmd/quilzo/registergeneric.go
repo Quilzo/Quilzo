@@ -386,14 +386,14 @@ func registerJobs(root string) []upkeep.Job {
 // vendor reading them under that person's grant. Which of its records a
 // model route may be sent is decided by data classes it does not yet
 // declare, so until it does, an app reads nothing here without a recorded
-// decision: the register.mcp_for_apps setting.
+// decision: the mcp.register_for_apps setting.
 func registerMayRead(root string, c *Caller) error {
 	if err := authorise(root, c, auth.ActView, register.Area); err != nil {
 		return &mcp.Refusal{Reason: err.Error()}
 	}
-	if (c.Client != "" || c.Grant != "") && !mustConfig(root).Bool("register.mcp_for_apps") {
+	if (c.Client != "" || c.Grant != "") && !mustConfig(root).Bool("mcp.register_for_apps") {
 		return &mcp.Refusal{Reason: "an app connected through OAuth does not read the security register unless the " +
-			"organisation switches it on: quilzo config set register.mcp_for_apps true, with the risk accepted"}
+			"organisation switches it on: quilzo config set mcp.register_for_apps true, with the risk accepted"}
 	}
 	return nil
 }

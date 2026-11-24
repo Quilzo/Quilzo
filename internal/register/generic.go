@@ -140,14 +140,8 @@ func filterable(spec *Spec, name string) (Field, error) {
 		}
 		return f, nil
 	}
-	var names []string
-	for _, f := range spec.Fields {
-		if !strings.HasSuffix(f.Type, "object") {
-			names = append(names, f.Name)
-		}
-	}
 	return Field{}, fmt.Errorf("%w: a %s has no field %q; it is filtered on %s", ErrInvalid,
-		strings.ToLower(string(spec.Kind)), clipped(name), strings.Join(names, ", "))
+		strings.ToLower(string(spec.Kind)), clipped(name), strings.Join(FilterFields(*spec), ", "))
 }
 
 // Find is a page of one kind's records whose fields hold the values the
@@ -413,4 +407,16 @@ func Eligible(p *auth.Policy, act auth.Action, resource string) int {
 		}
 	}
 	return n
+}
+
+// FilterFields is the fields of a kind a filter may name, in the order of
+// its schema: every field that holds one value or a list of them.
+func FilterFields(spec Spec) []string {
+	var out []string
+	for _, f := range spec.Fields {
+		if !strings.HasSuffix(f.Type, "object") {
+			out = append(out, f.Name)
+		}
+	}
+	return out
 }

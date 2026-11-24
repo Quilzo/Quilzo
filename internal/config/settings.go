@@ -781,7 +781,7 @@ var settings = []Setting{
 		},
 	},
 	{
-		Key: "register.mcp_for_apps", Kind: Bool, Default: "false",
+		Key: "mcp.register_for_apps", Kind: Bool, Default: "false",
 		Summary:  "let apps connected through OAuth read the security register over the agent interface",
 		Controls: []string{"AC-3", "AC-21"},
 		Why: "The security register holds restricted records: incidents, board " +

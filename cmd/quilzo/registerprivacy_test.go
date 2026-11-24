@@ -326,7 +326,7 @@ func TestRegisterOperationsAreOffForOutsideApps(t *testing.T) {
 	app := remoteCaller(appToken("owner", auth.RoleAdmin))
 	for _, op := range []string{"register_kinds", "register_inventory"} {
 		if _, rerr := callTool(t, buildMCP(root, s, app, "templates"), "quilzo_read", op, nil); rerr == nil ||
-			!strings.Contains(rerr.Message, "register.mcp_for_apps") {
+			!strings.Contains(rerr.Message, "mcp.register_for_apps") {
 			t.Errorf("an app's %s was answered %v", op, rerr)
 		}
 	}
@@ -334,7 +334,7 @@ func TestRegisterOperationsAreOffForOutsideApps(t *testing.T) {
 	if _, rerr := callTool(t, buildMCP(root, s, person, "templates"), "quilzo_read", "register_kinds", nil); rerr != nil {
 		t.Errorf("a person's own client was refused the register: %s", rerr.Message)
 	}
-	if _, e, code := cliRun(t, root, token, "config", "set", "register.mcp_for_apps", "true", "--accept-risk",
+	if _, e, code := cliRun(t, root, token, "config", "set", "mcp.register_for_apps", "true", "--accept-risk",
 		"the organisation's assistant reads the register"); code != 0 {
 		t.Fatalf("config set: %s", e)
 	}

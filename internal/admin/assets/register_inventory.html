@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+<h2>Where personal data is kept</h2>
+<dl class="kit-facts">
+<dt>In the register</dt><dd>Nothing that names a person: a person is a random pseudonym, and free text and raw files are digests.</dd>
+<dt>The subject map</dt><dd>{{.Inventory.SubjectMap}}</dd>
+<dt>The side store</dt><dd>{{.Inventory.SideStore}}</dd>
+<dt>An erasure</dt><dd>{{.Inventory.Erasure}} <a href="/register/erase">Erase a person</a>.</dd>
+</dl>
+<h2>Kind by kind</h2>
+{{range .Tables}}<section aria-labelledby="{{.ID}}-h"><h3 id="{{.ID}}-h">{{.Table.Caption}}</h3>{{template "kit-table" .Table}}</section>
+{{end}}
+<p class="hint"><code>quilzo register inventory</code> answers the same from a terminal, and <code>--json</code> as data.</p>
+{{template "foot" .}}
