@@ -1179,8 +1179,10 @@ writes it to a directory for a person or a one-way link to carry
 host). The public instance takes a transfer only when the pinned key signed
 it, only the three files of the projection (`attestations.json`,
 `heads.json` and `security.txt`), bounded in files and bytes before anything
-is read, each parsed and checked before any is served, and never one older
-than what it serves. The page is drawn by its own code from typed data, so a
+is read, each parsed and checked before any is served, never one older
+than what it serves, and never one whose head feed takes back a head it
+has published: a newer feed may add heads, and may not commit to fewer
+entries than the newest head served nor give a published size another root. The page is drawn by its own code from typed data, so a
 transfer carries no markup and no script.
 
 The page shows attestations only: the reports and certificates held, the

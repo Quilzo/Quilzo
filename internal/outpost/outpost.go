@@ -32,7 +32,9 @@
 // is signed. replica's rule holds here too: a peer is trusted to answer and
 // for nothing else, so what arrives is bounded in files and bytes before it
 // is read, and a transfer older than the one served is refused, so a
-// replayed one cannot put back what was withdrawn.
+// replayed one cannot put back what was withdrawn. Nor is the head feed
+// taken back: a newer feed may add heads, and may not drop below or rewrite
+// a head already published here (extends).
 package outpost
 
 import (
@@ -264,6 +266,9 @@ func (in *Instance) Import(src string, now time.Time) (Receipt, error) {
 			"an older transfer is refused, so a replayed one cannot put back what was withdrawn",
 			s.transfer.Created, cur.transfer.Created)
 	}
+	if err := s.extends(cur); err != nil {
+		return Receipt{}, err
+	}
 	name := s.made.UTC().Format("20060102T150405.000000000Z")
 	proj := filepath.Join(in.dir, "projections", name)
 	if err := os.MkdirAll(proj, 0o755); err != nil {
@@ -296,6 +301,46 @@ func (in *Instance) Import(src string, now time.Time) (Receipt, error) {
 	return Receipt{Created: s.transfer.Created, Approved: s.transfer.Approved, Carried: s.transfer.Carried,
 		Reason: s.transfer.Reason, Files: files, Bytes: s.transfer.Bytes, KeyID: in.KeyID(), Served: name,
 		Taken: now.UTC()}, nil
+}
+
+// extends refuses a head feed that takes back what the one served
+// published.
+//
+// The feed is publication: whoever fetched it holds heads the record has to
+// go on matching, and a feed that a later transfer could rewrite would show
+// the next reader a history nobody can check against the first. So a newer
+// feed may add heads and let the oldest go (the internal instance keeps the
+// last MaxHeads), and may not commit to fewer entries than the newest head
+// served, publish a size already published under another root, or carry no
+// feed at all. A signed transfer that does is the internal instance's own
+// record gone back, restored from an old backup or rewritten, and that is
+// exactly what a published head is there to show.
+func (s *served) extends(cur *served) error {
+	if cur == nil || cur.feed == nil || len(cur.feed.Heads) == 0 {
+		return nil
+	}
+	const back = "; the internal instance's record has gone back on a head already published here, " +
+		"and a head feed is kept so that this shows. If that is meant, it is said on this host, by " +
+		"removing the instance's current file so that it starts empty, and not by a transfer"
+	if s.feed == nil || len(s.feed.Heads) == 0 {
+		return refused("this transfer carries no head feed, and would withdraw the heads published here%s", back)
+	}
+	was, now := cur.feed.Heads[len(cur.feed.Heads)-1], s.feed.Heads[len(s.feed.Heads)-1]
+	if now.Size < was.Size {
+		return refused("the newest head in this transfer commits to %d entries, and the newest published "+
+			"here to %d%s", now.Size, was.Size, back)
+	}
+	published := map[int]string{}
+	for _, h := range cur.feed.Heads {
+		published[h.Size] = h.Root
+	}
+	for _, h := range s.feed.Heads {
+		if root, ok := published[h.Size]; ok && root != h.Root {
+			return refused("this transfer's head of %d entries has the root %s, and the one published here "+
+				"has %s%s", h.Size, h.Root, root, back)
+		}
+	}
+	return nil
 }
 
 // prune keeps the projection served and the two before it, so a person
@@ -471,6 +516,12 @@ func ParseFeed(body []byte, pinned *audit.HeadVerifier) (*HeadFeed, error) {
 		}
 		if i > 0 && (h.Size < f.Heads[i-1].Size || at.Before(last)) {
 			return nil, fmt.Errorf("head %d of the feed is smaller or older than the one before it, and a log only grows", i+1)
+		}
+		// Two heads of one size are one head signed twice, or the record
+		// forked: the second is refused, since a reader cannot tell which.
+		if i > 0 && h.Size == f.Heads[i-1].Size && h.Root != f.Heads[i-1].Root {
+			return nil, fmt.Errorf("heads %d and %d of the feed both commit to %d entries, with different roots: "+
+				"the record forked", i, i+1, h.Size)
 		}
 		last = at
 	}

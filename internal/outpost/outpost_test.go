@@ -143,13 +143,137 @@ func TestPublicRefusesWrongKey(t *testing.T) {
 		!strings.Contains(err.Error(), "pinned") {
 		t.Fatalf("a transfer signed by another key was taken: %v", err)
 	}
+	// Signed by another key and carrying the pinned key's own heads, which
+	// anybody who fetched the public feed holds: only the transfer's own
+	// signature tells this one from the internal instance's.
+	if _, err := in.Import(projection(t, goodFiles(t, internal), when, other), when); err == nil ||
+		!strings.Contains(err.Error(), "not signed by the pinned key") {
+		t.Errorf("a transfer signed by another key, carrying the pinned key's heads, was taken: %v", err)
+	}
 	files := goodFiles(t, internal)
 	files[FeedFile] = feed(t, other, 10)
 	if _, err := in.Import(projection(t, files, when, internal), when); err == nil {
 		t.Error("a head feed signed by another key was taken")
 	}
+	// And a feed that names the pinned key over heads another key signed:
+	// what the feed says of itself is not what checks it.
+	forged := HeadFeed{Format: 1, KeyID: internal.Verifier().KeyID()}
+	sh, err := other.Sign(audit.Head{Size: 10, Root: strings.Repeat("0", 64), At: when.Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.KeyID = ""
+	forged.Heads = append(forged.Heads, sh)
+	files[FeedFile], _ = json.Marshal(forged)
+	if _, err := in.Import(projection(t, files, when, internal), when); err == nil {
+		t.Error("a head feed naming the pinned key over heads another key signed was taken")
+	}
 	if strings.Contains(get(t, in.Handler(), "/").Body.String(), "Fernhollow") {
 		t.Error("a refused transfer is served")
+	}
+}
+
+// feedOf is a feed of heads as given, signed by k.
+func feedOf(t *testing.T, k *audit.HeadSigner, heads ...audit.Head) []byte {
+	t.Helper()
+	f := HeadFeed{Format: 1, KeyID: k.Verifier().KeyID()}
+	for _, h := range heads {
+		sh, err := k.Sign(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Heads = append(f.Heads, sh)
+	}
+	body, _ := json.Marshal(f)
+	return body
+}
+
+// The head feed is publication: whoever fetched it holds heads the record
+// has to go on matching. So a newer transfer may add heads and let the
+// oldest go, and may not take back what was published: a feed whose newest
+// head commits to fewer entries than the one served (the record went back),
+// one with a head of a size already published under another root (the
+// record was rewritten), or none at all. Nor may one feed hold two heads of
+// one size with different roots.
+func TestAFeedThatGoesBackIsRefused(t *testing.T) {
+	internal := key(t, 1)
+	root := func(c string) string { return strings.Repeat(c, 64) }
+	at := func(h int) string { return when.Add(time.Duration(h) * time.Hour).Format(time.RFC3339) }
+	in := instance(t, internal)
+	files := goodFiles(t, internal)
+	files[FeedFile] = feedOf(t, internal, audit.Head{Size: 10, Root: root("a"), At: at(0)},
+		audit.Head{Size: 25, Root: root("b"), At: at(1)})
+	if _, err := in.Import(projection(t, files, when, internal), when); err != nil {
+		t.Fatal(err)
+	}
+	made := when
+	send := func(feed []byte) error {
+		t.Helper()
+		made = made.Add(time.Minute)
+		f := goodFiles(t, internal)
+		if feed == nil {
+			delete(f, FeedFile)
+		} else {
+			f[FeedFile] = feed
+		}
+		_, err := in.Import(projection(t, f, made, internal), made)
+		return err
+	}
+	for what, feed := range map[string][]byte{
+		"whose newest head commits to fewer entries than the one served": feedOf(t, internal,
+			audit.Head{Size: 10, Root: root("a"), At: at(0)}, audit.Head{Size: 12, Root: root("c"), At: at(2)}),
+		"that publishes a head of a size already published under another root": feedOf(t, internal,
+			audit.Head{Size: 25, Root: root("d"), At: at(2)}, audit.Head{Size: 30, Root: root("e"), At: at(3)}),
+		"that holds two heads of one size with different roots": feedOf(t, internal,
+			audit.Head{Size: 25, Root: root("b"), At: at(1)}, audit.Head{Size: 25, Root: root("f"), At: at(2)},
+			audit.Head{Size: 40, Root: root("g"), At: at(3)}),
+		"with no head feed at all": nil,
+	} {
+		if err := send(feed); err == nil {
+			t.Errorf("a transfer %s was taken", what)
+		}
+	}
+	if raw := get(t, in.Handler(), "/heads.json").Body.String(); !strings.Contains(raw, root("b")) {
+		t.Error("a refused feed replaced the one served")
+	}
+	// Growing it, with the oldest head let go, is what a feed does.
+	if err := send(feedOf(t, internal, audit.Head{Size: 25, Root: root("b"), At: at(1)},
+		audit.Head{Size: 31, Root: root("h"), At: at(4)})); err != nil {
+		t.Errorf("a feed that grows was refused: %v", err)
+	}
+	// And a feed sent again from a store that lost its list of heads sent,
+	// whose one head is newer than every head served, is taken.
+	if err := send(feedOf(t, internal, audit.Head{Size: 40, Root: root("i"), At: at(5)})); err != nil {
+		t.Errorf("a feed of one newer head was refused: %v", err)
+	}
+}
+
+// A projection is checked again when the instance starts: one changed on
+// disk since it was taken is not served, and the instance says why.
+func TestAProjectionChangedOnDiskIsNotServed(t *testing.T) {
+	internal := key(t, 1)
+	in := instance(t, internal)
+	rc, err := in.Import(projection(t, goodFiles(t, internal), when, internal), when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := filepath.Join(in.Dir(), "projections", rc.Served, AttestationsFile)
+	body, err := os.ReadFile(served)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(served, bytes.Replace(body, []byte("Fernhollow Ltd"), []byte("Mallory Ltd"), 1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(in.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := get(t, again.Handler(), "/").Body.String(); strings.Contains(page, "Mallory") || strings.Contains(page, "Fernhollow") {
+		t.Error("a projection changed on disk is served")
+	}
+	if st := again.Status(); st.Served != nil || st.Problem == "" {
+		t.Errorf("the instance does not say why it serves nothing: %+v", st)
 	}
 }
 
@@ -214,6 +338,20 @@ func TestATransferCarriesOnlyTheProjection(t *testing.T) {
 	if _, err := in.Import(projection(t, files, when, internal), when); err == nil {
 		t.Error("attestations carrying a score were taken")
 	}
+	// security.txt is checked for RFC 9116's shape too: a page, or a file
+	// with no contact, is not one.
+	for what, body := range map[string]string{
+		"markup":       "<html><script>alert(1)</script></html>\n",
+		"no contact":   "Expires: 2027-12-31T00:00:00Z\n",
+		"no expiry":    "Contact: mailto:security@fernhollow.example\n",
+		"a stray line": "Contact: mailto:security@fernhollow.example\nExpires: 2027-12-31T00:00:00Z\nsend reports here\n",
+	} {
+		files = goodFiles(t, internal)
+		files[SecurityTxtFile] = []byte(body)
+		if _, err := in.Import(projection(t, files, when, internal), when); err == nil {
+			t.Errorf("a security.txt with %s was taken", what)
+		}
+	}
 }
 
 // An older transfer than the one served is refused, so a replayed transfer
@@ -268,7 +406,8 @@ func TestTheIntakeTakesASignedEnvelopeOnly(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, IntakePath, bytes.NewReader(body)))
 		return rec
 	}
-	bad, err := Pack(projection(t, goodFiles(t, other), when, other))
+	// Signed by another key, with the pinned key's own heads in it.
+	bad, err := Pack(projection(t, goodFiles(t, internal), when, other))
 	if err != nil {
 		t.Fatal(err)
 	}
