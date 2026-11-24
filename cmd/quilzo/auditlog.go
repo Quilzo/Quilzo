@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/siem"
 )
 
@@ -683,11 +684,10 @@ func auditShow(root string, args []string) error {
 		// checks the shape of "at", and an entry whose time had been cut to
 		// a date stopped this listing with a stack trace just after the
 		// warning that the chain was broken, which is the one listing that
-		// has to reach its end.
-		at := e.At
-		if len(at) > 19 {
-			at = at[:19]
-		}
+		// has to reach its end. For the same reason a doctored time is cut
+		// where a character starts: one with a wide character at the
+		// nineteenth byte was shown with half of it.
+		at := plaintext.Clip(e.At, 19, "")
 		// Every field through onOneLine, because every field is what the file
 		// holds and some of it was written by the people the log is about. A
 		// decoy is presented by an outsider and the path they asked for is

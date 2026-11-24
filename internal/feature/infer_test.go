@@ -217,3 +217,24 @@ func TestARowTooWideToReadIsRefused(t *testing.T) {
 		t.Fatalf("%v %v", err, in)
 	}
 }
+
+// A table's title keeps the letters its name was written in. The name came
+// from a file a person chose, often named in their own language, and the
+// title is what the page, the listing and the package call it.
+func TestATitleKeepsTheLettersItsNameWasWrittenIn(t *testing.T) {
+	for name, want := range map[string]string{
+		"émilie's records": "Émilie s records",
+		"日本語のデータ":          "日本語のデータ",
+		"lab samples":      "Lab samples",
+		"--":               "Records",
+	} {
+		if got := titleOf(name); got != want {
+			t.Errorf("titleOf(%q) = %q, want %q", name, got, want)
+		}
+	}
+	// A long one is cut where a character starts.
+	kept := "É" + strings.Repeat("a", 117)
+	if got := titleOf("é" + strings.Repeat("a", 117) + "中文"); got != kept {
+		t.Errorf("ends %q", got[len(got)-3:])
+	}
+}

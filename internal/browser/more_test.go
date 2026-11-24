@@ -263,3 +263,16 @@ func TestAPageIsChecked(t *testing.T) {
 		t.Error("checked something that is not checked")
 	}
 }
+
+// A page longer than the accessibility checks read is cut where a character
+// starts. Findings quote a link's words, and a link in Chinese at the cut
+// was quoted with half a character in it.
+func TestALongPageIsCheckedUpToACharacter(t *testing.T) {
+	link := `</p><a href="/x" target="_blank">go `
+	filler := strings.Repeat("a", 4<<20-1-len("<p>")-len(link))
+	out := accessReport("https://shop.example/", "<p>"+filler+link+"中文")
+	if !strings.Contains(out, `link "go" opens a new tab`) {
+		at := strings.Index(out, "new-tab-not-announced")
+		t.Fatalf("%s", out[max(0, at):min(len(out), at+60)])
+	}
+}

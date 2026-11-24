@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/audit"
 )
@@ -101,6 +102,28 @@ func TestShowListsAnEntryWhoseTimeWasShortened(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the listing does not show %q:\n%s", want, got)
 		}
+	}
+}
+
+// A doctored time is cut where a character starts. Nineteen bytes is the
+// second of the time the log writes, but "at" is whatever the file holds,
+// and one with a character of several bytes at the nineteenth was shown with
+// half of it: the terminal draws that as a character nobody wrote, below the
+// warning that the chain is broken.
+func TestShowCutsADoctoredTimeBetweenCharacters(t *testing.T) {
+	root := shownLog(t, published("/a"), published("/b"), published("/c"))
+	editEntry(t, root, 1, func(e map[string]any) { e["at"] = "2026-11-10T09:00:0" + "中文" })
+
+	got, err := showing(t, root, "--limit", "3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(got) || strings.ContainsRune(got, utf8.RuneError) {
+		at := strings.Index(got, "2026-11-10T09:00:0")
+		t.Fatalf("the time was shown as %q", got[max(0, at):min(len(got), at+24)])
+	}
+	if !strings.Contains(got, "2026-11-10T09:00:0") {
+		t.Errorf("the doctored time is not shown:\n%s", got)
 	}
 }
 

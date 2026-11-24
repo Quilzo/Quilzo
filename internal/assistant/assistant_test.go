@@ -1522,3 +1522,18 @@ func TestASectionsNamesAreNotKnowledge(t *testing.T) {
 		t.Fatalf("words were left out:\n%s", text)
 	}
 }
+
+// An argument the model supplies is cut where a character starts. It is
+// shown to the visitor to confirm, and a reason given in their own language
+// would otherwise end in U+FFFD on the form they are asked to send.
+func TestALongArgumentIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", MaxArg-1)
+	p, err := withActions().Propose(ActionCall{Name: "start-return",
+		Args: map[string]string{"reason": kept + "中文"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Args["reason"]; got != kept {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}

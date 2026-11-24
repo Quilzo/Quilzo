@@ -14,6 +14,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Asking a model for a picture.
@@ -141,9 +143,7 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4096))
 		snippet := strings.TrimSpace(buf.String())
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
+		snippet = plaintext.Clip(snippet, 300, "")
 		// A StatusError, as for words, so the gateway can tell a request it
 		// must give back from a route that cannot answer.
 		return Picture{}, &StatusError{Code: resp.StatusCode, Body: snippet}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Another vendor's agent, over the Agent2Agent protocol (JSON-RPC binding).
@@ -292,9 +293,7 @@ func (c *Client) a2aCall(ctx context.Context, in agent.Integration, skill string
 	if out == "" {
 		out = "it answered with nothing to read"
 	}
-	if len(out) > MaxResult {
-		out = out[:MaxResult]
-	}
+	out = plaintext.Clip(out, MaxResult, "")
 	return out, nil
 }
 

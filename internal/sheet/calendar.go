@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/ical"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -208,10 +209,7 @@ func meeting(raw string) bool {
 
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > schema.MaxTextLen {
-		s = s[:schema.MaxTextLen]
-	}
-	return s
+	return plaintext.Clip(s, schema.MaxTextLen, "")
 }
 
 var (

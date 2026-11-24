@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Violation reports: what visitors' browsers say a page tried to load that
@@ -191,9 +193,7 @@ func parseViolations(body []byte, host string) []Violation {
 		if page == "" {
 			page = "/"
 		}
-		if len(page) > 120 {
-			page = page[:120]
-		}
+		page = plaintext.Clip(page, 120, "")
 		out = append(out, Violation{Directive: directive, Blocked: blocked, Page: page,
 			Enforced: b.Disposition != "report"})
 	}

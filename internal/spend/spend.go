@@ -37,6 +37,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Mandate is what one agent may pay without a person deciding each time.
@@ -407,9 +409,7 @@ func (b *Book) Settle(id string, err error) {
 			return
 		}
 		msg := err.Error()
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
+		msg = plaintext.Clip(msg, 200, "")
 		r.Outcome = "failed: " + msg
 		return
 	}

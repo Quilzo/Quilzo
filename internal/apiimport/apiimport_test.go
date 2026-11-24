@@ -417,3 +417,27 @@ func TestOperationsThatShareANameAreNumberedInTimeInProportion(t *testing.T) {
 		t.Errorf("%d bytes of operations with one name were not read in %v", len(doc), time.Since(start))
 	}
 }
+
+// What an integration and its operations are for is cut where a character
+// starts. Both are the document's own words, in whatever language its
+// authors wrote, and both are what a person reads to decide what to turn on.
+func TestALongPurposeAndDescriptionAreCutBetweenCharacters(t *testing.T) {
+	purpose, description := strings.Repeat("a", 299), strings.Repeat("a", 199)
+	doc := fmt.Sprintf(`{"openapi": "3.1.0", "info": {"title": %q},
+  "servers": [{"url": "https://api.billing.example/v1"}],
+  "paths": {"/notes": {"get": {"operationId": "notes", "summary": %q}}}}`,
+		purpose+"中文", description+"中文")
+	imp, err := OpenAPI([]byte(doc), Options{Name: "notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := imp.Integration.Purpose; got != purpose {
+		t.Errorf("purpose ends %q", got[len(got)-3:])
+	}
+	if len(imp.Available) != 1 {
+		t.Fatalf("%d operations", len(imp.Available))
+	}
+	if got := imp.Available[0].Summary; got != description {
+		t.Errorf("description ends %q", got[len(got)-3:])
+	}
+}

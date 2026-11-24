@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -141,5 +142,36 @@ func TestARefusalKeepsItsStatus(t *testing.T) {
 	}
 	if _, err := h.Chat(context.Background(), clickRequest()); !errors.As(err, &se) || se.Code != http.StatusBadRequest {
 		t.Fatalf("chat err = %v", err)
+	}
+}
+
+// What a provider said when it refused is cut where a character starts, on
+// every way a request is made. It is shown to whoever runs the gateway, and
+// a provider elsewhere explains in its own language.
+func TestAProvidersLongRefusalIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 299)
+	refuse := func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, kept+"中文")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { refuse(w) }))
+	t.Cleanup(srv.Close)
+	words := &HTTPModel{BaseURL: srv.URL, Model: "m", Client: srv.Client()}
+	anthropic, _ := anthropicAt(t, func(w http.ResponseWriter, _ map[string]any) { refuse(w) })
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"complete":  func() error { _, err := words.Complete(ctx, "s", "u"); return err },
+		"chat":      func() error { _, err := words.Chat(ctx, clickRequest()); return err },
+		"paint":     func() error { _, err := painterAt(t, srv.URL).Paint(ctx, "a lighthouse", ""); return err },
+		"anthropic": func() error { _, err := anthropic.Complete(ctx, "s", "u"); return err },
+	} {
+		var se *StatusError
+		if err := call(); !errors.As(err, &se) {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if se.Body != kept {
+			t.Errorf("%s: %d bytes, ending %q", name, len(se.Body), se.Body[len(se.Body)-3:])
+		}
 	}
 }

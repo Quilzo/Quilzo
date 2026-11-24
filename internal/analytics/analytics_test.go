@@ -278,3 +278,13 @@ func TestKeptDaysAreCountedAgainUnderTheirNewNames(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A label from a request is cut where a character starts. A campaign or a
+// referrer's name in Japanese is as ordinary as one in English, and half a
+// character is shown as U+FFFD on every report that lists it.
+func TestALongLabelIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 79)
+	if got := clean(kept + "中文"); got != kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}

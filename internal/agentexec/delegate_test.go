@@ -382,3 +382,13 @@ func TestASpentTokenBudgetIsNotHandedOnAsNoBudget(t *testing.T) {
 		t.Errorf("a delegate was started with the supervisor's tokens spent, holding %+v", sp.given)
 	}
 }
+
+// What a supervisor says to a delegate is cut where a character starts. The
+// delegate is a model reading an instruction, and one that ends in a byte
+// that is not text is one it is left to guess the end of.
+func TestALongInstructionIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", MaxInstruction-1)
+	if got := instruction(agent.Action{Say: kept + "中文"}); got != kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}

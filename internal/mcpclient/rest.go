@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/jsonschema"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // REST APIs as tools.
@@ -279,9 +280,7 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 		return "", fmt.Errorf("%s %s: %w", in.Name, o.Name, err)
 	}
 	text := string(res.Body)
-	if len(text) > MaxResult {
-		text = text[:MaxResult]
-	}
+	text = plaintext.Clip(text, MaxResult, "")
 	if res.Status < 200 || res.Status > 299 {
 		// A far side that said when it will take the call again is said so,
 		// with the time, for a person or a later step to come back then.

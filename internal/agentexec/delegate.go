@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Handing work to another agent.
@@ -129,10 +130,7 @@ func instruction(a agent.Action) string {
 			said = strings.TrimSpace(v)
 		}
 	}
-	if len(said) > MaxInstruction {
-		said = said[:MaxInstruction]
-	}
-	return said
+	return plaintext.Clip(said, MaxInstruction, "")
 }
 
 func smaller(a, b agent.Budget) agent.Budget {
