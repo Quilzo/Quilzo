@@ -44,6 +44,13 @@ func (g *Ingester) now() time.Time {
 	return time.Now()
 }
 
+// Recorder wires a register that a server opened (the admin's, the content
+// API's) to record its writes in the audit log the command line records in,
+// and to write nothing while that log cannot take an entry. The program
+// sets it; a server it was not set for writes nothing to the register,
+// because Put refuses a register with no audit log.
+var Recorder func(reg *register.Register)
+
 // Clerk is the name proposals from an import are made under. It is the
 // evidence clerk of the security programme: code that seals, reads and
 // grades, and proposes what a person has to decide.

@@ -1,0 +1,45 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-errors" .Problems}}
+<form method="post" action="/evidence/import" enctype="multipart/form-data" class="param-form" novalidate>
+  {{$file := index .ByField "import-file"}}{{$format := index .ByField "import-format"}}{{$map := index .ByField "import-map"}}{{$kind := index .ByField "import-kind"}}
+  <label for="import-file">The file</label>
+  {{template "kit-field-error" $file}}
+  <input id="import-file" type="file" name="file" aria-describedby="import-file-hint{{if $file.Message}} import-file-error{{end}}"{{if $file.Message}} aria-invalid="true"{{end}}>
+  <p class="hint" id="import-file-hint">At most {{.Limit}} MB. It is sealed by its hash as it arrives, before anything reads it, and treated as a file somebody else made.</p>
+  <label for="import-format">Its format</label>
+  {{template "kit-field-error" $format}}
+  <select id="import-format" name="format"{{if $format.Message}} aria-invalid="true" aria-describedby="import-format-error"{{end}}>
+    <option value="">Choose the format</option>
+    {{range .Formats}}<option value="{{.Format}}"{{if eq $.Form.Format (print .Format)}} selected{{end}}>{{.Format}}: {{.Reads}}</option>
+    {{end}}</select>
+  <label for="import-source">The source its facts are filed under</label>
+  <input id="import-source" name="source" value="{{.Form.Source}}" maxlength="64" autocomplete="off" aria-describedby="import-source-hint">
+  <p class="hint" id="import-source-hint">A machine name, such as prowler-production. Leave it empty for one named after the format and how the file came in.</p>
+  <fieldset>
+    <legend>For a table: CSV, a workbook or a JSON list</legend>
+    <label for="import-map">Its column map</label>
+    {{template "kit-field-error" $map}}
+    <select id="import-map" name="map"{{if $map.Message}} aria-invalid="true" aria-describedby="import-map-error"{{end}}>
+      <option value="">None yet: draft one from the table's headings</option>
+      {{range .Maps}}<option value="{{.}}"{{if eq $.Form.Map .}} selected{{end}}>{{.}}</option>
+      {{end}}</select>
+    <label for="import-kind">Read it into</label>
+    {{template "kit-field-error" $kind}}
+    <select id="import-kind" name="kind" aria-describedby="import-kind-hint{{if $kind.Message}} import-kind-error{{end}}"{{if $kind.Message}} aria-invalid="true"{{end}}>
+      <option value="">Choose a kind of record, to draft a map</option>
+      {{range .Kinds}}<option value="{{.}}"{{if eq $.Form.Kind .}} selected{{end}}>{{.}}</option>
+      {{end}}</select>
+    <p class="hint" id="import-kind-hint">Only to draft a new map. You will see how it reads each column, and the first rows, before you confirm it.</p>
+    <label for="import-sheet">The worksheet, for a workbook</label>
+    <input id="import-sheet" name="sheet" value="{{.Form.Sheet}}" maxlength="200" autocomplete="off" aria-describedby="import-sheet-hint">
+    <p class="hint" id="import-sheet-hint">Leave it empty for the first sheet a person would see.</p>
+  </fieldset>
+  <div class="auto-controls"><button type="submit">Read the file</button></div>
+</form>
+<h2>What it reads</h2>
+<ul>
+{{range .Formats}}<li><strong>{{.Format}}</strong>: {{.Reads}}</li>
+{{end}}</ul>
+<p class="hint">Nothing a file names is fetched, no formula in it is worked out, and what is hidden in it is read and marked. From a terminal: <code>quilzo ingest FORMAT FILE --preview</code>, then without <code>--preview</code>.</p>
+{{template "foot" .}}

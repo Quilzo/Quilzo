@@ -345,3 +345,6 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// DigestOf is the digest a file is sealed under.
+func DigestOf(b []byte) register.Digest { return digestOf(b) }

@@ -1,0 +1,27 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-errors" .Problems}}
+{{template "kit-live" .Said}}
+<h2>Column maps</h2>
+{{if .HasMaps}}{{template "kit-table" .Maps}}{{else}}<p>No column map has been confirmed. <a href="/evidence/import">Bring a table in</a> to draft one.</p>{{end}}
+<h2>Pinned keys</h2>
+{{if .HasKeys}}{{template "kit-table" .Keys}}{{else}}<p>No key has been pinned, so no signed file can be read yet: a signature counts only when a key pinned here verifies it.</p>{{end}}
+{{if .CanPin}}<h2>Pin a key</h2>
+<form method="post" action="/evidence/keys" class="param-form" novalidate>
+  {{$name := index .ByField "key-name"}}{{$key := index .ByField "key-key"}}
+  <label for="key-name">Its name</label>
+  {{template "kit-field-error" $name}}
+  <input id="key-name" name="name" value="{{index .Form "name"}}" maxlength="64" autocomplete="off" aria-describedby="key-name-hint{{if $name.Message}} key-name-error{{end}}"{{if $name.Message}} aria-invalid="true"{{end}}>
+  <p class="hint" id="key-name-hint">A machine name, such as release-signing.</p>
+  <label for="key-title">Whose key it is</label>
+  <input id="key-title" name="title" value="{{index .Form "title"}}" maxlength="200" autocomplete="off">
+  <label for="key-keyid">The identifier signed files name it by</label>
+  <input id="key-keyid" name="keyid" value="{{index .Form "keyid"}}" maxlength="200" autocomplete="off" aria-describedby="key-keyid-hint">
+  <p class="hint" id="key-keyid-hint">Optional. Leave it empty when the signer gives none.</p>
+  <label for="key-key">The public key</label>
+  {{template "kit-field-error" $key}}
+  <textarea id="key-key" name="key" rows="6" class="code" spellcheck="false" aria-describedby="key-key-hint{{if $key.Message}} key-key-error{{end}}"{{if $key.Message}} aria-invalid="true"{{end}}>{{index .Form "key"}}</textarea>
+  <p class="hint" id="key-key-hint">In PEM, beginning BEGIN PUBLIC KEY: Ed25519, or ECDSA on P-256 or P-384. Check the fingerprint shown after pinning against what the key's owner published.</p>
+  <div class="auto-controls"><button type="submit">Pin this key</button></div>
+</form>{{end}}
+{{template "foot" .}}
