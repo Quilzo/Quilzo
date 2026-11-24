@@ -19,16 +19,26 @@
 // the mass assignment this exists to stop. A schema that wants other
 // properties says additionalProperties: true.
 //
-// What an object's schema lists is what every schema applied to it where it
-// is lists: its own, and those of the schemas it is made of, through allOf,
-// $ref, the alternatives of anyOf and oneOf it fits, then or else, and
-// dependentSchemas. That is the standard's unevaluatedProperties: false.
-// Each of them was held to the rule alone, so a tool's arguments composed
-// with allOf of two schemas that each listed some of them took no call at
-// all, and a patternProperties for the names a tool takes besides those it
-// lists refused every name it matched. Where this cannot tell what a schema
+// What an object takes is what every schema the value fits lists for it
+// where it is: its own schema's, and those of the schemas it is made of,
+// through allOf, $ref, the alternatives of anyOf and oneOf it fits, if and
+// then or else, and dependentSchemas, at whatever depth they reach it. Each
+// of them was held to the rule alone, so a tool's arguments composed with
+// allOf of two schemas that each listed some of them took no call at all,
+// and a patternProperties for the names a tool takes besides those it lists
+// refused every name it matched. Where this cannot tell what a schema
 // takes, a $ref it does not follow or a pattern RE2 does not compile, the
 // object takes any property rather than none.
+//
+// So the rule is asked once, of the whole value, when the standard's rules
+// have found what it fits, and never of what it is only tested against: a
+// schema under not, an if that fails, an alternative it does not fit, or
+// what contains looks for. Asked of each schema as it was applied, it did
+// not only refuse more there, it changed the answer: an object failed a
+// condition for carrying a property the condition happened not to list, so
+// one argument more than a call needed walked it past a not that forbade
+// it, down else where it belonged in then, and out of the count of oneOf's
+// shapes and of maxContains.
 package jsonschema
 
 import (
@@ -83,7 +93,7 @@ func CheckNamed(schema json.RawMessage, v any, name string) error {
 	if err != nil {
 		return err
 	}
-	return (&checker{root: s, budget: maxSteps + stepsPerByte*size}).check(s, norm, name, 0)
+	return (&checker{root: s, budget: maxSteps + stepsPerByte*size}).check(s, norm, name)
 }
 
 // CheckPart is Check against part, a part of the schema whole, such as one
@@ -107,7 +117,7 @@ func CheckPart(whole, part json.RawMessage, v any) error {
 	if err != nil {
 		return err
 	}
-	return (&checker{root: w, budget: maxSteps + stepsPerByte*size}).check(p, norm, "body", 0)
+	return (&checker{root: w, budget: maxSteps + stepsPerByte*size}).check(p, norm, "body")
 }
 
 // normal is v round-tripped, so integers and structs arrive as JSON does,
@@ -145,7 +155,7 @@ type followedKey struct {
 }
 
 type followed struct {
-	t   *taken
+	t   takes
 	err error
 }
 
@@ -181,8 +191,12 @@ func identity(v any) any {
 	return v
 }
 
-// taken is what the schemas applied to an object where it is took of it.
+// taken is what the schemas applied to one object in the value took of it.
 type taken struct {
+	// at is where the object is, and obj the object, for asking of it at
+	// the end.
+	at  string
+	obj map[string]any
 	// names are its properties that one of them named or matched, and
 	// listed every property they list, for saying what it takes.
 	names, listed map[string]bool
@@ -190,6 +204,9 @@ type taken struct {
 	// open is whether one of them took every property, or could not be
 	// read for what it takes.
 	lists, open bool
+	// shared is whether more than one takes holds it, so that it is
+	// copied before it is changed rather than every time it is added.
+	shared bool
 }
 
 func (t *taken) take(k string) {
@@ -217,41 +234,95 @@ func (t *taken) add(o *taken) {
 	t.open = t.open || o.open
 }
 
-// check is v, at a place in the value of its own, against schema: by the
-// standard's rules, and then, for an object, this package's own, that it
-// takes only the properties the schemas applied to it list.
-func (c *checker) check(schema any, v any, at string, depth int) error {
-	t, err := c.apply(schema, v, at, depth)
-	if err != nil {
-		return err
+// takes is what the schemas a value fits took of each object in it, by the
+// object's address. Made afresh by every schema applied, and added to what
+// applied it only when the value fits it, so what a schema the value does
+// not fit lists is never taken. What one has made is never changed by
+// another: what following a $ref made is kept and handed out again.
+type takes map[address]*taken
+
+// of is what has been taken of the object x, at at, to be added to: made
+// when nothing has, and copied when another takes holds it too.
+func (ts *takes) of(x map[string]any, at string) *taken {
+	if *ts == nil {
+		*ts = takes{}
 	}
-	x, ok := v.(map[string]any)
-	if !ok || !t.lists || t.open {
-		return nil
+	a := address(reflect.ValueOf(x).Pointer())
+	t := (*ts)[a]
+	switch {
+	case t == nil:
+		t = &taken{at: at, obj: x}
+		(*ts)[a] = t
+	case t.shared:
+		own := &taken{at: t.at, obj: t.obj}
+		own.add(t)
+		t = own
+		(*ts)[a] = t
 	}
-	for _, k := range sortedKeys(x) {
-		if t.names[k] {
+	return t
+}
+
+// add is what o took added to what ts took, leaving o as it was.
+func (ts *takes) add(o takes) {
+	for a, t := range o {
+		if *ts == nil {
+			*ts = takes{}
+		}
+		if (*ts)[a] == nil {
+			t.shared = true
+			(*ts)[a] = t
 			continue
 		}
-		where := at + "." + named(k)
-		if len(t.listed) == 0 {
-			return errors.New(where + " is not a property it takes")
+		ts.of(t.obj, t.at).add(t)
+	}
+}
+
+// strict is the rule, asked of every object the schemas the value fits
+// list properties for: it has none they do not take.
+func (ts takes) strict() error {
+	objects := make([]*taken, 0, len(ts))
+	for _, t := range ts {
+		if t.lists && !t.open {
+			objects = append(objects, t)
 		}
-		return fmt.Errorf("%s is not a property it takes; it takes %s", where, names(t.listed))
+	}
+	sort.Slice(objects, func(i, j int) bool { return objects[i].at < objects[j].at })
+	for _, t := range objects {
+		for _, k := range sortedKeys(t.obj) {
+			if t.names[k] {
+				continue
+			}
+			where := t.at + "." + named(k)
+			if len(t.listed) == 0 {
+				return errors.New(where + " is not a property it takes")
+			}
+			return fmt.Errorf("%s is not a property it takes; it takes %s", where, names(t.listed))
+		}
 	}
 	return nil
 }
 
+// check is v against schema: by the standard's rules, and then this
+// package's own, that each object in it takes only the properties the
+// schemas it fits list for it.
+func (c *checker) check(schema any, v any, at string) error {
+	t, err := c.apply(schema, v, at, 0)
+	if err != nil {
+		return err
+	}
+	return t.strict()
+}
+
 // apply is v against schema where v is, by the standard's rules alone, and
-// what schema and the schemas it is made of took of v, when v is an object.
-func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error) {
-	t := &taken{}
+// what schema and the schemas it is made of took of each object in v.
+func (c *checker) apply(schema any, v any, at string, depth int) (takes, error) {
+	var t takes
 	c.steps++
 	if depth > maxDepth {
-		return t, stopped{fmt.Errorf("%s is nested deeper than %d", at, maxDepth)}
+		return nil, stopped{fmt.Errorf("%s is nested deeper than %d", at, maxDepth)}
 	}
 	if c.steps > c.budget {
-		return t, stopped{fmt.Errorf("%s takes more checking than a schema may ask for", at)}
+		return nil, stopped{fmt.Errorf("%s takes more checking than a schema may ask for", at)}
 	}
 	s, ok := schema.(map[string]any)
 	if !ok {
@@ -259,19 +330,23 @@ func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error)
 		// schema at all says nothing of what an object takes.
 		b, isBool := schema.(bool)
 		if isBool && !b {
-			return t, fmt.Errorf("%s is not allowed", at)
+			return nil, fmt.Errorf("%s is not allowed", at)
 		}
-		t.open = !isBool
+		if x, isObject := v.(map[string]any); isObject && !isBool {
+			t.of(x, at).open = true
+		}
 		return t, nil
 	}
 	if ref, ok := s["$ref"].(string); ok {
-		if err := c.follow(ref, v, at, depth, t); err != nil {
-			return t, err
+		ft, err := c.follow(ref, v, at, depth)
+		if err != nil {
+			return nil, err
 		}
+		t.add(ft)
 	}
 	if ty, ok := s["type"]; ok {
 		if err := checkType(ty, v, at); err != nil {
-			return t, err
+			return nil, err
 		}
 	}
 	if e, ok := s["enum"].([]any); ok {
@@ -280,63 +355,67 @@ func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error)
 			found = found || equal(x, v)
 		}
 		if !found {
-			return t, fmt.Errorf("%s is not one of the values it may take", at)
+			return nil, fmt.Errorf("%s is not one of the values it may take", at)
 		}
 	}
 	if cv, ok := s["const"]; ok && !equal(cv, v) {
-		return t, fmt.Errorf("%s is not the value it must be", at)
+		return nil, fmt.Errorf("%s is not the value it must be", at)
 	}
 	switch x := v.(type) {
 	case string:
 		n := float64(utf8.RuneCountInString(x))
 		if m, ok := num(s["maxLength"]); ok && n > m {
-			return t, fmt.Errorf("%s is longer than %v characters", at, m)
+			return nil, fmt.Errorf("%s is longer than %v characters", at, m)
 		}
 		if m, ok := num(s["minLength"]); ok && n < m {
-			return t, fmt.Errorf("%s is shorter than %v characters", at, m)
+			return nil, fmt.Errorf("%s is shorter than %v characters", at, m)
 		}
 		if p, ok := s["pattern"].(string); ok {
 			// ECMA-262 and RE2 differ at the edges; a pattern this program
 			// cannot compile constrains nothing rather than refusing all.
 			if re := c.compile(p); re != nil && !re.MatchString(x) {
-				return t, fmt.Errorf("%s is not in the form it must be", at)
+				return nil, fmt.Errorf("%s is not in the form it must be", at)
 			}
 		}
 	case float64:
 		if m, ok := num(s["maximum"]); ok && x > m {
-			return t, fmt.Errorf("%s is more than %v", at, m)
+			return nil, fmt.Errorf("%s is more than %v", at, m)
 		}
 		if m, ok := num(s["minimum"]); ok && x < m {
-			return t, fmt.Errorf("%s is less than %v", at, m)
+			return nil, fmt.Errorf("%s is less than %v", at, m)
 		}
 		if m, ok := num(s["exclusiveMaximum"]); ok && x >= m {
-			return t, fmt.Errorf("%s is not less than %v", at, m)
+			return nil, fmt.Errorf("%s is not less than %v", at, m)
 		}
 		if m, ok := num(s["exclusiveMinimum"]); ok && x <= m {
-			return t, fmt.Errorf("%s is not more than %v", at, m)
+			return nil, fmt.Errorf("%s is not more than %v", at, m)
 		}
 		if m, ok := num(s["multipleOf"]); ok && m > 0 {
 			// Within what a float64 can say: 0.07 is a multiple of 0.01,
 			// though 0.07 / 0.01 is 7.000000000000001.
 			q := x / m
 			if !math.IsInf(q, 0) && math.Abs(q-math.Round(q)) > 1e-9*math.Max(1, math.Abs(q)) {
-				return t, fmt.Errorf("%s is not a multiple of %v", at, m)
+				return nil, fmt.Errorf("%s is not a multiple of %v", at, m)
 			}
 		}
 	case []any:
-		if err := c.array(s, x, at, depth); err != nil {
-			return t, err
+		it, err := c.array(s, x, at, depth)
+		if err != nil {
+			return nil, err
 		}
+		t.add(it)
 	case map[string]any:
-		if err := c.object(s, x, at, depth, t); err != nil {
-			return t, err
+		ot, err := c.object(s, x, at, depth)
+		if err != nil {
+			return nil, err
 		}
+		t.add(ot)
 	}
 	if all, ok := s["allOf"].([]any); ok {
 		for _, sub := range all {
 			st, err := c.apply(sub, v, at, depth+1)
 			if err != nil {
-				return t, err
+				return nil, err
 			}
 			t.add(st)
 		}
@@ -346,7 +425,7 @@ func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error)
 		for _, sub := range anyOf {
 			st, err := c.apply(sub, v, at, depth+1)
 			if isStopped(err) {
-				return t, err
+				return nil, err
 			}
 			if err == nil {
 				fits = true
@@ -354,39 +433,40 @@ func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error)
 			}
 		}
 		if !fits {
-			return t, fmt.Errorf("%s fits none of the shapes it may take", at)
+			return nil, fmt.Errorf("%s fits none of the shapes it may take", at)
 		}
 	}
 	if oneOf, ok := s["oneOf"].([]any); ok && len(oneOf) > 0 {
-		n, one := 0, &taken{}
+		n := 0
+		var one takes
 		for _, sub := range oneOf {
 			st, err := c.apply(sub, v, at, depth+1)
 			if isStopped(err) {
-				return t, err
+				return nil, err
 			}
 			if err == nil {
 				n, one = n+1, st
 			}
 		}
 		if n != 1 {
-			return t, fmt.Errorf("%s fits %d of the shapes it may take, and must fit exactly one", at, n)
+			return nil, fmt.Errorf("%s fits %d of the shapes it may take, and must fit exactly one", at, n)
 		}
 		t.add(one)
 	}
 	if not, ok := s["not"]; ok {
 		_, err := c.apply(not, v, at, depth+1)
 		if isStopped(err) {
-			return t, err
+			return nil, err
 		}
 		if err == nil {
-			return t, fmt.Errorf("%s is in a shape it must not be", at)
+			return nil, fmt.Errorf("%s is in a shape it must not be", at)
 		}
 	}
 	if cond, ok := s["if"]; ok {
 		branch, has := s["else"]
 		it, err := c.apply(cond, v, at, depth+1)
 		if isStopped(err) {
-			return t, err
+			return nil, err
 		}
 		if err == nil {
 			t.add(it)
@@ -395,26 +475,28 @@ func (c *checker) apply(schema any, v any, at string, depth int) (*taken, error)
 		if has {
 			bt, err := c.apply(branch, v, at, depth+1)
 			if err != nil {
-				return t, err
+				return nil, err
 			}
 			t.add(bt)
 		}
 	}
 	if x, ok := v.(map[string]any); ok {
-		if err := c.unevaluated(s, x, at, depth, t); err != nil {
-			return t, err
+		if err := c.unevaluated(s, x, at, depth, &t); err != nil {
+			return nil, err
 		}
 	}
 	return t, nil
 }
 
-// array is the keywords about a list's items.
-func (c *checker) array(s map[string]any, x []any, at string, depth int) error {
+// array is the keywords about a list's items, and what the schemas its
+// items fit took of the objects in them.
+func (c *checker) array(s map[string]any, x []any, at string, depth int) (takes, error) {
+	var t takes
 	if m, ok := num(s["maxItems"]); ok && float64(len(x)) > m {
-		return fmt.Errorf("%s has more than %v items", at, m)
+		return nil, fmt.Errorf("%s has more than %v items", at, m)
 	}
 	if m, ok := num(s["minItems"]); ok && float64(len(x)) < m {
-		return fmt.Errorf("%s has fewer than %v items", at, m)
+		return nil, fmt.Errorf("%s has fewer than %v items", at, m)
 	}
 	if u, _ := s["uniqueItems"].(bool); u {
 		// By their encoding, which sorts an object's keys: two items are
@@ -426,7 +508,7 @@ func (c *checker) array(s map[string]any, x []any, at string, depth int) error {
 				continue
 			}
 			if j, dup := seen[string(b)]; dup {
-				return fmt.Errorf("%s[%d] is the same as %s[%d], and its items must differ", at, i, at, j)
+				return nil, fmt.Errorf("%s[%d] is the same as %s[%d], and its items must differ", at, i, at, j)
 			}
 			seen[string(b)] = i
 		}
@@ -441,17 +523,21 @@ func (c *checker) array(s map[string]any, x []any, at string, depth int) error {
 	}
 	for i, item := range x {
 		where := fmt.Sprintf("%s[%d]", at, i)
+		var it takes
+		var err error
 		switch {
 		case i < len(prefix):
-			if err := c.check(prefix[i], item, where, depth+1); err != nil {
-				return err
-			}
+			it, err = c.apply(prefix[i], item, where, depth+1)
 		case hasRest:
-			if err := c.check(rest, item, where, depth+1); err != nil {
-				return err
-			}
+			it, err = c.apply(rest, item, where, depth+1)
 		}
+		if err != nil {
+			return nil, err
+		}
+		t.add(it)
 	}
+	// What contains looks for is a test of each item, not a shape it is
+	// held to, so what it lists of one is not taken.
 	if want, ok := s["contains"]; ok {
 		least, most := 1.0, math.Inf(1)
 		if m, ok := num(s["minContains"]); ok {
@@ -462,9 +548,9 @@ func (c *checker) array(s map[string]any, x []any, at string, depth int) error {
 		}
 		n := 0.0
 		for i, item := range x {
-			err := c.check(want, item, fmt.Sprintf("%s[%d]", at, i), depth+1)
+			_, err := c.apply(want, item, fmt.Sprintf("%s[%d]", at, i), depth+1)
 			if isStopped(err) {
-				return err
+				return nil, err
 			}
 			if err == nil {
 				n++
@@ -472,40 +558,42 @@ func (c *checker) array(s map[string]any, x []any, at string, depth int) error {
 		}
 		switch {
 		case n < least && least == 1:
-			return fmt.Errorf("%s has no item of the shape it must have", at)
+			return nil, fmt.Errorf("%s has no item of the shape it must have", at)
 		case n < least:
-			return fmt.Errorf("%s has fewer than %v items of the shape it must have", at, least)
+			return nil, fmt.Errorf("%s has fewer than %v items of the shape it must have", at, least)
 		case n > most:
-			return fmt.Errorf("%s has more than %v items of the shape it may have", at, most)
+			return nil, fmt.Errorf("%s has more than %v items of the shape it may have", at, most)
 		}
 	}
-	return nil
+	return t, nil
 }
 
-// object is the keywords about an object's properties, and what of it the
-// schema takes.
-func (c *checker) object(s map[string]any, x map[string]any, at string, depth int, t *taken) error {
+// object is the keywords about an object's properties, and what the schema
+// takes of it and of the objects in it.
+func (c *checker) object(s map[string]any, x map[string]any, at string, depth int) (takes, error) {
+	var t takes
 	props, _ := s["properties"].(map[string]any)
 	if props != nil {
-		t.lists = true
+		own := t.of(x, at)
+		own.lists = true
 		for k := range props {
-			t.list(k)
+			own.list(k)
 		}
 	}
 	if req, ok := s["required"].([]any); ok {
 		for _, r := range req {
 			if name, ok := r.(string); ok {
 				if _, present := x[name]; !present {
-					return fmt.Errorf("%s needs %s", at, name)
+					return nil, fmt.Errorf("%s needs %s", at, name)
 				}
 			}
 		}
 	}
 	if m, ok := num(s["maxProperties"]); ok && float64(len(x)) > m {
-		return fmt.Errorf("%s has more than %v properties", at, m)
+		return nil, fmt.Errorf("%s has more than %v properties", at, m)
 	}
 	if m, ok := num(s["minProperties"]); ok && float64(len(x)) < m {
-		return fmt.Errorf("%s has fewer than %v properties", at, m)
+		return nil, fmt.Errorf("%s has fewer than %v properties", at, m)
 	}
 	// A property that needs others, as dependentRequired has it and as
 	// dependencies did with a list.
@@ -519,7 +607,7 @@ func (c *checker) object(s map[string]any, x map[string]any, at string, depth in
 			for _, n := range need {
 				if name, ok := n.(string); ok {
 					if _, present := x[name]; !present {
-						return fmt.Errorf("%s needs %s, as it has %s", at, name, named(k))
+						return nil, fmt.Errorf("%s needs %s, as it has %s", at, name, named(k))
 					}
 				}
 			}
@@ -528,10 +616,10 @@ func (c *checker) object(s map[string]any, x map[string]any, at string, depth in
 	keys := sortedKeys(x)
 	if pn, ok := s["propertyNames"]; ok {
 		for _, k := range keys {
-			if err := c.check(pn, k, at, depth+1); isStopped(err) {
-				return err
+			if _, err := c.apply(pn, k, at, depth+1); isStopped(err) {
+				return nil, err
 			} else if err != nil {
-				return fmt.Errorf("%s.%s is not a name it takes", at, named(k))
+				return nil, fmt.Errorf("%s.%s is not a name it takes", at, named(k))
 			}
 		}
 	}
@@ -541,12 +629,13 @@ func (c *checker) object(s map[string]any, x map[string]any, at string, depth in
 	}
 	var patterns []pattern
 	if pp, ok := s["patternProperties"].(map[string]any); ok && len(pp) > 0 {
-		t.lists = true
+		own := t.of(x, at)
+		own.lists = true
 		for _, p := range sortedKeys(pp) {
 			re := c.compile(p)
 			if re == nil {
 				// Which names it takes cannot be told, so it takes any.
-				t.open = true
+				own.open = true
 				continue
 			}
 			patterns = append(patterns, pattern{re, pp[p]})
@@ -558,38 +647,48 @@ func (c *checker) object(s map[string]any, x map[string]any, at string, depth in
 		matched := false
 		if p, ok := props[k]; ok {
 			matched = true
-			if err := c.check(p, x[k], where, depth+1); err != nil {
-				return err
+			pt, err := c.apply(p, x[k], where, depth+1)
+			if err != nil {
+				return nil, err
 			}
+			t.add(pt)
 		}
 		for _, p := range patterns {
 			if p.re.MatchString(k) {
 				matched = true
-				if err := c.check(p.schema, x[k], where, depth+1); err != nil {
-					return err
+				pt, err := c.apply(p.schema, x[k], where, depth+1)
+				if err != nil {
+					return nil, err
 				}
+				t.add(pt)
 			}
 		}
 		if matched {
-			t.take(k)
+			t.of(x, at).take(k)
 			continue
 		}
 		if hasExtra {
-			if err := c.check(extra, x[k], where, depth+1); err != nil {
-				return errors.New(where + " is not a property it takes")
+			// A bound met beneath it stands as itself: read as a property
+			// it does not take, under a not it would be one it does.
+			et, err := c.apply(extra, x[k], where, depth+1)
+			if isStopped(err) {
+				return nil, err
+			} else if err != nil {
+				return nil, errors.New(where + " is not a property it takes")
 			}
+			t.add(et)
 		}
 	}
 	if hasExtra {
-		t.open = true
+		t.of(x, at).open = true
 	}
-	return nil
+	return t, nil
 }
 
 // unevaluated is the keywords applied to an object once the rest of its
 // schema has been: the schemas its properties call for, and what to make of
 // the properties none of the schemas applied to it took.
-func (c *checker) unevaluated(s map[string]any, x map[string]any, at string, depth int, t *taken) error {
+func (c *checker) unevaluated(s map[string]any, x map[string]any, at string, depth int, t *takes) error {
 	for _, key := range []string{"dependencies", "dependentSchemas"} {
 		deps, _ := s[key].(map[string]any)
 		for _, k := range sortedKeys(deps) {
@@ -607,32 +706,42 @@ func (c *checker) unevaluated(s map[string]any, x map[string]any, at string, dep
 		}
 	}
 	u, ok := s["unevaluatedProperties"]
-	if !ok || t.open {
+	if !ok {
+		return nil
+	}
+	own := t.of(x, at)
+	if own.open {
 		return nil
 	}
 	for _, k := range sortedKeys(x) {
-		if t.names[k] {
+		if own.names[k] {
 			continue
 		}
 		where := at + "." + named(k)
-		if err := c.check(u, x[k], where, depth+1); err != nil {
+		ut, err := c.apply(u, x[k], where, depth+1)
+		if isStopped(err) {
+			return err
+		} else if err != nil {
 			return errors.New(where + " is not a property it takes")
 		}
+		t.add(ut)
 	}
-	t.open = true
+	t.of(x, at).open = true
 	return nil
 }
 
 // follow applies what a $ref names to v, once for each part of the value
-// at each depth, and adds what it took to t. One it cannot follow says
-// nothing of what an object takes, so the object takes any property.
-func (c *checker) follow(ref string, v any, at string, depth int, t *taken) error {
+// at each depth, and is what it took. One it cannot follow says nothing of
+// what an object takes, so the object takes any property.
+func (c *checker) follow(ref string, v any, at string, depth int) (takes, error) {
 	key := followedKey{ref: ref, at: at, depth: depth, value: identity(v)}
 	f, ok := c.followed[key]
 	if !ok {
 		target, found := c.resolve(ref)
 		if !found {
-			f.t = &taken{open: true}
+			if x, isObject := v.(map[string]any); isObject {
+				f.t.of(x, at).open = true
+			}
 		} else {
 			f.t, f.err = c.apply(target, v, at, depth+1)
 		}
@@ -641,11 +750,7 @@ func (c *checker) follow(ref string, v any, at string, depth int, t *taken) erro
 		}
 		c.followed[key] = f
 	}
-	if f.err != nil {
-		return f.err
-	}
-	t.add(f.t)
-	return nil
+	return f.t, f.err
 }
 
 // resolve is what a $ref names in the schema it is part of: the whole

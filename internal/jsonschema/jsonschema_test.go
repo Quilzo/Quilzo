@@ -285,3 +285,72 @@ func TestAPartOfASchemaPointsIntoTheWhole(t *testing.T) {
 		t.Errorf("text for text: %v", err)
 	}
 }
+
+// What a value is only tested against is read as the standard reads it,
+// and the rule that an object takes only the properties listed for it is
+// asked once, of what the schemas the value fits list for each object.
+//
+// The rule was asked of each schema as it was applied, inside a not, an if,
+// a contains and the count of oneOf's alternatives as well. There it does
+// not refuse more, it changes the answer: an object the schema itself takes
+// failed the condition for carrying a property the condition did not happen
+// to list. So one argument more than a call needed walked it past a not that
+// forbade it, took it down else where it belonged in then, made two of
+// oneOf's shapes one, and hid an item from maxContains; and a check that had
+// to stop beneath an additionalProperties was read as a value that does not
+// fit, which under a not is one that does. Asked of each schema alone, an
+// object two of them reach, an address that allOf's parts or an if and its
+// then each describe, took no call, since each refused what the other
+// listed.
+func TestAConditionIsReadAsTheStandardReadsIt(t *testing.T) {
+	const deploy = `{"type":"object","properties":{"target":{"type":"object","properties":{"env":{"type":"string"},"region":{"type":"string"}}}},
+	  "not":{"properties":{"target":{"properties":{"env":{"const":"production"}},"required":["env"]}},"required":["target"]}}`
+	const address = `{"type":"object","properties":{"address":{"type":"object","properties":{"country":{"type":"string"},"zip":{"type":"string"}}}},
+	  "if":{"properties":{"address":{"properties":{"country":{"const":"US"}}}}},
+	  "then":{"properties":{"address":{"properties":{"zip":{"pattern":"^[0-9]{5}$"}}}}}}`
+	const either = `{"type":"object","properties":{"p":{"type":"object","properties":{"a":{},"b":{}}}},
+	  "oneOf":[{"properties":{"p":{"properties":{"a":{"const":1}}}}},{"properties":{"p":{"properties":{"a":{},"b":{}}}}}]}`
+	const member = `{"type":"object","oneOf":[{"properties":{"user":{"type":"object","properties":{"name":{}}}},"required":["user"]},
+	  {"properties":{"group":{}},"required":["group"]}]}`
+	const admins = `{"type":"array","items":{"type":"object","properties":{"role":{},"id":{}}},
+	  "contains":{"properties":{"role":{"const":"admin"}},"required":["role"]}}`
+	const upgrade = `{"type":"object","properties":{"name":{}},
+	  "if":{"properties":{"role":{"properties":{"level":{}}}},"required":["role"]},"then":{}}`
+	const deep = `{"$defs":{"deep":{"type":"object","additionalProperties":{"$ref":"#/$defs/deep"}}},"not":{"$ref":"#/$defs/deep"}}`
+	const extended = `{"allOf":[{"properties":{"address":{"properties":{"country":{}}}}},{"properties":{"address":{"properties":{"zip":{}}}}}]}`
+	const shared = `{"$defs":{"u":{"properties":{"name":{}}}},
+	  "anyOf":[{"$ref":"#/$defs/u"},{"$ref":"#/$defs/u","properties":{"role":{},"key":{}},"required":["key"]}]}`
+	nested := `{}`
+	for i := 0; i < 40; i++ {
+		nested = `{"a":` + nested + `}`
+	}
+	checkAll(t, []fits{
+		{deploy, `{"target":{"env":"production"}}`, "must not"},
+		{deploy, `{"target":{"env":"production","region":"eu"}}`, "must not"},
+		{deploy, `{"target":{"env":"staging","region":"eu"}}`, ""},
+		{address, `{"address":{"country":"US","zip":"abc"}}`, "not in the form"},
+		{address, `{"address":{"country":"US","zip":"12345"}}`, ""},
+		{address, `{"address":{"country":"GB","zip":"SW1"}}`, ""},
+		{address, `{"address":{"country":"US","zip":"12345","role":"admin"}}`, "address.role is not a property it takes"},
+		{address, `{"address":{"country":"US"}}`, ""},
+		// And an object reached through two of the schemas it fits takes
+		// what each lists for it, where the first refused the second's.
+		{extended, `{"address":{"country":"GB","zip":"SW1"}}`, ""},
+		{extended, `{"address":{"country":"GB","zip":"SW1","role":"admin"}}`, "arguments.address.role is not a property it takes; it takes country, zip"},
+		{shared, `{"name":"n","role":"admin"}`, "arguments.role is not a property it takes"},
+		{shared, `{"name":"n","role":"admin","key":"k"}`, ""},
+		{either, `{"p":{"a":1,"b":2}}`, "fits 2 of the shapes"},
+		{either, `{"p":{"a":2,"b":2}}`, ""},
+		// The shape a value fits is still the shape it is held to.
+		{member, `{"user":{"name":"n"}}`, ""},
+		{member, `{"user":{"name":"n","sudo":true}}`, "arguments.user.sudo is not a property it takes"},
+		{admins, `[{"role":"admin","id":1}]`, ""},
+		{admins, `[{"role":"user","id":1}]`, "no item of the shape"},
+		{strings.Replace(admins, `"contains"`, `"maxContains":0,"minContains":0,"contains"`, 1), `[{"role":"admin","id":1}]`, "more than 0 items"},
+		// What a condition lists is taken only as far as the value is held
+		// to it.
+		{upgrade, `{"name":"n","role":{"level":1}}`, ""},
+		{upgrade, `{"name":"n","role":{"level":1,"sudo":true}}`, "not a property it takes"},
+		{deep, nested, "deeper than"},
+	})
+}
