@@ -201,6 +201,17 @@ func IsCollectionPath(path string) (collection, id string, ok bool) {
 type Query struct {
 	// Equals matches fields exactly. All of them must match.
 	Equals map[string]any
+	// NotEquals matches a field that holds a value, and a different one. A
+	// field that is not there, or is null, has no value to differ, and is
+	// not matched: "not equal to true" said of a record nobody filled in is
+	// a claim about something nobody looked at. Exists asks for those.
+	NotEquals map[string]any
+	// In matches a field equal to any one of the values listed for it. An
+	// empty list matches nothing, as "one of none" does.
+	In map[string][]any
+	// Exists matches on whether a field is there: true for a field that is
+	// present and not null, false for one that is absent or null.
+	Exists map[string]bool
 	// Contains matches a substring, case-insensitively, in a string field.
 	Contains map[string]string
 	// Since and Until bound Updated, in unix seconds. Zero means unbounded.
@@ -249,6 +260,31 @@ const (
 func (q Query) Match(r Record) bool {
 	for field, want := range q.Equals {
 		if !equal(r.Fields[field], want) {
+			return false
+		}
+	}
+	for field, other := range q.NotEquals {
+		got, present := r.Fields[field]
+		if !present || got == nil || equal(got, other) {
+			return false
+		}
+	}
+	for field, values := range q.In {
+		got := r.Fields[field]
+		found := false
+		for _, want := range values {
+			if got != nil && equal(got, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	for field, want := range q.Exists {
+		got, present := r.Fields[field]
+		if (present && got != nil) != want {
 			return false
 		}
 	}
