@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
@@ -89,8 +90,14 @@ func cmdPolicy(root string, args []string) error {
 	}
 	switch args[0] {
 	case "show":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyShow(root)
 	case "params":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyParams()
 	case "propose":
 		return policyPropose(root, args[1:])
@@ -103,7 +110,7 @@ func cmdPolicy(root string, args []string) error {
 	case "export":
 		return policyExport(root, args[1:])
 	}
-	return fmt.Errorf("unknown policy command %q; try show, params, propose, approve, decline, withdraw, import or export", args[0])
+	return errMisused{fmt.Errorf("unknown policy command %q; try show, params, propose, approve, decline, withdraw, import or export", args[0])}
 }
 
 // policyRow is one parameter as `policy show` and the admin present it.
@@ -228,7 +235,7 @@ func parseChanges(args []string) ([]odp.Change, error) {
 func policyPropose(root string, args []string) error {
 	fs := flag.NewFlagSet("policy propose", flag.ContinueOnError)
 	reason := fs.String("reason", "", "why (required; the second administrator reads it)")
-	if err := fs.Parse(reorder(args, map[string]bool{"reason": true})); err != nil {
+	if err := parseOnce(fs, reorder(args, map[string]bool{"reason": true})); err != nil {
 		return err
 	}
 	changes, err := parseChanges(fs.Args())
@@ -259,7 +266,7 @@ func policyPropose(root string, args []string) error {
 
 func policyDecide(root, verb string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo policy %s ID", verb)
+		return errMisused{fmt.Errorf("usage: quilzo policy %s ID", verb)}
 	}
 	c := resolveCaller(root, flagToken)
 	alone := onlyAdministrator(root, c.Name)
@@ -284,7 +291,7 @@ func policyDecide(root, verb string, args []string) error {
 		action = "policy.approved"
 	}
 	detail := map[string]string{"proposal": pr.ID, "changes": changesText(pr.Changes), "proposed_by": pr.By}
-	if verb == "approve" && pr.By == c.Name {
+	if verb == "approve" && auth.SamePerson(pr.By, c.Name) {
 		detail["alone"] = "true"
 	}
 	record(root, c.auditRecord(action, "/settings", audit.Success, detail))
@@ -305,7 +312,7 @@ func policyDecide(root, verb string, args []string) error {
 
 func policyWithdraw(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo policy withdraw ID")
+		return errMisused{errors.New("usage: quilzo policy withdraw ID")}
 	}
 	c := resolveCaller(root, flagToken)
 	var pr odp.Proposal
@@ -324,11 +331,11 @@ func policyWithdraw(root string, args []string) error {
 func policyImport(root string, args []string) error {
 	fs := flag.NewFlagSet("policy import", flag.ContinueOnError)
 	reason := fs.String("reason", "", "why (required)")
-	if err := fs.Parse(reorder(args, map[string]bool{"reason": true})); err != nil {
+	if err := parseOnce(fs, reorder(args, map[string]bool{"reason": true})); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: quilzo policy import FILE.json --reason \"why\" (an OSCAL profile, system security plan or component definition)")
+		return errMisused{errors.New("usage: quilzo policy import FILE.json --reason \"why\" (an OSCAL profile, system security plan or component definition)")}
 	}
 	body, err := os.ReadFile(fs.Arg(0))
 	if err != nil {
@@ -382,7 +389,7 @@ func policyImport(root string, args []string) error {
 func policyExport(root string, args []string) error {
 	fs := flag.NewFlagSet("policy export", flag.ContinueOnError)
 	out := fs.String("o", "", "write to this file instead of standard output")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	pol, err := odp.Load(paramsPath(root))
@@ -406,7 +413,7 @@ func policyExport(root string, args []string) error {
 		return err
 	}
 	body = append(body, '\n')
-	if *out != "" {
+	if !toStdout(*out) {
 		return atomicfile.Write(*out, body, 0o644)
 	}
 	_, err = os.Stdout.Write(body)

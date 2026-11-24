@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -31,8 +34,18 @@ func dualStore(root string) *dual.Store {
 // is the only administrator, whose request is approved as it is made;
 // false when it waits, and the person has been told how it is approved.
 func proposeSecond(root string, c *Caller, kind, what string, payload any, why string) (bool, error) {
+	return proposeSecondFor(root, c, "", kind, what, payload, why)
+}
+
+// proposeSecondFor is proposeSecond for a way in for subject (a token or
+// an enrolment link), which is approved alone also when subject is an
+// administrator with no way in yet and the caller the only other one
+// (firstWayIn).
+func proposeSecondFor(root string, c *Caller, subject, kind, what string, payload any, why string) (bool, error) {
 	now := time.Now()
 	alone := onlyAdministrator(root, c.Name)
+	first := !alone && subject != "" && firstWayIn(root, c.Name, subject, now)
+	alone = alone || first
 	r, err := dualStore(root).Propose(kind, what, payload, why, c.Name, alone, now)
 	if err != nil {
 		return false, err
@@ -41,11 +54,18 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
+		if first {
+			detail["first_way_in"] = "true"
+		}
 		if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, detail)); err != nil {
 			return false, err
 		}
-		w.Human("%syou are the only administrator, so this is approved as you make it; the record says so%s\n",
-			yellow, reset)
+		// On stderr: it is said of the change, and the change may be a
+		// token or a link shown once, whose stdout is the secret alone.
+		// Printed before the token, it was the first line `$(quilzo token
+		// issue ...)` captured.
+		n := w.Notes()
+		n.Human("%s%s%s\n", n.Yellow(), aloneWords(root, subject, first), n.Reset())
 		return true, nil
 	}
 	if err := recordE(root, c.auditRecord("dual.proposed", "/", audit.Success, detail)); err != nil {
@@ -62,6 +82,87 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	w.Human("%swaiting for a second administrator%s: %s (request %s)\n", yellow, reset, what, r.ID)
 	w.Human("  %sanother administrator approves it with quilzo pending approve %s%s\n", dim, r.ID, reset)
 	return false, nil
+}
+
+// aloneWords is why a request was approved as it was made. "You are the
+// only administrator" was said before anybody administered the store at
+// all, by the commands a new store's setup runs before `init --admin`.
+func aloneWords(root, subject string, first bool) string {
+	if first {
+		return subject + " has no way to sign in as an administrator yet, so you are the only one who could " +
+			"approve this; it is approved as you make it, and the record says so"
+	}
+	if pol, err := loadPolicy(root); err == nil && len(dual.Administrators(pol)) == 0 {
+		return "nobody administers this store yet, so this is applied as you make it; the record says so"
+	}
+	return "you are the only administrator, so this is approved as you make it; the record says so"
+}
+
+// firstWayIn is dual.FirstWayIn for this store at now: subject has never
+// been an administrator who could sign in (holdsWayIn), and no
+// administrator stopped being one in the last day (dual.Store.Settling),
+// when nobody approves alone.
+func firstWayIn(root, asker, subject string, now time.Time) bool {
+	if rm, err := dualStore(root).Settling(now); err != nil || rm != nil {
+		return false
+	}
+	pol, err := loadPolicy(root)
+	if err != nil || !dual.FirstWayIn(pol, asker, subject, holdsWayIn(root, pol, subject, now)) {
+		return false
+	}
+	open, err := dualStore(root).OpenBy(asker, subject, now)
+	if err != nil {
+		return false
+	}
+	// Said, so the wait is not a dead end: subject is who these wait for,
+	// and they cannot sign in to decide them.
+	for _, r := range open {
+		w.Human("%s%s has no way to sign in as an administrator yet and is who your request %s waits for; withdraw it "+
+			"(quilzo pending withdraw %s) and ask again, and %s's first way in is yours to give%s\n",
+			dim, subject, r.ID, r.ID, subject, reset)
+	}
+	return len(open) == 0
+}
+
+// holdsWayIn reports whether who, an administrator under pol, is or has
+// been one who could sign in: a token or session that could approve a
+// request, and works or was theirs to use since they were made one
+// (dual.WayIn), a passkey, or single sign-on that could sign them in.
+// Unreadable is taken as yes, which keeps the request waiting.
+func holdsWayIn(root string, pol *auth.Policy, who string, now time.Time) bool {
+	ts, err := loadTokens(root)
+	if err != nil || dual.WayIn(pol, ts.Snapshot(), who, now) {
+		return true
+	}
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err != nil {
+		return true
+	}
+	for _, c := range pk.Credentials {
+		if strings.EqualFold(c.Principal, who) {
+			return true
+		}
+	}
+	return signsInBySSO(root, who)
+}
+
+// signsInBySSO reports whether an identity provider set up here could sign
+// who in (dual.SingleSignOn). Unreadable is taken as yes.
+func signsInBySSO(root, who string) bool {
+	samls, err := loadSAML(root)
+	if err != nil {
+		return true
+	}
+	for _, c := range samls {
+		if dual.SAML(c.Domains).Covers(who) {
+			return true
+		}
+	}
+	oidc, err := loadOIDC(root)
+	if err != nil {
+		return true
+	}
+	return oidc != nil && dual.OpenIDConnect(oidc.Claim, oidc.Domains).Covers(who)
 }
 
 // applyDual makes an approved change, as by. A token, an enrolment link or
@@ -127,6 +228,20 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
+	case dual.Approval:
+		var ch dual.ApprovalChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return saveApprovalPolicy(root, resolveCaller(root, ""), collab.Policy{Required: ch.Required,
+			RequiredHumans: ch.RequiredHumans, Approvers: ch.Approvers, RequireHumanForAI: true},
+			map[string]string{"request": r.ID, "approved_by": by})
+	case dual.Sends:
+		var ch dual.SendsChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return grantSends(root, ch, r.Why, r.By, by, r.Alone, resolveCaller(root, ""))
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
@@ -143,15 +258,37 @@ func cmdPending(root string, args []string) error {
 	c := resolveCaller(root, "")
 	now := time.Now()
 	if args[0] == "list" {
+		// Reached by this `if` and not by the switch below, and written in
+		// brackets in the help, so the test of every command did not find
+		// it: `pending list mine` listed everybody's.
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pend, err := store.Pending(now)
 		if err != nil {
 			return err
 		}
+		// Somebody's own requests, and everybody's to whoever may decide
+		// them, as `auth list` lists grants (listedFor). The list asks only
+		// to view, so that whoever asked for something can watch it wait,
+		// and it printed the whole queue, with each payload under --json,
+		// to a reader refused `pending show` and People for the same
+		// requests: who was about to be made an administrator, which
+		// enrolment links were asked for, which settings were being
+		// weakened.
+		who, everybody := listedFor(root, auth.ActGrant)
+		if !everybody {
+			pend = slices.DeleteFunc(pend, func(r dual.Request) bool { return !mine(r.By, who) })
+		}
 		if w.JSON(pend) {
 			return nil
 		}
+		if !everybody {
+			w.Human("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
+		}
 		if len(pend) == 0 {
 			w.Human("nothing is waiting for a second administrator\n")
+			sayInstallsWaiting(root)
 			return nil
 		}
 		for _, r := range pend {
@@ -160,15 +297,19 @@ func cmdPending(root string, args []string) error {
 			if r.Why != "" {
 				w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
 			}
+			if a := r.Approvers(); a != "" {
+				w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
+			}
 			if r.Kind == dual.Mapping && r.Open(now) {
 				w.Human("  %squilzo pending show %s lists the provisioning tokens it lets make administrators%s\n",
 					dim, r.ID, reset)
 			}
 		}
+		sayInstallsWaiting(root)
 		return nil
 	}
 	if len(args) != 2 {
-		return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
+		return errMisused{errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")}
 	}
 	id := args[1]
 	switch args[0] {
@@ -181,7 +322,7 @@ func cmdPending(root string, args []string) error {
 		}
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := store.Get(id); approve && gerr == nil && strings.EqualFold(mine.By, c.Name) {
+		if mine, gerr := store.Get(id); approve && gerr == nil && auth.SamePerson(mine.By, c.Name) {
 			if rm := aloneRefusal(root, c.Name, now); rm != nil {
 				return refuseAlone(root, c, rm, map[string]string{"request": mine.ID, "kind": mine.Kind})
 			}
@@ -190,6 +331,9 @@ func cmdPending(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Where the head keys were, for a move of the audit log, which the
+		// approver is told of as its proposer would be (sayKeysLeftBehind).
+		oldKeys := headKeysPath(root)
 		if approve {
 			if err := applyDual(root, r, c.Name); err != nil {
 				return fmt.Errorf("approved, and applying it failed: %w", err)
@@ -208,6 +352,9 @@ func cmdPending(root string, args []string) error {
 			return nil
 		}
 		w.Human("%s: %s\n", dual.StateWords(r, now), r.What)
+		if approve && r.Kind == dual.AuditLog {
+			sayKeysLeftBehind(oldKeys, auditDir(root))
+		}
 		if approve && dual.Received(r.Kind) {
 			w.Human("  %s%s receives it with quilzo pending redeem %s, within a day%s\n", dim, r.By, r.ID, reset)
 		}
@@ -262,7 +409,37 @@ func cmdPending(root string, args []string) error {
 		}
 		return tokenIssueAs(root, ch.Args, true)
 	}
-	return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
+	return errMisused{errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")}
+}
+
+// sayInstallsWaiting says, below the requests `pending list` lists, how
+// many feature installs wait for a second person too, and where they are
+// listed: `quilzo feature` keeps them, apart from these. With one waiting,
+// the list said "nothing is waiting for a second administrator" and no
+// more, while `feature pending` and the admin's Approvals listed it.
+//
+// Counted as the requests are listed: all of them to whoever may install
+// a feature, and their own to anybody else.
+func sayInstallsWaiting(root string) {
+	feats, err := pendingFeatures(root)
+	if err != nil || len(feats) == 0 {
+		return
+	}
+	who, everybody := listedFor(root, auth.ActInstall)
+	n := 0
+	for _, p := range feats {
+		if everybody || mine(p.RequestedBy, who) {
+			n++
+		}
+	}
+	switch {
+	case n == 1:
+		w.Human("%s1 feature install waits for a second person too: quilzo feature pending lists it,\n"+
+			"  and quilzo approvals everything waiting for you%s\n", dim, reset)
+	case n > 1:
+		w.Human("%s%d feature installs wait for a second person too: quilzo feature pending lists them,\n"+
+			"  and quilzo approvals everything waiting for you%s\n", dim, n, reset)
+	}
 }
 
 // showPending is `quilzo pending show ID`: one request, as a person
@@ -292,6 +469,9 @@ func showPending(root, id string, now time.Time) error {
 		r.At.UTC().Format("15:04 2 Jan 2006 UTC"), dual.StateWords(r, now), reset)
 	if r.Why != "" {
 		w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+	}
+	if a := r.Approvers(); a != "" {
+		w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 	}
 	if r.Kind != dual.Mapping {
 		return nil

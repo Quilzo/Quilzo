@@ -312,3 +312,107 @@ func clone(t *testing.T, c Card) Card {
 }
 
 var _ = strings.TrimSpace
+
+// The card leads with what the site says it is.
+//
+// Its description was one fixed paragraph about a merkle store, the same on
+// every deployment, so an agent choosing between two cards read two identical
+// descriptions and learnt nothing about either site. The site's own sentence
+// comes first now, and the governance sentence after it, because that is
+// what the extension on the card is.
+func TestTheCardLeadsWithTheSitesOwnSentence(t *testing.T) {
+	o := opts()
+	o.Description = "An independent games studio making fast, bright games set after dark"
+	c := From(map[string]agent.Manifest{"support": retrieval(t)}, known(), o)
+	if !strings.HasPrefix(c.Description, o.Description+". Content held in a merkle store") {
+		t.Errorf("the card says %q", c.Description)
+	}
+	if !strings.Contains(c.Description, GovernanceExtension) {
+		t.Error("the governance sentence went missing")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// A sentence that already ends is not given a second full stop.
+	o.Description = "Night games, made in Leeds!"
+	if c := From(nil, known(), o); !strings.HasPrefix(c.Description, "Night games, made in Leeds! Content") {
+		t.Errorf("the card says %q", c.Description)
+	}
+	// And a site with no sentence keeps the card it had.
+	if c := From(nil, known(), opts()); !strings.HasPrefix(c.Description, "Content held in a merkle store") {
+		t.Errorf("with no description the card says %q", c.Description)
+	}
+}
+
+// A card's url is where a caller sends its tasks, in its preferredTransport.
+// With tasks off, the card named its own address there, so a caller that
+// read it and sent a task got the card back, and it said nothing about
+// taking none. With tasks on, it still named its own address, which speaks
+// no binding, while the address that does was only in supportedInterfaces.
+func TestTheCardSendsTasksOnlyWhereTheyAreTaken(t *testing.T) {
+	c := From(map[string]agent.Manifest{"support": retrieval(t)}, known(), opts())
+	if c.URL != "https://shop.example/.well-known/agent-card.json" || c.PreferredTransport == "" {
+		t.Errorf("a card with tasks off has url %q, preferredTransport %q", c.URL, c.PreferredTransport)
+	}
+	if !strings.Contains(c.Description, "takes no tasks") {
+		t.Errorf("a card that takes no tasks does not say so: %q", c.Description)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	o := opts()
+	o.TaskURL = "https://admin.shop.example/a2a"
+	c = From(map[string]agent.Manifest{"support": retrieval(t)}, known(), o)
+	if c.URL != o.TaskURL || c.PreferredTransport != "JSONRPC" {
+		t.Errorf("a card taking tasks at %s has url %q, preferredTransport %q", o.TaskURL, c.URL, c.PreferredTransport)
+	}
+	if strings.Contains(c.Description, "takes no tasks") {
+		t.Errorf("a card taking tasks says it takes none: %q", c.Description)
+	}
+	// Re-read at the card's own address, whatever the url says.
+	if g := c.Governance["support"]; g.Revocation != "https://shop.example/.well-known/agent-card.json" {
+		t.Errorf("revocation is %q", g.Revocation)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A2A lists the extensions a card uses by URI in capabilities.extensions.
+// The governance block was said to be keyed by its URI and was keyed by
+// skill, and the URI was declared nowhere, so a consumer looking for the
+// extension where A2A says extensions are found nothing. It is declared
+// there now; the block keeps its keys, which every reader of it uses.
+func TestTheGovernanceExtensionIsDeclaredByItsURI(t *testing.T) {
+	c := From(map[string]agent.Manifest{"support": retrieval(t)}, known(), opts())
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back struct {
+		Capabilities struct {
+			Extensions []struct {
+				URI         string `json:"uri"`
+				Description string `json:"description"`
+				Required    *bool  `json:"required"`
+			} `json:"extensions"`
+		} `json:"capabilities"`
+		Extensions map[string]map[string]any `json:"extensions"`
+	}
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	ext := back.Capabilities.Extensions
+	if len(ext) != 1 || ext[0].URI != GovernanceExtension || ext[0].Description == "" ||
+		ext[0].Required == nil || *ext[0].Required {
+		t.Fatalf("capabilities.extensions is %+v\n%s", ext, b)
+	}
+	if _, ok := back.Extensions["support"]["budget"]; !ok {
+		t.Fatalf("the governance block lost its keys:\n%s", b)
+	}
+	// No skills, nothing governed, nothing declared.
+	if b, _ := json.Marshal(From(nil, known(), opts())); strings.Contains(string(b), `"uri"`) {
+		t.Errorf("a card with no skills declares an extension:\n%s", b)
+	}
+}

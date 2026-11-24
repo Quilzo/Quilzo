@@ -68,11 +68,17 @@ func cmdTrust(root string, args []string) error {
 	case "add":
 		return trustAdd(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return trustList(root)
 	case "remove":
 		return trustRemove(root, args[1:])
 	}
-	return trustUsage()
+	// A word that is none of them is refused, with the commands there are:
+	// it printed them and exited 0.
+	_ = trustUsage()
+	return errMisused{fmt.Errorf("unknown trust command %q", args[0])}
 }
 
 type claimFlags map[string]string
@@ -98,16 +104,16 @@ func trustAdd(root string, args []string) error {
 	as := fs.String("as", "", "the principal the job acts as, such as ci:docs")
 	role := fs.String("role", "", "reader, author or publisher")
 	on := fs.String("on", "/", "the part of the store it reaches")
-	life := fs.Duration("for", 15*time.Minute, "how long its token lasts, at most an hour")
+	life := flagDuration(fs, "for", 15*time.Minute, "how long its token lasts, at most an hour")
 	readOnly := fs.Bool("read-only", false, "its token refuses every write")
 	claims := claimFlags{}
 	fs.Var(claims, "claim", "a claim the token must carry, NAME=VALUE; repeat for more")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo trust add NAME --github OWNER/REPO --as PRINCIPAL --role ROLE")
+		return errMisused{errors.New("usage: quilzo trust add NAME --github OWNER/REPO --as PRINCIPAL --role ROLE")}
 	}
 	t := federate.Trust{Name: rest[0], Issuer: *issuer, Audience: *audience, Claims: claims,
 		Principal: *as, Role: auth.Role(*role), Resource: *on, ReadOnly: *readOnly, TTL: life.String(),
@@ -195,7 +201,7 @@ func trustList(root string) error {
 
 func trustRemove(root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: quilzo trust remove NAME")
+		return errMisused{errors.New("usage: quilzo trust remove NAME")}
 	}
 	trusts, err := loadTrusts(root)
 	if err != nil {
@@ -203,7 +209,7 @@ func trustRemove(root string, args []string) error {
 	}
 	kept := slices.DeleteFunc(slices.Clone(trusts), func(t federate.Trust) bool { return t.Name == args[0] })
 	if len(kept) == len(trusts) {
-		return fmt.Errorf("no trust called %s", args[0])
+		return errNotFound{fmt.Errorf("no trust called %s", args[0])}
 	}
 	if err := saveJSON(trustPath(root), trustFile{kept}); err != nil {
 		return err

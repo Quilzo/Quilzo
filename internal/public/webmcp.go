@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/form"
 )
 
@@ -67,7 +68,7 @@ func (st *Site) annotateTools(page string) string {
 	var b strings.Builder
 	rest := page
 	for {
-		at := indexFold(rest, "<form")
+		at := asciifold.Index(rest, "<form")
 		if at < 0 {
 			b.WriteString(rest)
 			break
@@ -80,7 +81,7 @@ func (st *Site) annotateTools(page string) string {
 		}
 		tag := rest[at:end]
 		attrs := tagAttrs(tag)
-		closeAt := indexFold(rest[end:], "</form")
+		closeAt := asciifold.Index(rest[end:], "</form")
 		if closeAt < 0 {
 			closeAt = len(rest) - end
 		}
@@ -212,7 +213,7 @@ func annotateParams(body string, params map[string]string, trap string) string {
 	for {
 		at := -1
 		for _, t := range []string{"<input", "<textarea", "<select"} {
-			if i := indexFold(rest, t); i >= 0 && (at < 0 || i < at) && isTagBoundary(rest, i+len(t)) {
+			if i := asciifold.Index(rest, t); i >= 0 && (at < 0 || i < at) && isTagBoundary(rest, i+len(t)) {
 				at = i
 			}
 		}
@@ -260,7 +261,7 @@ func hasField(body, name string) bool {
 	for {
 		at := -1
 		for _, t := range []string{"<input", "<textarea", "<select"} {
-			if i := indexFold(rest, t); i >= 0 && (at < 0 || i < at) {
+			if i := asciifold.Index(rest, t); i >= 0 && (at < 0 || i < at) {
 				at = i
 			}
 		}
@@ -276,11 +277,6 @@ func hasField(body, name string) bool {
 		}
 		rest = rest[end:]
 	}
-}
-
-// indexFold is strings.Index ignoring ASCII case in the needle's letters.
-func indexFold(s, sub string) int {
-	return strings.Index(strings.ToLower(s), sub)
 }
 
 // isTagBoundary reports whether the name ends at i: "<form " or "<form>",

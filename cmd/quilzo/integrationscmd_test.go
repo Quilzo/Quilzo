@@ -158,3 +158,81 @@ func TestAnIntegrationCallRefusedHereIsDenied(t *testing.T) {
 		t.Errorf("%d request(s) went out for calls that were refused", sent)
 	}
 }
+
+// orders is a 2026-07-28 server with one tool that says what each of its
+// arguments is, and which keeps the arguments of every call it is sent.
+type orders struct{ calls []string }
+
+func (o *orders) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"params"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	if msg.Method == "tools/list" {
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","tools":[`+
+			`{"name":"lookup_order","description":"Finds an order.","inputSchema":{"type":"object","properties":{`+
+			`"order_id":{"type":"string"},"note":{"anyOf":[{"type":"string"},{"type":"null"}]},`+
+			`"express":{"type":"boolean"},"count":{"type":"integer"},"tag":{}},"required":["order_id"]}}]}}`, msg.ID)
+		return
+	}
+	o.calls = append(o.calls, string(msg.Params.Arguments))
+	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","content":[{"type":"text","text":"found"}]}}`, msg.ID)
+}
+
+// `quilzo integrations call` sends a pinned tool each value as the tool's
+// schema takes it: text where it takes text, though the text reads as a
+// number, as true or as null.
+//
+// A value on the command line is given the type it looks like, so
+// order_id=42 is the number 42. That went out as it was until a pinned
+// tool's arguments were held to its schema, and then an order id, which
+// the tool takes as text, was refused as a number, with no way to write it
+// on the command line as anything else. What the schema does not take
+// either way is still refused, and sent nowhere.
+func TestAnIntegrationCallGivesAPinnedToolWhatItsSchemaTakes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	srv := &orders{}
+	mcpTransport = viaHandler(srv)
+	t.Cleanup(func() { mcpTransport = nil })
+	set := agent.Integrations{Declared: []agent.Integration{{Name: "shop", Kind: agent.IntegrationMCP, Enabled: true,
+		Purpose: "find orders", Endpoint: "shop.example", Uses: []string{"lookup_order"}}}}
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationsPin(root, []string{"shop"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationsCall(root, []string{"shop", "lookup_order", "order_id=42", "note=true", "express=true",
+		"count=3", "tag=7"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(srv.calls) != 1 {
+		t.Fatalf("sent: %v", srv.calls)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(srv.calls[0]), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["order_id"] != "42" || got["note"] != "true" || got["express"] != true || got["count"] != 3.0 || got["tag"] != 7.0 {
+		t.Fatalf("sent %s", srv.calls[0])
+	}
+	// Null where the schema takes null stays null, and text it does not
+	// take for a number is refused here.
+	if err := integrationsCall(root, []string{"shop", "lookup_order", "order_id=null", "note=null"}); err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal([]byte(srv.calls[1]), &got); got["order_id"] != "null" || got["note"] != nil {
+		t.Fatalf("sent %s", srv.calls[1])
+	}
+	err := integrationsCall(root, []string{"shop", "lookup_order", "order_id=42", "count=three"})
+	if err == nil || !strings.Contains(err.Error(), "count") || len(srv.calls) != 2 {
+		t.Fatalf("%v, sent %v", err, srv.calls)
+	}
+}

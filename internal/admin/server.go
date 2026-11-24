@@ -55,6 +55,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -77,6 +78,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -93,13 +95,16 @@ import (
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/waiting"
 )
 
 //go:embed assets/*
@@ -124,14 +129,42 @@ type Server struct {
 	// lives, and after the writer was separated out it deliberately must not
 	// open it for writing. Reading is all it is given.
 	LoadAudit func() ([]audit.Event, error)
+	// AuditIndex, where it is set, is the log the log page reads in place of
+	// LoadAudit: read once and then only as it grows, with every byte read
+	// before checked again on each view (audit.Index). Loading the whole log
+	// on every view took seconds and hundreds of megabytes on a year of it.
+	// A function, so the page follows the log if `auditlog dir` moves it.
+	AuditIndex func() *audit.Index
+	// SavedHeads are the heads saved beside the log. The page checks the
+	// log against every one as well as along its chain, as `auditlog
+	// verify` does: entries removed from the end of a log leave a shorter
+	// chain that verifies, and the page said "Chain intact" with a saved
+	// head covering entries the log no longer held. Every one, and not the
+	// largest alone, since a head saved after a cut is taken from the log
+	// as it was left (audit.AgainstHeads).
+	SavedHeads func() ([]audit.Head, error)
 	// ResolvePrincipal turns a pseudonym back into a name, for principals this
 	// store knows. It cannot reverse the HMAC — it computes forward for each
 	// known principal and matches — so somebody the policy has never heard of
 	// stays opaque, which is the right outcome rather than a limitation.
 	ResolvePrincipal func(pseudonym string) string
+	// Resolver, where it is set, is ResolvePrincipal for one view: it reads
+	// the key and the people this store knows once, and answers each
+	// pseudonym from a table. Asked per pseudonym, resolving opened the log
+	// each time, and visitors, who make a new pseudonym each, made a view of
+	// the log as slow as they liked.
+	Resolver func() func(pseudonym string) string
 	// LogSeparated reports whether the writer runs as another account, so the
 	// page can say what the record is worth rather than implying it.
 	LogSeparated bool
+	// LogHeads reports whether that writer also signs the log's heads,
+	// with a key this account cannot read; keys is where it publishes the
+	// public half for whoever checks one, and refused why it signs none,
+	// when it is to and does not. Asked on each visit: a writer that
+	// cannot use its key still writes the log, so a page that read this
+	// once at start said the heads were signed by the writer while every
+	// receipt failed, and never mentioned a writer started after it.
+	LogHeads func() (byWriter bool, keys, refused string)
 
 	// Settings gives the admin the store's configuration.
 	Settings *Settings
@@ -165,6 +198,14 @@ type Server struct {
 	// prints it — which is exactly the template that failed the accessibility
 	// gate when it wrapped the name in a link.
 	SiteName string
+	// Sources is what a template may see when this renders pages at a
+	// commit: the preview, the browser's publish gate and the review. It is
+	// the public site's context (public.(*Site).Sources), as `quilzo serve`
+	// hands it over, so a preview shows the form and the icon a visitor
+	// gets and the gate judges them. Nil draws through the public site's
+	// builder all the same, from this server's own hooks: its name, menus,
+	// listings and library.
+	Sources func(commit string, pages map[string]any) render.Sources
 	// Brand is what an operator may change about this interface's appearance:
 	// its name, its accent and its mark. The zero value is Quilzo's own.
 	Brand Brand
@@ -271,6 +312,13 @@ type Server struct {
 	// Approvals is dual authorisation: how many people must agree before
 	// anything is published, and who has.
 	Approvals *Approvals
+	// Waiting is everything waiting for a person that the session may
+	// decide, as `quilzo approvals` lists it (internal/waiting): what
+	// Approvals, Today and the assistant's waiting card show. Handed over
+	// so the screens and the command line are one list and not two that
+	// drifted, as they had. Nil builds the list by the same rules from
+	// this server's own hooks.
+	Waiting func(by Actor, now time.Time) ([]waiting.Item, error)
 	// Features reach the feature packages (internal/feature).
 	Features *FeatureHooks
 	// Pay is payments for what the catalogue sells; nil leaves them off.
@@ -335,10 +383,11 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
-	// OnTokenUsed is told every token that authenticated at /mcp, and the
-	// doors that share its check, so the host can write down when it was
-	// last used: the store this server reads is a copy refresh replaces, and
-	// the use noted in it was lost with it. Nil tells nobody.
+	// OnTokenUsed is told every token that authenticated at the admin's
+	// screens, at /mcp and at the doors that share its check, so the host
+	// can write down when it was last used: the store this server reads is
+	// a copy refresh replaces, and the use noted in it was lost with it.
+	// Nil tells nobody.
 	OnTokenUsed func(tok auth.Token)
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
@@ -371,7 +420,11 @@ type Server struct {
 	// Empty means the preview is unstyled and says so, rather than 404ing a
 	// stylesheet and leaving somebody to work out why.
 	SiteCSS string
-	tpl     *template.Template
+	// live is the design as the host last read it, when it reads it again
+	// while serving (SetDesign); nil until then, and Layouts and SiteCSS are
+	// the design. See livedesign.go.
+	live atomic.Pointer[liveDesign]
+	tpl  *template.Template
 
 	// Provenance is loaded and saved by the host, so the admin does not need to
 	// know where the store keeps it.
@@ -544,6 +597,10 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 			return template.URL("data:image/svg+xml," + url.PathEscape(MarkSVG("#0842a0")))
 		},
 		"pct": func(f float64) float64 { return f * 100 },
+		// cite is a passage's number as an answer cites it: [1] is the
+		// first. The console numbered its passages from 0, so every
+		// citation pointed at the row below the one it meant.
+		"cite": func(i int) int { return i + 1 },
 		// measure is a research value as a report states it.
 		"measure": research.Format,
 		// sentence capitalises the first letter, for a word stored in
@@ -564,6 +621,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		// fixparts splits a fix into the command to run and the words
 		// after its shell comment, so the words are read as words.
 		"fixparts": fixParts,
+		// fixfor is a finding's fix with the holder of its token, shown
+		// beside it, in place of HOLDER (posture.FixFor).
+		"fixfor": posture.FixFor,
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },
@@ -593,6 +653,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"ago": func(unix int64) string { return agoAt(unix, time.Now()) },
 		// bytes is a file size as a person reads it: "2.4 MB", not 2411954.
 		"bytes": humanBytes,
+		// shown is a value from the audit log with its control characters
+		// made visible (logs.go).
+		"shown": shown,
 	}).ParseFS(assets, "assets/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)
@@ -771,6 +834,13 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 			s.OnBadToken(r, raw, err)
 		}
 		return principal{}, err
+	}
+	// Written down where `quilzo token list` reads it, as /mcp's use is.
+	// The screens told nobody, so every session somebody signed in to with
+	// a passkey or an identity provider was listed as used "never", the
+	// one in use that minute among them.
+	if s.OnTokenUsed != nil {
+		s.OnTokenUsed(*tok)
 	}
 	p := principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
@@ -1219,13 +1289,40 @@ func limitBody(next http.Handler) http.Handler {
 		// photograph larger than a paragraph of text would be refused with an
 		// error about the request body. The limit is not removed, it is moved
 		// to the handler that knows what is being sent.
-		if r.URL.Path == uploadPath || r.URL.Path == exportUploadPath || r.URL.Path == recordUploadPath {
+		if FileBody(r) > 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBody)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// FileBody is the most a request may send when its route is one that
+// carries a file rather than a form, the limit its own handler applies, and
+// zero for every other request.
+//
+// The one list of them, for limitBody, which leaves these to their handlers,
+// and for the listener (internal/listen), which gives one of these bodies the
+// time its size takes at the slowest rate worth serving, once its handler
+// knows who is sending and calls listen.Receive, and any other body what the
+// public site gives a request. The admin runs with no deadline on the whole
+// request so that a recording can take as long as the link takes, and while
+// that was so for every route, a POST to /signin that sent a byte every few
+// seconds was held for as long as its sender liked.
+func FileBody(r *http.Request) int64 {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		return 0
+	}
+	switch r.URL.Path {
+	case uploadPath:
+		return MaxUpload
+	case exportUploadPath:
+		return MaxExportUpload + 1<<20
+	case recordUploadPath:
+		return MaxRecordUpload + 1<<20
+	}
+	return 0
 }
 
 // uploadPath is the one route that carries a file rather than a form.
@@ -1243,6 +1340,13 @@ const exportUploadPath = "/make/import-file"
 // recordUploadPath is the third: a spreadsheet or calendar brought into a
 // collection.
 const recordUploadPath = "/records/import"
+
+// ConnectionsDocumentPath is where this installation's Client ID Metadata
+// Document is served (connections.go), and so its client id at a server
+// that takes those: another Quilzo's authorization server registers apps
+// no other way. Exported because the connect command gives that address
+// as the client id, and one spelling of it cannot drift from the route.
+const ConnectionsDocumentPath = "/connections/client.json"
 
 // SignalsPath is where the identity provider's transmitter pushes security
 // events (signals.go). Exported because the command that connects a stream
@@ -1278,7 +1382,7 @@ func (s *Server) reporting(next http.Handler) http.Handler {
 	})
 }
 
-func sameSiteOnly(next http.Handler) http.Handler {
+func (s *Server) sameSiteOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodPut &&
 			r.Method != http.MethodDelete {
@@ -1318,33 +1422,32 @@ func sameSiteOnly(next http.Handler) http.Handler {
 		// So Sec-Fetch-Site decides when it is there, and Origin is the
 		// fallback for clients that do not send it. Belt and braces, with the
 		// braces no longer able to drop the trousers.
-		switch r.Header.Get("Sec-Fetch-Site") {
-		case "same-origin", "none":
+		//
+		// The one check every door shares (sameorigin.Check), with what this
+		// one admits beyond its own pages said here: a request a person
+		// started (none), and one that names neither header, which is not a
+		// browser's. Origin is compared by scheme as well as host, and the
+		// host in any case: compared by host alone, exactly, a page on
+		// another scheme of this host was this admin's own, and this admin's
+		// own host in capitals was refused.
+		if sameorigin.Check(r, s.ownOrigin(r), sameorigin.Policy{None: true, Missing: true}) {
 			next.ServeHTTP(w, r)
 			return
-		case "":
-			// Not sent. Fall through to Origin.
-		default:
+		}
+		if r.Header.Get("Sec-Fetch-Site") != "" {
 			http.Error(w, "cross-site requests cannot change anything here",
 				http.StatusForbidden)
 			return
 		}
-
-		if origin := r.Header.Get("Origin"); origin != "" {
-			u, err := url.Parse(origin)
-			if err != nil || u.Host != r.Host {
-				// Named, because "another origin" gives somebody staring at a
-				// blank page nothing to act on. This is the message an
-				// operator behind a proxy that rewrites Host will need.
-				http.Error(w, fmt.Sprintf(
-					"this request says it came from %q and this server is "+
-						"%q. If something in front of this rewrites the Host "+
-						"header, it needs to preserve it.",
-					origin, r.Host), http.StatusForbidden)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
+		// Named, because "another origin" gives somebody staring at a blank
+		// page nothing to act on. This is the message an operator behind a
+		// proxy that rewrites Host, or ends TLS without
+		// admin.behind_tls_proxy, will need.
+		http.Error(w, fmt.Sprintf(
+			"this request says it came from %q and this server is "+
+				"%q. If something in front of this rewrites the Host "+
+				"header, it needs to preserve it.",
+			r.Header.Get("Origin"), r.Host), http.StatusForbidden)
 	})
 }
 
@@ -1438,6 +1541,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/connections", s.handleConnections)
 	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
 	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
+	mux.HandleFunc(ConnectionsDocumentPath, s.handleConnectionsDocument)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/analytics/redirect", s.handleAnalyticsRedirect)
 	mux.HandleFunc("/experiments", s.handleExperiments)
@@ -1534,6 +1638,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/design/save", s.handleDesignSave)
 	mux.HandleFunc("/design/generate", s.handleDesignGenerate)
 	mux.HandleFunc("/design/install", s.handleDesignInstall)
+	mux.HandleFunc("/design/layer", s.handleDesignLayer)
+	mux.HandleFunc("/design/font", s.handleDesignFont)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)
 	mux.HandleFunc("/transfer/import", s.handleImport)
@@ -1660,6 +1766,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/models", s.handleModelDoor)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
+	// A gateway's and a browser grant's, each at its own address.
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp/", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
 	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("/oauth/token", s.handleOAuthToken)
@@ -1714,7 +1822,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Reports != nil {
 		mux.Handle(public.ReportsPath, s.Reports)
 	}
-	return securityHeaders(s.reporting(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))))
+	return securityHeaders(s.reporting(s.signedFlash(s.sameSiteOnly(limitBody(s.readOnlyTokens(mux))))))
 }
 
 // handleSignIn exchanges a pasted token for a session cookie.
@@ -1839,6 +1947,11 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			signInAgain(w, r, "refused")
 			return
 		}
+		// A session for this door, which keeps its idle clock: a server
+		// that keeps none refuses it (auth.Token's SignedIn).
+		if merr := s.Tokens.MarkSignIn(sess.ID); merr == nil {
+			sess.SignIn = true
+		}
 		if s.SaveTokens != nil {
 			if serr := s.SaveTokens(s.Tokens); serr != nil {
 				http.Error(w, "the session could not be stored: "+serr.Error(),
@@ -1847,6 +1960,23 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		cookie, cookieTok = secret, sess
+	} else if !tok.SignedIn() {
+		// A session pasted here is signed in with as well, and marked as
+		// the one exchanged above is. Used as it is and left unmarked, it
+		// sat in the browser's cookie, was signed out here once nobody
+		// used it, and went on being taken by a server that keeps no idle
+		// clock. The mark is stored before anybody is signed in: unstored,
+		// that server would not read it.
+		if merr := s.Tokens.MarkSignIn(tok.ID); merr == nil {
+			cookieTok.SignIn = true
+		}
+		if s.SaveTokens != nil {
+			if serr := s.SaveTokens(s.Tokens); serr != nil {
+				http.Error(w, "the session could not be stored: "+serr.Error(),
+					http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 	maxAge := int(time.Until(time.Unix(cookieTok.ExpiresAt, 0)).Seconds())
 	if maxAge < 1 {
@@ -2557,8 +2687,25 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	name := strings.Join(parts, "/")
+	// An address typed in a script with no spelling in Latin letters
+	// (Arabic, Hebrew, Chinese) leaves no name, and is told that: it was
+	// told to give an address, which it had.
+	if name == "" && strings.Trim(raw, "/ ") != "" {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("A page address is written in Latin letters and "+
+			"digits, and that one has none. Give the new page one, such as about-us; "+
+			"its title can be in any language"), http.StatusSeeOther)
+		return
+	}
 	if name == "" || len(parts) > 8 {
 		http.Redirect(w, r, "/?e="+urlQueryEscape("Give the new page an address, such as about-us"), http.StatusSeeOther)
+		return
+	}
+	// Asked by the store's own rule, so the editor is never opened on an
+	// address it cannot save: 200 x's made a page name of 80, which the
+	// store refuses, and the editor's Save ended on a bare 500.
+	if store.CheckPath(name) != nil {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("That address is too long or has a part no page "+
+			"name can hold. Give the new page a shorter one, such as about-us"), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)
@@ -2586,14 +2733,45 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 	body, exists := pages[name]
 
+	// Somebody who may only read is shown the page, and an address with no
+	// page is not one to show them: it rendered as an empty "Edit ghost",
+	// for a page that is not there and that they could not have written.
+	canEdit := s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed
+	if !canEdit && !exists {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Claim the page, advisorily. Somebody else holding it does not stop this
 	// edit; it is shown so the two of them can talk before one loses work.
+	//
+	// Only by somebody who may edit it. Every GET claimed it, a reader's
+	// too, so the next editor was told that a person who could not edit the
+	// page "opened this page for editing recently", and an address that was
+	// no page at all was claimed as one.
+	//
+	// And only when nobody else holds it. Opening the editor used to claim
+	// the page whoever held it, so pat's claim and his note were replaced by
+	// the claim of somebody who only looked: pat could no longer release it,
+	// and the next person was warned about the wrong one. Somebody else's
+	// claim is shown and left alone; taking it over is an act (`quilzo lock
+	// PAGE`), not a visit.
 	var heldBy *collab.Lock
-	if s.Locks != nil && s.SaveLocks != nil {
+	if canEdit && s.Locks != nil && s.SaveLocks != nil {
 		if locks, err := s.Locks(); err == nil {
-			_, existing := locks.Claim(name, p.Name, "", time.Now())
-			heldBy = existing
-			_ = s.SaveLocks(locks)
+			now := time.Now()
+			l, held := locks.Holder(name, now)
+			switch {
+			case held && l.Holder != p.Name:
+				heldBy = &l
+			case held:
+				// Their own claim, renewed with the note they gave it.
+				locks.Claim(name, p.Name, l.Note, now)
+				_ = s.SaveLocks(locks)
+			default:
+				locks.Claim(name, p.Name, "", now)
+				_ = s.SaveLocks(locks)
+			}
 		}
 	}
 
@@ -2653,19 +2831,53 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		fields = kept
 	}
 
+	// A page with nothing written in it yet is offered a title and a body to
+	// write it with. The editor shows the fields a page already has, and a
+	// page started from Pages has none, so New page opened on a form with no
+	// box to type the page into: saving stored an empty page, and the editor
+	// was as empty afterwards. A page built from sections is written on
+	// Sections, and is not given fields it never had.
+	bodyMap, _ := body.(map[string]any)
+	_, sectioned := bodyMap[section.Field]
+	if canEdit && typeName == "" && len(fields) == 0 && !sectioned {
+		fields = []field{
+			{Key: "title", Label: "Title", Input: "text"},
+			{Key: "body", Label: "Body", Input: "text", Long: true},
+		}
+	}
+
+	// Whether /preview/NAME has anything to show: the page, or a record at
+	// a detail address. A page nobody has saved has neither, and framing
+	// its preview framed a 404, which carries frame-ancestors 'none' like
+	// every other answer: a blank pane and a framing error on the first
+	// visit to every new page's editor.
+	previewable := exists
+	if !previewable {
+		_, status, _ := s.previewRecord(pages, name)
+		previewable = status == 0
+	}
+
+	// What the screen is to the person looking at it: a reader was shown
+	// "Edit" over a page that said they could not edit it.
+	verb := "Edit"
+	if !canEdit {
+		verb = "View"
+	}
+
 	s.render(w, r, "edit.html", map[string]any{
+		"Verb":       verb,
 		"PageTitle":  pageTitle,
 		"Nav":        "pages",
 		"CheckedOn":  s.Checked != nil && s.Checked.Store != nil,
 		"CheckedNow": cells[name],
 		"NotesOn":    s.Notes != nil && s.Notes.Store != nil,
 		"Notes":      notes,
-		"Title":      "Edit " + name, "Principal": p, "Name": name,
-		"Fields": fields, "Exists": exists, "Type": typeName,
+		"Title":      verb + " " + name, "Principal": p, "Name": name,
+		"Fields": fields, "Exists": exists, "Type": typeName, "Previewable": previewable,
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
-		"CanEdit":   s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"CanEdit":   canEdit,
 		"NoIndex":   seo.NoIndex(body),
 		"Canonical": canonicalRaw(body),
 		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&
@@ -2749,6 +2961,10 @@ type field struct {
 	// SuggestID ties the input to its list. Per field, because two inputs
 	// sharing one id is markup a browser resolves by picking the first.
 	SuggestID string
+	// Invalid marks the field a refusal is about, so a screen reader says
+	// which box to fix rather than leaving the person to read the notice
+	// and find it.
+	Invalid bool
 }
 
 // pictureOption is one picture a field can name: its id, and what it shows.
@@ -2862,6 +3078,20 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 			e.Checkbox = true
 		case schema.Choice:
 			e.Choices = f.Choices
+		case schema.List:
+			// Lists are edited as one value per line. A repeated-input widget
+			// needs script to add and remove rows, and the admin has none: the
+			// CSP forbids it and the absence is the security argument.
+			//
+			// Always a box of lines, and never a maxlength. Drawn from the
+			// value, a list with no items yet was a one-line input, where
+			// nothing typed became a second item; and a list's max_len,
+			// copied to the box, was counted by the browser in characters
+			// across every item, so a dish with five allergens could not be
+			// saved once touched. What a list may hold is checked where the
+			// CLI's, the API's and MCP's writes are.
+			e.Long, e.MaxLen = true, 0
+			e.Help = strings.TrimSpace(e.Help + " One per line.")
 		case schema.Reference:
 			e.Suggest = pages
 			e.SuggestID = "pages-" + f.Name
@@ -2873,15 +3103,20 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 		switch v := m[f.Name].(type) {
 		case string:
 			e.Value = v
+			// Text of more than one line is drawn in a box that keeps its
+			// lines: see multiLine.
+			if f.Kind == schema.Text && multiLine(v) {
+				e.Long = true
+			}
 		case float64:
 			e.Value = fmt.Sprintf("%v", v)
 		case bool:
 			e.Checked = v
 			e.Value = fmt.Sprintf("%v", v)
 		case []any:
-			// Lists are edited as one value per line. A repeated-input widget
-			// needs script to add and remove rows, and the admin has none: the
-			// CSP forbids it and the absence is the security argument.
+			// One item per line, as the list kind above is drawn. A value of
+			// a list held by a field of another kind is shown the same way, so
+			// the refusal its type gives on saving names something visible.
 			parts := make([]string, 0, len(v))
 			for _, item := range v {
 				if str, ok := item.(string); ok {
@@ -2889,7 +3124,9 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 				}
 			}
 			e.Value, e.Long = strings.Join(parts, "\n"), true
-			e.Help = strings.TrimSpace(e.Help + " One per line.")
+			if f.Kind != schema.List {
+				e.Help = strings.TrimSpace(e.Help + " One per line.")
+			}
 		}
 		if len(e.Choices) > 0 {
 			e.Selected = map[string]bool{e.Value: true}
@@ -2901,6 +3138,14 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	// and marked. Hiding it would let a value the type rejects sit in the page
 	// invisibly, blocking every save with an error about a field the editor
 	// never displayed.
+	//
+	// Shown holding what it holds. Only text was: a number, a boolean, a
+	// list or an object was drawn as an empty box, and an empty box is how
+	// a field is removed, so every save from the browser took them off the
+	// page. Those are the fields every page may carry whatever its type
+	// (schema.Reserved): a typed page lost its sections, its hero, its terms
+	// and its members-only mark to an edit of its title, and a page for
+	// members was public on the next publish.
 	extra := make([]string, 0)
 	for k := range m {
 		if !declared[k] {
@@ -2909,14 +3154,59 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	}
 	sort.Strings(extra)
 	for _, k := range extra {
-		v, _ := m[k].(string)
+		// Edited in the editor's own "Search engines" fieldset, as flatten
+		// leaves it to.
+		if k == seo.NoIndexField {
+			continue
+		}
+		v, shown := undeclaredText(m[k], schema.Reserved(k))
+		if !shown {
+			continue
+		}
 		out = append(out, field{
-			Key: k, Label: k, Value: v, Input: "text",
+			Key: k, Label: k, Value: v, Input: "text", Long: multiLine(v),
 			Help: "Not declared by " + t.Name + ". Clear this field to remove it.",
 		})
 	}
 	return out
 }
+
+// undeclaredText is what the editor's box holds for a value the page's type
+// does not declare, and whether it is given a box at all.
+//
+// Text, a number and a boolean are shown as a page with no type shows them
+// (flatten), and keepType reads them back as what they were. A list or an
+// object has no box to be edited in, so it is shown as its JSON where the
+// type refuses the field, for the refusal to name something visible and the
+// box to be cleared; under a name every page may carry (reserved) it is not
+// shown at all, because the type allows it, it is edited on its own screen,
+// and a page with no type does not show it either.
+func undeclaredText(v any, reserved bool) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case float64, bool:
+		return fmt.Sprintf("%v", t), true
+	}
+	if reserved {
+		return "", false
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// multiLine reports whether text has a line break in it, and so has to be
+// drawn in a multi-line box.
+//
+// A browser takes the line breaks out of what a one-line box holds before it
+// submits it. Short text was drawn in one whatever it held, so an address or
+// opening hours written on two lines by `quilzo add`, the API or an import
+// was joined into one by the next save from the browser, though nobody had
+// touched it.
+func multiLine(text string) bool { return strings.ContainsAny(text, "\r\n") }
 
 // canonicalRaw is what a page's canonical field says, usable or not, for
 // the editor to show back.
@@ -2960,8 +3250,12 @@ func flatten(body any) []field {
 		}
 		switch v := m[k].(type) {
 		case string:
-			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80,
-				Input: "text"})
+			// A body is a box to write in however short it is so far: a new
+			// page's editor offers it as one, and "Nine to five." saved into
+			// it came back as a single line.
+			// And text of more than one line, however short: see multiLine.
+			out = append(out, field{Key: k, Label: keyLabel(k), Value: v,
+				Long: len(v) > 80 || k == "body" || multiLine(v), Input: "text"})
 		case float64:
 			out = append(out, field{Key: k, Label: keyLabel(k), Value: fmt.Sprintf("%v", v),
 				Input: "text"})
@@ -3007,7 +3301,7 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 		if !present || len(values) == 0 {
 			continue
 		}
-		raw := values[0]
+		raw := formText(values[0])
 
 		switch f.Kind {
 		case schema.Number:
@@ -3048,7 +3342,9 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 			delete(body, key)
 			continue
 		}
-		body[key] = values[0]
+		// As what it was, when the box still says what it was drawn holding:
+		// a number, a boolean, a list. See typedFields and keepType.
+		body[key] = keepType(body[key], formText(values[0]))
 	}
 }
 
@@ -3105,7 +3401,8 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Title": "Security", "Principal": p, "Low": low,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
-		"Holders": s.tokenHolders(rep.Findings),
+		"Holders":     s.tokenHolders(rep.Findings),
+		"OpensShield": s.opens(p, "shield"), "OpensSignins": s.opens(p, "signins"),
 	})
 }
 
@@ -3254,6 +3551,20 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/"+name) {
 		return
 	}
+	// A name the store cannot hold is the person's to change, and is said
+	// so here, on a page of this screen, before anything is read or written.
+	// It was met only at the commit, and the save of an editor opened on such
+	// an address ended on a plain-text 500 with no way back.
+	if err := store.CheckPath(name); err != nil {
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusBadRequest,
+			"Nav": "pages", "Title": "Not saved", "Principal": p,
+			"Heading": "This address cannot be a page",
+			"Body": "Nothing was saved. " + err.Error() + ". Start the page again " +
+				"from Pages with a shorter address, such as about-us.",
+			"Back": crumb{Label: "Pages", Path: "/"},
+		})
+		return
+	}
 
 	// Two different situations arrive here as the same error, and only one of
 	// them may be turned into an empty page set.
@@ -3282,6 +3593,13 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	msg := r.FormValue("__message")
 	if strings.TrimSpace(msg) == "" {
 		msg = "edit " + name
+	}
+	// A person's change cannot say a machine wrote it, as on the command
+	// line (collab.PersonsMessage): the approval gate reads who wrote a
+	// change from its message.
+	if err := collab.PersonsMessage(msg); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
 	}
 	// Content types are enforced here as well as in the CLI. This project has
 	// twice shipped a rule the terminal honoured and the browser did not, and
@@ -3341,7 +3659,23 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	// Redirect after post so a refresh does not re-submit, and so the browser's
 	// back button behaves the way the person expects.
+	//
+	// On to Sections when the editor's "Save, then add sections" was pressed:
+	// Sections builds a page that is there, and a page started from Pages is
+	// not there until this save, so a link to it from the new page's editor
+	// would have led to a 404.
+	if r.FormValue("__then") == "sections" {
+		http.Redirect(w, r, "/sections?page="+url.QueryEscape(name), http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/review?saved="+name, http.StatusSeeOther)
+}
+
+// reviewChange is a row of Review's changes: the page, and the fields that
+// changed in it when the reader may see them.
+type reviewChange struct {
+	site.Change
+	Fields []site.FieldChange
 }
 
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
@@ -3355,10 +3689,7 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	var changes []site.Change
-	if draft != "" {
-		changes, _ = site.Diff(s.Store, live, draft)
-	}
+	changes, hidden := s.changesTo(p, draft)
 
 	reports, a11yErr := s.checkAll(draft)
 	a11yUnavailable := ""
@@ -3373,11 +3704,52 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		"Message":                  r.URL.Query().Get("m"),
 		"Nav":                      "review",
 		"Title":                    "Review", "Principal": p, "Changes": changes,
-		"Reports": reports, "Blocking": a11y.BlockingCount(reports),
+		"HiddenChanges": hidden,
+		"Reports":       reports, "Blocking": a11y.BlockingCount(reports),
 		"Saved":      r.URL.Query().Get("saved"),
 		"CanPublish": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
 		"Nothing":    draft == "" || draft == live,
 	})
+}
+
+// changesTo is what publishing commit would change on the live site, as
+// Review lists it to p: the changes to pages p may read, and how many more
+// there are.
+//
+// One function for Review and for every refusal drawn on the same screen.
+// The refusals were rendered without it, so the one asking for a reason to
+// publish pages with no provenance said "No content differences" at the
+// moment the person was asked to write that reason against them. A page p
+// may not read is counted and not named, as deniedChanges counts it: the
+// list named it, and told a session confined away from a page what the
+// page was called.
+func (s *Server) changesTo(p principal, commit string) ([]reviewChange, int) {
+	if commit == "" {
+		return nil, 0
+	}
+	changes, _ := site.Diff(s.Store, s.Store.GetRef(site.RefLive), commit)
+	shown := make([]reviewChange, 0, len(changes))
+	hidden := 0
+	for _, c := range changes {
+		id := c.After
+		if id == "" {
+			id = c.Before
+		}
+		if s.Policy != nil && !s.Store.IsTree(id) && !s.allows(p, auth.ActView, pageResource(c.Path)) {
+			hidden++
+			continue
+		}
+		// What changed inside each page, for the pages this person may
+		// read. The screen tells whoever approves a change to read it
+		// first, and it showed the page's name and "modified": nothing it
+		// said.
+		rc := reviewChange{Change: c}
+		if c.Kind == "modified" && s.allows(p, auth.ActView, pageResource(c.Path)) {
+			rc.Fields, _ = site.FieldChanges(s.Store, c)
+		}
+		shown = append(shown, rc)
+	}
+	return shown, hidden
 }
 
 // checkAll renders every page and runs the accessibility checks.
@@ -3396,7 +3768,13 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	if commitID == "" {
 		return nil, nil // no draft is nothing to check, not a failure
 	}
-	if s.Layouts.Len() == 0 {
+	// The design read once, for every question this asks of it. The host
+	// hands over a new one whenever templates/ changes (SetDesign), and a
+	// check that read it again for each question could be told a page's
+	// layout was there and then, rendering it, that it was not: the page
+	// was then neither reported nor checked, and passed.
+	layouts := s.layouts()
+	if layouts.Len() == 0 {
 		// Not a failure. A server started without a template directory is a
 		// store that renders somewhere else, which the command line treats as
 		// the one legitimate reason to turn this gate off — it has
@@ -3436,25 +3814,26 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	// zero to the blocking count, and published cleanly from the browser while
 	// the command line refused it.
 	var extra []*a11y.Report
-	for page, layout := range s.Layouts.Missing(pages) {
+	for page, layout := range layouts.Missing(pages) {
 		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
 			fmt.Sprintf("this page asks for the %q layout, which this site "+
 				"does not have. It would not render for a reader at all. "+
 				"Layouts available: %s", layout,
-				strings.Join(s.Layouts.Names(), ", "))))
+				strings.Join(layouts.Names(), ", "))))
 	}
 	// The theme's contrast, as `quilzo publish` checks it. This path did
 	// not: a palette saved below 4.5:1 with `quilzo theme set --force`,
 	// which says the publish gate will refuse it, went live from the
 	// browser.
 	extra = append(extra, s.themeBlockers()...)
+	backdrop := s.backdropFindings()
 
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
 			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
-		_, layout, lerr := s.Layouts.For(body)
+		_, layout, lerr := layouts.For(body)
 		if lerr != nil {
 			// Already reported above. Rendering it through something else to
 			// have something to check would be checking a document nobody is
@@ -3466,12 +3845,23 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
+		// The words over a backdrop, as `quilzo publish` judges them: for a
+		// page that has one, against the worst picture its veil could cover.
+		if render.HasBackdrop(ctx["page"]) {
+			for _, f := range backdrop {
+				if f.Blocking {
+					extra = append(extra, a11y.Blocker(name, "backdrop-contrast", f.Criterion, f.Detail))
+				}
+			}
+		}
 	}
-	return append(a11y.CheckAll(rendered), extra...), nil
+	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: s.mediaSound()}), extra...), nil
 }
 
 // deniedChanges are the pages a publish of draft would change that this
-// session may not publish, at most a few of them, named.
+// session may not publish, at most a few of them, named, and those it may
+// not read counted: the page list leaves those out, so a refusal naming
+// one told the reader what a deny was there to keep from them.
 func (s *Server) deniedChanges(p principal, draft string) []string {
 	if s.Policy == nil || draft == "" {
 		return nil
@@ -3481,6 +3871,7 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		return []string{"(the changes could not be read: " + err.Error() + ")"}
 	}
 	var out []string
+	hidden := 0
 	for _, c := range changes {
 		id := c.After
 		if id == "" {
@@ -3489,9 +3880,16 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		if s.Store.IsTree(id) || s.allows(p, auth.ActPublish, pageResource(c.Path)) {
 			continue
 		}
-		if out = append(out, c.Path); len(out) == 5 {
-			break
+		if !s.allows(p, auth.ActView, pageResource(c.Path)) {
+			hidden++
+			continue
 		}
+		if len(out) < 5 {
+			out = append(out, c.Path)
+		}
+	}
+	if hidden > 0 {
+		out = append(out, plural2(hidden, "one page", fmt.Sprintf("%d pages", hidden))+" you may not read")
 	}
 	return out
 }
@@ -3510,9 +3908,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Frozen != nil {
 		if ferr := s.Frozen(); ferr != nil {
+			frozenChanges, frozenHidden := s.changesTo(p, s.Store.GetRef(site.RefDraft))
 			s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": ferr.Error()})
 			s.render(w, r, "review.html", map[string]any{"Status": http.StatusConflict,
 				"Nav": "review", "Title": "Review", "Principal": p,
+				"Changes": frozenChanges, "HiddenChanges": frozenHidden,
 				"CanPublish": false, "Error": ferr.Error()})
 			return
 		}
@@ -3520,6 +3920,8 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	// The design as the checks find it, so the publish records that one.
+	checked := s.designDigest()
 	waived, refusal := s.publishChecks(p, draft, reason)
 	if refusal != nil {
 		s.showRefusal(w, r, refusal, nil)
@@ -3528,20 +3930,36 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// The commit that was checked, and not whatever the draft is by now: a
 	// save landing between the checks and this would go live unchecked.
+	designChanged, undoDesign, derr := s.publishDesign(checked)
+	if derr != nil {
+		s.audit("publish", "/", map[string]string{
+			"by": p.Name, "outcome": "failed", "detail": derr.Error()})
+		http.Error(w, derr.Error(), http.StatusInternalServerError)
+		return
+	}
 	pub, err := site.Publish(s.Store, draft)
 	if err != nil {
+		undoDesign()
 		s.audit("publish", "/", map[string]string{
 			"by": p.Name, "outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.recordPublished(p, pub, waived, reason)
+	s.recordPublishedDesign(p, pub, waived, reason, designChanged)
+	body := fmt.Sprintf("%d change%s are now live. The previous version is "+
+		"still stored, so rolling back moves a pointer.",
+		len(pub.Changes), plural(len(pub.Changes)))
+	switch {
+	case designChanged && len(pub.Changes) == 0 && pub.Previous == pub.Published:
+		body = "The design is live now. The pages were live already, so nothing a " +
+			"rollback goes back to has moved."
+	case designChanged:
+		body += " The design changed since the last publish, and the site takes it with them."
+	}
 	s.render(w, r, "message.html", map[string]any{
 		"Title": "Published", "Principal": p,
 		"Heading": "Published",
-		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
-			"still stored, so rolling back moves a pointer.",
-			len(pub.Changes), plural(len(pub.Changes))),
+		"Body":    body,
 		// What was waived, and not the word "accessibility" whatever it was.
 		// The template said "Published with an accessibility override" for
 		// every one of the four gates this box clears, so somebody who typed a
@@ -3585,6 +4003,14 @@ func (s *Server) showRefusal(w http.ResponseWriter, r *http.Request, ref *publis
 // the live ref with none of these, so a draft Publish refused went live
 // from there, straight from the draft or by way of staging.
 func (s *Server) publishChecks(p principal, draft, reason string) (waived []string, refusal *publishRefusal) {
+	// Every refusal drawn on Review shows what would go live, as Review did
+	// before the button was pressed: here once rather than at each of the
+	// refusals below, which had all left it out.
+	defer func() {
+		if refusal != nil && refusal.page == "review.html" && refusal.data["Changes"] == nil {
+			refusal.data["Changes"], refusal.data["HiddenChanges"] = s.changesTo(p, draft)
+		}
+	}()
 	// Each page the publish would change, asked about its own path: a deny
 	// of publishing on /legal is not seen by the caller's check on "/".
 	if denied := s.deniedChanges(p, draft); len(denied) > 0 {
@@ -3714,7 +4140,12 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	// a month. Publishing it writes content that is invisible from the instant
 	// it goes live, which looks exactly like a broken publish and is very hard
 	// to diagnose from outside.
-	stale := site.AlreadyExpired(site.PagesOf(s.Store, draft), time.Now())
+	//
+	// Only a page this publish puts up or changes: a live page that reached
+	// its date as scheduled asked for a reason on every publish after it.
+	// Unreadable is no pages, as PagesOf answers, for the content gates
+	// above have already refused a draft they cannot read.
+	stale, _ := site.ExpiredOnPublish(s.Store, draft, time.Now())
 	if len(stale) > 0 {
 		waived = append(waived, "expired-pages")
 	}
@@ -3844,6 +4275,27 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	return waived, nil
 }
 
+// designDigest is the design as it stands, taken before a publish's checks
+// run so that what the publish records is what they judged.
+func (s *Server) designDigest() string {
+	if s.DesignSet == nil || s.DesignSet.Digest == nil {
+		return ""
+	}
+	return s.DesignSet.Digest()
+}
+
+// publishDesign records the design the checks rendered through as the one a
+// publish passed, a change to it alone included, as the command line does,
+// just before the pages move: the public site takes the two together.
+// checked is designDigest from before the checks, and a design that has
+// moved since is refused.
+func (s *Server) publishDesign(checked string) (bool, func(), error) {
+	if s.DesignSet == nil || s.DesignSet.Published == nil {
+		return false, func() {}, nil
+	}
+	return s.DesignSet.Published(checked)
+}
+
 // recordPublished records a publish and tells whoever listens: Review →
 // Publish, and a promotion into production, which is the same act.
 //
@@ -3863,13 +4315,23 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 // recorded next to it rather than left to be inferred from what happened
 // to be failing at the time.
 func (s *Server) recordPublished(p principal, pub site.Publication, waived []string, reason string) {
-	s.audit("publish", "/", map[string]string{
+	s.recordPublishedDesign(p, pub, waived, reason, false)
+}
+
+// recordPublishedDesign is recordPublished for a publish that may have
+// changed the design, which the record says.
+func (s *Server) recordPublishedDesign(p principal, pub site.Publication, waived []string, reason string, design bool) {
+	detail := map[string]string{
 		"by":      p.Name,
 		"commit":  shortHash(pub.Published),
 		"changes": fmt.Sprintf("%d", len(pub.Changes)),
 		"waived":  strings.Join(waived, ","),
 		"reason":  reason,
-	})
+	}
+	if design {
+		detail["design"] = "changed"
+	}
+	s.audit("publish", "/", detail)
 	s.tell("published", pub)
 }
 
@@ -4300,7 +4762,7 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	if record != nil {
 		s.sources(s.Store.GetRef(site.RefDraft), pages).WithRecord(ctx, record)
 	}
-	_, layout, lerr := s.Layouts.For(body)
+	_, layout, lerr := s.layouts().For(body)
 	if lerr != nil {
 		http.Error(w, lerr.Error(), http.StatusUnprocessableEntity)
 		return
@@ -4309,6 +4771,15 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// In the page's own language and direction, as the site serves it. The
+	// site sets them on the page it has rendered, whatever the layout says,
+	// and the preview did not: the Arabic page was previewed as English,
+	// left to right, which is not the page a reader gets.
+	if s.Languages != nil && s.Languages.Load != nil {
+		if locales, lerr := s.Languages.Load(); lerr == nil {
+			out = public.InLanguage(out, locales, name)
+		}
 	}
 
 	// The ways back into what you are looking at. See previewbar.go: the page
@@ -4371,7 +4842,7 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 			if strings.HasPrefix(key, "__") || len(values) == 0 {
 				continue
 			}
-			body[key] = values[0]
+			body[key] = keepType(body[key], formText(values[0]))
 		}
 	}
 	// What it tells search engines, from the editor's own fieldset: an
@@ -4401,6 +4872,60 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 		}
 	}
 	return body
+}
+
+// formText is a submitted value with the line endings a page stores.
+//
+// A browser submits a textarea with CRLF line endings, as the HTML spec says
+// it must. Stored as sent, every multi-line field of a page saved from the
+// editor changed bytes though nobody had touched it: a title-only edit
+// counted as a body change, history and approvals recorded one, and a
+// colleague's --merge of a real body edit was refused as "you both changed
+// this field". The CLI, the API and MCP all store \n, so the browser does too.
+func formText(s string) string {
+	if !strings.Contains(s, "\r") {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// keepType is a value submitted for a field no type describes, in the type
+// the value it replaces had: every field of a page with no type, and the
+// fields of a typed page that its type does not declare.
+//
+// Such a page may carry numbers and booleans, written by `quilzo add`, the
+// content API or an import, and the editor offers them as text boxes. Saving
+// stored the strings the boxes submitted, so an edit of the title turned
+// featured false into "false", which a layout reads as true: a page
+// explicitly not featured was shown as featured. A value that still reads as
+// what it was is stored as that; anything else is stored as typed, because
+// somebody who wrote words over a number meant the words.
+//
+// A list or an object is shown as its JSON (undeclaredText), and is what it
+// was while its box still says so.
+func keepType(old any, raw string) any {
+	switch old.(type) {
+	case string:
+	case float64:
+		n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		// NaN and the infinities parse but have no JSON form, and a page
+		// holding one could not be saved at all.
+		if err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
+			return n
+		}
+	case bool:
+		switch strings.TrimSpace(raw) {
+		case "true":
+			return true
+		case "false":
+			return false
+		}
+	default:
+		if b, err := json.Marshal(old); err == nil && strings.TrimSpace(raw) == string(b) {
+			return old
+		}
+	}
+	return raw
 }
 
 // previewRecord resolves a detail address in the draft.
@@ -4499,7 +5024,8 @@ func (s *Server) siteCSS(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireAuth(w, r); !ok {
 		return
 	}
-	if s.SiteCSS == "" {
+	css := s.siteStylesheet()
+	if css == "" {
 		// 404 rather than empty, because an empty stylesheet is indisting-
 		// uishable from one that loaded and had no rules — and somebody
 		// debugging an unstyled preview would then be looking at the wrong
@@ -4509,7 +5035,7 @@ func (s *Server) siteCSS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = io.WriteString(w, s.SiteCSS)
+	_, _ = io.WriteString(w, css)
 }
 
 // firstOf flattens a query string to one value per name.
@@ -4609,6 +5135,24 @@ func (s *Server) shieldable(target string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// backdropFindings is what would be unreadable over a backdrop with this
+// site's veil, or nothing when the theme is not in effect. A theme that cannot
+// be read is refused by themeBlockers, so nothing here passes in its place.
+func (s *Server) backdropFindings() []theme.Finding {
+	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
+		return nil
+	}
+	if s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet() {
+		return nil
+	}
+	overrides, err := s.DesignSet.Tokens()
+	if err != nil {
+		return nil
+	}
+	th, _ := theme.New(overrides, s.siteFamilies())
+	return th.CheckBackdrop()
 }
 
 // themeBlockers are the theme's blocking contrast failures, as reports: the

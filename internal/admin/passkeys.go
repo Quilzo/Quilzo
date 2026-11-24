@@ -595,6 +595,9 @@ func (s *Server) handlePasskeySignIn(w http.ResponseWriter, r *http.Request) {
 		// Where the sign-in goes afterwards, carried by the page's script
 		// to the verify call: see signInNext.
 		"Next": signInNext(r.URL.Query().Get("next")),
+		// Come from adding a passkey through an enrolment link
+		// (handleEnrolRegister), which is said here.
+		"Added": r.URL.Query().Get("added") == "1",
 	})
 }
 

@@ -291,15 +291,16 @@
 
 /* The operator's accent, when one is configured.
  *
- * A single custom property set on the root element, and every role that should
- * follow it reads through this. Applied with a fallback rather than by
- * overwriting --primary, so a deployment that sets nothing is byte-identical to
- * one that never heard of branding — and the AAA contrast the palette was built
- * for is the default rather than something a brand can silently drop below.
+ * A custom property set on the root element by /brand.css, and every role
+ * that should follow it reads through this. Applied with a fallback, so a
+ * deployment that sets nothing is byte-identical to one that never heard of
+ * branding. /brand.css also sets --primary to the accent, in each scheme
+ * where the accent meets the AAA contrast this palette was built for (brand.go
+ * checks it against the surfaces and on-primary below); in a scheme where it
+ * does not, --primary stays as it is here, so a brand cannot drop below it.
  *
- * The colour reaching this variable is validated in brand.go against a hex
- * pattern before it is written into the style attribute. Nothing else may land
- * here, which is why this is one property and not a stylesheet. */
+ * The colour reaching these variables is validated in brand.go against a hex
+ * pattern before it is written. Nothing else may land there. */
 .brand .mark, .brand span { color: var(--brand, inherit); }
 .mark-initial {
   display: inline-flex; align-items: center; justify-content: center;
@@ -838,6 +839,10 @@ footer { margin-top: 3rem; padding-top: 1.5rem;
    markup (the "newtab" template). */
 .newtab { display: inline-block; margin-inline-start: .2em; vertical-align: -0.125em; }
 .newtab .icon { width: 1em; height: 1em; display: inline-block; }
+/* Such a link and the stop after it, kept on one line. A browser may break
+   a line after an inline-block, so the footer's "All documentation." put
+   its full stop alone on a line under the link. */
+.nobreak { white-space: nowrap; }
 
 /* The way up from a screen below a destination: the parent's name with a
    back arrow, above the heading, as Polaris and Material place it. A
@@ -1271,8 +1276,10 @@ details[open] > summary > .chev .icon { rotate: 180deg; }
 .note { margin: 0; padding: .1rem 0 .1rem .9rem;
   border-left: 3px solid var(--outline-variant); }
 /* A note somebody has dealt with is kept and set back, so the conversation
-   stays readable without the finished parts competing for attention. */
-.note.done { opacity: .65; border-left-color: var(--outline-variant); }
+   stays readable without the finished parts competing for attention. Set back
+   no further than its hints stay at 4.5:1: at .65, who dealt with it was
+   3.5:1 in the light scheme. */
+.note.done { opacity: .8; border-left-color: var(--outline-variant); }
 .notewho { margin: 0 0 .15rem; display: flex; flex-wrap: wrap; gap: .4rem;
   align-items: baseline; font: var(--label-md); }
 .notetext { margin: 0 0 .4rem; white-space: pre-wrap; }
@@ -1621,6 +1628,10 @@ pre.code code { background: none; padding: 0; }
 .chips a.on { background: var(--secondary-container);
   color: var(--on-secondary-container); border-color: transparent; }
 .chips .count { font-size: .75rem; opacity: .7; }
+/* At full strength in the selected chip. Faded there it was 4.4:1 in the
+   dark scheme, under the 4.5:1 its 12px asks; the chip's own colour says
+   which one is chosen. */
+.chips a.on .count { opacity: 1; }
 /* A chip that is not a link. The layouts on the design screen are names, not
    destinations, and a chip somebody can click that goes nowhere is worse than
    one that plainly does not. */
@@ -2721,7 +2732,9 @@ summary > .chev .icon { width: 20px; height: 20px; }
      page with it, instead of scrolling in its own wrap. */
   min-width: 0; }
 .auto-card code { overflow-wrap: anywhere; }
-.auto-card.off { opacity: .72; }
+/* Set back no further than the hints and choices on it stay at 4.5:1: at
+   .72 the Off band and its choices were 3.9:1 in the light scheme. */
+.auto-card.off { opacity: .8; }
 .auto-card.waiting { background: var(--surface-container-low); outline: 1px solid var(--warning); }
 .auto-card > p { margin: 8px 0; }
 .auto-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font: var(--title-md); }
@@ -2795,6 +2808,11 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .style-bold i { border: 2px solid var(--on-surface); border-radius: 0; box-shadow: 3px 3px 0 var(--on-surface); } .style-bold b { border-radius: 0; box-shadow: 2px 2px 0 var(--on-surface); }
 .style-soft i { border-color: transparent; border-radius: 18px; box-shadow: 0 6px 16px color-mix(in srgb, var(--on-surface) 12%, transparent); }
 .style-business i { border-radius: 4px; box-shadow: 0 1px 2px color-mix(in srgb, var(--on-surface) 12%, transparent); } .style-business b { border-radius: 4px; }
+.style-neon i { border-radius: 10px; corner-shape: bevel; border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--primary) 45%, transparent); }
+.style-neon b { border-radius: 6px; corner-shape: bevel; box-shadow: 0 0 10px color-mix(in srgb, var(--primary) 55%, transparent); }
+@media (forced-colors: active), (prefers-contrast: more) { .style-neon i, .style-neon b { box-shadow: none; } }
+.design-layer textarea { width: 100%; min-height: 14rem; font-family: var(--mono); font-size: 0.875rem; }
 .icon-preview { grid-area: swatch; display: flex; gap: 10px; align-items: center; height: 36px; color: var(--primary); }
 .icon-preview .icon { width: 24px; height: 24px; fill: currentColor; }
 

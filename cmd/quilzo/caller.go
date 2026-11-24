@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -52,6 +56,11 @@ type Caller struct {
 	Verified bool
 	// Why explains an unverified caller, for the message a refusal prints.
 	Why string
+	// Credential is the name of the token the caller was proved by, for a
+	// refusal about the token rather than the person it acts as: "ada is a
+	// program's credential" said of ada's token that the person ada was
+	// refused for.
+	Credential string
 	// Remote marks a caller at the agent interface over HTTP, and Grant the
 	// app consent its token came from, when it came from one. See
 	// agentinterface.go.
@@ -63,10 +72,15 @@ type Caller struct {
 	Bound bool
 	Life  time.Duration
 	// Model is what an AI caller's acts are recorded as having been decided
-	// by: the app at the agent interface (mcp-client), which does not say
-	// which model it runs, or an agent acting under its own identity.
-	// Empty for a person or a service.
+	// by: the client at the agent interface (mcp-client, or the app a
+	// token was given to), which does not say which model it runs, or an
+	// agent acting under its own identity. Empty for a person or a service.
 	Model string
+	// Client is the app a token at the agent interface was given to
+	// through OAuth, when it was one: what its acts are recorded as done
+	// by, and what the pages it writes are marked as written by
+	// (interfaceClient).
+	Client string
 	// Via says how an act reached this caller when it was not them at a
 	// keyboard ("schedule" for a publish somebody scheduled), and FiredBy
 	// whose identity set it off. The act is still theirs and on their
@@ -86,6 +100,10 @@ type Caller struct {
 	// the agent interface, when it is one (agentplatform.go): a model an
 	// operation asks is charged to it.
 	run *agent.Session
+	// runFor is the person who started that run, as its record names them
+	// (agentResume.startedBy): what an operation writes in the draft is
+	// written for them (writesFor).
+	runFor string
 }
 
 // tokenFile is preferred over the environment.
@@ -109,6 +127,7 @@ func findToken(explicit string) (string, string) {
 	if p := tokenFile(); p != "" {
 		if b, err := os.ReadFile(p); err == nil {
 			if t := strings.TrimSpace(string(b)); t != "" {
+				warnOpenTokenFile(p)
 				return t, p
 			}
 		}
@@ -117,6 +136,32 @@ func findToken(explicit string) (string, string) {
 		return t, "QUILZO_TOKEN"
 	}
 	return "", ""
+}
+
+// openTokenFileWarned keeps warnOpenTokenFile to one line a command,
+// however many times the command asks who is running it.
+var openTokenFileWarned sync.Once
+
+// warnOpenTokenFile says, once, that the token file can be read by
+// accounts other than its owner's. The file is preferred to QUILZO_TOKEN
+// for being 0600 (tokenFile), and one written at 0644 by hand, or copied
+// with the mode of wherever it came from, was used without a word: any
+// account on the machine could act as its holder. Still used, since a
+// command that stopped working would be a worse way to find out, and said
+// the way ssh says it of a key, with what closes it.
+func warnOpenTokenFile(path string) {
+	if runtime.GOOS == "windows" {
+		// A Windows file's mode bits do not say who may read it.
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm()&0o077 == 0 {
+		return
+	}
+	openTokenFileWarned.Do(func() {
+		fmt.Fprintf(os.Stderr, "warning: %s can be read by other accounts (mode %04o), "+
+			"so they can act as you; chmod 600 %s\n", path, info.Mode().Perm(), path)
+	})
 }
 
 // resolveCaller identifies whoever is running the command.
@@ -168,27 +213,129 @@ func resolveCaller(root, explicitToken string) *Caller {
 	// able to find credentials nobody needs any more.
 	_ = saveTokens(root, toks)
 
+	// A person's own token, or a session exchanged from one, as its issue
+	// recorded (auth.Token's Person); every other token is a program's. It
+	// was a guess from the name, "cli" or an address, so the first
+	// administrator's token, named "first" as the install guide names it,
+	// was a program's, and an administrator's token for a CI job named cli
+	// was a person's. A service label is still the default, because
+	// over-attributing to a human is the direction that misleads.
 	kind := audit.KindService
-	if strings.EqualFold(tok.Name, "cli") || strings.Contains(tok.Name, "@") {
-		// A weak heuristic, and named as one. Distinguishing a person's own
-		// token from a CI credential properly needs the token to say which it
-		// is at issue time; until then a service label is the safer default,
-		// because over-attributing to a human is the direction that misleads.
+	if tok.Person() {
 		kind = audit.KindHuman
 	}
 	return &Caller{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Limits: tok.Scope, Kind: kind, Verified: true,
+		Limits: tok.Scope, Kind: kind, Verified: true, Credential: tok.Name,
 	}
 }
 
+// osUser is the name an unverified caller is recorded under: the
+// environment's, and failing that the operating-system account this runs
+// as, which is the one the store's ownership is checked against
+// (storeowner.go).
+//
+// It was the environment's or "unknown-operator", and under a service
+// manager or in a container none of $USER, $USERNAME and $LOGNAME is set,
+// so a risk accepted there was accepted by unknown-operator and the posture
+// scan named nobody. An account the system has no name for is named by its
+// number, as the refusal to start a server names it (storeowner_unix.go):
+// a container started as a user id its image has no entry for, as
+// `docker run --user 1000` and an OpenShift pod are, has no $USER and no
+// name to look up, and was unknown-operator though its id was right there.
+// unknown-operator is left for a system with no user ids at all.
 func osUser() string {
 	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 	}
+	if u, err := currentAccount(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if uid := os.Geteuid(); uid >= 0 {
+		return "uid " + strconv.Itoa(uid)
+	}
 	return "unknown-operator"
+}
+
+// currentAccount is the operating-system account this runs as. A variable
+// so a test can run as an account the system has no name for.
+var currentAccount = user.Current
+
+// accepter is who a risk this caller accepts is recorded as accepted by:
+// their name, and for a name nobody checked, said to be one.
+//
+// An unverified name, from the environment or the operating system, was
+// recorded as plainly as one a token proved, so `config show` and the
+// posture scan said "accepted by kit" of whatever $USER said, which is the
+// unproven name described as established that resolveCaller exists to
+// prevent.
+func (c *Caller) accepter() string {
+	if c.Verified {
+		return c.Name
+	}
+	return c.Name + " (not verified)"
+}
+
+// recordedAs is who a change this caller makes is recorded as written by, and
+// the message it carries, for a command that takes a name to put on it
+// (--author): always the caller (writesFor), and a name other than theirs
+// kept in the message as a credit, which no rule reads.
+//
+// The name was the commit's author. `quilzo add --author lee`, run by dana,
+// recorded dana's change as lee's, and every rule about who wrote a change
+// reads the commit: with one approval asked, dana approved her own change as
+// though it were lee's, and it went live with nobody else having read it.
+// The audit record named dana all along. The flag stays, for when the words
+// are somebody else's, and they are credited for them.
+func (c *Caller) recordedAs(named, message string) (author, msg string) {
+	author = c.writesFor()
+	if named = strings.TrimSpace(named); named == "" || named == author {
+		return author, message
+	}
+	return author, message + " (" + credit(named) + ")"
+}
+
+// namedBy is who a record of an act names, for a command that takes a
+// typed --by: the verified caller, always, and a different name typed kept
+// beside them as a credit, which no rule reads. Only where nobody is
+// verified, on a store with no access control, is the name typed the one
+// there is.
+//
+// The name typed was the record. `posture suppress --by 'Dana (CISO)'`
+// wrote the risk acceptance to the audit log under Dana and left out the
+// administrator who ran it, `auth grant --by` set "granted by" to whatever
+// was typed, `checked set --by` let an author record a confirmation as
+// somebody else's, and `lang translated --by` a translation: the evidence
+// an auditor reads named whoever the person at the keyboard chose.
+func (c *Caller) namedBy(typed string) (who, credited string) {
+	typed = strings.TrimSpace(typed)
+	if c != nil && c.Verified && strings.TrimSpace(c.Name) != "" {
+		if typed == "" || typed == c.Name {
+			return c.Name, ""
+		}
+		return c.Name, typed
+	}
+	return typed, ""
+}
+
+// withCredit is a note with a credit for a name typed added (credit).
+func withCredit(note, credited string) string {
+	if credited == "" {
+		return note
+	}
+	if note = strings.TrimSpace(note); note == "" {
+		return credit(credited)
+	}
+	return note + " (" + credit(credited) + ")"
+}
+
+// credit is how a name somebody gave for the words is kept beside what they
+// were recorded under (recordedAs): said in the message, or in a provenance
+// record's note, and believed by nothing.
+func credit(named string) string {
+	return "credit: " + named
 }
 
 // policyInUse reports whether anybody has been granted anything.
@@ -230,6 +377,11 @@ func policyInUse(root string) (bool, error) {
 // Returns nil when the action may proceed. The refusal explains which of the
 // two things was missing — an identity or a permission — because they need
 // different fixes and "forbidden" tells nobody which.
+//
+// A refusal is a gate's (errBlocked), and exits 3, as the help documents a
+// refusal by a gate; a policy that cannot be read is not one, and fails. A
+// reader's `publish` and a publisher-capped token's `auth grant` exited 1,
+// as a command that broke does, so a script could not tell the two apart.
 func authorise(root string, c *Caller, action auth.Action, resource string) error {
 	inUse, err := policyInUse(root)
 	if err != nil {
@@ -239,7 +391,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 		return nil // nothing has been granted; there is nothing to enforce
 	}
 	if !c.Verified {
-		return &errUnverified{action: action, resource: resource, why: c.Why}
+		return errBlocked{&errUnverified{action: action, resource: resource, why: c.Why}}
 	}
 	p, err := loadPolicy(root)
 	if err != nil {
@@ -247,7 +399,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	}
 	d := p.Evaluate(c.Name, action, resource)
 	if !d.Allowed {
-		return fmt.Errorf("%s", d.Reason)
+		return errBlocked{fmt.Errorf("%s", d.Reason)}
 	}
 
 	// The token's own limits, checked second and separately.
@@ -263,7 +415,10 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	// interface and the content API were each doing a different subset of the
 	// same three and one of the gaps was a privilege escalation. This surface
 	// had them all; being right is not the same as being the only one right.
-	return auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource)
+	if err := auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource); err != nil {
+		return errBlocked{err}
+	}
+	return nil
 }
 
 // errUnverified is a refusal for want of an identity, before the policy
@@ -358,8 +513,9 @@ func conflictError(err error, changed []string) error {
 		fmt.Fprintf(&b, "\n  nothing you changed was touched, so re-running "+
 			"this against the current draft is safe")
 	} else if len(both) > 0 {
+		// In stderr's colours, since an error is written there.
 		fmt.Fprintf(&b, "\n  %syou both changed: %s%s — look before retrying",
-			red, strings.Join(both, ", "), reset)
+			noteRed, strings.Join(both, ", "), noteReset)
 	}
 	fmt.Fprintf(&b, "\n  current draft: %s", short(c.Actual))
 	return errBlocked{fmt.Errorf("%s", b.String())}

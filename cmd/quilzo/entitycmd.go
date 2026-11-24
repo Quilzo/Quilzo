@@ -41,14 +41,17 @@ func cmdEntity(root string, args []string) error {
 	}
 	switch args[0] {
 	case "tree":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return entityTree(root)
 	case "report":
 		return entityReport(root, args[1:])
 	case "relies":
 		return entityRelies(root, args[1:])
 	default:
-		return fmt.Errorf("unknown entity command %q; try tree, report or "+
-			"relies", args[0])
+		return errMisused{fmt.Errorf("unknown entity command %q; try tree, report or "+
+			"relies", args[0])}
 	}
 }
 
@@ -128,7 +131,7 @@ func entityReport(root string, args []string) error {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	from := fs.String("from", "", "start of the period, as 2026-04-01")
 	to := fs.String("to", "", "end of it; today by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	t, err := loadTree(root)
@@ -142,7 +145,7 @@ func entityReport(root string, args []string) error {
 	if len(pos) == 1 {
 		scope = pos[0]
 		if _, ok := t.Get(scope); !ok {
-			return fmt.Errorf("there is no entity %q", scope)
+			return errNotFound{fmt.Errorf("there is no entity %q", scope)}
 		}
 	}
 	period, err := window(*from, *to)
@@ -220,12 +223,12 @@ func entityRelies(root string, args []string) error {
 	fs := flag.NewFlagSet("relies", flag.ContinueOnError)
 	because := fs.String("because", "",
 		"why the ancestor's control counts for this company's audit")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) != 3 {
-		return fmt.Errorf(
-			"usage: quilzo entity relies COMPANY ON CONTROL --because \"...\"")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo entity relies COMPANY ON CONTROL --because \"...\"")}
 	}
 	t, err := loadTree(root)
 	if err != nil {
@@ -251,7 +254,7 @@ func entityRelies(root string, args []string) error {
 		}
 	}
 	if !known {
-		return fmt.Errorf("there is no control called %q", r.Control)
+		return errNotFound{fmt.Errorf("there is no control called %q", r.Control)}
 	}
 	// Saying a subsidiary need not perform a control itself is a statement
 	// its auditor will question: the same authority as publishing.

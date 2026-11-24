@@ -6,6 +6,7 @@ package admin
 import (
 	"html"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -315,4 +316,58 @@ func panelIn(t *testing.T, doc string) string {
 		t.Fatalf("the panel has no closing note:\n  %s", doc[start:])
 	}
 	return doc[start : start+end]
+}
+
+// A preview whose title is Turkish has its stylesheet just inside the head
+// and its panel just inside the body.
+//
+// Both tags were found in strings.ToLower(page), and İ is two bytes that
+// lower to one: every İ before a tag put the insertion a byte early, so the
+// stylesheet and the panel landed in the markup before the tag rather than
+// after it. A character that grows when lowered moved them the other way.
+func TestAPreviewWithATurkishTitleKeepsBothHalvesInPlace(t *testing.T) {
+	for _, x := range []string{"İstanbul, İzmir ve İzmit", "300 \u212A",
+		strings.Repeat("\u023A", 40), "caf\xe9 cr\xe8me"} {
+		page := `<!doctype html><html lang="tr" title="` + x + `"><HEAD><title>` + x +
+			`</title></HEAD><Body class="x"><h1>` + x + `</h1></Body></html>`
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q: injecting the panel panicked: %v", x, r)
+				}
+			}()
+			out := injectBar(page, `<div class="qz-bar">panel</div>`)
+			if !strings.Contains(out, `<HEAD><link rel="stylesheet" href="/preview.css">`) ||
+				!strings.Contains(out, `<Body class="x"><div class="qz-bar">panel</div>`) {
+				t.Errorf("%q: the halves are not just inside their tags:\n  %s", x, out)
+			}
+		}()
+	}
+}
+
+// What a section still waits for is said to the person previewing the page,
+// not to its readers. The layout told every reader of a page with a video
+// section and no video "No video chosen yet. Send one to the bot and pick it
+// here"; the panel says it now, beside the section, and the page does not.
+func TestThePanelSaysWhatASectionStillWaitsFor(t *testing.T) {
+	body := map[string]any{"title": "Home", "sections": []any{
+		map[string]any{"prose": map[string]any{"title": "About", "paragraphs": []any{"Words."}}},
+		map[string]any{"video": map[string]any{"title": "Watch this", "src": ""}},
+	}}
+	bar := previewBar("index", body, schema.Type{}, false, true)
+	items := regexp.MustCompile(`(?s)<li>.*?</li>`).FindAllString(bar, -1)
+	var video string
+	for _, it := range items {
+		if strings.Contains(it, "at=1") {
+			video = it
+		}
+	}
+	if !strings.Contains(video, "no video chosen yet") {
+		t.Errorf("the panel does not say the video section has no video: %s", video)
+	}
+	for _, it := range items {
+		if strings.Contains(it, "at=0") && strings.Contains(it, "chosen") {
+			t.Errorf("the prose section is said to wait for something: %s", it)
+		}
+	}
 }

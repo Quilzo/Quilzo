@@ -369,8 +369,8 @@ func Builtins() []Playbook {
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(24 * time.Hour)}}},
 			}},
 		{Name: "conversation-guessing", Title: "Guessing chatbot conversations", Mode: "act", Builtin: true,
-			Why: "Trying to read another visitor's conversation with the business. One wrong address is a stale link; three is guessing.",
-			On:  Trigger{Signal: "conversation-guess", Per: "source", Count: 3, Within: h(time.Hour)},
+			Why: "Trying to read another visitor's conversation with the business. One wrong address is a stale link, however often it is asked for; three different ones is guessing.",
+			On:  Trigger{Signal: "conversation-guess", Per: "source", Count: 3, Within: h(time.Hour), Distinct: true},
 			Stages: []Stage{
 				{Do: []Step{{Action: "slow-source", Where: Site, For: h(time.Hour)}}},
 				{Do: []Step{{Action: "block-source", Where: Site, For: h(6 * time.Hour)}}},

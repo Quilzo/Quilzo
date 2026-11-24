@@ -34,6 +34,34 @@ type Connections struct {
 	// Finish completes one, for the person signed in: the provider's title.
 	Finish func(ctx context.Context, state, code, person string) (string, error)
 	Revoke func(ctx context.Context, provider, person string) error
+	// Document is this installation's Client ID Metadata Document, served
+	// at ConnectionsDocumentPath for an authorization server that takes
+	// those in place of registrations; nil serves none.
+	Document func() ([]byte, error)
+}
+
+// handleConnectionsDocument serves the document to anybody: it is read by
+// the authorization server, which signs nobody in here, and says only
+// what the connect command registered there would have.
+func (s *Server) handleConnectionsDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.Connections == nil || s.Connections.Document == nil {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Connections.Document()
+	if err != nil {
+		// No address to serve it at: admin.base_url is not set.
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write(b)
 }
 
 // ConnectedAccount is one of a person's connections, as the screen shows it.
@@ -41,6 +69,25 @@ type ConnectedAccount struct {
 	Provider  string
 	Scope     string
 	Connected time.Time
+	// Expires is when its tokens end, as far as is known: never a token.
+	Expires connect.Ends
+}
+
+// EndsSaid is when its tokens end, in words, in UTC as the screen's other
+// dates are.
+func (a ConnectedAccount) EndsSaid() string { return a.Expires.Said(time.UTC) }
+
+// Notice is what the screen says of a connection that stops working within
+// connect.ExpiryNotice of now, or has stopped; empty for any other.
+func (a ConnectedAccount) Notice(now time.Time) string {
+	if !a.Expires.LapsesSoon(now) {
+		return ""
+	}
+	at := a.Expires.Lapses().UTC()
+	if at.After(now) {
+		return "Connect it again before " + at.Format("2 Jan 2006 15:04 MST") + ": it stops working then."
+	}
+	return "It stopped working " + at.Format("2 Jan 2006") + ": connect it again."
 }
 
 func (s *Server) connectionsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -59,7 +106,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := map[string]any{"Nav": "accounts", "Title": "Connected accounts", "Principal": p,
+	data := map[string]any{"Nav": "accounts", "Title": "Your accounts", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
 	if s.Connections == nil || s.Connections.Providers == nil || s.Connections.Mine == nil {
 		data["Unavailable"] = "This build was started without connected accounts."
@@ -82,7 +129,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	for _, a := range mine {
 		connected[a.Provider] = a
 	}
-	data["Providers"], data["Connected"] = providers, connected
+	data["Providers"], data["Connected"], data["Now"] = providers, connected, time.Now().UTC()
 	s.render(w, r, "connections.html", data)
 }
 

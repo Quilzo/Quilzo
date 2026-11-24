@@ -105,8 +105,8 @@ const MaxPoints = 2000
 // MaxNote is the longest a note can be.
 //
 // Not a document. A note that needs more than this is a message, and a
-// message belongs in the room where it can be threaded, edited and found
-// again, rather than floating over a frame that will not exist tomorrow.
+// message belongs somewhere it can be edited and found again, rather than
+// floating over a frame that will not exist tomorrow.
 const MaxNote = 280
 
 // Point is a position, in pixels, relative to a mark's anchor.
@@ -188,8 +188,8 @@ func (m Mark) Validate() error {
 		}
 		if len([]rune(m.Note)) > MaxNote {
 			return fmt.Errorf("a note is at most %d characters; this is %d, "+
-				"which is a message and belongs in the room where it can be "+
-				"found again", MaxNote, len([]rune(m.Note)))
+				"which is a message and belongs somewhere it can be found "+
+				"again", MaxNote, len([]rune(m.Note)))
 		}
 	} else if m.Note != "" {
 		return fmt.Errorf("only a note carries words")

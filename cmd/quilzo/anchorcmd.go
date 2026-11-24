@@ -95,16 +95,22 @@ func cmdAnchor(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return anchorStatus(root)
 	case "submit":
 		return anchorSubmit(root, args[1:])
 	case "upgrade":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return anchorUpgrade(root)
 	case "export":
 		return anchorExport(root, args[1:])
 	default:
-		return fmt.Errorf("unknown anchor command %q; try status, submit, upgrade or export",
-			args[0])
+		return errMisused{fmt.Errorf("unknown anchor command %q; try status, submit, upgrade or export",
+			args[0])}
 	}
 }
 
@@ -138,7 +144,7 @@ func liveFingerprint(root string) (string, error) {
 
 func anchorSubmit(root string, args []string) error {
 	fs := flag.NewFlagSet("submit", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -321,7 +327,7 @@ func anchorOf(kind string) string {
 func anchorExport(root string, args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "where to write the .ots files")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	file, err := loadAnchors(root)

@@ -1,5 +1,5 @@
 {{template "head" .}}
-<h1>Edit {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
+<h1>{{.Verb}} {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
 {{if or .PageTitle .Type}}<p class="help">{{if .PageTitle}}The page <code>{{.Name}}</code>. {{end}}{{if .Type}}It is a <strong>{{.Type}}</strong>, so it must have the fields that type asks for.{{end}}</p>{{end}}
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
@@ -46,8 +46,15 @@
   <button type="submit">Save to draft</button>
   <button class="btn tonal" type="submit" formaction="/preview/{{.Name}}?plain=1" formtarget="preview-frame"
     formnovalidate data-preview-now>Show in the preview</button>
+  {{/*
+    The way to Sections, from the page itself. A page that is not saved yet
+    is not there for Sections to open, so it is saved first and Sections
+    opened on it; one that is there is a link away.
+  */}}
+  {{if not .Type}}{{if .Exists}}<a class="btn btn-tonal" href="/sections?page={{.Name}}">Build it from sections</a>
+  {{else}}<button class="btn-tonal" type="submit" name="__then" value="sections">Save, then add sections</button>{{end}}{{end}}
   <p class="help">Saving writes a draft. Nothing is public until someone publishes. The preview shows
-    what you have typed, unsaved.</p>
+    what you have typed, unsaved.{{if not .Type}} Sections put headings, pictures, lists and more on the page.{{end}}</p>
 </form>
 
 <div class="edit-details">
@@ -235,7 +242,8 @@
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>
   <p class="help">Your page as readers will see it, with what you have typed and not saved yet.
-    <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft{{template "newtab"}}</a>.</p>
+    {{if .Previewable}}<span class="nobreak"><a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft{{template "newtab"}}</a>.</span>
+    {{else}}Nothing is saved here yet, so it shows what you type, a moment after you stop or when you press Show in the preview.{{end}}</p>
 
   {{/*
     ?plain=1 here and nowhere else. The editing panel is what turns a preview
@@ -243,7 +251,13 @@
     field it is the same links twice. Opened in a tab, where there is no form,
     the panel is the only way back and appears.
   */}}
-  <iframe name="preview-frame" src="/preview/{{.Name}}?plain=1" title="Preview of {{.Name}}" loading="lazy"></iframe>
+  {{/*
+    Without a src until there is something saved to show. /preview/NAME
+    answers 404 for a page with no draft, and a 404 may not be framed, so
+    the pane was a framing error. The frame is still here for the live
+    preview to post what is typed into.
+  */}}
+  <iframe name="preview-frame"{{if .Previewable}} src="/preview/{{.Name}}?plain=1"{{end}} title="Preview of {{.Name}}" loading="lazy"></iframe>
 </aside>
 </div>
 {{else}}

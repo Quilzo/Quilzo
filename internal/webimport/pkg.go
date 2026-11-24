@@ -13,20 +13,27 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // NotePicturesLeftOut is the note for a site brought in without its
 // pictures.
 const NotePicturesLeftOut = "pictures were left out, as asked; import again with pictures to keep the ones the site describes"
+
+// NoteMorePages starts the note for a site with more pages than were read.
+// What follows it says what can be done about that, which is not the same
+// at every door: an import over the agent interface reads fewer pages than
+// MaxPages, and says so in its own words (site_import).
+const NoteMorePages = "the site has more pages than were read"
 
 // Picture stores a picture a page shows, with the description the page gave
 // it, and answers the path a page refers to it by. Nil leaves pictures out.
@@ -112,49 +119,60 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	}
 	out.Notes = append(out.Notes, s.Notes...)
 
-	// Each page gets a name from its address, and keeps it if it can.
-	names := map[string]string{}
-	// Each post's page is the blog's, by this name.
-	taken := map[string]bool{postPage: len(s.Posts) > 0}
-	// next is, for a name taken, the number to try first, as in postSlugs.
-	next := map[string]int{}
+	// Each page gets the name its source gives it, or one from its address,
+	// and keeps it if it can. Each is kept by the page's place, not by its
+	// address: the address without its query, which this was keyed by, is
+	// the home's for every page of a WordPress site on plain links
+	// (/?page_id=11), so they all took the last name given and the package
+	// was refused, "page index-3 is declared twice".
+	names := addresses{}
+	given := make([]string, len(s.Pages))
+	// A name taken is numbered as every import numbers one (export.Names),
+	// within what the store holds: numbered here by putting -2 after it, a
+	// name already as long as the store holds became one it refuses, and
+	// the whole package was refused for two pages with long slugs.
+	named := export.NewNames()
+	if len(s.Posts) > 0 {
+		// Each post's page is the blog's, by this name.
+		named.Claim(postPage)
+	}
 	for i, pg := range s.Pages {
-		n := pageName(pg.URL)
+		n := pg.Name
+		if n == "" {
+			n = pageName(pg.URL)
+		}
 		if i == 0 {
 			n = "index"
 		}
-		base := n
-		for k := max(2, next[base]); taken[n]; k++ {
-			n = fmt.Sprintf("%s-%d", base, k)
-			next[base] = k + 1
-		}
-		taken[n] = true
-		names[keyOf(pg.URL)] = n
+		n = named.Claim(n)
+		given[i] = n
+		names[addressOf(pg.URL)] = n
 	}
 
 	// A link to one of the site's own pages or posts goes to where it is
 	// now; one into a folder that names nothing there, to its path.
-	posts := map[string]string{}
+	posts := addresses{}
 	for i, slug := range postSlugs(s.Posts) {
 		if slug != "" && s.Posts[i].URL != nil {
-			posts[keyOf(s.Posts[i].URL)] = feature.PagePath(postPage) + "/" + slug
+			posts[addressOf(s.Posts[i].URL)] = feature.PagePath(postPage) + "/" + slug
 			// The folder the posts were in listed them, as the blog does.
 			up := *s.Posts[i].URL
-			up.Path = path.Dir(strings.TrimSuffix(up.Path, "/"))
+			up.Path, up.RawQuery = path.Dir(strings.TrimSuffix(up.Path, "/")), ""
 			if k := keyOf(&up); posts[k] == "" && up.Path != "/" && names[k] == "" {
 				posts[k] = feature.PagePath("blog")
 			}
 		}
 	}
+	queried := byQuery(s)
 	link := func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil {
 			return raw
 		}
-		if n, ok := names[keyOf(u)]; ok {
+		if n, ok := names.at(u, queried); ok {
 			return feature.PagePath(n)
 		}
-		if p, ok := posts[keyOf(u)]; ok {
+		if p, ok := posts.at(u, queried); ok {
 			return p
 		}
 		if u.Host == LocalHost {
@@ -163,8 +181,8 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		return raw
 	}
 	pictures, undescribed, failed, undescribedPosts := 0, 0, 0, 0
-	for _, pg := range s.Pages {
-		n := names[keyOf(pg.URL)]
+	for i, pg := range s.Pages {
+		n := given[i]
 		body, empty := pageBody(pg, siteName, func(src *url.URL, alt string) string {
 			if picture == nil {
 				return ""
@@ -211,9 +229,14 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 		p.Pages = append(p.Pages, feature.Page{Name: n, Body: body})
 		// Only where the address changed: /about-us/ is /about-us already.
+		// And only from an address that is a path. A page known by a query
+		// (/hall/?page_id=11, as WordPress's plain links have every page) has
+		// the home's path, and a redirect matches a path alone: each such
+		// page redirected the old home to itself, and the package was
+		// refused, "/hall is redirected to both / and /qa-night".
 		old, now := pg.URL.EscapedPath(), feature.PagePath(n)
 		if trimmed := strings.TrimSuffix(old, "/"); trimmed != "" && trimmed != now && old != "" &&
-			len(out.Redirects) < feature.MaxSiteRedirects {
+			pg.URL.RawQuery == "" && len(out.Redirects) < feature.MaxSiteRedirects {
 			out.Redirects = append(out.Redirects, seo.Redirect{From: old, To: now, Permanent: true})
 		}
 	}
@@ -223,7 +246,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		exists[pg.Name] = true
 	}
 	for _, nav := range home.Navs {
-		m := menuOf(nav, names, exists)
+		m := menuOf(nav, names, exists, queried)
 		if len(m.Items) == 0 {
 			continue
 		}
@@ -268,8 +291,17 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	if len(s.Failed) > 0 {
 		note("%d page(s) could not be read: %s", len(s.Failed), strings.Join(first(s.Failed, 3), "; "))
 	}
-	if s.Capped {
-		note("the site has more pages than were read; read more with --pages")
+	// In words every door can follow: the command line's flag is --pages,
+	// the agent interface's argument is pages, and "read more with
+	// --pages" sent an agent looking for a flag its call does not have.
+	// And only where asking would read more: a site read to the most an
+	// import reads was told to ask for up to that many, and asking again
+	// read the same pages and said the same.
+	switch {
+	case s.Capped && len(s.Pages) >= MaxPages:
+		note(NoteMorePages+": %d is the most an import reads", MaxPages)
+	case s.Capped:
+		note(NoteMorePages+"; ask for more pages, up to %d, to read more of it", MaxPages)
 	}
 
 	// A package a person can read: the pages that fit, the rest named. The
@@ -329,7 +361,8 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		note(NotePicturesLeftOut)
 	}
 	if undescribed += undescribedPosts; undescribed > 0 {
-		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)
+		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; "+
+			"add them to the media library with a description of each", undescribed)
 	}
 	if failed > 0 {
 		note("%d picture(s) could not be fetched or are not a format this keeps", failed)
@@ -544,11 +577,11 @@ func linksIn(md string, link func(string) string) string {
 	}
 }
 
-func menuOf(nav Nav, names map[string]string, exists map[string]bool) menu.Menu {
+func menuOf(nav Nav, names addresses, exists map[string]bool, queried bool) menu.Menu {
 	var m menu.Menu
 	seen := map[string]bool{}
 	for _, l := range nav.Links {
-		target, ok := names[keyOf(l.URL)]
+		target, ok := names.at(l.URL, queried)
 		if !ok || !exists[target] || seen[target] || len(m.Items) >= 12 {
 			continue
 		}
@@ -634,21 +667,15 @@ func pageName(u *url.URL) string {
 	}
 	var parts []string
 	for _, seg := range strings.Split(p, "/") {
-		var b strings.Builder
-		dash := false
-		for _, r := range strings.ToLower(seg) {
-			switch {
-			case r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r)):
-				b.WriteRune(r)
-				dash = false
-			case r == '\'' || r == '’':
-			case !dash && b.Len() > 0:
-				b.WriteByte('-')
-				dash = true
+		// Each part is made as a post's link is, and cut at 60 characters
+		// where a hyphen can end it. It was cut by clip, which ends what it
+		// cuts with "…", so a page at a long address came to a name no page
+		// may have and the whole package was refused.
+		if s := sheet.Slug(seg); s != "" {
+			if len(s) > 60 {
+				s = strings.TrimRight(s[:60], "-")
 			}
-		}
-		if s := strings.Trim(b.String(), "-"); s != "" {
-			parts = append(parts, clip(s, 60))
+			parts = append(parts, s)
 		}
 	}
 	if len(parts) == 0 {
@@ -657,12 +684,75 @@ func pageName(u *url.URL) string {
 	if len(parts) > 4 {
 		parts = parts[len(parts)-4:]
 	}
+	// The parts nearest the page are kept, as above, while they come to 121
+	// characters or fewer: two parts at their longest, with room for the
+	// number a name two pages share is given (-2, -3), under the 128 a
+	// package's page may have. Four parts of up to 60 came to as many as 243,
+	// and the whole package was refused for one page deep in long addresses.
+	for len(parts) > 1 && len(strings.Join(parts, "/")) > 121 {
+		parts = parts[1:]
+	}
 	return strings.Join(parts, "/")
 }
 
 // keyOf is a page's address as the crawl knows it.
 func keyOf(u *url.URL) string {
 	return strings.TrimPrefix(strings.ToLower(u.Host), "www.") + strings.TrimSuffix(u.EscapedPath(), "/")
+}
+
+// addressOf is keyOf with the address's query, for a page or post only a
+// query names: WordPress's plain links are the home's address with
+// ?page_id= or ?p=.
+func addressOf(u *url.URL) string {
+	if u.RawQuery == "" {
+		return keyOf(u)
+	}
+	return keyOf(u) + "?" + u.RawQuery
+}
+
+// addresses are pages' and posts' names, or where they are now, by
+// addressOf.
+type addresses map[string]string
+
+// at is what a link names: the page or post at its address with its query,
+// or, for a link with a query of its own (?utm_source=, ?ref=), the one at
+// its path, as the crawl takes an address with a query for the same page
+// again (pageLike). On a site that knows its own pages or posts by a query
+// (queried, byQuery), a query on the home's address names a page of its own
+// or nothing, never the home: ?page_id=99 is a page that was not brought.
+// Everywhere else it is the home. It was never the home anywhere, and on a
+// crawled site a link home with ?utm_source= went back to the old site and
+// the menu lost its Home. The home is told by its name, not by a path at
+// the host's root: WordPress installed in a folder has its home there, and
+// sent ?page_id=99 to it.
+func (a addresses) at(u *url.URL, queried bool) (string, bool) {
+	if v, ok := a[addressOf(u)]; ok {
+		return v, true
+	}
+	if u.RawQuery == "" {
+		return "", false
+	}
+	v, ok := a[keyOf(u)]
+	if queried && v == "index" {
+		return "", false
+	}
+	return v, ok
+}
+
+// byQuery says whether a site knows any of its own pages or posts by a
+// query, as WordPress's plain links do (/?page_id=11, /?p=20).
+func byQuery(s *Site) bool {
+	for _, pg := range s.Pages {
+		if pg.URL != nil && pg.URL.RawQuery != "" {
+			return true
+		}
+	}
+	for _, p := range s.Posts {
+		if p.URL != nil && p.URL.RawQuery != "" {
+			return true
+		}
+	}
+	return false
 }
 
 var hexColour = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

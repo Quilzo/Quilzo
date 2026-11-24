@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/mailaddr"
 )
 
 // Book is where bookings are kept: calendar/ the busy times, a file a
@@ -75,7 +76,6 @@ var (
 
 var (
 	reID    = regexp.MustCompile(`^\d{8}-[0-9a-f]{12}$`)
-	reEmail = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$`)
 	rePhone = regexp.MustCompile(`^[0-9+()\-. ]{5,30}$`)
 )
 
@@ -96,7 +96,7 @@ func (d *Details) Clean() error {
 	switch {
 	case d.Name == "" || utf8.RuneCountInString(d.Name) > 100:
 		return errors.New("say your name, in at most 100 characters")
-	case len(d.Email) > 254 || !reEmail.MatchString(d.Email):
+	case !mailaddr.Valid(d.Email):
 		return errors.New("give an email address, such as you@example.com")
 	case d.Phone != "" && !rePhone.MatchString(d.Phone):
 		return errors.New("a telephone number is digits, spaces and + ( ) -")

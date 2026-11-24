@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/form"
@@ -217,5 +218,51 @@ func TestThePlanRefusesWhatSomebodyElseMade(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s: %s, want %s", k, got[k], v)
 		}
+	}
+}
+
+// The card never said that a package's agent starts on its own, nor what
+// program it runs: an agent with a daily schedule, a trigger on every form
+// sent and its own program was described as "runs its own program,
+// confined", and the person approving it could see neither fact. The card
+// names each trigger as a person would say it, and the program by its path
+// and the digest it is pinned to, or says that it is pinned when installed.
+func TestTheCardSaysWhenAnAgentStartsOnItsOwn(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	p := sample(t)
+	p.Agents = []agent.Manifest{{
+		Name: "tidier", Kind: "task", Purpose: "Tidy the records", Autonomy: agent.AutonomyDraft,
+		Capabilities: []string{"records_list"},
+		Triggers: []agent.Trigger{
+			{On: agent.OnSchedule, Every: agent.Duration(24 * time.Hour), At: "07:30", Zone: "Europe/London", Goal: "tidy"},
+			{On: "form.submitted", Where: "contact", Goal: "file it"},
+		},
+		Program: &agent.Program{Command: []string{"/opt/tidier/bin/run", "--fast"}, Digest: digest},
+	}, {
+		Name: "helper", Kind: "task", Purpose: "Help", Autonomy: agent.AutonomyDraft,
+		Capabilities: []string{"records_list"},
+		Program:      &agent.Program{Command: []string{"/opt/helper/run"}},
+	}, {
+		Name: "boxed", Kind: "task", Purpose: "Work in a sandbox", Autonomy: agent.AutonomyDraft,
+		Capabilities: []string{"records_list"},
+		Program:      &agent.Program{Command: []string{"/sandbox/run"}, Backend: "openshell", Image: "base"},
+	}}
+	c := p.MakeCard()
+	if len(c.Agents) != 3 {
+		t.Fatalf("agents %+v", c.Agents)
+	}
+	tidier, helper, boxed := c.Agents[0].Text, c.Agents[1].Text, c.Agents[2].Text
+	for _, want := range []string{"starts on its own", "every day at 07:30 Europe/London",
+		"when somebody sends a form (contact)", "/opt/tidier/bin/run --fast", digest} {
+		if !strings.Contains(tidier, want) {
+			t.Errorf("the card does not say %q:\n%s", want, tidier)
+		}
+	}
+	if strings.Contains(helper, "starts on its own") || !strings.Contains(helper, "/opt/helper/run") ||
+		!strings.Contains(helper, "pinned to the file at that path when it is installed") {
+		t.Errorf("an unpinned program:\n%s", helper)
+	}
+	if !strings.Contains(boxed, "/sandbox/run") || !strings.Contains(boxed, "OpenShell sandbox made from base") {
+		t.Errorf("a sandboxed program:\n%s", boxed)
 	}
 }

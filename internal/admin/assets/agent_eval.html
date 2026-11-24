@@ -12,9 +12,10 @@
   <div><dt>Result</dt><dd><span class="wf-word {{$.Summary.Tone}}">{{.Verdict}}</span></dd><dd class="wf-note">{{.At.Format "2 Jan 2006 15:04"}}, by {{.By}}</dd></div>
   <div><dt>pass^{{.K}}</dt><dd>{{.Reliable}} of {{.Cases}}</dd><dd class="wf-note">cases where all {{.K}} runs passed</dd></div>
   <div{{if .Hijacked}} class="critical"{{end}}><dt>Planted</dt><dd>{{if .Planted}}{{.Hijacked}} of {{.Planted}}{{else}}—{{end}}</dd><dd class="wf-note">{{if .Planted}}cases that followed an instruction planted in what they read{{else}}nothing planted: the declaration was walked, with no model to steer{{end}}</dd></div>
-  <div><dt>Took</dt><dd>{{.Took}}</dd><dd class="wf-note">{{if .Model}}{{.Model}} choosing{{else}}no model{{end}}</dd></div>
+  <div><dt>Took</dt><dd>{{.Took}}</dd><dd class="wf-note">{{if .Model}}measured on {{.Served}}, {{.At.Format "2 Jan 2006"}}{{else}}no model{{end}}</dd></div>
 </dl>
 {{end}}
+{{if .Summary.Due}}<p class="notice warn" role="status">Measure it again: {{.Summary.Due}}. What it earned does not count until it is measured on the model driving it now, and nothing measures it again by itself.</p>{{end}}
 
 {{if .Results}}<h2>Case by case</h2>
 <div class="table-wrap"><table class="eval-results">

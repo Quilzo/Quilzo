@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/checked"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -25,7 +26,7 @@ import (
 
 func cmdChecked(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["checked"]}
 	}
 	switch args[0] {
 	case "set":
@@ -41,9 +42,9 @@ func cmdChecked(root string, args []string) error {
 	case "clear":
 		return checkedClear(root, args[1:])
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown checked command %q; try set, list, due, own, disown or "+
-				"clear", args[0])
+				"clear", args[0])}
 	}
 }
 
@@ -89,21 +90,31 @@ func checkedSet(root string, args []string) error {
 		"how long until this page is wanted again, e.g. 168h; "+
 			"omit for the site's own answer")
 	note := fs.String("note", "", "what the next person should know")
-	by := fs.String("by", "", "who checked it")
+	by := fs.String("by", "", "who to credit for the check; it is recorded as the signed-in principal's")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
-			"usage: quilzo checked set PAGE [--every 168h] [--note \"...\"]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo checked set PAGE [--every 168h] [--note \"...\"]")}
 	}
 	page := rest[0]
 
-	who := strings.TrimSpace(*by)
+	// Recorded as the verified caller's, whatever the flag says, as a note
+	// is its signed-in writer's (noteAdd), with a name typed after --by
+	// credited in the note (Caller.namedBy). The flag was taken as who
+	// checked the page whenever it was given, so an author confirmed a page
+	// in the publisher's name with "Legal has signed this off" for its note,
+	// and `checked list` and the admin showed both as hers; the admin's own
+	// button records whoever is signed in. At a console nobody signs in to,
+	// the name typed is the one there is.
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
 	if who == "" {
-		who = resolveCaller(root, "").Name
+		who = caller.Name
 	}
+	*note = withCredit(*note, credited)
 	if who == "" {
 		return fmt.Errorf("who checked it? Pass --by, or sign in")
 	}
@@ -112,7 +123,7 @@ func checkedSet(root string, args []string) error {
 	if _, exists := hashes[page]; !exists {
 		// Refused rather than recorded. A check on a page that is not there is
 		// a typo, and recording it produces a record nothing will ever clear.
-		return fmt.Errorf("there is no page called %q in the draft", page)
+		return errNotFound{fmt.Errorf("there is no page called %q in the draft", page)}
 	}
 
 	st, err := openChecked(root)
@@ -126,7 +137,7 @@ func checkedSet(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	record(root, resolveCaller(root, "").auditRecord("checked.set", "/"+page,
+	record(root, caller.auditRecord("checked.set", "/"+page,
 		audit.Success, map[string]string{"by": who, "every": r.Every}))
 
 	if w.JSON(r) {
@@ -143,7 +154,7 @@ func checkedList(root string, args []string, dueOnly bool) error {
 	owner := fs.String("owner", "",
 		"only pages this person is responsible for")
 	unowned := fs.Bool("unowned", false, "only pages nobody is responsible for")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *unowned && strings.TrimSpace(*owner) != "" {
@@ -160,6 +171,22 @@ func checkedList(root string, args []string, dueOnly bool) error {
 	}
 	pages, hashes := draftPageIDs(root)
 	rows := checked.Survey(pages, hashes, records, reviewEvery(root), time.Now())
+
+	// Only the pages the caller may read, as list_checked answers over MCP.
+	// A reader may run this (privilege.go), and it listed every page in the
+	// draft, so a reader denied a page was told its name here though every
+	// list of pages they are shown leaves it out.
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return err
+	}
+	readable := rows[:0]
+	for _, r := range rows {
+		if may(r.Page) {
+			readable = append(readable, r)
+		}
+	}
+	rows = readable
 
 	if dueOnly {
 		kept := rows[:0]
@@ -212,28 +239,41 @@ func checkedList(root string, args []string, dueOnly bool) error {
 		if checked.NeedsAttention(r.State) {
 			colour = yellow
 		}
-		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, r.Page)
+		// Who checked it, whose job it is and the note are whatever
+		// somebody typed, as a note's author and text are (noteList).
+		// Printed raw, a note or an owner carrying a line break and this
+		// layout printed a second page confirmed fresh in somebody else's
+		// name, and ESC and CR rewrote what the terminal showed. The names
+		// stay on the row, and every line of the note at the note's depth.
+		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, onOneLine(r.Page))
 		switch {
 		case r.At == 0:
 			w.Human("  %s—%s", dim, reset)
 		default:
 			w.Human("  %s%s by %s%s", dim,
-				time.Unix(r.At, 0).UTC().Format("2006-01-02"), r.By, reset)
+				time.Unix(r.At, 0).UTC().Format("2006-01-02"), onOneLine(r.By), reset)
 		}
 		if r.Owner != "" {
-			w.Human("  %s(%s)%s", dim, r.Owner, reset)
+			w.Human("  %s(%s)%s", dim, onOneLine(r.Owner), reset)
 		}
 		w.Human("\n")
 		if r.Note != "" {
-			w.Human("            %s%s%s\n", dim, r.Note, reset)
+			w.Human("            %s%s%s\n", dim,
+				indentedForTerminal(r.Note, "            "), reset)
 		}
 	}
 	return nil
 }
 
 func checkedClear(root string, args []string) error {
+	// A flag is refused rather than taken for the page: `checked clear
+	// --zzflag` cleared a page called "--zzflag" and said so, exit 0.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo checked clear PAGE")
+		return errMisused{fmt.Errorf("usage: quilzo checked clear PAGE")}
 	}
 	st, err := openChecked(root)
 	if err != nil {
@@ -255,7 +295,7 @@ func checkedClear(root string, args []string) error {
 // and no flags, so leadingArgs has nothing to trip over.
 func checkedOwn(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo checked own PAGE WHO")
+		return errMisused{fmt.Errorf("usage: quilzo checked own PAGE WHO")}
 	}
 	page, who := args[0], strings.TrimSpace(args[1])
 	if who == "" {
@@ -276,7 +316,7 @@ func checkedOwn(root string, args []string) error {
 // checkedDisown takes the owner off a page.
 func checkedDisown(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo checked disown PAGE")
+		return errMisused{fmt.Errorf("usage: quilzo checked disown PAGE")}
 	}
 	if _, err := setOwner(root, args[0], ""); err != nil {
 		return err
@@ -296,8 +336,8 @@ func setOwner(root, page, who string) (checked.Record, error) {
 		// Same refusal as set, for the same reason: an owner on a page that is
 		// not there is a typo, and it produces a record nothing will ever
 		// clear.
-		return checked.Record{}, fmt.Errorf(
-			"there is no page called %q in the draft", page)
+		return checked.Record{}, errNotFound{fmt.Errorf(
+			"there is no page called %q in the draft", page)}
 	}
 	st, err := openChecked(root)
 	if err != nil {

@@ -80,6 +80,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
 	st.IconStyle = design.Theme.IconStyle()
+	st.Scheme = design.Theme.Scheme()
 	// Where each picture is cropped from, appended to the stylesheet the site
 	// already serves.
 	//
@@ -99,11 +100,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// The installed app's splash and chrome, from the same tokens the
 	// stylesheet is generated from — so a themed site does not open on a white
 	// screen under somebody else's accent colour.
+	//
+	// In the scheme the site is drawn in. A dark-only site's app opened on
+	// the light palette's surface under its light accent, colours no reader
+	// is ever served; and a colour the site had not set was skipped, because
+	// Value's second answer is whether it was set and not whether there is
+	// one, so the same site with the shipped dark palette opened on white.
 	if design.Theme != nil {
-		if v, ok := design.Theme.Value("surface", false); ok {
+		dark := design.Theme.Scheme() == "dark"
+		if v, _ := design.Theme.Value("surface", dark); v != "" {
 			st.Background = v
 		}
-		if v, ok := design.Theme.Value("primary", false); ok {
+		if v, _ := design.Theme.Value("primary", dark); v != "" {
 			st.ThemeColour = v
 		}
 	}
@@ -195,6 +203,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	chatAct, chatAnswer := chatActSite(root)
 	st.Assistants = &public.Assistants{
 		Act: chatAct, Answer: chatAnswer,
+		Taking:    func() bool { return chatActQueue(root).Taking(time.Now()) },
 		Guardrail: guard, GuardrailEvent: guardEvent,
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Handoff: handoffStore(root),
@@ -525,8 +534,14 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				// could not be built, which is a fault; returning the
 				// validation failure as one made it a 500, and a 500 stops
 				// every static copy of the site.
+				//
+				// The site's own sentence leads the card's description: the
+				// configured one, or the one `quilzo site --description`
+				// gave this run, read when the card is asked for so the flag
+				// is honoured too.
 				return a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
 					SiteName:         cfg.Raw("site.name"),
+					Description:      st.Description,
 					BaseURL:          st.BaseURL,
 					Version:          version,
 					DocumentationURL: cfg.Raw("site.docs_url"),

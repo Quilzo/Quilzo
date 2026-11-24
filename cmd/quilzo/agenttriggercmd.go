@@ -25,13 +25,22 @@ import (
 //	quilzo agent trigger events
 func agentTriggerCmd(root string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")
+		return errMisused{fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")}
 	}
 	if args[0] == "events" {
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentTriggerEvents()
 	}
 	name, rest := args[0], args[1:]
 	if len(rest) == 0 || rest[0] == "list" {
+		// Nothing after list: a word there was not read.
+		if len(rest) > 0 {
+			if err := noArguments(rest[1:]); err != nil {
+				return err
+			}
+		}
 		return agentTriggerList(root, name)
 	}
 	switch rest[0] {
@@ -40,7 +49,7 @@ func agentTriggerCmd(root string, args []string) error {
 	case "remove":
 		return agentTriggerRemove(root, name, rest[1:])
 	}
-	return fmt.Errorf("unknown trigger command %q; try add, remove or list", rest[0])
+	return errMisused{fmt.Errorf("unknown trigger command %q; try add, remove or list", rest[0])}
 }
 
 func agentTriggerEvents() error {
@@ -57,14 +66,14 @@ func agentTriggerEvents() error {
 
 func agentTriggerAdd(root, name string, args []string) error {
 	fs := flag.NewFlagSet("trigger add", flag.ContinueOnError)
-	on := fs.String("on", "", "an event (quilzo agent trigger events), or schedule with --every")
+	on := fs.String("on", "", "an event (quilzo agent trigger events), by its name or a webhook's (published), or schedule with --every")
 	where := fs.String("where", "", "a page path, collection, form, chatbot or service the event is about")
-	every := fs.Duration("every", 0, "how often a schedule repeats (15m at least)")
+	every := flagDuration(fs, "every", 0, "how often a schedule repeats (15m at least)")
 	at := fs.String("at", "", "a schedule's time of day, 07:30")
 	zone := fs.String("zone", "", "the time zone of --at, Europe/London (UTC when not given)")
 	goal := fs.String("goal", "", "what each run is to do")
 	perDay := fs.Int("per-day", 0, fmt.Sprintf("the most runs it starts in a day (%d when not given)", agent.DefaultPerDay))
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	t := agent.Trigger{On: *on, Where: *where, Every: agent.Duration(*every), At: *at, Zone: *zone,
@@ -82,7 +91,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	m.Triggers = append(append([]agent.Trigger(nil), m.Triggers...), t)
 	if err := declareAgent(root, m, false, true, caller); err != nil {
@@ -111,7 +120,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 
 func agentTriggerRemove(root, name string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent trigger %s remove N (the number in the list)", name)
+		return errMisused{fmt.Errorf("usage: quilzo agent trigger %s remove N (the number in the list)", name)}
 	}
 	n, err := strconv.Atoi(args[0])
 	set, lerr := loadAgents(root)
@@ -120,7 +129,7 @@ func agentTriggerRemove(root, name string, args []string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	if err != nil || n < 1 || n > len(m.Triggers) {
 		return fmt.Errorf("%q is not one of %s's triggers, numbered 1 to %d", args[0], name, len(m.Triggers))
@@ -170,7 +179,7 @@ func agentTriggerList(root, name string) error {
 	}
 	m, ok := set.Agents[name]
 	if !ok {
-		return fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	views := triggerViews(root, name, m, time.Now())
 	if w.JSON(views) {

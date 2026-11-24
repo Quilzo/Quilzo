@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,6 +39,8 @@ import (
 //	  page.html        the default layout; required
 //	  *.html           any other layout, named by a page's "layout" field
 //	  theme.json       the tokens this site overrides; optional
+//	  style.css        a style layer over the generated stylesheet; optional,
+//	                   every colour a token, served only when it passes
 //	  site.css         an operator's own stylesheet; optional, and wins
 //	  fonts/*.woff2    typefaces served from this origin; optional
 //
@@ -64,6 +67,13 @@ type Design struct {
 	// command can say that the theme is not in effect rather than leaving
 	// somebody wondering why `theme set` changed nothing.
 	OwnStylesheet bool
+	// Layer is the site's style layer as written, LayerFindings what the
+	// check said about it, and LayerServed whether it is in the stylesheet:
+	// only when nothing in it was refused, and never under a site.css, which
+	// replaces everything a layer would sit on.
+	Layer         string
+	LayerFindings []theme.Finding
+	LayerServed   bool
 	// Notes are non-fatal things worth telling the operator: a font that was
 	// refused, a theme value that is not usable. A design that quietly loses
 	// half of itself is worse than one that complains.
@@ -104,13 +114,70 @@ func loadDesign(dir string) (*Design, error) {
 	}
 	d.Theme = th
 
+	layer, lerr := readLayer(dir)
+	if lerr != nil {
+		return nil, lerr
+	}
+	d.Layer = layer
+	if layer != "" {
+		d.LayerFindings = theme.CheckLayer(layer, th)
+	}
+
 	if own, oerr := os.ReadFile(filepath.Join(dir, "site.css")); oerr == nil {
 		d.Stylesheet = string(own)
 		d.OwnStylesheet = true
-	} else {
-		d.Stylesheet = starter.Stylesheet(th)
+		if layer != "" {
+			d.Notes = append(d.Notes, filepath.Join(dir, theme.LayerFile)+
+				" is not served: site.css replaces the generated stylesheet, and "+
+				"a style layer is a layer over that")
+		}
+		return d, nil
 	}
+	// A refused layer is left out whole and said, the way a bad token is:
+	// the site keeps serving the stylesheet it can stand behind, rather than
+	// stopping over a rule, or serving the part of a layer that passed and
+	// looking like somebody's half-finished design.
+	if layer != "" && theme.Blocks(d.LayerFindings) {
+		d.Notes = append(d.Notes, fmt.Sprintf("%s is not served: %d rule(s) in it are "+
+			"refused. `quilzo theme check` says which",
+			filepath.Join(dir, theme.LayerFile), blockingCount(d.LayerFindings)))
+		layer = ""
+	}
+	d.LayerServed = layer != ""
+	d.Stylesheet = starter.WithLayer(th, layer)
 	return d, nil
+}
+
+// readLayer reads templates/style.css. Absent is normal and is no layer.
+//
+// Read no further than one byte past the bound, so a file somebody put there
+// by mistake — a video renamed, a log — is refused for its size rather than
+// read whole into every process that loads the design.
+func readLayer(dir string) (string, error) {
+	f, err := os.Open(filepath.Join(dir, theme.LayerFile))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, theme.MaxLayer+1))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// blockingCount counts the findings that refuse something.
+func blockingCount(findings []theme.Finding) int {
+	n := 0
+	for _, f := range findings {
+		if f.Blocking {
+			n++
+		}
+	}
+	return n
 }
 
 // loadLayouts reads every .html in the directory as a layout.
@@ -189,6 +256,29 @@ func trimFloat(f float64) string {
 	return s
 }
 
+// siteDesignAt refuses a design directory that is not there yet, saying
+// what to do about it.
+//
+// `theme set` before any site existed answered "open templates/theme.json:
+// no such file or directory": true, and no help to somebody who has not
+// started a site, which is the only way to have no templates directory. Not
+// created here instead: a theme with no layouts beside it is a palette for
+// a site nobody can serve, and the directory a site is started in is the
+// one `site new` and `demo` write.
+func siteDesignAt(dir string) error {
+	st, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("there is no site design at %s yet: start a site first "+
+			"(quilzo site new or quilzo demo), or give the directory its templates are in with --dir", dir)
+	case err != nil:
+		return err
+	case !st.IsDir():
+		return fmt.Errorf("%s is a file, not the directory a site's templates are in", dir)
+	}
+	return nil
+}
+
 // writeThemeFile saves a token set, sorted so a diff is readable.
 func writeThemeFile(dir string, values map[string]string) error {
 	if len(values) == 0 {
@@ -199,6 +289,9 @@ func writeThemeFile(dir string, values map[string]string) error {
 			return err
 		}
 		return nil
+	}
+	if err := siteDesignAt(dir); err != nil {
+		return err
 	}
 	keys := make([]string, 0, len(values))
 	for k := range values {

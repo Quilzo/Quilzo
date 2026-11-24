@@ -27,11 +27,11 @@ func integrationsImport(root string, args []string) error {
 	endpoint := fs.String("endpoint", "", "the server to reach, when the document names none or names another")
 	uses := fs.String("uses", "", "the operations or tools this install may call, comma-separated")
 	secret := fs.String("secret", "", "the name of the credential it authenticates with, as quilzo secret set keeps it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo integrations import openapi.json|server.json|agent-card.json [--name N] [--endpoint HOST] [--uses A,B] [--secret NAME]")
+		return errMisused{errors.New("usage: quilzo integrations import openapi.json|server.json|agent-card.json [--name N] [--endpoint HOST] [--uses A,B] [--secret NAME]")}
 	}
 	body, err := readBounded(pos[0], apiimport.MaxDocument)
 	if err != nil {

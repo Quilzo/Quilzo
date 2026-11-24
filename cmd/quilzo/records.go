@@ -35,6 +35,9 @@ func cmdRecords(root string, args []string) error {
 	}
 	switch args[0] {
 	case "collections":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return recordsCollections(root)
 	case "list":
 		return recordsList(root, args[1:])
@@ -49,8 +52,8 @@ func cmdRecords(root string, args []string) error {
 	case "export":
 		return recordsExport(root, args[1:])
 	default:
-		return fmt.Errorf("unknown records command %q; try collections, "+
-			"list, get, add, delete, import or export", args[0])
+		return errMisused{fmt.Errorf("unknown records command %q; try collections, "+
+			"list, get, add, delete, import or export", args[0])}
 	}
 }
 
@@ -70,29 +73,31 @@ func draftTree(s *store.Store) (string, error) {
 	return c.Tree, nil
 }
 
-// commitTree makes a tree the new draft.
+// commitTree makes the draft what change makes of it, under the ref lock:
+// change is handed the draft's tree as it is once the lock is held, and
+// gives back the tree to commit and the commit's message.
 //
-// Under the ref lock and against the draft the caller read, so two people
-// writing records at once cannot silently lose one of the writes — the same
-// compare-and-swap every other write in this program goes through.
-func commitTree(root string, s *store.Store, tree, message, author string) error {
+// The tree is read here, inside the lock, and not by the caller. This took
+// a tree its callers had already read and changed, and said it ran "against
+// the draft the caller read" while checking nothing: whatever landed between
+// their read and this write was not in the tree it made the draft. Ten
+// `quilzo records add` run beside ten `quilzo add` kept two to five of the
+// ten records and five or six of the ten pages, a deleted record came back,
+// and all of them exited 0. write_record, the admin and the content API
+// already read, change and write under the one lock.
+func commitTree(s *store.Store, author string,
+	change func(tree string) (next, message string, err error)) error {
+
 	return s.WithRefLock(func() error {
-		parent := s.GetRef(site.RefDraft)
-		if parent == "" {
-			parent = s.GetRef(site.RefLive)
-		}
-		var parents []string
-		if parent != "" {
-			parents = []string{parent}
-		}
-		cid, err := s.PutCommit(store.Commit{
-			Tree: tree, Parents: parents, Message: message,
-			Author: author, At: time.Now().Unix(),
-		})
+		tree, err := draftTree(s)
 		if err != nil {
 			return err
 		}
-		return s.SetRef(site.RefDraft, cid)
+		next, message, err := change(tree)
+		if err != nil {
+			return err
+		}
+		return commitTreeNoLock(s, next, message, author)
 	})
 }
 
@@ -143,11 +148,11 @@ func recordsList(root string, args []string) error {
 	limit := fs.Int("limit", collection.DefaultLimit, "how many")
 	offset := fs.Int("offset", 0, "where to start")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo records list <collection> [--where field=value]")
+		return errMisused{fmt.Errorf("usage: quilzo records list <collection> [--where field=value]")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -172,8 +177,12 @@ func recordsList(root string, args []string) error {
 		w.Human("no records match\n")
 		return nil
 	}
+	// The whole id, which is what `records get` and `records delete` take.
+	// The first twelve characters were shown, and both refused them as not
+	// a record id, so the list could not be followed by either without
+	// --json.
 	for _, r := range recs {
-		w.Human("  %s%s%s\n", bold, r.ID[:12], reset)
+		w.Human("  %s%s%s\n", bold, r.ID, reset)
 		for _, k := range sortedKeys(r.Fields) {
 			w.Human("    %-16s %v\n", k, r.Fields[k])
 		}
@@ -184,7 +193,7 @@ func recordsList(root string, args []string) error {
 
 func recordsGet(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo records get <collection> <id>")
+		return errMisused{fmt.Errorf("usage: quilzo records get <collection> <id>")}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -236,19 +245,19 @@ func recordsAdd(root string, args []string) error {
 		}
 		rest = append(rest, a)
 	}
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) < 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo records add <collection> field=value [...]\n" +
-				"   or: quilzo records add <collection> --from record.json")
+				"   or: quilzo records add <collection> --from record.json")}
 	}
 	coll := rest[0]
 
 	fields := map[string]any{}
 	if *fromFile != "" {
-		body, err := os.ReadFile(*fromFile)
+		body, err := readInput(*fromFile, 16<<20)
 		if err != nil {
 			return err
 		}
@@ -272,17 +281,14 @@ func recordsAdd(root string, args []string) error {
 		return err
 	}
 	caller := resolveCaller(root, "")
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-	next, rec, err := collection.Put(s, tree, coll,
-		collection.Record{ID: *id, Fields: fields}, time.Now(),
-		recordGate(root))
-	if err != nil {
-		return err
-	}
-	if err := commitTree(root, s, next, "records: write "+coll, caller.Name); err != nil {
+	var rec collection.Record
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, put, err := collection.Put(s, tree, coll,
+			collection.Record{ID: *id, Fields: fields}, time.Now(),
+			recordGate(root))
+		rec = put
+		return next, "records: write " + coll, err
+	}); err != nil {
 		return err
 	}
 	record(root, caller.auditRecord("records.write", "/"+coll, audit.Success,
@@ -298,23 +304,17 @@ func recordsAdd(root string, args []string) error {
 
 func recordsDelete(root string, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo records delete <collection> <id>")
+		return errMisused{fmt.Errorf("usage: quilzo records delete <collection> <id>")}
 	}
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-	next, err := collection.Delete(s, tree, args[0], args[1])
-	if err != nil {
-		return err
-	}
-	if err := commitTree(root, s, next, "records: delete "+args[0],
-		caller.Name); err != nil {
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, err := collection.Delete(s, tree, args[0], args[1])
+		return next, "records: delete " + args[0], err
+	}); err != nil {
 		return err
 	}
 	record(root, caller.auditRecord("records.delete", "/"+args[0],
@@ -341,17 +341,17 @@ func recordsImport(root string, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
 	noPictures := fs.Bool("no-pictures", false, "leave out pictures named by address rather than fetch them")
 	flags, rest := splitFlags(args, map[string]bool{"key": true, "map": true, "dates": true})
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo records import <collection> <file.csv|file.json|file.ics> " +
-			"[--key FIELD|none] [--map 'Heading=field,…'] [--dates dmy|mdy] [--skip-bad] [--dry-run] [--no-pictures]")
+		return errMisused{fmt.Errorf("usage: quilzo records import <collection> <file.csv|file.json|file.ics> " +
+			"[--key FIELD|none] [--map 'Heading=field,…'] [--dates dmy|mdy] [--skip-bad] [--dry-run] [--no-pictures]")}
 	}
 	if *dates != "" && *dates != "dmy" && *dates != "mdy" {
 		return fmt.Errorf("--dates is dmy (day first) or mdy (month first), not %q", *dates)
 	}
-	body, err := readBounded(rest[1], sheet.MaxBytes)
+	body, err := readInput(rest[1], sheet.MaxBytes)
 	if err != nil {
 		return err
 	}
@@ -379,11 +379,11 @@ func recordsExport(root string, args []string) error {
 	outPath := fs.String("o", "", "write to this file rather than the terminal")
 	excel := fs.Bool("excel", false, "begin the file with the mark Excel needs to read accents")
 	flags, rest := splitFlags(args, map[string]bool{"format": true, "o": true})
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo records export <collection> [--format csv|json] [-o FILE] [--excel]")
+		return errMisused{fmt.Errorf("usage: quilzo records export <collection> [--format csv|json] [-o FILE] [--excel]")}
 	}
 	if *format != "csv" && *format != "json" {
 		return fmt.Errorf("--format is csv or json, not %q", *format)
@@ -395,7 +395,7 @@ func recordsExport(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	record(root, caller.auditRecord("records.export", "/"+rest[0], audit.Success,
 		map[string]string{"collection": rest[0], "records": fmt.Sprint(n), "format": *format}))
-	if *outPath == "" {
+	if toStdout(*outPath) {
 		_, err := os.Stdout.Write(body)
 		return err
 	}
@@ -451,21 +451,16 @@ func putCheckedRecords(root, name string, rows []map[string]any, caller *Caller)
 	if err != nil {
 		return 0, err
 	}
-	tree, err := draftTree(s)
-	if err != nil {
-		return 0, err
-	}
 	batch := make([]collection.Record, 0, len(rows))
 	for _, f := range rows {
 		batch = append(batch, collection.Record{Fields: f})
 	}
-	next, out, err := collection.PutMany(s, tree, name, batch, time.Now())
-	if err != nil {
-		return 0, err
-	}
-	if err := commitTree(root, s, next,
-		fmt.Sprintf("records: import %d into %s", len(out), name),
-		caller.Name); err != nil {
+	var out []collection.Record
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, put, err := collection.PutMany(s, tree, name, batch, time.Now())
+		out = put
+		return next, fmt.Sprintf("records: import %d into %s", len(put), name), err
+	}); err != nil {
 		return 0, err
 	}
 	record(root, caller.auditRecord("records.import", "/"+name,

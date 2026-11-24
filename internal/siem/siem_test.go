@@ -5,6 +5,7 @@ package siem
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -400,6 +401,31 @@ func TestOnlyTheFormatsWorthMaintainingAreOffered(t *testing.T) {
 	}
 }
 
+// A format nobody has is said to be that, whatever the events are.
+//
+// The format was looked at last, after the chain was verified and the range
+// applied, so an empty log, a range with nothing in it or a chain that does
+// not verify each answered for the format instead: `quilzo siem zzbogus` on
+// a new store said "no events in that range" and exited 3, a gate refusing,
+// where a format nobody has is the command used wrongly, 2.
+func TestAnUnknownFormatIsSaidWhateverTheEvents(t *testing.T) {
+	broken := log(t, nil)
+	broken[1].Action = "something else"
+	for name, c := range map[string]struct {
+		events []audit.Event
+		opt    Options
+	}{
+		"no events":         {nil, Options{}},
+		"an empty range":    {log(t, nil), Options{Since: 900, Until: 999}},
+		"a broken chain":    {broken, Options{}},
+		"the log as stored": {log(t, nil), Options{AsStored: true}},
+	} {
+		if _, err := Export("zzbogus", c.events, c.opt, now); !errors.Is(err, ErrUnknownFormat) {
+			t.Errorf("%s: an unknown format was refused for something else: %v", name, err)
+		}
+	}
+}
+
 // A partial export is the normal case — last week's events, not all of them.
 // The first version verified only the selected range, which verifies nothing:
 // each event links to the one before it, so a slice cannot be checked against
@@ -658,5 +684,91 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 	}
 	if _, ok := recs[3]["actor"].(map[string]any)["app_name"]; ok {
 		t.Error("a person's record names an application")
+	}
+}
+
+// The envelope says whether the identifiers in the export are protected, so
+// the receiver knows whether it holds personal data, and it said what was
+// asked for rather than what was sent: a log kept with a key, exported with
+// identifiers asked for, carried nothing but pseudonyms and an envelope
+// saying it was not pseudonymous, in the GUI, the CLI and the stream alike.
+// Asking cannot recover what the log never stored in the clear, so the
+// envelope says what the export holds.
+func TestAskingForIdentifiersDoesNotMakeAPseudonymousExportClaimOtherwise(t *testing.T) {
+	key, _ := audit.NewKey()
+	for _, f := range Formats() {
+		res, err := Export(f, log(t, key), Options{Reveal: true}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Chain.Pseudonymous {
+			t.Errorf("%s: an export of pseudonyms says it is not pseudonymous because identifiers were asked for", f)
+		}
+		if f == OCSF && !strings.Contains(res.Body, `"pseudonymous":true`) {
+			t.Errorf("the OCSF records say otherwise:\n%s", res.Body)
+		}
+	}
+	// And a log that names people as they are does not become pseudonymous
+	// by nobody asking.
+	res, err := Export(JSONL, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Chain.Pseudonymous {
+		t.Error("an export that names people in the clear says it is pseudonymous")
+	}
+}
+
+// Result.Redacted says whether identifiers were withheld, and it was the
+// request turned round as the envelope's flag was. Asked for identifiers on
+// a log kept with a key, `quilzo --json siem --reveal` answered
+// "redacted": false beside an envelope saying the export was pseudonymous,
+// while every principal in it was a handle; on a log that names people as
+// they are, asking for nothing answered that they had been withheld, with
+// every name in the export.
+func TestRedactedSaysWhatTheExportHolds(t *testing.T) {
+	key, _ := audit.NewKey()
+	res, err := Export(JSONL, log(t, key), Options{Reveal: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Redacted {
+		t.Error("an export of nothing but handles says its identifiers were not withheld, because they were asked for")
+	}
+	res, err = Export(JSONL, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Redacted {
+		t.Error("an export that names people as they are says their identifiers were withheld")
+	}
+}
+
+// A grant or revocation recorded under the name the People screen used to
+// write, access.grant or access.revoke, exports as identity and access
+// management, as the same act recorded as auth.granted or auth.revoke does.
+// The names the log was written with stay in the export; only what they are
+// filed under follows the act.
+func TestAnActRecordedUnderItsOldNameIsClassifiedAsTheAct(t *testing.T) {
+	var rs []audit.Record
+	for _, a := range []string{"access.grant", "auth.granted", "access.revoke", "auth.revoke"} {
+		rs = append(rs, audit.Record{Action: a, Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true})
+	}
+	res, err := Export(OCSF, log(t, nil, rs...), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][2]float64{}
+	for _, rec := range records(t, res.Body) {
+		got[rec["activity_name"].(string)] = [2]float64{rec["class_uid"].(float64), rec["activity_id"].(float64)}
+	}
+	for old, now := range map[string]string{"access.grant": "auth.granted", "access.revoke": "auth.revoke"} {
+		if got[old] != got[now] {
+			t.Errorf("%s exports as class and activity %v, and %s as %v", old, got[old], now, got[now])
+		}
+	}
+	if got["access.grant"][0] != classAuthentication {
+		t.Errorf("access.grant is class %v, not identity", got["access.grant"][0])
 	}
 }

@@ -50,6 +50,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // A Record is one confirmation that a page was right.
@@ -106,7 +108,9 @@ func (r Record) Interval(fallback time.Duration) time.Duration {
 	if strings.TrimSpace(r.Every) == "" {
 		return fallback
 	}
-	d, err := time.ParseDuration(r.Every)
+	// Read as Validate took it: a check made `--every 7d` would otherwise
+	// be due at the site's own interval, the 7d unread.
+	d, err := config.ParseDuration(strings.TrimSpace(r.Every))
 	if err != nil || d <= 0 {
 		return fallback
 	}
@@ -208,10 +212,13 @@ func (st *Store) Set(r Record, now time.Time) (Record, error) {
 			"a check records who made it; somebody has to be askable")
 	}
 	if e := strings.TrimSpace(r.Every); e != "" {
-		d, err := time.ParseDuration(e)
+		// Days and weeks as well as Go's hours, as every other length of
+		// time on the command line is read (config.ParseDuration): this
+		// told somebody who typed 7d to write 168h instead.
+		d, err := config.ParseDuration(e)
 		if err != nil {
 			return Record{}, fmt.Errorf(
-				"%q is not a length of time. Try 168h for a week, or 8760h "+
+				"%q is not a length of time. Try 1w for a week, or 365d "+
 					"for a year", e)
 		}
 		if d <= 0 {

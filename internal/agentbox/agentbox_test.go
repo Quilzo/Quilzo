@@ -509,3 +509,61 @@ func TestABoxServiceReadsTheBearerSchemeInAnyCase(t *testing.T) {
 		t.Error("no secret accepted nothing")
 	}
 }
+
+// A program's call is a step of its run whatever it calls its arguments:
+// the run reads them, by the executor's own rules, and records the step.
+//
+// The run's interface is built from the store's operations, which say what
+// arguments they take, and the interface began holding every call to that
+// before its handler ran. But here the handler is the run, whose executor
+// reads a page from "page" or "name", a search from "query", "q" or "text"
+// and a page's content from "fields", "body" or "content": a program that
+// had always sent name was refused as invalid params, and the step, which
+// the manifest, the budget and the record are all about, never happened.
+func TestAProgramsArgumentsAreReadByTheRun(t *testing.T) {
+	m := manifest(5)
+	b := NewBridge()
+	srv := RunServer(b, m, []mcp.Operation{
+		{Name: "read_page", Summary: "read a page", NeedsRole: "reader", Args: map[string]string{"page": "the page name"}},
+		{Name: "search_pages", Summary: "search", NeedsRole: "reader",
+			Args: map[string]string{"query": "the words", "limit": "optional"}, Types: map[string]string{"limit": "number"}},
+	}, "test")
+	got := make(chan agent.Action, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() {
+		seen := []agent.Observation(nil)
+		for {
+			a, err := b.Decide(ctx, "", seen)
+			if err != nil {
+				return
+			}
+			got <- a
+			seen = []agent.Observation{{Body: "done", Trusted: true}}
+		}
+	}()
+	for _, tc := range []struct{ params, op, key string }{
+		{`{"name":"quilzo_read","arguments":{"operation":"read_page","arguments":{"name":"about"}}}`, "read_page", "name"},
+		{`{"name":"quilzo_read","arguments":{"operation":"search_pages","arguments":{"q":"returns","limit":"3"}}}`, "search_pages", "q"},
+	} {
+		done := make(chan *mcp.Response, 1)
+		go func() {
+			done <- srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "tools/call",
+				Params: json.RawMessage(tc.params)})
+		}()
+		select {
+		case a := <-got:
+			if a.Op != tc.op || a.Input[tc.key] == nil {
+				t.Fatalf("the run was handed %+v", a)
+			}
+		case res := <-done:
+			t.Fatalf("%s never reached the run: %+v", tc.op, res.Error)
+		case <-ctx.Done():
+			t.Fatal("nothing happened")
+		}
+		// The next Decide hands this step's answer back to the program.
+		if res := <-done; res.Error != nil {
+			t.Fatalf("%s: %+v", tc.op, res.Error)
+		}
+	}
+}

@@ -4,7 +4,11 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -34,6 +38,17 @@ type Program struct {
 	// MemoryMB and CPUSeconds bound it; zero is Quilzo's default.
 	MemoryMB   int `json:"memory_mb,omitempty"`
 	CPUSeconds int `json:"cpu_seconds,omitempty"`
+	// Digest is the SHA-256 of the program's file as it was when a person
+	// reviewed it ("sha256:" and 64 hex digits), set when the program is
+	// declared. A run whose file is not that one any more is refused. When
+	// the command line names further files, a script an interpreter runs,
+	// it pins those too: see DigestNow.
+	//
+	// The declaration named a path and nothing else, so the file could be
+	// replaced between the review and the run with nothing recorded, while
+	// a process integration was refused without a digest. A program in an
+	// OpenShell sandbox runs from its image, which is what pins it there.
+	Digest string `json:"digest,omitempty"`
 }
 
 // Backends a program may run on.
@@ -96,19 +111,134 @@ func (p *Program) validate(name string) error {
 	if p.MemoryMB < 0 || p.MemoryMB > 65536 || p.CPUSeconds < 0 || p.CPUSeconds > 86400 {
 		return fmt.Errorf("%s's program asks for limits out of range", name)
 	}
+	if p.Digest != "" && !reDigest.MatchString(p.Digest) {
+		return fmt.Errorf("%q is not a program's digest; it is sha256: and 64 hex digits", p.Digest)
+	}
+	if p.Digest != "" && !p.Pinnable() {
+		return fmt.Errorf("%s's program runs from its OpenShell image, so the image is what pins it "+
+			"(IMAGE@sha256:…), not a digest of a file on this machine", name)
+	}
 	return nil
+}
+
+// Pinnable reports whether the program is a file on this machine, which is
+// what a digest pins.
+func (p *Program) Pinnable() bool { return p != nil && p.Backend != "openshell" }
+
+// FileDigest is a program file's SHA-256, written as a pin is.
+func FileDigest(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil {
+		return "", err
+	} else if !st.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a file", path)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// pinnedFiles are the files a pin covers: the program, and each argument
+// that names a file on this machine, in the order the command line gives
+// them.
+//
+// The program alone was the command's first word, so "/usr/bin/python3
+// /opt/agent/run.py" was pinned to python3: the script, which is what a
+// person reviewed there, could be replaced after the review and still run.
+// A path that names no file (a directory, an output not written yet, a
+// word) is not one.
+func (p *Program) pinnedFiles() []string {
+	files := []string{p.Command[0]}
+	for _, a := range p.Command[1:] {
+		if !filepath.IsAbs(a) || filepath.Clean(a) != a {
+			continue
+		}
+		if st, err := os.Stat(a); err == nil && st.Mode().IsRegular() {
+			files = append(files, a)
+		}
+	}
+	return files
+}
+
+// DigestNow is what the program's pin is as its files are now: the
+// program file's own SHA-256 when its command line names no other file,
+// which is what sha256sum says of it, and otherwise the SHA-256 of what
+// sha256sum lists for each of them, in order ("sha256sum FILE... |
+// sha256sum").
+func (p *Program) DigestNow() (string, error) {
+	files := p.pinnedFiles()
+	if len(files) == 1 {
+		return FileDigest(files[0])
+	}
+	var list strings.Builder
+	for _, f := range files {
+		d, err := FileDigest(f)
+		if err != nil {
+			return "", err
+		}
+		list.WriteString(strings.TrimPrefix(d, "sha256:") + "  " + f + "\n")
+	}
+	sum := sha256.Sum256([]byte(list.String()))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+// Pin sets the digest to the program's files as they are now: done where a
+// person declares or reviews the program, never when it runs, since a run
+// pinning what it found would pin whatever had replaced the file.
+func (p *Program) Pin() error {
+	if !p.Pinnable() || len(p.Command) == 0 {
+		return nil
+	}
+	d, err := p.DigestNow()
+	if err != nil {
+		return fmt.Errorf("the program %s cannot be pinned to the file a person reviews: %w", p.Command[0], err)
+	}
+	p.Digest = d
+	return nil
+}
+
+// Check says whether the program's file is still the one pinned when it
+// was reviewed, and gives its digest as it is now, for the run's receipt.
+// It is read as the run starts, a moment before the box executes it.
+func (p *Program) Check(agentName string) (string, error) {
+	if !p.Pinnable() || len(p.Command) == 0 {
+		return "", nil
+	}
+	path := p.Command[0]
+	again := "Review it, then pin it again: quilzo agent program " + agentName + " --pin"
+	now, err := p.DigestNow()
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("%s's program %s cannot be read to check it is the one reviewed, so it is not run: %w",
+			agentName, path, err)
+	case p.Digest == "":
+		return now, fmt.Errorf("%s's program %s was never pinned, so nothing records which file a person reviewed, "+
+			"and it is not run. %s", agentName, path, again)
+	case now != p.Digest:
+		return now, fmt.Errorf("%s's program %s has changed since it was reviewed (pinned %s, now %s), "+
+			"so it is not run. %s", agentName, path, p.Digest, now, again)
+	}
+	return now, nil
 }
 
 // FromProgram is a run whose every decision was a program's.
 const FromProgram SourceKind = "program"
 
-// DecidedBy marks a run as decided by a program. Like reading stored
-// content, it taints the run from the start: what the program chose to do
-// is not evidence anybody reviewed, so what the run produced goes live
-// only when a person says so.
-func (s *Session) DecidedBy(program string) {
+// DecidedBy marks a run as decided by a program, the file whose digest is
+// given. Like reading stored content, it taints the run from the start:
+// what the program chose to do is not evidence anybody reviewed, so what
+// the run produced goes live only when a person says so. The digest goes
+// on the receipt with the path, so a run says which file decided it, not
+// only where that file was.
+func (s *Session) DecidedBy(program, digest string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tainted = true
-	s.note(FromProgram, program, "")
+	s.note(FromProgram, program, digest)
 }

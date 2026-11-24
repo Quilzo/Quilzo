@@ -28,6 +28,14 @@ func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
 	case IsForeignProbe(r.URL.Path):
 		st.signal(ForeignProbe, huntedPath(r.URL.Path), r)
 	}
+	st.notFoundPage(w, r)
+}
+
+// notFoundPage writes the site's own 404 and counts nothing: for an address
+// that is the site's own to answer for, its agent interface asked for as a
+// page among them (page), where the same answer is no sign of anybody
+// hunting for the admin.
+func (st *Site) notFoundPage(w http.ResponseWriter, r *http.Request) {
 	name := st.Name
 	if strings.TrimSpace(name) == "" {
 		name = "This site"

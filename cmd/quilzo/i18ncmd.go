@@ -34,24 +34,30 @@ func cmdLang(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return langStatus(root)
 	case "init":
 		return langInit(root, args[1:])
 	case "add":
 		return langAdd(root, args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return langCheck(root)
 	case "translated":
 		return langTranslated(root, args[1:])
 	default:
-		return fmt.Errorf("unknown lang command %q; try status, init, add, "+
-			"check or translated", args[0])
+		return errMisused{fmt.Errorf("unknown lang command %q; try status, init, add, "+
+			"check or translated", args[0])}
 	}
 }
 
 func langInit(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo lang init <default-locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang init <default-locale>")}
 	}
 	l, err := i18n.ParseLocale(args[0])
 	if err != nil {
@@ -65,6 +71,10 @@ func langInit(root string, args []string) error {
 	if err := saveJSON(localesPath(root), c); err != nil {
 		return err
 	}
+	// The languages under --json; it answered nothing, exit 0.
+	if w.JSON(map[string]any{"default": l, "locales": c}) {
+		return nil
+	}
 	w.Human("default language is %s%s%s\n", bold, l, reset)
 	w.Human("  %spages stay where they are; a second language is added under a "+
 		"prefix%s\n", dim, reset)
@@ -73,7 +83,7 @@ func langInit(root string, args []string) error {
 
 func langAdd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo lang add <locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang add <locale>")}
 	}
 	c, err := loadLocales(root)
 	if err != nil {
@@ -101,6 +111,9 @@ func langAdd(root string, args []string) error {
 		Detail: map[string]string{"locale": string(l)},
 	})
 
+	if w.JSON(map[string]any{"added": l, "dir": l.Dir(), "locales": c}) {
+		return nil
+	}
 	w.Human("added %s%s%s\n", bold, l, reset)
 	w.Human("  %spages go under %s/, and %s is %s%s\n",
 		dim, l, l, l.Dir(), reset)
@@ -192,12 +205,12 @@ func langCheck(root string) error {
 func langTranslated(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("translated", flag.ContinueOnError)
-	by := fs.String("by", "", "who made the translation")
-	if err := fs.Parse(flags); err != nil {
+	by := fs.String("by", "", "who to credit for the translation; it is recorded as the signed-in principal's")
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo lang translated <page> <locale>")
+		return errMisused{fmt.Errorf("usage: quilzo lang translated <page> <locale>")}
 	}
 
 	c, err := loadLocales(root)
@@ -235,9 +248,16 @@ func langTranslated(root string, args []string) error {
 			c.Path(pos[0], l))
 	}
 
-	who := *by
+	// Recorded as the verified caller's, with a name typed after --by
+	// credited beside them (Caller.namedBy): the name typed was the whole
+	// record, and whoever recorded the translation was not in it.
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
 	if who == "" {
-		who = resolveCaller(root, "").Name
+		who = caller.Name
+	}
+	if credited != "" {
+		who += " (" + credit(credited) + ")"
 	}
 	c.Record(pos[0], l, sourceHash, who, time.Now())
 	if err := saveJSON(localesPath(root), c); err != nil {

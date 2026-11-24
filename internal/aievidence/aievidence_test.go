@@ -141,3 +141,18 @@ func TestTheAIBillOfMaterialsSaysWhatUsesWhat(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A memory deleted from the command line counts as deleted. It was recorded
+// as memory.deleteed, which this did not count, so the evidence of what
+// agents were made to forget left out every deletion made from a terminal.
+func TestAMemoryDeletedUnderEitherNameCountsAsForgotten(t *testing.T) {
+	day := now.Add(-24 * time.Hour)
+	c := Count([]audit.Event{
+		ev("memory.forgotten", day, audit.KindHuman, audit.Success, nil),
+		ev("memory.deleted", day, audit.KindHuman, audit.Success, nil),
+		ev("memory.deleteed", day, audit.KindHuman, audit.Success, nil),
+	}, now.Add(-30*24*time.Hour), now)
+	if c.Forgotten != 3 {
+		t.Errorf("three memories forgotten or deleted counted as %d", c.Forgotten)
+	}
+}

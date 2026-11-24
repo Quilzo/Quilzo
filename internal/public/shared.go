@@ -6,6 +6,8 @@ package public
 import (
 	"net/http"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
 )
 
 // A draft shared for review, at /shared/ID: one page as it was when it was
@@ -37,7 +39,7 @@ func (st *Site) shared(w http.ResponseWriter, r *http.Request) {
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	// After the body's own opening tag, where a reader looks first.
-	if i := strings.Index(strings.ToLower(out), "<body"); i >= 0 {
+	if i := asciifold.Index(out, "<body"); i >= 0 {
 		if j := strings.Index(out[i:], ">"); j >= 0 {
 			at := i + j + 1
 			out = out[:at] + sharedNote + out[at:]

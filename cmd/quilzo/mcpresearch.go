@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -24,7 +23,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 	refuse := func(err error) (any, error) { return nil, &mcp.Refusal{Reason: err.Error()} }
 	str := func(a map[string]any, k string) string { v, _ := a[k].(string); return strings.TrimSpace(v) }
 	asJSON := func(v any) (any, error) {
-		b, err := json.Marshal(v)
+		b, err := mcpJSON(v)
 		return string(b), err
 	}
 
@@ -137,6 +136,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Cite one with research_cite by the identifier given here, never by a title " +
 			"remembered: a citation is kept only for a work an index returns.",
 		Args:     map[string]string{"query": "the words", "limit": "optional, at most 25"},
+		Types:    map[string]string{"limit": "number"},
 		Keywords: []string{"literature", "papers", "search", "openalex", "pubmed", "arxiv", "citations"},
 	}, func(a map[string]any) (any, error) {
 		n := 10

@@ -74,6 +74,32 @@ func resolverFrom(cfg *config.Config, local string) *clientip.Resolver {
 	return &clientip.Resolver{Proxies: ps}
 }
 
+// sharedPeers is who a surface's limit on connections per source does not
+// count (internal/listen): this machine, where the proxy in front usually is
+// and the operator's own tools are, and the proxies named in
+// network.trusted_proxies, read as edge reads them. Each is many visitors on
+// one address. Held to one visitor's share, a proxy would be one share for
+// everybody behind it — one client shutting everybody out, which is what the
+// limit is there to stop, done by the limit.
+//
+// This machine whether or not the surface's own setting says a proxy is on
+// it: an unnamed proxy there is still everybody's connection, and somebody
+// who can open connections from this machine has easier ways to hurt it.
+func sharedPeers(root, local string) func(netip.Addr) bool {
+	resolve := proxies(root, local)
+	return func(a netip.Addr) bool {
+		if clientip.ThisMachine(a) {
+			return true
+		}
+		for _, p := range resolve().Proxies {
+			if p.Contains(a) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // assumedProxy is the line a surface starts with when its proxy is assumed
 // rather than named: whom it believes, and what a proxy anywhere else
 // needs. Empty when proxies are named or none is said to be there.
@@ -121,13 +147,15 @@ func unbelieved(local string, resolve func() *clientip.Resolver, to io.Writer, n
 				// it ends the assumption for both, so the hint says so
 				// before it is followed rather than leaving a proxy on this
 				// machine to stop being believed without a word.
+				// In stderr's colours: in stdout's, `quilzo serve
+				// 2>>serve.log` at a terminal logged escape codes.
 				if first {
 					fmt.Fprintf(to, "  %s%s sent X-Forwarded-For and is not believed: %s believes "+
 						"a proxy on this machine only. If %s is the proxy in front, name it. Naming "+
 						"any proxy ends that for the site and the admin both, so a proxy on this "+
 						"machine is then believed only if it is named too:%s\n"+
 						"      quilzo config set network.trusted_proxies %s\n",
-						yellow, c.Peer, local, c.Peer, reset, c.Peer)
+						noteYellow, c.Peer, local, c.Peer, noteReset, c.Peer)
 				}
 			}
 		}

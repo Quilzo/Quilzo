@@ -138,7 +138,7 @@ func watchStop(ctx context.Context, root, id string, since time.Time) (context.C
 // agentStop is quilzo agent stop RUN.
 func agentStop(root string, args []string) error {
 	if len(args) != 1 || !agent.ValidRecordID(args[0]) {
-		return errors.New("usage: quilzo agent stop RUN")
+		return errMisused{errors.New("usage: quilzo agent stop RUN")}
 	}
 	if err := stopRun(root, args[0], resolveCaller(root, ""), time.Now()); err != nil {
 		return err

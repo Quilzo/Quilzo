@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -132,8 +133,10 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 		}
 		rows = append(rows, Row{ID: rowID(key), Fields: f})
 		now := feature.PagePath(postPage) + "/" + slug
+		// Where it was, when that is a path: a post known by a query (/?p=20)
+		// is at the home's path, and would redirect the old home to itself.
 		olds := pst.Aliases
-		if pst.URL != nil {
+		if pst.URL != nil && pst.URL.RawQuery == "" {
 			olds = append([]string{pst.URL.EscapedPath()}, olds...)
 		}
 		for _, old := range olds {
@@ -174,22 +177,12 @@ func postSlugs(posts []Post) []string {
 }
 
 // slugOf is a page link made from words: lower case, hyphens between.
-func slugOf(s string) string {
-	var b strings.Builder
-	dash := false
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
-		switch {
-		case r < 128 && (r >= 'a' && r <= 'z' || r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			dash = false
-		case r == '\'' || r == '’':
-		case !dash && b.Len() > 0:
-			b.WriteByte('-')
-			dash = true
-		}
-	}
-	return clip(strings.Trim(b.String(), "-"), 80)
-}
+//
+// It is sheet.Slug, which a sheet's rows are linked by. This was a copy of it
+// that ended in clip, the shortener for words people read, which ends what it
+// cuts with "…": a post titled at more than 80 characters got a link such as
+// /post/how-we-rebuilt-…, which the blog type's own page link rule refuses.
+func slugOf(s string) string { return sheet.Slug(s) }
 
 // addBlog puts the ready-made blog in a package bringing posts: its type,
 // collection, listing and page for each post, and a page listing them,

@@ -21,84 +21,10 @@ import (
 // It said "every" while holding only the roles of the call demonstrations
 // and the room, and left out the ones a deployment hands out every day: a
 // share link, a handoff conversation's secret, an enrolment link and an
-// agent run's starter. Those are here, and the room's moderator is
-// registered as what the room command enforces.
+// agent run's starter. Those are here. The call demonstrations and the room
+// have left Quilzo, and their roles went with them.
 func Register() []Situational {
 	return []Situational{
-		{
-			Package: "huddle", Name: "host",
-			What: "runs a call",
-			Held: "whoever opened it, or whoever they passed the chair to",
-			Ends: "when the call does",
-			Powers: []Power{
-				{Name: "admit", Why: "somebody is in a call that will be " +
-					"over within the hour, and admitting them is what a " +
-					"meeting is"},
-				{Name: "eject", Why: "removing somebody from a call ends " +
-					"when the call ends. It is cryptographic and it is " +
-					"still contained: they can be invited to the next one"},
-				{Name: "mute", Why: "the same, and weaker — everybody " +
-					"drops their media until the call is over"},
-				{Name: "lock", Why: "closes one call to new arrivals"},
-			},
-		},
-		{
-			Package: "huddle", Name: "cohost",
-			What: "shares the moderation of a call",
-			Held: "granted by the host, for that call",
-			Ends: "when the call does",
-			Powers: []Power{
-				{Name: "admit", Why: "as the host's, and a cohost cannot " +
-					"make another cohost, so the power does not spread"},
-				{Name: "eject", Why: "as the host's, and not of the host"},
-				{Name: "mute", Why: "as the host's"},
-			},
-		},
-		{
-			Package: "errand", Name: "owner",
-			What: "the person who agreed to do something in a call",
-			Held: "by having said so; internal/errand carries the sentence",
-			Ends: "when the errand is carried out or declined",
-			Powers: []Power{
-				{Name: "accept", Why: "confirming your own commitment is " +
-					"the narrowest possible authority: it is about one " +
-					"task that one person said they would do"},
-				{Name: "decline", Why: "the same, and refusing work you " +
-					"were never granted is not an escalation"},
-			},
-		},
-		{
-			// Registered as "granted for that room" and contained, and no
-			// grant names a room: the command asks for publish on the whole
-			// site before somebody else's words come down.
-			Package: "room", Name: "moderator",
-			What: "removes somebody else's messages from a room",
-			Held: "by holding the authority to publish on the whole site; " +
-				"there is no grant for one room",
-			Ends: "when that authority does",
-			Powers: []Power{
-				{Name: "remove", Outside: true, Needs: auth.ActPublish,
-					Why: "taking down somebody else's words is a statement " +
-						"the organisation stands behind, and it outlives any " +
-						"conversation: a room does not end, and the tombstone " +
-						"and the audit record stay. `quilzo room remove` asks " +
-						"for publish on the whole site for it"},
-			},
-		},
-		{
-			Package: "scribe", Name: "participant",
-			What: "anybody in a call, over the note-taker",
-			Held: "by being in the call",
-			Ends: "when they leave",
-			Powers: []Power{
-				{Name: "withdraw-consent", Why: "withdrawing consent to " +
-					"be recorded is nobody's to refuse, and it is the one " +
-					"power here that deliberately has no floor at all"},
-				{Name: "eject-scribe", Why: "removing the note-taker ends " +
-					"the recording of one call. That anybody present can " +
-					"do it is the design rather than an oversight"},
-			},
-		},
 		{
 			// Kept by `quilzo share` in the command layer; there is no
 			// package of its own.
@@ -236,13 +162,25 @@ func Look() Shape {
 }
 
 // Why describes the register in a sentence.
+//
+// The verbs agree with the counts. They were written for a register where
+// several roles were contained and several reached outside, and once a
+// single role reached outside the sentence read "1 confer something",
+// which is how a figure nobody looked at reads.
 func (s Shape) Why() string {
+	are, confer := "are", "confer"
+	if s.Contained == 1 {
+		are = "is"
+	}
+	if s.Reaching == 1 {
+		confer = "confers"
+	}
 	return fmt.Sprintf(
 		"%d situational role(s) across %d package(s), conferring %d "+
-			"power(s). %d are contained and %d confer something that "+
+			"power(s). %d %s contained and %d %s something that "+
 			"survives the situation and therefore rests on a standing "+
-			"grant", s.Roles, s.Packages, s.Powers, s.Contained,
-		s.Reaching)
+			"grant", s.Roles, s.Packages, s.Powers, s.Contained, are,
+		s.Reaching, confer)
 }
 
 // Check validates the whole register.

@@ -6,6 +6,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -220,6 +221,21 @@ func TestPageNamesAllowOneSlashAndNothingElse(t *testing.T) {
 	} {
 		if _, err := s.PutTree(map[string]string{name: oid}); err == nil {
 			t.Errorf("%q was accepted as a page name", name)
+		}
+	}
+}
+
+// ValidPath is the rule a tree entry is held to, as a question other
+// surfaces can ask before they write.
+func TestValidPathIsTheRuleATreeIsHeldTo(t *testing.T) {
+	oid := strings.Repeat("0", 64)
+	for _, name := range []string{"About_Us", "docs/v1.2", "a", "fr/about", "data/c/aa/bb/id",
+		strings.Repeat("a", 64), "1/2/3/4/5/6/7/8", "a..b",
+		"", "a//b", "a/", "/a", "../x", "a/../b", ".hidden", "a/-b", "a/_b", "has space", "é",
+		strings.Repeat("a", 65), "1/2/3/4/5/6/7/8/9"} {
+		held := CheckTreeEntries(map[string]string{name: oid}) == nil
+		if ValidPath(name) != held {
+			t.Errorf("ValidPath(%q) = %v, and the store holds it: %v", name, ValidPath(name), held)
 		}
 	}
 }

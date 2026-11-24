@@ -87,9 +87,16 @@ type Card struct {
 	DefaultOutputModes  []string    `json:"defaultOutputModes"`
 	Skills              []Skill     `json:"skills"`
 
-	// Governance is the extension this project adds, keyed by its URI so a
-	// consumer that does not know it can ignore it and one that does can find
-	// it without guessing at a field name.
+	// Governance is the extension this project adds, one entry per skill
+	// id, under a key of the card's own so a consumer that does not know it
+	// can ignore it. It is declared by its URI in capabilities.extensions,
+	// where A2A lists the extensions a card uses, so one that does know it
+	// finds it without guessing at a field name.
+	//
+	// This said it was keyed by its URI. It never was, and the URI was
+	// declared nowhere, so a consumer looking where A2A says extensions are
+	// found nothing. The keys stay as every reader of the block has them;
+	// the declaration is what was missing.
 	Governance map[string]Governance `json:"extensions,omitempty"`
 }
 
@@ -112,6 +119,19 @@ type Capabilities struct {
 	Streaming              bool `json:"streaming"`
 	PushNotifications      bool `json:"pushNotifications"`
 	StateTransitionHistory bool `json:"stateTransitionHistory"`
+	// Extensions are the extensions the card uses, by URI, as A2A lists
+	// them: the governance one, while there is a skill it governs.
+	Extensions []Extension `json:"extensions,omitempty"`
+}
+
+// Extension declares one extension a card uses, as A2A's AgentExtension.
+type Extension struct {
+	URI         string `json:"uri"`
+	Description string `json:"description,omitempty"`
+	// Required is whether a caller must understand it to use the agent.
+	// False for governance: a caller that ignores it is refused by the
+	// gate all the same, it only learns so later.
+	Required bool `json:"required"`
 }
 
 // Skill is one declared agent, described for a caller deciding whether to use it.
@@ -218,6 +238,10 @@ type Memory struct {
 type Options struct {
 	// SiteName is what this deployment calls itself.
 	SiteName string
+	// Description is the site's own sentence about itself (site.description),
+	// which the card's description leads with. Empty leaves the governance
+	// sentence alone, as the card was before it was read.
+	Description string
 	// BaseURL is the origin the card is served from, without a trailing slash.
 	BaseURL string
 	// Version is the build.
@@ -247,8 +271,13 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 
 	base := strings.TrimRight(o.BaseURL, "/")
 	c := Card{
-		ProtocolVersion:    ProtocolVersion,
-		Name:               nonEmpty(o.SiteName, "A Quilzo store"),
+		ProtocolVersion: ProtocolVersion,
+		Name:            nonEmpty(o.SiteName, "A Quilzo store"),
+		// The card's own address while it takes no tasks, since A2A
+		// requires a url and this is the only one the card has: the
+		// description says it takes none, and the address answers a task
+		// with 405, which the card served with 200 to a caller that sent
+		// one there.
 		URL:                base + "/.well-known/agent-card.json",
 		PreferredTransport: "HTTP+JSON",
 		Version:            nonEmpty(o.Version, "0.0.0"),
@@ -271,12 +300,32 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 	}
 	if o.TaskURL != "" {
 		c.SupportedInterfaces = []Interface{{URL: o.TaskURL, ProtocolBinding: "JSONRPC", ProtocolVersion: TaskVersion}}
+		// Where tasks are taken, and in the binding they are taken in.
+		// This named the card's own address in a binding nothing there
+		// speaks, so a caller reading url found no agent at it.
+		c.URL, c.PreferredTransport = o.TaskURL, "JSONRPC"
 	}
 	c.Description = fmt.Sprintf(
 		"Content held in a merkle store, and the agents allowed to touch it. "+
 			"Each skill below is an enforced manifest: the %s extension states "+
 			"the capabilities, scope, budget and accountability that A2A itself "+
 			"cannot express.", GovernanceExtension)
+	if o.TaskURL == "" {
+		c.Description += " This site takes no tasks from other agents: the card " +
+			"describes them, and its address answers only a read."
+	}
+	// The site's own sentence first, then the governance one.
+	//
+	// The card said what the store is made of and nothing about what the
+	// site is for, the same paragraph on every deployment, so an agent
+	// choosing between two cards read two identical descriptions. The
+	// governance sentence stays, because it is what the extension below is.
+	if d := strings.TrimSpace(o.Description); d != "" {
+		if !strings.HasSuffix(d, ".") && !strings.HasSuffix(d, "!") && !strings.HasSuffix(d, "?") {
+			d += "."
+		}
+		c.Description = d + " " + c.Description
+	}
 
 	for _, name := range names {
 		m := manifests[name]
@@ -301,6 +350,13 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 		// offers no agents" is an answer, and a card with no skills field looks
 		// like a card that failed to render one.
 		c.Skills = []Skill{}
+	} else {
+		c.Capabilities.Extensions = []Extension{{
+			URI: GovernanceExtension,
+			Description: "Per skill, under the card's \"extensions\" key by skill id: " +
+				"the capabilities, scope, budget, delegation, revocation and " +
+				"accountability the session enforces.",
+		}}
 	}
 	return c
 }

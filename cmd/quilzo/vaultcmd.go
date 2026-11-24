@@ -97,7 +97,7 @@ func keyMaterial() (string, error) {
 			fmt.Fprintf(os.Stderr,
 				"%swarning: %s is mode %04o — the key is readable by other "+
 					"local accounts%s\n",
-				yellow, path, info.Mode().Perm(), reset)
+				noteYellow, path, info.Mode().Perm(), noteReset)
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
@@ -190,6 +190,9 @@ func cmdVault(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return vaultStatus(root)
 	case "enable":
 		return vaultEnable(root, args[1:])
@@ -198,9 +201,9 @@ func cmdVault(root string, args []string) error {
 	case "rewrap":
 		return vaultRewrap(root, args[1:])
 	default:
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"unknown vault command %q; try status, enable, rotate or rewrap",
-			args[0])
+			args[0])}
 	}
 }
 
@@ -257,7 +260,7 @@ func vaultStatus(root string) error {
 func vaultEnable(root string, args []string) error {
 	fs := flag.NewFlagSet("enable", flag.ContinueOnError)
 	id := fs.String("id", "k1", "an id for the first key")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if _, err := os.Stat(keyringPath(root)); err == nil {
@@ -287,24 +290,27 @@ func vaultEnable(root string, args []string) error {
 	if w.JSON(map[string]any{"id": *id, "key": secret}) {
 		return nil
 	}
+	// The key alone on stdout, and what is said of it on stderr, so it
+	// can be written straight to the file QUILZO_VAULT_KEY_FILE names.
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %sthis is the only time it is shown. It is not stored here —\n"+
+	n := w.Notes()
+	n.Human("\n  %sthis is the only time it is shown. It is not stored here —\n"+
 		"  a key kept beside the data it protects protects nothing against\n"+
-		"  somebody who takes the directory.%s\n", yellow, reset)
-	w.Human("\n  %ssupply it with one of:%s\n", dim, reset)
-	w.Human("    export %s='%s'\n", keyEnv, "…")
-	w.Human("    export %s=/run/secrets/quilzo.key\n", keyFileEnv)
-	w.Human("    export %s='aws kms decrypt … --output text'\n", keyCmdEnv)
-	w.Human("\n  %sobjects already written stay in the clear; only new ones are\n"+
+		"  somebody who takes the directory.%s\n", n.Yellow(), n.Reset())
+	n.Human("\n  %ssupply it with one of:%s\n", n.Dim(), n.Reset())
+	n.Human("    export %s='%s'\n", keyEnv, "…")
+	n.Human("    export %s=/run/secrets/quilzo.key\n", keyFileEnv)
+	n.Human("    export %s='aws kms decrypt … --output text'\n", keyCmdEnv)
+	n.Human("\n  %sobjects already written stay in the clear; only new ones are\n"+
 		"  sealed. Nothing is rewritten, so enabling this cannot lose content.%s\n",
-		dim, reset)
+		n.Dim(), n.Reset())
 	return nil
 }
 
 func vaultRotate(root string, args []string) error {
 	fs := flag.NewFlagSet("rotate", flag.ContinueOnError)
 	id := fs.String("id", "", "an id for the new key")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *id == "" {
@@ -334,17 +340,25 @@ func vaultRotate(root string, args []string) error {
 		Detail: map[string]string{"kek_id": *id, "previous": previous},
 	})
 
+	// The new key under --json, as vault enable answers its first. This
+	// wrote it only for a person, so `quilzo --json vault rotate` sealed
+	// new objects with a key it showed nobody.
+	if w.JSON(map[string]any{"id": *id, "key": secret, "previous": previous}) {
+		return nil
+	}
+	// The key alone on stdout, and what is said of it on stderr.
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %snew objects are sealed with %s. %s is still needed to read\n"+
+	n := w.Notes()
+	n.Human("\n  %snew objects are sealed with %s. %s is still needed to read\n"+
 		"  everything written before now — supply both:%s\n",
-		yellow, *id, previous, reset)
-	w.Human("    export %s='%s=…,%s=…'\n", keyEnv, previous, *id)
-	w.Human("\n  %sthen move what is already there:%s\n", bold, reset)
-	w.Human("    quilzo vault rewrap\n")
-	w.Human("\n  %suntil that runs, %s is mandatory. This command used to say\n"+
+		n.Yellow(), *id, previous, n.Reset())
+	n.Human("    export %s='%s=…,%s=…'\n", keyEnv, previous, *id)
+	n.Human("\n  %sthen move what is already there:%s\n", n.Bold(), n.Reset())
+	n.Human("    quilzo vault rewrap\n")
+	n.Human("\n  %suntil that runs, %s is mandatory. This command used to say\n"+
 		"  rotation rewraps data keys — it does, and nothing was calling the\n"+
 		"  function that does it, so the old key stayed necessary forever.%s\n",
-		dim, previous, reset)
+		n.Dim(), previous, n.Reset())
 	return nil
 }
 
@@ -367,7 +381,7 @@ func vaultRotate(root string, args []string) error {
 // rewrap that stops half way is finished by running it again.
 func vaultRewrap(root string, args []string) error {
 	fs := flag.NewFlagSet("rewrap", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	kr, err := loadKeyring(root)

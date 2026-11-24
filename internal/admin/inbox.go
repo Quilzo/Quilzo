@@ -33,9 +33,10 @@ type Inbox struct {
 	Get   func(assistant, id string) (handoff.Conversation, error)
 	Reply func(assistant, id, by, text string) error
 	Close func(assistant, id, by string) error
-	// Suggest drafts a reply from the assistant's own knowledge. It returns
-	// the draft and the pages it came from, or why it could not.
-	Suggest func(assistant, question string) (string, []string, error)
+	// Suggest drafts a reply from the assistant's own knowledge, charged to
+	// by, the person asking for it. It returns the draft and the pages it
+	// came from, or why it could not.
+	Suggest func(assistant, question, by string) (string, []string, error)
 	// Titles names each assistant, for showing which one a conversation
 	// came through.
 	Titles func() map[string]string
@@ -239,7 +240,7 @@ func (s *Server) handleInboxAct(w http.ResponseWriter, r *http.Request) {
 				last = m.Text
 			}
 		}
-		draft, sources, serr := s.Inbox.Suggest(c.Assistant, last)
+		draft, sources, serr := s.Inbox.Suggest(c.Assistant, last, p.Name)
 		if serr != nil {
 			s.showConversation(w, r, p, c, map[string]any{
 				"Error": fmt.Sprintf("No suggestion: %v", serr)})

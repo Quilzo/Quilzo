@@ -84,6 +84,62 @@ func TestASettingWeakenedByHandIsPutBackAndADecisionIsNot(t *testing.T) {
 	}
 }
 
+// A value set before its setting asked for a reason is reported for one,
+// and not put back as though it had been edited in by hand.
+//
+// Extensions, remote telemetry, a Chromium of the operator's own, a burst
+// over 200, more than 16 browsers and an extension's output over 16 MiB
+// were each taken from `quilzo config set` with no reason, as no reason
+// was asked for. Asked for now, a store upgraded with any of them held a
+// weaker value and no reason, which is what a hand edit looks like: the
+// server's first posture run turned the extensions off, sent agents back to
+// a pinned browser the machine may not have, cut every integration's burst
+// to 20, and opened a case about each.
+func TestAValueSetBeforeItsSettingAskedWhyIsReportedNotPutBack(t *testing.T) {
+	root := shieldRoot(t)
+	was := map[string]string{
+		"ext.enabled":            "true",
+		"telemetry.allow_remote": "true",
+		"browser.path":           "/opt/chromium/chrome",
+		"api.rate.burst":         "500",
+		"browser.sessions":       "32",
+		"ext.max_output_bytes":   "33554432",
+	}
+	body, err := json.Marshal(map[string]any{"values": was})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath(root), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reverted, err := revertDrift(root, time.Now())
+	if err != nil || len(reverted) != 0 {
+		t.Fatalf("an upgraded store's settings were put back: %+v %v", reverted, err)
+	}
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, v := range was {
+		if got := cfg.Raw(key); got != v {
+			t.Errorf("%s is %q, not the %q it was set to", key, got, v)
+		}
+	}
+	// Reported with no reason, which is how a person is asked for one.
+	unexplained := 0
+	for _, e := range cfg.Weakened() {
+		if _, ok := was[e.Setting.Key]; ok && e.Accepted == nil {
+			unexplained++
+		}
+	}
+	if unexplained != len(was) {
+		t.Errorf("%d of the %d are reported as weaker with no reason", unexplained, len(was))
+	}
+	if st, _ := shield.Load(root); len(st.Responses) != 0 {
+		t.Errorf("a case was opened about settings nobody edited by hand: %+v", st.Responses)
+	}
+}
+
 // flawIn is a self-check that found one flaw in this build to upgrade for.
 func flawIn(id string) selfReport {
 	return selfReport{Report: selfvuln.Report{Findings: []selfvuln.Finding{{ID: id,

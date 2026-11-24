@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -57,7 +59,59 @@ type logRow struct {
 	Who      string
 	Resolved bool
 	Detail   map[string]string
-	Failed   bool
+	// Failed is whether the outcome was anything but a success.
+	Failed bool
+	// Tag is how the outcome is drawn (outcomeTag).
+	Tag string
+}
+
+// outcomeTag is the class an outcome is drawn with.
+//
+// Denied is kept apart from Failure in the log (audit.Outcome): being refused
+// is not the same as breaking, and the reader needs to tell them apart. The
+// page marked only a refusal, so a failed backup was drawn in the success
+// colour, and an outcome the log never writes, which only an edit can put
+// there, was drawn as a success too. Only a success looks like one.
+func outcomeTag(o audit.Outcome) string {
+	switch o {
+	case audit.Success:
+		return "tag tag-ok"
+	case audit.Denied:
+		return "tag tag-bad"
+	case audit.Failure:
+		return "tag tag-warn"
+	}
+	return "tag"
+}
+
+// shown is a value from the log as the page draws it, with every control
+// character in it replaced by a mark that can be seen, as the command line
+// shows them.
+//
+// The template escapes what a browser would read as markup, and nothing
+// else. The escape sequences somebody holding a decoy put in the path they
+// asked for reached this page byte for byte, and a browser draws them as
+// nothing, so the row read as an ordinary path with stray brackets in it and
+// kept quiet about what had been sent. A control character in an entry is a
+// fact worth seeing. The log, its exports and a filter's own value keep the
+// exact bytes; this is only what a person is shown.
+func shown(s string) string {
+	if !strings.ContainsFunc(s, control) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if control(r) {
+			return '�'
+		}
+		return r
+	}, s)
+}
+
+// control is a C0 control other than a tab or a line feed, which HTML draws
+// as space, or DEL, or a C1 control, which some terminals take as an escape
+// of its own.
+func control(r rune) bool {
+	return r < 0x20 && r != '\t' && r != '\n' || r == 0x7f || r >= 0x80 && r <= 0x9f
 }
 
 // handleLogs shows the audit log.
@@ -86,153 +140,248 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActView, auth.AreaLog) {
 		return
 	}
-	if s.LoadAudit == nil {
+	unavailable := func(why string) {
 		s.render(w, r, "logs.html", map[string]any{
 			"Nav":   "logs",
 			"Title": "Audit log", "Principal": p,
-			"Unavailable": "this server was started without access to the " +
-				"audit log",
+			"Unavailable": why,
 		})
+	}
+	if s.AuditIndex == nil && s.LoadAudit == nil {
+		unavailable("this server was started without access to the audit log")
 		return
 	}
 
-	events, err := s.LoadAudit()
+	q := r.URL.Query()
+	// An act renamed since some of its entries were written is asked for,
+	// and listed, under the name it has now, and found under either: a
+	// bookmark to ?action=access.grant finds the grants written as
+	// auth.granted since, and the filter for auth.granted the ones before.
+	action := audit.Canonical(strings.TrimSpace(q.Get("action")))
+	outcome := strings.TrimSpace(q.Get("outcome"))
+	who := strings.TrimSpace(q.Get("who"))
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
+
+	// A line edited between the look at the log and the reading of the page
+	// is not shown as the line that verified (audit.ErrChanged). The page
+	// looks again, and that look sees the edit and says so.
+	var data map[string]any
+	var err error
+	for try := 0; try < 2; try++ {
+		if data, err = s.logPage(action, outcome, who, offset); !errors.Is(err, audit.ErrChanged) {
+			break
+		}
+	}
 	if err != nil {
-		s.render(w, r, "logs.html", map[string]any{
-			"Nav":   "logs",
-			"Title": "Audit log", "Principal": p,
-			"Unavailable": err.Error(),
-		})
+		unavailable(err.Error())
 		return
 	}
 
-	// Verified before anything is rendered. A list of events with no statement
-	// about whether the chain holds invites the reader to trust it, which is
-	// the opposite of what the chain is for.
-	intact, problems := audit.Verify(events)
+	byWriter, keys, refused := false, "", ""
+	if s.LogHeads != nil {
+		byWriter, keys, refused = s.LogHeads()
+	}
+	for k, v := range map[string]any{
+		"Nav":   "logs",
+		"Title": "Audit log", "Principal": p,
+		"Action": action, "Outcome": outcome, "Who": who,
+		"Separated": s.LogSeparated, "HeadsByWriter": byWriter,
+		"HeadsRefused": refused, "HeadKeys": keys,
+	} {
+		data[k] = v
+	}
+	s.render(w, r, "logs.html", data)
+}
 
-	action := strings.TrimSpace(r.URL.Query().Get("action"))
-	outcome := strings.TrimSpace(r.URL.Query().Get("outcome"))
-	who := strings.TrimSpace(r.URL.Query().Get("who"))
+// logPage is one page of the log, newest first, and what the page says about
+// the whole of it.
+//
+// A view costs the page it shows. This read every entry into memory, built
+// and resolved a row for each, and then showed two hundred: on a year of
+// logging that was seconds and hundreds of megabytes a view, and every new
+// pseudonym, which every visitor makes, was one more lookup. The filters now
+// look at what the index keeps of each entry; only the rows on the page are
+// read in full, built and resolved; and a filter on a name resolves each
+// person once.
+func (s *Server) logPage(action, outcome, who string, offset int) (map[string]any, error) {
+	var snap *audit.Snapshot
+	if s.AuditIndex != nil {
+		var err error
+		if snap, err = s.AuditIndex().Look(); err != nil {
+			return nil, err
+		}
+	} else {
+		// A line that is not an entry is among what the check found, not
+		// instead of the page. Reading stopped at one, and the page showed
+		// that error alone, with no entries and no banner: one crash part
+		// way through a write took this screen away for good, and every
+		// record after it with it. The index reads past one in the same way.
+		var err error
+		if snap, err = audit.SnapshotOfRead(s.LoadAudit()); err != nil {
+			return nil, err
+		}
+	}
+	// Verified before anything is rendered, and the whole chain, not the
+	// page: a list of events with no statement about whether the chain holds
+	// invites the reader to trust it, which is the opposite of what the
+	// chain is for. The snapshot holds that answer for the whole log.
+	report := snap.Report()
+	// And against the heads saved beside it (SavedHeads says why). The page
+	// names the largest.
+	var head *audit.Head
+	if s.SavedHeads != nil {
+		heads, err := s.SavedHeads()
+		if err != nil {
+			report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside " +
+				"the log cannot be read, so it was not checked against them: " + err.Error()})
+			report.Intact = false
+		} else if p := snap.AgainstHeads(heads); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
+		}
+		head = audit.LargestHead(heads)
+	}
 
-	// Newest first: an administrator opening this is nearly always asking what
-	// just happened, not what happened first.
-	rows := make([]logRow, 0, len(events))
-	actions := map[string]int{}
-	// Each pseudonym resolved once for the page: resolving one costs a
-	// keyed hash per known person, and a page of the log names the same few
-	// people thousands of times.
-	resolved := map[string]string{}
-	resolve := func(p string) string {
-		if name, ok := resolved[p]; ok {
+	// Each pseudonym resolved once for the page, through one table where
+	// the server offers one (Resolver).
+	lookup := s.ResolvePrincipal
+	if s.Resolver != nil {
+		lookup = s.Resolver()
+	}
+	var resolve func(string) string
+	if lookup != nil {
+		resolved := map[string]string{}
+		resolve = func(p string) string {
+			if name, ok := resolved[p]; ok {
+				return name
+			}
+			name := lookup(p)
+			resolved[p] = name
 			return name
 		}
-		name := s.ResolvePrincipal(p)
-		resolved[p] = name
-		return name
 	}
-	for i := len(events) - 1; i >= 0; i-- {
-		e := events[i]
-		actions[e.Action]++
 
-		if action != "" && e.Action != action {
+	// Newest first: an administrator opening this is nearly always asking
+	// what just happened, not what happened first.
+	//
+	// Bounded. A log with a hundred thousand entries would otherwise become
+	// a hundred thousand table rows, and the browser is not the place to
+	// discover that.
+	const pageSize = 200
+	var at []int
+	total := 0
+	for i := snap.Len() - 1; i >= 0; i-- {
+		e := snap.Entry(i)
+		if action != "" && audit.Canonical(e.Action) != action {
 			continue
 		}
 		if outcome != "" && string(e.Outcome) != outcome {
 			continue
 		}
-
-		row := logRow{
-			Seq: e.Seq, At: e.At, Action: e.Action, Resource: e.Resource,
-			Outcome: string(e.Outcome), Kind: string(e.Kind),
-			Verified: e.Verified, Detail: e.Detail,
-			Who: e.Principal, Failed: e.Outcome == audit.Denied,
-		}
-		if s.ResolvePrincipal != nil {
-			if name := resolve(e.Principal); name != "" {
-				row.Who, row.Resolved = name, true
-			}
-			// Details naming a person are pseudonymised like the principal,
-			// and named here the same way: known people by name, anybody
-			// else left opaque. A sentence or a resource that names
-			// somebody the record names carries their handle too, and is
-			// named the same way.
-			var named map[string]string
-			for k, v := range e.Detail {
-				var name string
-				if audit.IdentityKeys[k] {
-					name = resolve(v)
-				} else if strings.Contains(v, "p_") {
-					if name = handles.ReplaceAllStringFunc(v, orHandle(resolve)); name == v {
-						name = ""
-					}
-				}
-				if name != "" {
-					if named == nil {
-						named = make(map[string]string, len(e.Detail))
-						for k2, v2 := range e.Detail {
-							named[k2] = v2
-						}
-					}
-					named[k] = name
+		if who != "" {
+			name := e.Principal
+			if resolve != nil {
+				if n := resolve(e.Principal); n != "" {
+					name = n
 				}
 			}
-			if strings.Contains(row.Resource, "p_") {
-				row.Resource = handles.ReplaceAllStringFunc(row.Resource, orHandle(resolve))
-			}
-			if named != nil {
-				row.Detail = named
+			if !strings.EqualFold(name, who) {
+				continue
 			}
 		}
-		if who != "" && !strings.EqualFold(row.Who, who) {
-			continue
+		if total >= offset && total < offset+pageSize {
+			at = append(at, i)
 		}
-		rows = append(rows, row)
-	}
-
-	// Bounded. A log with a hundred thousand entries would otherwise become a
-	// hundred thousand table rows, and the browser is not the place to
-	// discover that.
-	const pageSize = 200
-	total := len(rows)
-	offset := 0
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = n
-		}
+		total++
 	}
 	if offset > total {
 		offset = total
 	}
-	end := offset + pageSize
-	if end > total {
-		end = total
-	}
-	page := rows[offset:end]
+	end := min(offset+pageSize, total)
 
-	var names []string
-	for a := range actions {
-		names = append(names, a)
+	events, err := snap.Events(at)
+	if err != nil {
+		return nil, err
 	}
-	sortStrings(names)
-
-	s.render(w, r, "logs.html", map[string]any{
-		"Nav":   "logs",
-		"Title": "Audit log", "Principal": p,
-		"Rows": page, "Total": total, "Entries": len(events),
+	rows := make([]logRow, 0, len(events))
+	for _, e := range events {
+		rows = append(rows, rowOf(e, resolve))
+	}
+	return map[string]any{
+		"Rows": rows, "Total": total, "Entries": snap.Len(),
 		"Offset": offset, "Next": end, "HasNext": end < total,
-		"Intact": intact, "Problems": problems,
-		"Actions": names, "Action": action, "Outcome": outcome, "Who": who,
-		"Separated": s.LogSeparated,
-	})
+		"Intact": report.Intact, "Problems": report.Problems, "Crashed": report.Crashed(), "Head": head,
+		"Actions": canonicalActions(snap.Actions()),
+	}, nil
 }
 
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
+// canonicalActions is the actions a log holds as the filter lists them: each
+// under the name its act has now (audit.Canonical), once, in order.
+func canonicalActions(actions []string) []string {
+	seen := make(map[string]bool, len(actions))
+	out := make([]string, 0, len(actions))
+	for _, a := range actions {
+		if c := audit.Canonical(a); !seen[c] {
+			seen[c] = true
+			out = append(out, c)
 		}
 	}
+	sort.Strings(out)
+	return out
+}
+
+// rowOf prepares one entry for the page, naming the people this store knows
+// when resolve is set.
+func rowOf(e audit.Event, resolve func(string) string) logRow {
+	row := logRow{
+		Seq: e.Seq, At: e.At, Action: e.Action, Resource: e.Resource,
+		Outcome: string(e.Outcome), Kind: string(e.Kind),
+		Verified: e.Verified, Detail: e.Detail,
+		Who: e.Principal, Failed: e.Outcome != audit.Success,
+		Tag: outcomeTag(e.Outcome),
+	}
+	if resolve == nil {
+		return row
+	}
+	if name := resolve(e.Principal); name != "" {
+		row.Who, row.Resolved = name, true
+	}
+	// Details naming a person are pseudonymised like the principal, and
+	// named here the same way: known people by name, anybody else left
+	// opaque. A sentence or a resource that names somebody the record names
+	// carries their handle too, and is named the same way.
+	var named map[string]string
+	for k, v := range e.Detail {
+		var name string
+		if audit.IdentityKeys[k] {
+			name = resolve(v)
+		} else if strings.Contains(v, "p_") {
+			if name = handles.ReplaceAllStringFunc(v, orHandle(resolve)); name == v {
+				name = ""
+			}
+		}
+		if name != "" {
+			if named == nil {
+				named = make(map[string]string, len(e.Detail))
+				for k2, v2 := range e.Detail {
+					named[k2] = v2
+				}
+			}
+			named[k] = name
+		}
+	}
+	if strings.Contains(row.Resource, "p_") {
+		row.Resource = handles.ReplaceAllStringFunc(row.Resource, orHandle(resolve))
+	}
+	if named != nil {
+		row.Detail = named
+	}
+	return row
 }
 
 // The navigation used to be movable between the top bar and the side, with a

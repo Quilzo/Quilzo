@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // A page with a hero and sections can leave.
@@ -62,5 +64,68 @@ func TestAPageWithNestedFieldsCanBeExportedToMarkdown(t *testing.T) {
 	if strings.Contains(body, "map[") {
 		t.Error("a Go map was printed into the front matter, which no parser " +
 			"reads back")
+	}
+}
+
+// The name an import makes from words in another language is the words,
+// spelled in the letters a page name may hold, as a sheet's links are.
+//
+// Every letter outside ASCII was left out: ürünlerimiz came in as rnlerimiz
+// and a Greek title had nothing left.
+func TestASlugSpellsLettersFromOtherAlphabets(t *testing.T) {
+	for in, want := range map[string]string{
+		"ürünlerimiz": "urunlerimiz",
+		"Naïve café":  "naive-cafe",
+		"İstanbul":    "istanbul",
+		"σχετικά":     "schetika",
+		"Объявление":  "obiavlenie",
+		"مرحبا":       "",
+	} {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The name an import makes is one the store holds, however long the words
+// it was made from, and so is the name a page is numbered to.
+//
+// A name was cut at 80 characters and the store holds a part of 64: a
+// WordPress post whose slug ran past that came in under a name the store
+// refused, and the one refusal failed the whole import, after the report had
+// listed every page as brought. Spelling letters in ASCII made it likelier:
+// a Russian title of fifty letters is a name of seventy. Two long titles that
+// differ only at their ends are one name when cut, and the second was
+// numbered past what the store holds, with the same end.
+func TestANameMadeFromWordsIsOneTheStoreHolds(t *testing.T) {
+	for _, words := range []string{
+		"Ten things you should know before you visit Istanbul in the winter of 2024 or later",
+		"Как правильно выбрать зимние шины для вашего автомобиля в этом году",
+		strings.Repeat("x", 300),
+	} {
+		if got := Slug(words); !store.ValidPath(got) {
+			t.Errorf("Slug(%q) = %q (%d characters), which the store does not hold", words, got, len(got))
+		}
+	}
+	// What the store already held is as it was.
+	if at := strings.Repeat("a", 64); Slug(at) != at {
+		t.Errorf("a name of 64 characters, which the store holds, was cut to %d", len(Slug(at)))
+	}
+
+	named := NewNames()
+	seen := map[string]bool{}
+	for _, base := range []string{strings.Repeat("a", 64), strings.Repeat("a", 64), strings.Repeat("a", 64),
+		"tr/" + strings.Repeat("b", 64), "tr/" + strings.Repeat("b", 64), "short", "short"} {
+		name := named.Claim(base)
+		if !store.ValidPath(name) {
+			t.Errorf("%q was named %q, which the store does not hold", base, name)
+		}
+		if seen[name] {
+			t.Errorf("two pages were named %q", name)
+		}
+		seen[name] = true
+	}
+	if !seen["short-2"] || !seen["tr/"+strings.Repeat("b", 62)+"-2"] {
+		t.Errorf("a name taken is numbered from the name the pages share: %v", seen)
 	}
 }
