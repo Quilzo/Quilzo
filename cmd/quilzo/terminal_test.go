@@ -5,10 +5,12 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/activitypub"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/pay"
@@ -210,5 +212,30 @@ func TestABuyersDetailsCannotDriveTheTerminal(t *testing.T) {
 		Name: "Ana Diaz" + forged, Email: "ana@example.com" + forged, Ship: "4 Mill Lane" + forged}}
 	mustPrintAsText(t, "pay orders", "Ana Diaz", func() error {
 		return payOrders(root, nil, asAdmin("dana"))
+	})
+}
+
+// A follower is whoever a server anywhere says it is, and `quilzo fediverse
+// followers` printed each one's address as the server sent it. The inbox
+// refuses an address that is not a URL, which keeps the escape character
+// out, but not the C1 escape U+009B, which a terminal can take as the start
+// of a control sequence: a follower named so cleared the screen the list
+// was printed on.
+func TestAFollowersAddressCannotDriveTheTerminal(t *testing.T) {
+	root := t.TempDir()
+	followers := activitypub.NewFollowers()
+	if _, err := followers.Add(activitypub.Follower{
+		Actor: "https://social.example/users/ana\u009b2J", Inbox: "https://social.example/inbox",
+	}); err != nil {
+		t.Fatalf("the inbox would not have taken the follower: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(fediverseFollowersPath(root)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(fediverseFollowersPath(root), followers); err != nil {
+		t.Fatal(err)
+	}
+	mustPrintAsText(t, "fediverse followers", "https://social.example/users/ana", func() error {
+		return cmdFediverse(root, []string{"followers"})
 	})
 }
