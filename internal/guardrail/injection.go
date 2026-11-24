@@ -294,6 +294,14 @@ func AsksForSecrets(text string) bool {
 // with one. That is the text a model is given; this is only what the
 // patterns are matched against. "AI" with a non-joiner inside it was kept
 // by the one and matched by none of the other.
+//
+// And every letter that looks like a Latin one written as that letter
+// (lookalike), with the marks drawn over letters taken off, since they
+// take no room of their own either. The patterns are written in ASCII, and
+// "Ignore your previous instructions" in fullwidth letters, with a
+// Cyrillic о and і, in the mathematical bold a "fancy text" site makes, or
+// struck through letter by letter, matched none of them, while a model
+// reads each as the sentence it looks like.
 func shown(text string) string {
 	if strings.IndexFunc(text, hidden) < 0 {
 		return text
@@ -302,16 +310,83 @@ func shown(text string) string {
 		switch {
 		case unicode.Is(unicode.Zs, r):
 			return ' '
-		case unicode.Is(unicode.Cf, r):
+		case unicode.Is(unicode.Cf, r), unicode.Is(unicode.Mn, r):
 			return -1
 		}
-		return r
+		return lookalike(r)
 	}, text)
 }
 
 // hidden reports whether a character is one shown changes.
 func hidden(r rune) bool {
-	return r > 0x7f && (unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Cf, r))
+	return r > 0x7f && (unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Cf, r) ||
+		unicode.Is(unicode.Mn, r) || lookalike(r) != r)
+}
+
+// lookalike is the ASCII character r is written to look like, or r.
+//
+// The alphabets that are ASCII drawn another way, a range each: the
+// fullwidth forms, the thirteen mathematical alphabets and their digits,
+// and the circled letters. Then the letters of other scripts that are
+// drawn as Latin ones are, and the phonetic alphabet's small capitals:
+// only those, so a sentence in Russian or Greek is still that sentence to
+// the patterns, and only a word built to pass for English reads as one.
+func lookalike(r rune) rune {
+	switch {
+	case r < 0x80:
+		return r
+	case 0xFF01 <= r && r <= 0xFF5E: // fullwidth ASCII
+		return r - 0xFF01 + '!'
+	case 0x1D400 <= r && r <= 0x1D6A3: // 13 alphabets of A to Z and a to z
+		k := (r - 0x1D400) % 52
+		if k < 26 {
+			return 'A' + k
+		}
+		return 'a' + k - 26
+	case 0x1D7CE <= r && r <= 0x1D7FF: // 5 sets of mathematical digits
+		return '0' + (r-0x1D7CE)%10
+	case 0x24B6 <= r && r <= 0x24CF: // circled capitals
+		return 'A' + r - 0x24B6
+	case 0x24D0 <= r && r <= 0x24E9: // circled small letters
+		return 'a' + r - 0x24D0
+	}
+	if l, ok := lookalikes[r]; ok {
+		return l
+	}
+	return r
+}
+
+// lookalikes are the letters read as Latin ones that are not in a range of
+// their own: Cyrillic, Greek and Armenian letters drawn as Latin ones are,
+// the phonetic alphabet's small capitals, and the letterlike symbols that
+// stand in the mathematical alphabets' gaps, such as the italic h.
+var lookalikes = map[rune]rune{
+	// Cyrillic.
+	'а': 'a', 'с': 'c', 'ԁ': 'd', 'е': 'e', 'һ': 'h', 'і': 'i', 'ј': 'j',
+	'ӏ': 'l', 'о': 'o', 'р': 'p', 'ԛ': 'q', 'г': 'r', 'ѕ': 's', 'ԝ': 'w',
+	'х': 'x', 'у': 'y', 'ү': 'y',
+	'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Ԍ': 'G', 'Н': 'H', 'І': 'I',
+	'Ӏ': 'I', 'Ј': 'J', 'К': 'K', 'М': 'M', 'О': 'O', 'Р': 'P', 'Ԛ': 'Q',
+	'Ѕ': 'S', 'Т': 'T', 'Ԝ': 'W', 'Х': 'X', 'Ү': 'Y',
+	// Greek.
+	'α': 'a', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p', 'υ': 'u',
+	'χ': 'x', 'γ': 'y',
+	'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K',
+	'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X',
+	// Armenian.
+	'ց': 'g', 'հ': 'h', 'ո': 'n', 'օ': 'o', 'զ': 'q', 'ս': 'u', 'ա': 'w',
+	// Latin letters that are other Latin letters to the eye, and small
+	// capitals.
+	'ı': 'i', 'ɑ': 'a', 'ɡ': 'g',
+	'ᴀ': 'a', 'ʙ': 'b', 'ᴄ': 'c', 'ᴅ': 'd', 'ᴇ': 'e', 'ꜰ': 'f', 'ɢ': 'g',
+	'ʜ': 'h', 'ɪ': 'i', 'ᴊ': 'j', 'ᴋ': 'k', 'ʟ': 'l', 'ᴍ': 'm', 'ɴ': 'n',
+	'ᴏ': 'o', 'ᴘ': 'p', 'ǫ': 'q', 'ʀ': 'r', 'ꜱ': 's', 'ᴛ': 't', 'ᴜ': 'u',
+	'ᴠ': 'v', 'ᴡ': 'w', 'ʏ': 'y', 'ᴢ': 'z',
+	// Letterlike symbols.
+	'ℂ': 'C', 'ℊ': 'g', 'ℋ': 'H', 'ℌ': 'H', 'ℍ': 'H', 'ℎ': 'h', 'ℐ': 'I',
+	'ℑ': 'I', 'ℒ': 'L', 'ℓ': 'l', 'ℕ': 'N', 'ℙ': 'P', 'ℚ': 'Q', 'ℛ': 'R',
+	'ℜ': 'R', 'ℝ': 'R', 'ℤ': 'Z', 'ℨ': 'Z', 'ℬ': 'B', 'ℭ': 'C', 'ℯ': 'e',
+	'ℰ': 'E', 'ℱ': 'F', 'ℳ': 'M', 'ℴ': 'o', 'ℹ': 'i',
 }
 
 // Injection is why text met in a view reads as addressed to a machine,
