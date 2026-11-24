@@ -82,6 +82,7 @@
   ],
   "crypto/sha256": [
    "*",
+   "api",
    "boards",
    "chatbots",
    "forms",
@@ -146,6 +147,7 @@
   ],
   "encoding/hex": [
    "*",
+   "api",
    "boards",
    "chatbots",
    "forms",
