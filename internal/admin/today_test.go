@@ -312,3 +312,33 @@ func TestTodayOffersStartingOnPagesOnlyToWhoMayOpenIt(t *testing.T) {
 		}
 	}
 }
+
+// Today offers Write a page to whoever Pages shows the New page box to,
+// asked as Pages asks it: through the credential they signed in with.
+//
+// Pages came to ask the session, and Today went on asking the person, so an
+// administrator signed in with a reader's session was offered Write a page
+// and landed on a Pages with no box.
+func TestTodayOffersWritingAPageAsPagesOffersIt(t *testing.T) {
+	srv, tok := scoped(t, auth.Binding{Principal: "ed", Role: auth.RoleAdmin, Resource: "/"})
+	capped, _, err := srv.Tokens.IssueSession("ed-r", "ed", auth.RoleReader, "/", time.Hour, auth.RoleAdmin,
+		auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		who, token string
+		offered    bool
+	}{{"an administrator", tok["ed"], true}, {"an administrator capped at reader", capped, false}} {
+		offered := false
+		for _, m := range startsOnToday(t, srv, tc.token) {
+			if m[0] == "Write a page" {
+				offered = true
+				landsWhereItIsDone(t, srv, tc.token, m[0], m[1])
+			}
+		}
+		if offered != tc.offered {
+			t.Errorf("%s is offered Write a page: %v, want %v", tc.who, offered, tc.offered)
+		}
+	}
+}
