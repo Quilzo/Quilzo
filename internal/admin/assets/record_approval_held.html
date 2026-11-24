@@ -1,0 +1,21 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+<p>{{range .Status}}{{template "kit-badge" .}} {{end}}</p>
+<dl class="kit-facts">
+<dt>What was approved</dt><dd>The surface whose hash is <code class="kit-hash">{{.Hash}}</code>: the record as it was written, what it cited and what it changed. The receipt of the write and its audit entry carry the same hash.</dd>
+<dt>Rule</dt><dd>{{.Held.Approval.Rule}}, by holding {{.Held.Approval.Atom}}</dd>
+<dt>Approvers</dt><dd>{{len .Held.Approval.Signers}}, where the rule asked {{.Held.Approval.Needed}}, of {{.Held.Approval.Of}} eligible</dd>
+<dt>Raised by</dt><dd>The person whose pseudonym is <code>{{.Held.Approval.Raised}}</code></dd>
+<dt>Lapses</dt><dd>{{with .Expires}}<time datetime="{{.Format "2006-01-02T15:04:05Z07:00"}}">{{.Format "2 Jan 2006, 15:04"}} UTC</time>{{else}}It does not lapse{{end}}</dd>
+{{with .ReviewDue}}<dt>Review by somebody else due</dt><dd><time datetime="{{.Format "2006-01-02T15:04:05Z07:00"}}">{{.Format "2 Jan 2006"}}</time></dd>{{end}}
+</dl>
+<div class="table-wrap"><table class="kit-table">
+<caption>Who approved it, and whether their evidence holds</caption>
+<thead><tr><th scope="col">Approver</th><th scope="col">When</th><th scope="col">How</th><th scope="col">Evidence</th><th scope="col">Checked</th></tr></thead>
+<tbody>{{range .Signers}}<tr><th scope="row"><code>{{.Subject}}</code></th><td><time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.Format "2 Jan 2006, 15:04"}} UTC</time></td><td>{{if eq .Method "console"}}At the store's console, typing the hash back, which is weaker than a passkey{{else}}A passkey{{end}}{{with .Batch}}, in a batch whose root is <code class="kit-hash">{{.}}</code>{{end}}</td><td><code class="kit-hash">{{.Evidence}}</code></td><td>{{.Checks}}</td></tr>{{end}}</tbody>
+</table></div>
+{{if .Held.Approval.Alone}}<h2>Its compensating review</h2>
+{{with .Held.Review}}<p>Reviewed on <time datetime="{{.At.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.At.Format "2 Jan 2006"}}</time> by the person whose pseudonym is <code>{{.Reviewer}}</code>: {{.Outcome}}.</p>
+{{else}}<p>It was made alone, and nobody else has reviewed it yet.{{with $.ReviewHref}} <a href="{{.}}">Review it</a>, if you are somebody else.{{end}}</p>{{end}}{{end}}
+<p class="hint"><a href="/register/record/{{.ID}}">The record as the register holds it</a>. <code>quilzo approval show {{.ID}}</code> answers the same from a terminal.</p>
+{{template "foot" .}}

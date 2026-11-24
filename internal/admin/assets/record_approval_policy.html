@@ -1,0 +1,17 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-table" .Table}}
+<h2>What no policy changes</h2>
+<ul>
+<li>Whoever raised or drafted a decision does not approve it.</li>
+<li>No agent approves anything, an agent's work included.</li>
+<li>Each person counts once.</li>
+<li>A team of one approves alone only with the decision marked so, and a review by somebody else due within {{.Policy.ReviewDays}} days; and not for a day after another administrator stopped being one.</li>
+</ul>
+<h2>Second approvers named in the policy</h2>
+{{if .Policy.Seconds}}<ul>{{range .Policy.Seconds}}<li>{{.Principal}}, as the organisation's {{.As}}</li>{{end}}</ul>{{else}}<p>The policy names nobody: a second approver is anybody else who holds the rule's permission.</p>{{end}}
+<h2>Signing in</h2>
+<p>{{if .Policy.PhishingResistant}}Whoever may approve, accept a risk, publish outside the organisation or administer signs in with a passkey, or a single sign-on whose provider said it used a method that cannot be phished; anybody else is asked for their passkey before they go on.{{else}}The policy does not ask for a sign-in that cannot be phished; every approval is still a fresh passkey signature.{{end}}</p>
+<p>A request that has gathered some of its approvals waits {{.Policy.WaitDays}} days for the rest, and then lapses with them.</p>
+<p class="hint">The policy is declared at the store's console: <code>quilzo approval policy</code> shows it, and <code>quilzo approval policy set FILE</code> declares it.</p>
+{{template "foot" .}}

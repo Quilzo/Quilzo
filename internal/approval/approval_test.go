@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -571,5 +572,55 @@ func TestTheRegisterChecksTheEvidence(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(b.root, "approvals", "evidence")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An overdue compensating review is a problem in the posture, named by the
+// record, until somebody else reviews the decision.
+func TestOverdueCompensatingReviewIsPostureProblem(t *testing.T) {
+	b := newBench(t, holds("solo", auth.ActAcceptRisk))
+	b.m.Separation = Default()
+	b.m.Separation.Seconds = []Second{{Principal: "adviser", As: "adviser"}}
+	id := b.propose("solo", b.risk("R-12", "solo", 2))
+	if _, err := b.sign("solo", id); err != nil {
+		t.Fatal(err)
+	}
+	scan := func() []posture.Finding {
+		var out []posture.Finding
+		rep := posture.Scan(posture.State{Now: b.clock, Approvals: b.m.Posture()}, nil)
+		for _, f := range rep.Findings {
+			if strings.HasPrefix(f.Rule, "approval.") {
+				out = append(out, f)
+			}
+		}
+		for _, skipped := range rep.Skipped {
+			if strings.HasPrefix(skipped, "approval.") {
+				t.Fatalf("the approvals were handed over and the rule %s was skipped", skipped)
+			}
+		}
+		return out
+	}
+	if got := scan(); len(got) != 0 {
+		t.Fatalf("a review not yet due is a problem: %+v", got)
+	}
+	b.clock = b.clock.Add(31 * 24 * time.Hour)
+	got := scan()
+	if len(got) != 1 || got[0].Rule != "approval.review-overdue" || got[0].Resource != string(id) ||
+		!strings.Contains(got[0].Detail, "approved alone") {
+		t.Fatalf("the overdue review is not a posture problem: %+v", got)
+	}
+	e, _ := b.reg.Get(id)
+	if _, err := b.m.Review(b.person("adviser"), id, "upheld",
+		b.proofFor("adviser", ForReview, register.ApprovalOf(e.Record).Surface)); err != nil {
+		t.Fatal(err)
+	}
+	if got := scan(); len(got) != 0 {
+		t.Fatalf("the reviewed decision is still a problem: %+v", got)
+	}
+	// Not handed over is not looked at, and the posture says so.
+	rep := posture.Scan(posture.State{Now: b.clock}, nil)
+	skipped := strings.Join(rep.Skipped, " ")
+	if !strings.Contains(skipped, "approval.review-overdue") || !strings.Contains(skipped, "approval.lapsed") {
+		t.Errorf("approvals nobody looked at were taken for none owed: %v", rep.Skipped)
 	}
 }

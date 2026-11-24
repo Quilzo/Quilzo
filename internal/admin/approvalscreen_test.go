@@ -1,0 +1,290 @@
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
+// SPDX-License-Identifier: Apache-2.0
+
+package admin
+
+import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/approval"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/oidc"
+	"github.com/quilzo/quilzo/internal/register"
+)
+
+// approvalBench is the admin with somebody who may accept risks and has a
+// passkey, a risk somebody else raised waiting for them, and every audit
+// record the admin writes.
+type approvalBench struct {
+	srv   *Server
+	token string
+	key   *fakeAuthenticator
+	risk  register.ID
+	log   []map[string]string
+}
+
+func newApprovalBench(t *testing.T, methods ...string) *approvalBench {
+	t.Helper()
+	srv, _ := setup(t)
+	srv.Passkeys = &Passkeys{}
+	b := &approvalBench{srv: srv}
+	srv.Audit = func(action, resource string, detail map[string]string) {
+		d := map[string]string{"action": action}
+		for k, v := range detail {
+			d[k] = v
+		}
+		b.log = append(b.log, d)
+	}
+	for _, g := range []auth.Binding{
+		{Principal: "ciso", Role: auth.RoleReader, Resource: auth.AreaCompliance},
+		{Principal: "ciso", Permission: auth.ActAcceptRisk, Resource: register.Area},
+	} {
+		if err := srv.Policy.Grant(g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(methods) == 0 {
+		methods = []string{auth.MethodPasskey}
+	}
+	secret, _, err := srv.Tokens.IssueSession("test", "ciso", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, methods...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.token = secret
+	b.key = newFake(t, "ciso-key")
+	if len(methods) == 1 && methods[0] == auth.MethodPasskey {
+		b.key.register(t, srv, secret)
+	}
+
+	reg := register.Open(srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	people := approval.PeopleAt(srv.Store.Root())
+	dana, err := people.Pseudonym("dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _ := people.Pseudonym("owner")
+	allow := func(auth.Action, string) error { return nil }
+	rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman, May: allow}, "raised at the risk review",
+		register.Risk{Ref: "R-21", Title: "Payroll supplier outage", Owner: owner, Raised: dana, Likelihood: 3, Impact: 3, Status: "accepted"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.risk = rc.Written[0].ID
+	return b
+}
+
+// assert is the passkey answering a challenge.
+func (f *fakeAuthenticator) assert(t *testing.T, challenge string) map[string]any {
+	t.Helper()
+	f.count++
+	cd := f.clientData(t, "webauthn.get", challenge)
+	ad := f.authData()
+	sum := sha256.Sum256(cd)
+	digest := sha256.Sum256(append(append([]byte{}, ad...), sum[:]...))
+	sig, err := ecdsa.SignASN1(rand.Reader, f.key, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]any{"id": enc(f.id), "challenge": challenge, "clientDataJSON": enc(cd),
+		"authenticatorData": enc(ad), "signature": enc(sig)}
+}
+
+func (b *approvalBench) logged(action string) []map[string]string {
+	var out []map[string]string
+	for _, d := range b.log {
+		if d["action"] == action {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// The hash beside the button is the hash the passkey signs, the hash the
+// receipt carries and the hash the audit log records, for one approval
+// made through the real routes with a virtual authenticator.
+func TestPageHashEqualsAuditHash(t *testing.T) {
+	b := newApprovalBench(t)
+	page := get(t, b.srv, "/register/approvals/item/"+string(b.risk), b.token)
+	if page.Code != http.StatusOK {
+		t.Fatalf("the decision's page answered %d\n%s", page.Code, firstLines(page.Body.String(), 30))
+	}
+	m := b.srv.approvalsFor()
+	ask, err := m.Ask(b.risk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := string(ask.Hash)
+	body := page.Body.String()
+	if !strings.Contains(body, `<code class="kit-hash">`+hash+`</code>`) || !strings.Contains(body, "Your passkey signs the hash") {
+		t.Fatalf("the page does not show the hash beside the button\n%s", firstLines(body, 80))
+	}
+	if csp := page.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'nonce-") || !strings.Contains(csp, "connect-src 'self'") {
+		t.Errorf("the page's policy does not let its ceremony run, and only it: %s", csp)
+	}
+
+	start := decodeBody(t, postJSON(t, b.srv, "/register/approvals/item/"+string(b.risk)+"/challenge", b.token, nil))
+	challenge, _ := start["challenge"].(string)
+	purpose, of, err := approval.ChallengeFor(challenge)
+	if err != nil || purpose != approval.ForApproval || string(of) != hash || start["surface"] != hash {
+		t.Fatalf("the challenge does not hold the page's hash: %v %v %v", of, start, err)
+	}
+	w := postJSON(t, b.srv, "/register/approvals/item/"+string(b.risk)+"/approve", b.token, b.key.assert(t, challenge))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the approval answered %d: %s", w.Code, w.Body.String())
+	}
+	out := decodeBody(t, w)
+	receipt, _ := out["receipt"].(map[string]any)
+	approved, _ := receipt["approved"].([]any)
+	if out["done"] != true || len(approved) != 1 || approved[0] != hash || out["surface"] != hash {
+		t.Fatalf("the receipt does not carry the page's hash: %v", out)
+	}
+	signed := b.logged(approval.AuditSigned)
+	put := b.logged(register.AuditAction)
+	if len(signed) != 1 || signed[0]["surface"] != hash || signed[0]["by"] != "ciso" {
+		t.Fatalf("the audit log does not record the signature over the page's hash: %v", signed)
+	}
+	if len(put) != 1 || put[0]["approved"] != hash || put[0]["receipt"] != receipt["digest"] {
+		t.Fatalf("the audit entry of the write does not carry the page's hash and the receipt's digest: %v", put)
+	}
+	// The record holds it, and its page shows it beside a signature that
+	// checks.
+	held := get(t, b.srv, "/register/approvals/held/"+string(b.risk), b.token).Body.String()
+	if !strings.Contains(held, hash) || !strings.Contains(held, "The signature holds") {
+		t.Errorf("the held decision does not show its hash and checked evidence\n%s", firstLines(held, 60))
+	}
+	// A challenge is used once.
+	if w := postJSON(t, b.srv, "/register/approvals/item/"+string(b.risk)+"/approve", b.token, b.key.assert(t, challenge)); w.Code == http.StatusOK {
+		t.Error("a challenge was used twice")
+	}
+}
+
+// The admin's approvals work with the page's script off but for the
+// passkey ceremony, which says so and names the console's way instead.
+func TestApprovingWithTheScriptOffSaysHowTheConsoleApproves(t *testing.T) {
+	b := newApprovalBench(t)
+	ask, _ := b.srv.approvalsFor().Ask(b.risk)
+	w := postFormAuth(t, b.srv, b.token, "/register/approvals/item/"+string(b.risk)+"/approve", url.Values{})
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "quilzo approval approve "+string(b.risk)+" --surface "+string(ask.Hash)) {
+		t.Fatalf("approving without the script answered %d\n%s", w.Code, firstLines(body, 40))
+	}
+	if register.Open(b.srv.Store).Head() != "" {
+		t.Fatal("approving without a passkey wrote the record")
+	}
+}
+
+func postFormAuth(t *testing.T, srv *Server, token, path string, v url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+// A person who may accept risks and signed in through single sign-on that
+// said only "mfa" is asked for their passkey before anything else; said
+// "hwk", or an acr the operator named, they are not.
+func TestAmrMfaCannotApproveInTheAdmin(t *testing.T) {
+	b := newApprovalBench(t, auth.MethodSSO)
+	w := get(t, b.srv, "/register/approvals", b.token)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/signin/verify" {
+		t.Fatalf("a single sign-on that said only mfa reached the approvals: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if w := postJSON(t, b.srv, "/register/approvals/item/"+string(b.risk)+"/challenge", b.token, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("a single sign-on that said only mfa was given a challenge to approve with: %d", w.Code)
+	}
+	if verify := get(t, b.srv, "/signin/verify", b.token).Body.String(); !strings.Contains(verify, "cannot be phished") {
+		t.Errorf("the confirmation page does not say why\n%s", firstLines(verify, 40))
+	}
+
+	strong := newApprovalBench(t, auth.MethodSSO, auth.MethodSSOPhishingResistant)
+	if w := get(t, strong.srv, "/register/approvals", strong.token); w.Code != http.StatusOK {
+		t.Fatalf("a single sign-on its provider said resisted phishing was held back: %d", w.Code)
+	}
+
+	// Somebody who decides nothing is not held back by it.
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "writer", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	secret, _, _ := srv.Tokens.IssueSession("test", "writer", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodSSO)
+	if w := get(t, srv, "/", secret); w.Code != http.StatusOK {
+		t.Errorf("an author who decides nothing was asked for a passkey: %d", w.Code)
+	}
+
+	// What the provider says, read.
+	now := time.Now()
+	recent := float64(now.Add(-time.Minute).Unix())
+	o := &OIDC{PhishingACR: []string{"phr-level"}}
+	for _, c := range []struct {
+		raw  map[string]any
+		want bool
+	}{
+		{map[string]any{"auth_time": recent, "amr": []any{"pwd", "mfa"}}, false},
+		{map[string]any{"auth_time": recent, "amr": []any{"hwk", "user"}}, true},
+		{map[string]any{"auth_time": recent, "amr": []any{"phrh"}}, true},
+		{map[string]any{"auth_time": recent, "acr": "phr-level"}, true},
+		{map[string]any{"amr": []any{"hwk"}}, false},
+	} {
+		p := o.proof(&oidc.Claims{Raw: c.raw}, 0, now)
+		if got := auth.PhishingResistant(p.methods()); got != c.want {
+			t.Errorf("%v is phishing-resistant: %v, want %v (%v)", c.raw, got, c.want, p.methods())
+		}
+	}
+}
+
+// A batch through the admin: shown, refused until its sample is opened, and
+// every page of it accessible.
+func TestABatchInTheAdminWaitsForItsSample(t *testing.T) {
+	b := newApprovalBench(t)
+	reg := register.Open(b.srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	people := approval.PeopleAt(b.srv.Store.Root())
+	dana, _ := people.Pseudonym("dana")
+	allow := func(auth.Action, string) error { return nil }
+	rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman, May: allow}, "raised at the risk review",
+		register.Risk{Ref: "R-22", Title: "Laptop theft", Owner: dana, Raised: dana, Likelihood: 2, Impact: 2, Status: "accepted"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := get(t, b.srv, "/register/approvals", b.token).Body.String()
+	if !strings.Contains(list, `name="id" value="`+string(b.risk)+`"`) {
+		t.Fatalf("the list offers no way to batch the decision\n%s", firstLines(list, 60))
+	}
+	w := postFormAuth(t, b.srv, b.token, "/register/approvals/batch", url.Values{"id": {string(b.risk), string(rc.Written[0].ID)}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("starting a batch answered %d\n%s", w.Code, firstLines(w.Body.String(), 30))
+	}
+	at := w.Header().Get("Location")
+	page := get(t, b.srv, at, b.token).Body.String()
+	if !strings.Contains(page, "Open this first") || !strings.Contains(page, "Merkle root") {
+		t.Fatalf("the batch does not say what must be opened first\n%s", firstLines(page, 60))
+	}
+	start := decodeBody(t, postJSON(t, b.srv, at+"/challenge", b.token, nil))
+	challenge, _ := start["challenge"].(string)
+	if w := postJSON(t, b.srv, at+"/approve", b.token, b.key.assert(t, challenge)); w.Code != http.StatusForbidden ||
+		!strings.Contains(w.Body.String(), "not been opened") {
+		t.Fatalf("a batch was approved with its sample unopened: %d %s", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/register/approvals", at, at + "/item/" + string(b.risk), "/register/approvals/item/" + string(b.risk),
+		"/register/approvals/policy"} {
+		for _, f := range a11y.Check(path, get(t, b.srv, path, b.token).Body.String()).Findings {
+			if f.Severity == a11y.Blocking {
+				t.Errorf("%s: %s", path, f)
+			}
+		}
+	}
+}

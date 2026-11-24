@@ -323,6 +323,9 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 // meaning more than one factor. Anything else is one factor, and the
 // person confirms with their passkey here.
 func samlProof(cfg *saml.Config, a *saml.Assertion) ssoProof {
+	if cfg.PhishingResistant(a) {
+		return ssoProof{MFA: true, PhishingResistant: true, Said: "AuthnContext " + a.AuthnContext + ", phishing-resistant"}
+	}
 	if cfg.MFA(a) {
 		return ssoProof{MFA: true, Said: "AuthnContext " + a.AuthnContext}
 	}
@@ -359,7 +362,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		refuse("The identity provider's own session ends in under a minute. Sign in there again.", "")
 		return
 	}
-	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.method())
+	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.methods()...)
 	if err != nil {
 		refuse("the session could not be created: "+err.Error(), "")
 		return

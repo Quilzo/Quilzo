@@ -46,6 +46,12 @@ type Config struct {
 	MFAContexts  []string `json:"mfa_contexts,omitempty"`
 	MFAAttribute string   `json:"mfa_attribute,omitempty"`
 	MFAValues    []string `json:"mfa_values,omitempty"`
+	// PhishingContexts, or MFAAttribute holding one of PhishingValues, is
+	// how this provider says a sign-in used a method that cannot be
+	// phished, which whoever approves a decision here needs. An amr
+	// attribute naming hwk, phr or phrh says so without being told.
+	PhishingContexts []string `json:"phishing_contexts,omitempty"`
+	PhishingValues   []string `json:"phishing_values,omitempty"`
 	// VerifiedAttribute names the attribute in which this provider says it
 	// verified the address it signs somebody in as, the counterpart of
 	// OIDC's email_verified; a sign-in as an address it does not say "true"
@@ -333,6 +339,31 @@ func (c *Config) MFA(a *Assertion) bool {
 	if c.MFAAttribute != "" {
 		for _, got := range a.Attributes[c.MFAAttribute] {
 			for _, want := range c.MFAValues {
+				if got == want {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// PhishingResistant reports whether the assertion says the sign-in used a
+// method that cannot be phished, in a way this provider was configured to
+// say it, or as an amr attribute says it in RFC 8176's words.
+func (c *Config) PhishingResistant(a *Assertion) bool {
+	for _, want := range c.PhishingContexts {
+		if a.AuthnContext == want {
+			return true
+		}
+	}
+	values := append([]string(nil), c.PhishingValues...)
+	if strings.EqualFold(c.MFAAttribute, "amr") {
+		values = append(values, "hwk", "phr", "phrh")
+	}
+	if c.MFAAttribute != "" {
+		for _, got := range a.Attributes[c.MFAAttribute] {
+			for _, want := range values {
 				if got == want {
 					return true
 				}

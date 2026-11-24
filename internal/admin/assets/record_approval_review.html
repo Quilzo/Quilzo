@@ -1,0 +1,20 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+<dl class="kit-facts">
+<dt>What was approved</dt><dd>The surface whose hash is <code class="kit-hash">{{.Hash}}</code>. <a href="{{.Record}}">The record as the register holds it</a>.</dd>
+<dt>Rule</dt><dd>{{.Held.Approval.Rule}}, by holding {{.Held.Approval.Atom}}</dd>
+</dl>
+{{with .Reviewed}}<p class="notice" role="status">{{icon "info"}} It has been reviewed: {{.Outcome}}.</p>
+{{else}}<section class="kit-approval" aria-labelledby="review-h">
+<h2 id="review-h">Your review</h2>
+<form method="post" action="{{.Action}}" class="approval-review">
+<fieldset><legend>Does the decision stand?</legend>
+<p class="choice"><input type="radio" name="outcome" value="upheld" id="outcome-upheld" checked> <label for="outcome-upheld">It stands: uphold it</label></p>
+<p class="choice"><input type="radio" name="outcome" value="challenged" id="outcome-challenged"> <label for="outcome-challenged">Challenge it: it stands, marked challenged, until it is decided again</label></p>
+</fieldset>
+<p class="kit-approve-row"><button type="submit">Review with my passkey</button> <span class="hint">Your passkey signs the hash <code>{{.Short}}</code>, and the record of your review carries it.</span></p>
+</form>
+</section>{{end}}
+{{with .Ceremony}}{{template "approval-ceremony" .}}{{end}}
+<p class="hint">At the store's console: <code>quilzo approval review ID upheld --surface {{.Hash}}</code></p>
+{{template "foot" .}}

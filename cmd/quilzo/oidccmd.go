@@ -52,6 +52,10 @@ type oidcConfig struct {
 	// factor, asked for on every sign-in; an amr naming mfa says so without
 	// them.
 	MFAACR []string `json:"mfa_acr,omitempty"`
+	// PhishingACR are the acr values that mean the provider used a method
+	// that cannot be phished, which whoever approves a decision needs; an
+	// amr naming hwk, phr or phrh says so without them.
+	PhishingACR []string `json:"phishing_acr,omitempty"`
 }
 
 // providerLabel is what the sign-in button calls a preset.
@@ -157,6 +161,8 @@ func oidcConfigure(root string, args []string) error {
 	tenant := fs.String("tenant", "", "the Microsoft Entra tenant ID")
 	mfaACR := fs.String("mfa-acr", "", "acr values that mean a second factor was used, comma-separated "+
 		"(urn:okta:loa:2fa:any, or a Keycloak level)")
+	phishingACR := fs.String("phishing-resistant-acr", "", "acr values that mean a method that cannot be phished "+
+		"was used, comma-separated; whoever approves a decision needs one, or a passkey")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
@@ -227,6 +233,11 @@ func oidcConfigure(root string, args []string) error {
 			cfg.MFAACR = append(cfg.MFAACR, v)
 		}
 	}
+	for _, v := range strings.Split(*phishingACR, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			cfg.PhishingACR = append(cfg.PhishingACR, v)
+		}
+	}
 	if err := saveJSON(oidcPath(root), cfg); err != nil {
 		return err
 	}
@@ -238,7 +249,7 @@ func oidcConfigure(root string, args []string) error {
 		Detail: map[string]string{
 			"issuer": cfg.Issuer, "client": cfg.ClientID, "claim": cfg.Claim,
 			"provider": cfg.Provider, "domains": strings.Join(cfg.Domains, ","),
-			"mfa_acr": strings.Join(cfg.MFAACR, " "),
+			"mfa_acr": strings.Join(cfg.MFAACR, " "), "phishing_acr": strings.Join(cfg.PhishingACR, " "),
 		},
 	})
 
@@ -293,7 +304,7 @@ func oidcStatus(root string) error {
 	if w.JSON(map[string]any{
 		"configured": true, "issuer": cfg.Issuer, "client_id": cfg.ClientID,
 		"claim": cfg.Claim, "secret_set": secretSet(), "secret_checked_in": secretWhere,
-		"mfa_acr": cfg.MFAACR,
+		"mfa_acr": cfg.MFAACR, "phishing_acr": cfg.PhishingACR,
 	}) {
 		return nil
 	}

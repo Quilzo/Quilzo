@@ -1105,7 +1105,7 @@ func cmdServe(root string, args []string) error {
 			RedirectURI: cfg.RedirectURI, Claim: cfg.Claim,
 			RequireVerifiedEmail: cfg.RequireVerifiedEmail,
 			Label:                cfg.providerLabel(), Tenant: cfg.Tenant,
-			Domains: cfg.Domains, MFAACR: cfg.MFAACR,
+			Domains: cfg.Domains, MFAACR: cfg.MFAACR, PhishingACR: cfg.PhishingACR,
 		}
 		if cfg.Provider == "google" {
 			srv.OIDC.HostedDomains = cfg.Domains

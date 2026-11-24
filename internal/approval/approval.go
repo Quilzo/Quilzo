@@ -285,17 +285,6 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 			}
 		}
 	}
-	for _, s := range pol.seconds(rule) {
-		if !a.eligible[auth.PersonKey(s.Principal)] {
-			a.seconds[auth.PersonKey(s.Principal)] = s.As
-		}
-	}
-	a.Of = len(a.eligible) + len(a.seconds)
-	if a.Of == 0 {
-		// A store with nobody granted anything is its owner's, and whoever
-		// is at it is the one person eligible.
-		a.Of = 1
-	}
 	var err error
 	if a.Needed, a.Over, err = m.needed(rule, p.Record); err != nil {
 		return nil, err
@@ -319,6 +308,36 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 		if a.Raised, err = m.people().Pseudonym(p.Agent); err != nil {
 			return nil, err
 		}
+	}
+
+	// A second named in the policy approves beside somebody who holds the
+	// atom and did not raise it, never in their place, so they are counted
+	// among those eligible only where the rule asks for a second and there
+	// is such a somebody. Counted otherwise, a team of one with an adviser
+	// was two people who could not between them approve anything: the one
+	// raised it, and the other may only be second.
+	free := 0
+	for name := range a.eligible {
+		id, err := m.people().Pseudonym(name)
+		if err != nil {
+			return nil, err
+		}
+		if !a.raisers[id] {
+			free++
+		}
+	}
+	if a.Needed > 1 && free > 0 {
+		for _, s := range pol.seconds(rule) {
+			if !a.eligible[auth.PersonKey(s.Principal)] {
+				a.seconds[auth.PersonKey(s.Principal)] = s.As
+			}
+		}
+	}
+	a.Of = len(a.eligible) + len(a.seconds)
+	if a.Of == 0 {
+		// A store with nobody granted anything is its owner's, and whoever
+		// is at it is the one person eligible.
+		a.Of = 1
 	}
 	now := m.now()
 	a.Expires = expiry(rule, p.Record, now)

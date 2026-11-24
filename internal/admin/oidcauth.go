@@ -67,6 +67,11 @@ type OIDC struct {
 	// factor, asked for on every sign-in. Without them, only an amr naming
 	// mfa says so (RFC 8176).
 	MFAACR []string
+	// PhishingACR are the acr values that mean the provider used a method
+	// that cannot be phished. Without them, an amr naming hwk, phr or phrh
+	// says so; an amr of mfa alone does not, because a code typed from a
+	// phone is typed as readily into a copy of the page.
+	PhishingACR []string
 
 	mu      sync.Mutex
 	pending map[string]*oidcPending
@@ -95,6 +100,9 @@ type oidcPending struct {
 type ssoProof struct {
 	MFA  bool
 	Said string
+	// PhishingResistant says the provider said the method could not be
+	// phished, which whoever approves a decision here needs.
+	PhishingResistant bool
 }
 
 // method is the session's sign-in method for what the provider said.
@@ -104,6 +112,21 @@ func (p ssoProof) method() string {
 	}
 	return auth.MethodSSOOneFactor
 }
+
+// methods are the session's sign-in methods for what the provider said:
+// its method, and beside it, never in its place, that the method could not
+// be phished, where the provider said so.
+func (p ssoProof) methods() []string {
+	if p.MFA && p.PhishingResistant {
+		return []string{auth.MethodSSO, auth.MethodSSOPhishingResistant}
+	}
+	return []string{p.method()}
+}
+
+// phishingAMR are the amr values (RFC 8176, and the phishing-resistant
+// values the OpenID Foundation registered) that name a method that cannot
+// be phished: a key held in hardware, or a phishing-resistant method.
+var phishingAMR = []string{"hwk", "phr", "phrh"}
 
 // authTimeSkew is how far a provider's clock may be behind this one when
 // it says when somebody signed in.
@@ -133,12 +156,24 @@ func (o *OIDC) proof(c *oidc.Claims, maxAge time.Duration, now time.Time) ssoPro
 			}
 		}
 	}
+	acr := rawString(c, "acr")
+	for _, m := range amr {
+		for _, phr := range phishingAMR {
+			if m == phr {
+				return ssoProof{MFA: true, PhishingResistant: true, Said: "amr " + strings.Join(amr, " ")}
+			}
+		}
+	}
+	for _, want := range o.PhishingACR {
+		if acr != "" && acr == want {
+			return ssoProof{MFA: true, PhishingResistant: true, Said: "acr " + acr}
+		}
+	}
 	for _, m := range amr {
 		if m == "mfa" {
 			return ssoProof{MFA: true, Said: "amr " + strings.Join(amr, " ")}
 		}
 	}
-	acr := rawString(c, "acr")
 	for _, want := range o.MFAACR {
 		if acr != "" && acr == want {
 			return ssoProof{MFA: true, Said: "acr " + acr}
@@ -161,7 +196,7 @@ func (o *OIDC) start(w http.ResponseWriter, r *http.Request, cookie string, maxA
 		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
 		return
 	}
-	req.MaxAge, req.ACRValues = maxAge, o.MFAACR
+	req.MaxAge, req.ACRValues = maxAge, append(append([]string(nil), o.PhishingACR...), o.MFAACR...)
 	secret, err := randomToken(32)
 	if err != nil {
 		http.Error(w, "cannot begin sign-in", http.StatusInternalServerError)
@@ -495,7 +530,7 @@ func (s *Server) finishOIDC(w http.ResponseWriter, r *http.Request, principal st
 	// The provider authenticated; everything after this is local.
 	secret, tok, err := s.Tokens.IssueSession(
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
-		s.oidcTTL(), auth.RoleAdmin, proof.method())
+		s.oidcTTL(), auth.RoleAdmin, proof.methods()...)
 	if err != nil {
 		s.refuseOIDC(w, r, "the session could not be created: "+err.Error(), "", principal)
 		return

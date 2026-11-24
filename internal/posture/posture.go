@@ -566,6 +566,7 @@ type State struct {
 	Alerts     AlertFacts        `json:"alerts"`
 	Self       SelfFacts         `json:"self"`
 	Shield     ShieldFacts       `json:"shield"`
+	Approvals  ApprovalFacts     `json:"approvals"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
@@ -894,6 +895,8 @@ func inputFor(rule string) string {
 		return "self"
 	case strings.HasPrefix(rule, "shield."):
 		return "shield"
+	case strings.HasPrefix(rule, "approval."):
+		return "approvals"
 	}
 	return ""
 }
@@ -923,6 +926,8 @@ func supplied(s State, input string) bool {
 		return s.Self.Checked
 	case "shield":
 		return s.Shield.Checked
+	case "approvals":
+		return s.Approvals.Checked
 	}
 	return true
 }

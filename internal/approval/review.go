@@ -10,6 +10,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/register"
 )
 
@@ -191,3 +192,24 @@ func (m *Approvals) Review(by Person, id register.ID, outcome register.ReviewOut
 
 // AuditReviewed is the name a compensating review is recorded under.
 const AuditReviewed = "approval.reviewed"
+
+// Posture is what the approvals owe, as the posture is handed it: the
+// decisions made alone whose review is overdue, and the approvals that
+// have lapsed. A register that cannot be read is not checked, which the
+// posture says, rather than nothing owed.
+func (m *Approvals) Posture() posture.ApprovalFacts {
+	overdue, lapsed, err := m.Problems()
+	if err != nil {
+		return posture.ApprovalFacts{}
+	}
+	out := posture.ApprovalFacts{Checked: true}
+	for _, h := range overdue {
+		out.Overdue = append(out.Overdue, posture.ApprovalFact{Record: string(h.Record), Kind: string(h.Kind),
+			Label: h.Label, Due: h.Approval.ReviewDue.At()})
+	}
+	for _, h := range lapsed {
+		out.Lapsed = append(out.Lapsed, posture.ApprovalFact{Record: string(h.Record), Kind: string(h.Kind),
+			Label: h.Label, Due: h.Approval.Expires.At()})
+	}
+	return out
+}

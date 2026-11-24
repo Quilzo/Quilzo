@@ -480,6 +480,13 @@ type Server struct {
 	// it does not know where the log lives, and since the writer was separated
 	// out it must not.
 	Audit func(action, resource string, detail map[string]string)
+	// AuditRecord records a whole audit record, with its outcome and the
+	// kind of actor as the writer gave them: the register and its
+	// approvals write through it (approvalscreen.go), and AuditReady says
+	// whether the log can take an entry before they write. Nil records
+	// through Audit, and asks nothing first.
+	AuditRecord func(audit.Record) error
+	AuditReady  func() error
 	// OnSignIn records an authentication. Separate from the handler so the
 	// audit log stays the host's concern.
 	OnSignIn func(principal, tokenID string)
@@ -868,6 +875,15 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 		} else {
 			p.Grace = s.MFAFrom.UTC().Format("2 January 2006")
 		}
+	}
+	// Whoever may approve a decision, accept a risk, publish outside the
+	// organisation or administer signs in with a method that cannot be
+	// phished (approvalscreen.go). A single sign-on whose provider said
+	// only that it used two factors is two factors, and a code typed from
+	// a phone is typed as readily into a copy of this page: such a session
+	// waits for the person's passkey as a held one does.
+	if p.StepUp == "" && p.Session && p.Level >= 2 && !auth.PhishingResistant(p.Methods) && s.mustResistPhishing(p.Name) {
+		p.StepUp = phishableSignIn
 	}
 	return p, nil
 }
