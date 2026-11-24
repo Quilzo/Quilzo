@@ -179,6 +179,82 @@ func TestDeclaringANetworkTrustedIsBoundedAndTold(t *testing.T) {
 	}
 }
 
+// shieldFindings is what the posture says about the shield, for this store,
+// by finding.
+func shieldFindings(t *testing.T, root string) map[string]posture.Finding {
+	t.Helper()
+	out := map[string]posture.Finding{}
+	for _, f := range posture.Scan(Observe(root, t.TempDir(), posture.ServerFacts{}), nil).Findings {
+		if strings.HasPrefix(f.Rule, "shield.") {
+			out[f.ID()] = f
+		}
+	}
+	return out
+}
+
+// The posture says when the shield is not protecting what it seems to.
+//
+// A network declared trusted that is as wide as a provider or a country
+// was nobody's finding, and neither was a record that cannot be read,
+// which the Shield screen said "stays in force" while a server started
+// since enforced none of it. Both are findings now, and the high ones are
+// what the drift check tells the security contact of.
+func TestAWideTrustedNetworkAndAnUnreadableRecordAreFindings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	if got := shieldFindings(t, root); len(got) != 0 {
+		t.Fatalf("a store that has trusted nothing: %+v", got)
+	}
+	for _, n := range []string{"198.51.100.0/24", "10.0.0.0/8"} {
+		if err := shieldTrust(root, []string{"add", n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := shieldFindings(t, root)
+	if f, ok := got["shield.trusts-widely:10.0.0.0/8"]; len(got) != 1 || !ok || f.Severity != posture.Medium {
+		t.Fatalf("an office and the whole of 10.0.0.0/8: %+v", got)
+	}
+	// One an older version took, when anything was taken.
+	if err := shield.Change(root, time.Now(), func(st *shield.State) error {
+		st.Trusted = append(st.Trusted, "0.0.0.0/0")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got = shieldFindings(t, root)
+	if f, ok := got["shield.trusts-widely:0.0.0.0/0"]; len(got) != 2 || !ok || f.Severity != posture.High {
+		t.Fatalf("most of the internet, kept from before: %+v", got)
+	}
+	// A record nobody can read.
+	if err := os.WriteFile(shield.Path(root), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got = shieldFindings(t, root)
+	f, ok := got["shield.record-unreadable:shield/state.json"]
+	if len(got) != 1 || !ok || f.Severity != posture.High || !strings.HasPrefix(f.Fix, "quilzo shield repair") {
+		t.Fatalf("a record that cannot be read: %+v", got)
+	}
+	// The drift check tells the security contact of it.
+	box := securityMailbox(t, root)
+	if opened, _, err := postureDrift(root, Observe(root, t.TempDir(), posture.ServerFacts{}), time.Now()); err != nil || opened == 0 {
+		t.Fatalf("opened %d: %v", opened, err)
+	}
+	said := false
+	for _, m := range box.read() {
+		said = said || strings.Contains(m.Subject+m.Body, "shield's record cannot be read")
+	}
+	if !said {
+		t.Fatal("nobody was told the shield's record cannot be read")
+	}
+	if err := shieldRepair(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := shieldFindings(t, root); len(got) != 0 {
+		t.Fatalf("after the repair: %+v", got)
+	}
+}
+
 // unrouted is what the posture says about where alerts go, for this store.
 func unrouted(t *testing.T, root string) []posture.Finding {
 	t.Helper()

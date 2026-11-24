@@ -101,7 +101,10 @@ func (g *Guard) state(now time.Time) *State {
 	if err != nil {
 		// A shield that cannot be read protects nothing, and stopping
 		// every request because of it would be the attack. It keeps what
-		// it last read, and the posture check reports the file.
+		// it last read; a guard started since has read nothing and holds
+		// nothing, which the Shield screen says and the posture check
+		// reports (shield.record-unreadable). The screen used to say that
+		// what the record held stayed in force, and nothing reported it.
 		if g.st == nil {
 			g.st, g.ix = &State{}, compile(&State{})
 		}

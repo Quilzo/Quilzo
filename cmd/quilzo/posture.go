@@ -36,6 +36,7 @@ import (
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/sandbox"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -97,6 +98,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 
 	s.Alerts = observeAlerts(root)
 	s.Self = observeSelf(root)
+	s.Shield = observeShield(root)
 
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.
@@ -305,6 +307,23 @@ func observeAlerts(root string) posture.AlertFacts {
 func observeSelf(root string) posture.SelfFacts {
 	_, kev := loadKEV(root)
 	return posture.SelfFacts{Checked: true, Exploited: kev.Kept, ExploitedOf: kev.Of, Problem: kev.Problem}
+}
+
+// observeShield is the shield's own record as it stands: whether it can be
+// read, and the wide networks it is told never to block. A record that
+// cannot be read was said only on the Shield screen, to whoever opened
+// it, and nothing said that a network as wide as the internet had been
+// declared trusted; both are findings now, which the drift check tells
+// the security contact of when they are high.
+func observeShield(root string) posture.ShieldFacts {
+	f := posture.ShieldFacts{Checked: true}
+	st, err := shield.Load(root)
+	if err != nil {
+		f.Unreadable = err.Error()
+		return f
+	}
+	f.Wide, f.Most = st.TrustedWidely()
+	return f
 }
 
 // observeUpkeep counts the work that was supposed to have happened by now.

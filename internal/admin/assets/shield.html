@@ -10,7 +10,11 @@
   <p><a href="/security/shield">Back to the shield</a></p>
 </div>
 {{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
-{{else if .Broken}}<p class="notice bad" role="alert">The shield's record cannot be read, so what it holds stays in force: {{.Broken}}. On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read.</p>
+{{else if .Broken}}<div class="notice bad" role="alert">
+  <p><strong>The shield's record cannot be read:</strong> {{.Broken}}.</p>
+  <p>A server that was running when it stopped reading keeps what it last read, until each protection ends. A server started since has nothing to go by: there, no block, slowing, lockdown, suspended token or feature turned off is in force. Until the record is repaired nothing can be applied or lifted, and publishing and agents are refused.</p>
+  <p>On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read. Then apply again what still matters.</p>
+</div>
 {{else}}
 <p class="lead">Quilzo protecting itself: blocking a source, turning a public feature down, locking the admin to passkeys and single sign-on, freezing publishing, pausing an agent. Playbooks decide these beforehand and act at once; each protection ends by itself, within a day when a playbook set it, and any of them can be lifted here.</p>
 
