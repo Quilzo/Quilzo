@@ -485,7 +485,7 @@ access
   quilzo public target [URL|DIR]           where signed transfers go: its intake, or a directory to carry
   quilzo public send [--reason WHY]        send what was published again, with a fresh head of the record
   quilzo public import DIR                 on the public host: take a transfer carried to it
-  quilzo serve --profile public [--addr ADDR] [--intake=false]   serve a public instance: the page, the head feed, security.txt
+  quilzo serve [--profile public] [--intake=false]   on a public instance: the page, the head feed, security.txt
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
   quilzo transfer verify DIR               check what arrived is what left
   quilzo move OLD NEW [--dry-run]          a page and everything under it
