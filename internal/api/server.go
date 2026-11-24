@@ -392,8 +392,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		// Limited per token rather than per address. Addresses are shared by
 		// everybody behind one office, and limiting them together means one
 		// busy client throttles their colleagues.
-		now := s.now()
-		ok, remaining, reset := s.limiter.take(tok.ID, now)
+		//
+		// Per token that lasts (RateKey): a session is counted with the
+		// token it was exchanged from. Counted by its own id, every session
+		// was a new caller with a whole burst, and a token can be exchanged
+		// for another as often as its holder likes.
+		now, key := s.now(), tok.RateKey()
+		ok, remaining, reset := s.limiter.take(key, now)
 		w.Header().Set("RateLimit-Limit",
 			fmt.Sprintf("%d", s.Limits.withDefaults().PerMinute))
 		w.Header().Set("RateLimit-Remaining", fmt.Sprintf("%d", remaining))
@@ -412,7 +417,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(&uncounted304{ResponseWriter: w, give: func() {
-			left, full := s.limiter.give(tok.ID, now)
+			left, full := s.limiter.give(key, now)
 			w.Header().Set("RateLimit-Remaining", strconv.Itoa(left))
 			w.Header().Set("RateLimit-Reset", strconv.Itoa(secondsUntil(full, now)))
 		}}, r.WithContext(withToken(r, tok)))

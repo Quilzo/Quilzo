@@ -38,6 +38,14 @@ func (f fileTokens) RevokeGrant(id string) error {
 	return saveTokens(f.root, ts)
 }
 
+func (f fileTokens) GrantOf(token string) (string, string) {
+	ts, err := loadTokens(f.root)
+	if err != nil {
+		return "", ""
+	}
+	return ts.GrantOf(token)
+}
+
 func appsServer(root string, by *Caller) *oauthas.Server {
 	st := &oauthas.Store{Dir: oauthDir(root)}
 	return &oauthas.Server{

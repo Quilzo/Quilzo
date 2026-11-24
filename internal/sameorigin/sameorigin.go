@@ -40,8 +40,10 @@ type Policy struct {
 	// at this machine is same-origin to its own browser, and only its
 	// Origin says which site it is.
 	OriginOnly bool
-	// Also is other origins the door takes requests from, as the agent
-	// interface takes its OAuth issuer's.
+	// Also is other origins the door takes requests from, beside its own.
+	// The agent interface named its OAuth issuer here, beside an origin it
+	// read from the Host header; it takes the issuer's alone now, because
+	// the Host header's is whatever name a rebound page was reached by.
 	Also []string
 }
 

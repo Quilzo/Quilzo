@@ -161,7 +161,13 @@ func (h *Handler) groupJSON(g Group, st *State) map[string]any {
 			"location": h.prefix() + "/Groups/" + g.ID}}
 }
 
-var reFilter = regexp.MustCompile(`^\s*(userName|externalId|displayName)\s+eq\s+"([^"]*)"\s*$`)
+// reFilter is the one filter offered, `attribute eq "value"`, with the
+// attribute's name and the operator in any case: RFC 7644 section
+// 3.4.2.2 makes both case-insensitive, as attribute names are everywhere
+// (RFC 7643 section 2.1, and attr for PATCH). Matched exactly, a provider
+// that writes `UserName eq` or `userName EQ` to look somebody up before
+// creating them was told the filter is not supported, and gave up.
+var reFilter = regexp.MustCompile(`^\s*(?i:(userName|externalId|displayName)\s+eq)\s+"([^"]*)"\s*$`)
 
 // list answers a GET on a collection: a filter by one attribute, and
 // startIndex and count as RFC 7644 §3.4.2.4 has them.
@@ -170,13 +176,19 @@ func list(w http.ResponseWriter, r *http.Request, all []map[string]any, keys map
 	items := all
 	if f := q.Get("filter"); f != "" {
 		m := reFilter.FindStringSubmatch(f)
-		if m == nil || keys[m[1]] == nil {
+		var key func(map[string]any) string
+		for name, k := range keys {
+			if m != nil && strings.EqualFold(name, m[1]) {
+				key = k
+			}
+		}
+		if key == nil {
 			fail(w, http.StatusBadRequest, "invalidFilter", "only `attribute eq \"value\"` on userName, externalId or displayName is supported")
 			return
 		}
 		items = nil
 		for _, it := range all {
-			if strings.EqualFold(keys[m[1]](it), m[2]) {
+			if strings.EqualFold(key(it), m[2]) {
 				items = append(items, it)
 			}
 		}

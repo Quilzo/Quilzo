@@ -107,18 +107,16 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	if oauth {
 		resource, metadata, scope = cfg.Resource(), cfg.MetadataURL(), oauthas.DefaultScope
 	}
-	own := s.ownOrigin(r)
+	page := s.pageOrigin(r, cfg, oauth)
 	e := &mcp.Endpoint{
 		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
 			return s.interfaceCaller(r, token, resource)
 		},
-		Build:  s.Interface.Build,
-		Called: s.Interface.Called,
-		Allow:  s.interfaceAllow,
-		SameOrigin: func(o string) bool {
-			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
-		},
+		Build:      s.Interface.Build,
+		Called:     s.Interface.Called,
+		Allow:      s.interfaceAllow,
+		SameOrigin: func(o string) bool { return sameorigin.Same(o, page) },
 	}
 	e.ServeHTTP(w, r)
 }
@@ -158,7 +156,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	if oauth {
 		resource, metadata, scope = cfg.Resource(), cfg.MetadataURLAt("/mcp/gateway/"+name), oauthas.DefaultScope
 	}
-	own := s.ownOrigin(r)
+	page := s.pageOrigin(r, cfg, oauth)
 	e := &mcp.Endpoint{
 		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
@@ -167,10 +165,8 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			return s.Interface.Gateway(r, c, name)
 		},
-		Allow: s.interfaceAllow,
-		SameOrigin: func(o string) bool {
-			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
-		},
+		Allow:      s.interfaceAllow,
+		SameOrigin: func(o string) bool { return sameorigin.Same(o, page) },
 	}
 	e.ServeHTTP(w, r)
 }
@@ -196,7 +192,7 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 	if oauth {
 		resource, metadata, scope = cfg.Resource(), cfg.MetadataURLAt("/mcp/browser/"+name), oauthas.DefaultScope
 	}
-	own := s.ownOrigin(r)
+	own, page := s.ownOrigin(r), s.pageOrigin(r, cfg, oauth)
 	e := &mcp.Endpoint{
 		// DPoP offered in a refusal, as /mcp and the gateway offer it: a
 		// key-bound token is taken here too, through interfaceCaller, and a
@@ -219,10 +215,8 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			return s.Interface.Browser(r, c, name)
 		},
-		Allow: s.interfaceAllow,
-		SameOrigin: func(o string) bool {
-			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
-		},
+		Allow:      s.interfaceAllow,
+		SameOrigin: func(o string) bool { return sameorigin.Same(o, page) },
 	}
 	e.ServeHTTP(w, r)
 }
@@ -239,13 +233,9 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// By Origin alone, as the transport has it at /mcp (mcp.Endpoint): a
-	// request with none is not a page's, and a page's is this admin's or
-	// its OAuth issuer's.
-	also := []string(nil)
-	if oauth {
-		also = []string{cfg.Issuer}
-	}
-	if !sameorigin.Check(r, s.ownOrigin(r), sameorigin.Policy{OriginOnly: true, Missing: true, Also: also}) {
+	// request with none is not a page's, and a page's is this admin's
+	// (pageOrigin).
+	if !sameorigin.Check(r, s.pageOrigin(r, cfg, oauth), sameorigin.Policy{OriginOnly: true, Missing: true}) {
 		http.Error(w, "not from another site's page", http.StatusForbidden)
 		return
 	}
@@ -418,6 +408,23 @@ func (s *Server) ownOrigin(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+// pageOrigin is the origin of the pages the agent interface takes requests
+// from: the admin's own address as admin.base_url names it, which is the
+// OAuth issuer, and only when it is not set the address the request
+// reached (ownOrigin).
+//
+// Every door of the interface took its origin from the Host header alone,
+// with the issuer beside it. A page on a name pointed at this machine (DNS
+// rebinding) sends that name as both Host and Origin, so it was the
+// admin's own page, and the transport's one check against rebinding let
+// it through, although base_url said where the admin really is.
+func (s *Server) pageOrigin(r *http.Request, cfg oauthas.Config, oauth bool) string {
+	if oauth {
+		return cfg.Issuer
+	}
+	return s.ownOrigin(r)
 }
 
 func writeMetadata(w http.ResponseWriter, r *http.Request, doc map[string]any) {

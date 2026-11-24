@@ -651,6 +651,70 @@ func TestAnAudienceBoundTokenWorksOnlyAtItsResource(t *testing.T) {
 	if ts.RevokeGrant("") != 0 {
 		t.Fatal("an empty grant id revoked something")
 	}
+	// The revocation endpoint finds an app's access token's grant, revoked
+	// or not, and no grant for any other secret: a person's own token is
+	// not an app's to revoke there.
+	if g, c := ts.GrantOf(secret); g != "gr_1" || c != "https://app.example/c.json" {
+		t.Errorf("an app's access token is of %q, %q", g, c)
+	}
+	for what, s := range map[string]string{"a person's own token": plain,
+		"a token nobody issued": "qz_" + strings.Repeat("a", 52), "nonsense": "nonsense", "nothing": ""} {
+		if g, c := ts.GrantOf(s); g != "" || c != "" {
+			t.Errorf("%s is of %q, %q", what, g, c)
+		}
+	}
+}
+
+// A rate limit counts a token under the credential that lasts: an app's
+// access tokens under its connection, a session under the token it was
+// exchanged from, and any other token under itself.
+//
+// Each was counted under its own id, and both are minted at will: an app's
+// at every refresh, a session at every exchange. So each was a caller the
+// limit had never seen, with a whole burst to spend.
+func TestARateIsCountedUnderTheCredentialThatLasts(t *testing.T) {
+	ts := &TokenStore{}
+	now := time.Now()
+	key := func(secret string) string {
+		t.Helper()
+		tok, err := ts.AuthenticateFor(secret, "https://cms.example/mcp", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok.RateKey()
+	}
+	app := func(grant string) string {
+		t.Helper()
+		secret, _, err := ts.IssueForGrant("dana", RoleReader, Scope{}, "https://app.example/c.json", grant,
+			"https://cms.example/mcp", time.Hour, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+	if a, b, c := key(app("gr_1")), key(app("gr_1")), key(app("gr_2")); a != b || a == c {
+		t.Errorf("two tokens of one connection are counted under %q and %q, and another connection's under %q", a, b, c)
+	}
+	own, parent, err := ts.Issue("ci", "dana", RoleReader, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		session, _, err := ts.Exchange(own, RoleReader, "/", time.Minute, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := key(session); got != parent.ID || got != key(own) {
+			t.Errorf("a session of token %s is counted under %q", parent.ID, got)
+		}
+	}
+	other, _, err := ts.Issue("cli", "dana", RoleReader, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key(other) == key(own) {
+		t.Error("two tokens of one person are counted together")
+	}
 }
 
 func TestAppTokensAreBoundedAndSweptAway(t *testing.T) {

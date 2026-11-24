@@ -45,6 +45,8 @@ func (t rigTokens) Issue(g oauthas.Grant, role auth.Role, ttl time.Duration, now
 
 func (t rigTokens) RevokeGrant(id string) error { t.srv.Tokens.RevokeGrant(id); return nil }
 
+func (t rigTokens) GrantOf(token string) (string, string) { return t.srv.Tokens.GrantOf(token) }
+
 func newIfaceRig(t *testing.T) *ifaceRig {
 	t.Helper()
 	srv, token := emptyStore(t)
@@ -832,6 +834,9 @@ func TestATokensUseAtTheInterfaceIsToldToTheHost(t *testing.T) {
 // admin's own host in capitals was another site's page.
 func TestTheAgentInterfaceKnowsItsOwnOriginWhateverItsCase(t *testing.T) {
 	r := newIfaceRig(t)
+	// With no admin.base_url, the address the request reached is its own
+	// (pageOrigin); TestARebindingPageIsNotTheInterfacesOwn has it set.
+	r.oauth = false
 	for origin, want := range map[string]int{
 		"http://example.com":   http.StatusOK,
 		"http://EXAMPLE.com":   http.StatusOK,

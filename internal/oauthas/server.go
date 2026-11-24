@@ -172,6 +172,9 @@ func CheckHost(h string) error {
 type Tokens interface {
 	Issue(g Grant, role auth.Role, ttl time.Duration, now time.Time) (string, error)
 	RevokeGrant(id string) error
+	// GrantOf is the grant an access token was issued under and the app it
+	// was issued to, or empty for a secret that is no app's access token.
+	GrantOf(token string) (grant, client string)
 }
 
 // Server is the authorization server.
@@ -760,9 +763,17 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 	return s.tokenResponse(out, access, refresh), nil
 }
 
-// Revoke is the revocation endpoint (RFC 7009): a refresh token ends its
-// grant. It answers 200 whatever it was given, as the RFC asks, so it says
+// Revoke is the revocation endpoint (RFC 7009): a refresh token, or an
+// access token, ends its grant when the app it was issued to presents it.
+// It answers 200 whatever it was given, as the RFC asks, so it says
 // nothing about which tokens exist.
+//
+// Only a refresh token was looked for. An app signing out by revoking the
+// access token it used, which the RFC lets it, was answered 200 and nothing
+// was revoked: the access token kept working at /mcp and the refresh token
+// kept refreshing, while the app believed it was disconnected. Revoking an
+// access token may end its grant too (RFC 7009 section 2.1), and does here,
+// so either token means the same: this app, for this person, no longer.
 func (s *Server) Revoke(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
@@ -777,11 +788,20 @@ func (s *Server) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 	presented := hashOf(r.PostForm.Get("token"))
 	client := r.PostForm.Get("client_id")
+	// Asked before the grant store's lock is taken, as refresh reads the
+	// configuration: the token store is another lock.
+	access := ""
+	if s.Tokens != nil {
+		if id, issuedTo := s.Tokens.GrantOf(r.PostForm.Get("token")); id != "" && issuedTo == client {
+			access = id
+		}
+	}
 	var grant Grant
 	_ = s.Store.changeGrants(s.now(), func(f *grantsFile) error {
 		for i := range f.Grants {
 			g := &f.Grants[i]
-			if g.Client == client && g.Ended.IsZero() && subtle.ConstantTimeCompare([]byte(g.Refresh), []byte(presented)) == 1 {
+			if g.Client == client && g.Ended.IsZero() &&
+				(subtle.ConstantTimeCompare([]byte(g.Refresh), []byte(presented)) == 1 || (access != "" && g.ID == access)) {
 				g.Ended, g.EndedBy, g.EndedWhy = s.now(), "app", "the app disconnected"
 				grant = *g
 			}

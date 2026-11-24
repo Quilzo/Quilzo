@@ -45,6 +45,11 @@ func (f *fakeTokens) Issue(g Grant, role auth.Role, ttl time.Duration, now time.
 
 func (f *fakeTokens) RevokeGrant(id string) error { f.revoked[id] = true; return nil }
 
+func (f *fakeTokens) GrantOf(token string) (string, string) {
+	g := f.issued[token]
+	return g.ID, g.Client
+}
+
 type rig struct {
 	*Server
 	toks    *fakeTokens
@@ -882,5 +887,37 @@ func TestTheResourceListsEveryScope(t *testing.T) {
 		if got, _ := m["scopes_supported"].([]string); strings.Join(got, " ") != strings.Join(ScopeNames(), " ") {
 			t.Errorf("%v", m["scopes_supported"])
 		}
+	}
+}
+
+// An access token, revoked by the app it was issued to, ends its grant as
+// the refresh token does (RFC 7009 section 2.1 lets either). Only the
+// refresh token was looked for, so an access token was answered 200 and
+// revoked nothing; presented by another app, it still changes nothing.
+func TestRevokingAnAccessTokenEndsTheGrant(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	revoke := func(form url.Values) {
+		q := httptest.NewRequest("POST", "/oauth/revoke", strings.NewReader(form.Encode()))
+		q.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		r.Revoke(w, q)
+		if w.Code != 200 {
+			t.Fatalf("revoking answered %d", w.Code)
+		}
+	}
+	access := out["access_token"].(string)
+	revoke(url.Values{"token": {access}, "client_id": {"https://evil.example/c.json"}})
+	if grants, _ := r.Store.Grants(); !grants[0].Ended.IsZero() || r.toks.revoked[grants[0].ID] {
+		t.Fatal("another app's revocation ended the grant")
+	}
+	revoke(url.Values{"token": {access}, "client_id": {appID}, "token_type_hint": {"access_token"}})
+	grants, _ := r.Store.Grants()
+	if grants[0].Ended.IsZero() || !r.toks.revoked[grants[0].ID] || grants[0].EndedBy != "app" {
+		t.Fatalf("the grant outlived its access token's revocation: %+v", grants[0])
+	}
+	if status, _ := r.post(t, r.Token, url.Values{"grant_type": {"refresh_token"},
+		"refresh_token": {out["refresh_token"].(string)}, "client_id": {appID}}); status != 400 {
+		t.Error("the refresh token still works")
 	}
 }
