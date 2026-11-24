@@ -1702,8 +1702,10 @@ func commandArea(cmd string, args []string) (string, bool) {
 }
 
 // bareRuns is the subcommand a bare command runs, for a command whose own
-// row is strict and whose bare form only reads. Its dispatch reads the same
-// entry, so the two cannot disagree about what a bare command does.
+// row is strict and whose bare form only reads. Most dispatches read the
+// same entry, so the two cannot disagree about what a bare command does;
+// `lock`, `locks`, `framework`, `assurance`, `engagement` and `entity` name
+// the same subcommand in their own dispatch, and are asked as it is here.
 //
 // `anchor`, `timestamp` and `stamp` took grant as a whole so that sending a
 // digest out stopped being a reader's act, and their bare forms, which show

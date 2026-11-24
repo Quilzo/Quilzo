@@ -2605,7 +2605,8 @@ func cmdLog(root string, args []string) error {
 // the whole site's when they reach a page out of the caller's reach or the
 // records, so a commit that touched one is left out whole rather than shown
 // with its message. As many commits as were asked for are shown when there
-// are that many to show.
+// are that many among the last twenty times as many, which is as far back
+// as it looks.
 func readableHistory(root string, s *store.Store, head string, limit int) ([]struct {
 	ID     string
 	Commit store.Commit
