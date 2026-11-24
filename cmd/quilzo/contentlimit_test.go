@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -362,5 +363,57 @@ func TestATokenLimitedToTypesOrLocalesHasTheAssistantWriteOnlyWhatItMay(t *testi
 	}
 	if title, _ := pages["pen"].(map[string]any)["title"].(string); title != "Brass pen" {
 		t.Errorf("the product page reads %q after a token limited to policy had it rewritten", title)
+	}
+}
+
+// A token limited to content types is shown the history of its types, as
+// it is shown the differences: what it may read of the whole site is not
+// the whole site.
+//
+// The log showed its whole history to whoever was let read "/", which a
+// token limited to some types is: `quilzo diff` left the product page out
+// for a token issued `--types policy`, and `quilzo log` listed each commit
+// that changed it or the products collection, by its message and its
+// author.
+func TestATokenLimitedToTypesIsShownTheHistoryOfThemAlone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := typedStore(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, page := range []string{"pen", "returns"} {
+		pages[page] = map[string]any{"title": "Changed " + page}
+		if _, err := site.SaveDraft(s, pages, "edit "+page, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	asOnly(t, root, "boss")
+	if err := cmdRecords(root, []string{"add", "products", "name=kettle"}); err != nil {
+		t.Fatal(err)
+	}
+	limitedAs(t, root, "boss", auth.Scope{Types: []string{"policy"}})
+	for name, run := range map[string]func() error{
+		"diff": func() error { return cmdDiff(root) },
+		"log":  func() error { return cmdLog(root, nil) },
+	} {
+		doc, err := jsonAnswer(t, run)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := fmt.Sprint(doc)
+		if strings.Contains(got, "pen") || strings.Contains(got, "products") || strings.Contains(got, "kettle") {
+			t.Errorf("a token limited to policy is shown the product page or records by %s: %s", name, got)
+		}
+		if !strings.Contains(got, "returns") {
+			t.Errorf("a token limited to policy is not shown the policy page by %s: %s", name, got)
+		}
 	}
 }

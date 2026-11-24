@@ -2612,7 +2612,11 @@ func readableHistory(root string, s *store.Store, head string, limit int) ([]str
 	Commit store.Commit
 }, error) {
 	caller := resolveCaller(root, "")
-	if authorise(root, caller, auth.ActView, "/") == nil {
+	// A credential limited to some content types or languages is let read
+	// "/", which is no one type or language, and may still not read the
+	// whole site: shown the whole history, a token issued `--types policy`
+	// was listed each commit to the product page that diff leaves out.
+	if authorise(root, caller, auth.ActView, "/") == nil && !caller.Limits.LimitsContent() {
 		return s.History(head, limit)
 	}
 	may, err := pageCheck(root, caller, auth.ActView)
