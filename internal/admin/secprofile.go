@@ -22,6 +22,9 @@ type SecurityProfile struct {
 	// Switch turns a feature on or off with a reason, as by. Nil leaves the
 	// screen read-only.
 	Switch func(feature string, on bool, reason string, by Actor) error
+	// Apply makes a profile the store's, starting from it again, with a
+	// reason, as by. Nil leaves the screen without the choice.
+	Apply func(name, reason string, by Actor) error
 	// Manifest is the signed manifest's file, nil when none has been
 	// signed.
 	Manifest func() ([]byte, error)
@@ -78,6 +81,13 @@ func (s *Server) handleSecurityProfile(w http.ResponseWriter, r *http.Request) {
 	data["View"] = v
 	data["Secured"] = v.Profile == profile.Security
 	data["CanSwitch"] = s.SecurityProfile.Switch != nil && s.allows(p, auth.ActGrant, "/")
+	data["CanApply"] = s.SecurityProfile.Apply != nil && s.allows(p, auth.ActGrant, "/")
+	// The other profile is the one offered: the standard profile from the
+	// security profile, and the security profile from either of the others.
+	data["Other"], data["OtherTitle"] = profile.Security, "the security profile"
+	if v.Profile == profile.Security {
+		data["Other"], data["OtherTitle"] = profile.Standard, "the standard profile"
+	}
 	data["HasManifest"] = v.Manifest != "" && s.SecurityProfile.Manifest != nil
 	s.render(w, r, "secprofile.html", data)
 }
@@ -98,12 +108,21 @@ func (s *Server) handleSecurityProfileAct(w http.ResponseWriter, r *http.Request
 		return
 	}
 	feature := r.FormValue("feature")
+	apply := r.FormValue("apply")
+	if apply != "" {
+		// The field an error is named beside is the application's.
+		feature = "apply"
+	}
 	back := func(k, v string) {
 		to := "/security/profile?" + k + "=" + url.QueryEscape(v)
 		if k == "e" {
 			to += "&f=" + url.QueryEscape(feature) + "#reason-" + url.PathEscape(feature)
 		}
 		http.Redirect(w, r, to, http.StatusSeeOther)
+	}
+	if apply != "" {
+		s.applyProfile(w, r, p, apply, back)
+		return
 	}
 	if s.SecurityProfile == nil || s.SecurityProfile.Switch == nil {
 		back("e", "switching features is not wired up in this build")
@@ -129,6 +148,31 @@ func (s *Server) handleSecurityProfileAct(w http.ResponseWriter, r *http.Request
 		return
 	}
 	back("m", f.Title+" is switched off. The change and its reason are in the audit log and the signed manifest.")
+}
+
+// applyProfile is the form that applies another profile, with the reason
+// it asks for: what this installation runs changes, and the record keeps
+// why.
+func (s *Server) applyProfile(w http.ResponseWriter, r *http.Request, p principal, name string, back func(k, v string)) {
+	if s.SecurityProfile == nil || s.SecurityProfile.Apply == nil {
+		back("e", "applying a profile is not wired up in this build")
+		return
+	}
+	title := map[string]string{profile.Security: "the security profile", profile.Standard: "the standard profile"}[name]
+	if title == "" {
+		back("e", "choose the security profile or the standard profile")
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	if reason == "" {
+		back("e", "Give a reason: applying "+title+" changes what this installation runs, and the record keeps why.")
+		return
+	}
+	if err := s.SecurityProfile.Apply(name, reason, p.actor()); err != nil {
+		back("e", err.Error())
+		return
+	}
+	back("m", "This installation runs "+title+" now. The change and its reason are in the audit log and the signed manifest.")
 }
 
 // handleSecurityProfileManifest is the signed manifest, to download and hand

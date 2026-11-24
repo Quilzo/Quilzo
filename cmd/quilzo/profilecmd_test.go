@@ -551,3 +551,61 @@ func TestTheProfileIsOnEverySurface(t *testing.T) {
 		t.Errorf("experiment_report is not refused as switched off with experiments off: %s", text)
 	}
 }
+
+// Applying a profile is on every surface a feature's switch is: the
+// screen, with a missing reason named beside its field and summarised at
+// the top, and the HTTP API, for an administrator only.
+func TestApplyingAProfileIsOnEverySurface(t *testing.T) {
+	root := securedStore(t)
+	srv, tok := screenFor(t, root, func(srv *admin.Server) { wireProfile(srv, root, sessionCaller) })
+	body := adminGet(t, srv, "/security/profile", tok)
+	if !strings.Contains(body, `id="reason-apply"`) || !strings.Contains(body, `name="apply" value="standard"`) {
+		t.Fatal("the screen does not offer to apply another profile")
+	}
+	rec := adminPost(t, srv.Handler(), "/security/profile/act", tok, url.Values{"apply": {"standard"}})
+	loc, _, _ := strings.Cut(rec.Header().Get("Location"), "#")
+	errPage := adminGet(t, srv, loc, tok)
+	if !strings.Contains(errPage, `id="err-apply"`) || !strings.Contains(errPage, `href="#reason-apply"`) ||
+		profileState(root).Name() != profile.Security {
+		t.Errorf("applying with no reason is not named beside its field, or applied anyway:\n%s", errPage)
+	}
+	accessible(t, "/security/profile (applying with no reason)", errPage)
+	rec = adminPost(t, srv.Handler(), "/security/profile/act", tok, url.Values{"apply": {"standard"},
+		"reason": {"this installation is the organisation's website as well"}})
+	if !strings.Contains(rec.Header().Get("Location"), "m=") || profileState(root).Name() != profile.Standard {
+		t.Fatalf("applying the standard profile from the screen answered %s", rec.Header().Get("Location"))
+	}
+	if ev := lastEvent(t, root, "profile.applied"); ev == nil || ev.Detail["surface"] != "admin" || ev.Kind != "human" {
+		t.Errorf("the screen's application is not recorded as dana's, from the admin: %+v", ev)
+	}
+
+	pol, _ := loadPolicy(root)
+	toks, _ := loadTokens(root)
+	if err := cmdAuth(root, []string{"grant", "kit", "reader"}); err != nil {
+		t.Fatal(err)
+	}
+	kit := personToken(t, root, "kit", auth.RoleReader)
+	toks, _ = loadTokens(root)
+	pol, _ = loadPolicy(root)
+	h := securityAPI(root, &api.Server{Policy: pol, Tokens: toks})
+	call := func(token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/profile/apply", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := call(kit, `{"profile": "security", "reason": "mine"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("a reader applied a profile through the API: %d", rec.Code)
+	}
+	if rec := call(flagToken, `{"profile": "security"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("applying with no reason through the API answered %d", rec.Code)
+	}
+	if rec := call(flagToken, `{"profile": "security", "reason": "the website moved to its own host"}`); rec.Code != http.StatusOK ||
+		profileState(root).Name() != profile.Security {
+		t.Errorf("an administrator could not apply the security profile through the API: %d %s", rec.Code, rec.Body.String())
+	}
+	if ev := lastEvent(t, root, "profile.applied"); ev == nil || ev.Detail["surface"] != "api" {
+		t.Errorf("the API's application is not recorded: %+v", ev)
+	}
+}

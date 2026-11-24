@@ -1204,7 +1204,9 @@ sends only the draft that was proposed; a store with one administrator
 publishes alone, and the record says so. `quilzo public send` sends what was
 published again with a fresh head. The Security profile and Public instance
 screens, the agent interface's `profile_status` and `public_status`, and
-`/api/v1/profile` and `/api/v1/attestations` do the same as the command line.
+`/api/v1/profile` (with `/apply` and `/features/NAME`), `/api/v1/attestations`
+(with `/publish`), `/api/v1/public/target` and `/api/v1/public/send` do the
+same as the command line; the agent interface reads, and changes nothing.
 
 What is verified, and what is not. The tests run an internal instance and a
 public instance as two servers on one machine, posting and carrying

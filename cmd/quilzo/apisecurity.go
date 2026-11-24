@@ -32,9 +32,12 @@ type apiRoute struct {
 // securityRoutes is every route this file and its siblings add.
 var securityRoutes = []apiRoute{
 	{"/api/v1/profile", apiProfile},
+	{"/api/v1/profile/apply", apiProfileApply},
 	{"/api/v1/profile/features/", apiProfileFeature},
 	{"/api/v1/attestations", apiAttestations},
 	{"/api/v1/attestations/publish", apiAttestationsPublish},
+	{"/api/v1/public/target", apiPublicTarget},
+	{"/api/v1/public/send", apiPublicSend},
 }
 
 // securityAPI is the content API with the security routes in front of it.
@@ -139,6 +142,30 @@ func apiProfile(root string, c *Caller, w http.ResponseWriter, r *http.Request) 
 	apiJSON(w, http.StatusOK, map[string]any{"profile": v, "signed_manifest": sm})
 }
 
+// apiProfileApply is POST /api/v1/profile/apply with {"profile":
+// "security", "reason": "..."}: an administrator applying a profile, which
+// starts from it again, as quilzo profile apply does.
+func apiProfileApply(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
+	if !onlyMethods(w, r, http.MethodPost) {
+		return
+	}
+	var body struct {
+		Profile string `json:"profile"`
+		Reason  string `json:"reason"`
+	}
+	if err := readBody(r, &body); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	sm, err := changeProfile(root, c, "profile.applied", map[string]string{"reason": body.Reason, "surface": "api"},
+		func(st *profile.State, now time.Time) error { return st.Apply(body.Profile, body.Reason, c.Name, now) })
+	if err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, map[string]string{"profile": body.Profile, "manifest": sm.Digest})
+}
+
 // apiProfileFeature is POST /api/v1/profile/features/NAME with
 // {"on": true, "reason": "..."}: an administrator switching one feature.
 func apiProfileFeature(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
@@ -228,4 +255,65 @@ func apiAttestationsPublish(root string, c *Caller, w http.ResponseWriter, r *ht
 	}
 	v, _ := viewPublic(root)
 	apiJSON(w, http.StatusOK, map[string]string{"state": state, "request": v.Waiting})
+}
+
+// apiPublicTarget is PUT /api/v1/public/target with {"to": "..."}: where
+// transfers go, the public instance's address or a directory to carry them
+// from, as quilzo public target says it. GET is the address.
+func apiPublicTarget(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
+	if !onlyMethods(w, r, http.MethodGet, http.MethodHead, http.MethodPut) {
+		return
+	}
+	if r.Method != http.MethodPut {
+		if err := authoriseUnder(root, c, auth.ActView, auth.AreaSecurity); err != nil {
+			apiFail(w, 0, err)
+			return
+		}
+		to, err := loadTarget(root)
+		if err != nil {
+			apiFail(w, 0, err)
+			return
+		}
+		apiJSON(w, http.StatusOK, map[string]string{"to": to})
+		return
+	}
+	var body struct {
+		To string `json:"to"`
+	}
+	if err := readBody(r, &body); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	if err := setTarget(root, c, body.To); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	to, _ := loadTarget(root)
+	apiJSON(w, http.StatusOK, map[string]string{"to": to})
+}
+
+// apiPublicSend is POST /api/v1/public/send with {"reason": "..."}: what
+// was published, sent again with a fresh head of the record, as quilzo
+// public send sends it. It carries what two administrators published and
+// nothing changed since, so it is one administrator's.
+func apiPublicSend(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
+	if !onlyMethods(w, r, http.MethodPost) {
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := readBody(r, &body); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	if strings.TrimSpace(body.Reason) == "" {
+		body.Reason = "a fresh head of the record"
+	}
+	sent, err := resendPublished(root, c, body.Reason)
+	if err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, sent)
 }

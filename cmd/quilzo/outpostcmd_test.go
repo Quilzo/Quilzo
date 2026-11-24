@@ -596,3 +596,63 @@ func TestThePublicInstanceIsOnEverySurface(t *testing.T) {
 		t.Errorf("public_status answered %v %s", mErr, text)
 	}
 }
+
+// Where the public instance is, and sending again what was published, are
+// on the HTTP API as on the command line and the screen: an administrator's,
+// recorded, and refused to a reader.
+func TestTheTargetAndSendingAgainAreOnTheAPI(t *testing.T) {
+	root, tokens := internalStore(t)
+	_, srv, posts := publicHost(t, root)
+	if err := cmdAuth(root, []string{"grant", "kit", "reader"}); err != nil {
+		t.Fatal(err)
+	}
+	kit := personToken(t, root, "kit", auth.RoleReader)
+	pol, _ := loadPolicy(root)
+	toks, _ := loadTokens(root)
+	h := securityAPIFor(root, pol, toks)
+	call := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	to, _ := json.Marshal(map[string]string{"to": srv.URL})
+	if rec := call(http.MethodPut, "/api/v1/public/target", kit, string(to)); rec.Code != http.StatusForbidden {
+		t.Errorf("a reader said where the public instance is: %d", rec.Code)
+	}
+	if rec := call(http.MethodPut, "/api/v1/public/target", tokens["dana"], `{"to": "relative/dir"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("a target that is neither an address nor a directory answered %d", rec.Code)
+	}
+	if rec := call(http.MethodPut, "/api/v1/public/target", tokens["dana"], string(to)); rec.Code != http.StatusOK {
+		t.Fatalf("an administrator could not say where the public instance is: %d %s", rec.Code, rec.Body.String())
+	}
+	if got, _ := loadTarget(root); got != srv.URL {
+		t.Errorf("the target is %q after the API set it to %s", got, srv.URL)
+	}
+	if ev := lastEvent(t, root, "public.target"); ev == nil || ev.Detail["to"] != srv.URL {
+		t.Errorf("the API's target is not recorded: %+v", ev)
+	}
+	if rec := call(http.MethodPost, "/api/v1/public/send", tokens["dana"], `{"reason": "a fresh head"}`); rec.Code != http.StatusNotFound {
+		t.Errorf("sending again before anything was published answered %d", rec.Code)
+	}
+
+	flagToken = tokens["dana"]
+	if err := cmdAttest(root, []string{"publish", "--reason", "the 2025 report is in"}); err != nil {
+		t.Fatal(err)
+	}
+	flagToken = tokens["sam"]
+	if err := cmdPending(root, []string{"approve", waitingRequest(t, root).ID}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(http.MethodPost, "/api/v1/public/send", kit, `{"reason": "mine"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("a reader sent to the public instance: %d", rec.Code)
+	}
+	if rec := call(http.MethodPost, "/api/v1/public/send", tokens["dana"], `{"reason": "a fresh head"}`); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"head_size"`) {
+		t.Errorf("sending again through the API answered %d %s", rec.Code, rec.Body.String())
+	}
+	if posts.Load() != 2 {
+		t.Errorf("the publication and the API's send made %d posts, want two", posts.Load())
+	}
+}

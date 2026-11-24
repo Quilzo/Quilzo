@@ -504,6 +504,12 @@ func securityProfileHooks(root string, signedIn func(admin.Actor) *Caller) *admi
 			})
 			return err
 		},
+		Apply: func(name, reason string, by admin.Actor) error {
+			c := signedIn(by)
+			_, err := changeProfile(root, c, "profile.applied", map[string]string{"reason": reason, "surface": "admin"},
+				func(st *profile.State, now time.Time) error { return st.Apply(name, reason, c.Name, now) })
+			return err
+		},
 		Manifest: func() ([]byte, error) {
 			body, err := os.ReadFile(manifestPath(root))
 			if errors.Is(err, os.ErrNotExist) {

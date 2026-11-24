@@ -61,6 +61,22 @@
 </div>
 {{if not .CanSwitch}}<p class="hint">An administrator of this store switches features, with a reason.</p>{{end}}
 
+{{if .CanApply}}
+<h2>Apply {{.OtherTitle}}</h2>
+{{$bad := eq .Field "apply"}}
+<form method="post" action="/security/profile/act" class="card">
+  <input type="hidden" name="apply" value="{{.Other}}">
+  <div class="field"><label for="reason-apply">Reason for applying {{.OtherTitle}} {{template "req"}}</label>
+    <input id="reason-apply" name="reason" required maxlength="300"
+      aria-describedby="help-apply{{if $bad}} err-apply{{end}}"{{if $bad}} aria-invalid="true"{{end}}>
+    <p id="help-apply" class="help">Applying a profile starts from it again: every feature is set as {{.OtherTitle}}
+      has it, and the changes made since the last one was applied are kept in the audit log.</p>
+    {{if $bad}}<p id="err-apply" class="hint warn">Error: {{.Error}}</p>{{end}}
+  </div>
+  <button type="submit" class="btn-tonal">Apply {{.OtherTitle}}</button>
+</form>
+{{end}}
+
 <h2>The signed feature manifest</h2>
 {{if .View.Problem}}
 <p class="notice bad"><span class="wf-icon">{{icon "warning"}}</span> Not evidence: {{.View.Problem}}</p>
