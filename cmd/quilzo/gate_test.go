@@ -226,8 +226,14 @@ func TestEverySurfaceChecksTheTokensOwnLimits(t *testing.T) {
 	}
 	for _, s := range surfaces {
 		body := readFile(t, s.file)
+		// auth.CheckGranted is CheckCredential for a decision already made,
+		// and ends in it on every path that does not refuse: the admin asks
+		// it of every place, so that a permission granted on its own is
+		// capped by the credential's path and limits rather than its role.
+		// Asking for CheckCredential alone failed the admin once its last
+		// direct call became that one.
 		if !strings.Contains(body, "auth.CheckCredential") &&
-			!strings.Contains(body, "CheckCredential(") {
+			!strings.Contains(body, "CheckCredential(") && !strings.Contains(body, "auth.CheckGranted(") {
 			t.Errorf("%s (%s) resolves a token and never calls "+
 				"auth.CheckCredential.\n  A token may carry less authority "+
 				"than the principal holding it: a narrower role, a subtree, "+
