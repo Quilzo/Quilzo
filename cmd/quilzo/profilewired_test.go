@@ -19,9 +19,11 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/cdp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/profile"
+	"github.com/quilzo/quilzo/internal/public"
 )
 
 // lockedBuffer is a server's standard error, written by its process and
@@ -186,5 +188,64 @@ func TestAnAgentRunIsRefusedItsBrowserWithBrowserHandsOff(t *testing.T) {
 	}
 	if err := try(); err == nil || !strings.Contains(err.Error(), launched.Error()) {
 		t.Errorf("with browser hands switched back on, the run's browser was not launched: %v", err)
+	}
+}
+
+// With experiments and personalisation switched off, the site serves every
+// visitor the same page: the sets it reads per request are empty, whatever
+// tests and rules were declared before, and come back when the features
+// are switched back on.
+func TestTheSiteServesEveryVisitorTheSamePageWithTheirFeaturesOff(t *testing.T) {
+	root := securedStore(t)
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.json"), filepath.Join(dir, "b.json")
+	if err := os.WriteFile(a, []byte(`{"title":"About us","body":"Who we are."}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte(`{"title":"About us B","body":"Who we are, again."}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(t, root, "add", "about="+a, "about-b="+b, "-m", "two pages"); err != nil {
+		t.Fatal(err)
+	}
+	// Declared by calling the commands, which the dispatch refuses under
+	// the profile: what was declared before it was applied is what this is
+	// about.
+	if err := cmdExperiment(root, []string{"add", "signup", "--page", "about", "--variant", "b=about-b",
+		"--goal", "page:/contact"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPersonalise(root, []string{"add", "spring", "--page", "about", "--variant", "about-b",
+		"--when", "campaign=spring"}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &public.Site{}
+	siteRun{root: root, store: s, counter: &analytics.Counter{}}.dress(st)
+	sets := func() (int, int) {
+		t.Helper()
+		e, err := st.Experiments()
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := st.Personalise()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(e.Experiments), len(p.Rules)
+	}
+	if e, p := sets(); e != 0 || p != 0 {
+		t.Errorf("with experiments and personalisation off, the site reads %d experiments and %d rules", e, p)
+	}
+	for _, f := range []string{"experiments", "personalisation"} {
+		if err := cmdProfile(root, []string{"enable", f, "--reason", "the spring campaign"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if e, p := sets(); e != 1 || p != 1 {
+		t.Errorf("switched back on, the site reads %d experiments and %d rules, want one of each", e, p)
 	}
 }
