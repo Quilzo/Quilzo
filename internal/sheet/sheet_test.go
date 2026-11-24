@@ -242,7 +242,8 @@ func TestBroughtInTwiceIsTheSameRecords(t *testing.T) {
 	m.Key = ""
 	m.Existing = again.Records
 	back := m.Plan(read(t, csv, Options{Type: product()}).Rows)
-	if back.Updated != 2 || back.New != 0 {
+	// The same records, and as they are: nothing to write again.
+	if back.Unchanged != 2 || back.Updated != 0 || back.New != 0 || len(back.Records) != 0 {
 		t.Errorf("a sheet written here did not come back as the same records: %+v\n%s", back, csv)
 	}
 }
@@ -394,14 +395,19 @@ func TestACalendarBecomesEvents(t *testing.T) {
 	if plan.Records[0].Fields["slug"] != "rye-night" || plan.Records[3].Fields["slug"] != "yoga-2026-11-09" {
 		t.Errorf("slugs %v %v", plan.Records[0].Fields["slug"], plan.Records[3].Fields["slug"])
 	}
-	// Brought again, after someone gave the first a picture and changed
-	// its page link: the same records, with those kept.
+	// Brought again, after someone gave the first a picture, changed its
+	// page link and its title: the same records, the title as the
+	// calendar has it, and the picture and the link kept. The three nobody
+	// touched are as they were, and not written again.
 	m.Existing = plan.Records
+	title := m.Existing[0].Fields["title"]
 	m.Existing[0].Fields["slug"], m.Existing[0].Fields["image"] = "rye", "pic"
+	m.Existing[0].Fields["title"] = "Renamed"
 	again := m.Plan(rows)
-	if again.New != 0 || again.Updated != 4 || again.Records[0].Fields["slug"] != "rye" ||
-		again.Records[0].Fields["image"] != "pic" {
-		t.Errorf("%+v %v", again, again.Records[0].Fields)
+	if again.New != 0 || again.Updated != 1 || again.Unchanged != 3 || len(again.Records) != 1 ||
+		again.Records[0].Fields["slug"] != "rye" || again.Records[0].Fields["image"] != "pic" ||
+		again.Records[0].Fields["title"] != title {
+		t.Fatalf("%+v", again)
 	}
 }
 
@@ -502,4 +508,99 @@ func FuzzRead(f *testing.F) {
 			_ = Write(typ, plan.Records, WriteOptions{})
 		}
 	})
+}
+
+// A record's own field named id is written under field:id, beside the
+// store's id, and read back as that field, whether or not the type
+// declares it; a sheet with no field:id is read as it was, its id the
+// store's unless the type declares a field id.
+//
+// The id column is the store's id, so a record's own id was left out of
+// every sheet written here, and a sheet taken out and brought back lost it.
+func TestARecordsOwnIdGoesOutBesideTheStoresAndComesBack(t *testing.T) {
+	coded := product()
+	coded.Fields = append(coded.Fields, schema.Field{Name: "id", Kind: schema.Text})
+	recs := []collection.Record{{ID: "s1", Created: 1, Fields: map[string]any{"name": "Rye", "id": "RYE-1"}}}
+	for _, typ := range []*schema.Type{coded, nil} {
+		out := string(Write(typ, recs, WriteOptions{}))
+		if !strings.HasPrefix(out, "id,field:id,") || !strings.Contains(out, "s1,RYE-1,") {
+			t.Fatalf("written as %q", out)
+		}
+		sh := read(t, out, Options{Type: typ})
+		if r := sh.Rows[0]; r.ID != "s1" || r.Fields["id"] != "RYE-1" || r.Fields["name"] != "Rye" {
+			t.Errorf("read back as %+v", r)
+		}
+	}
+	// A record with no id of its own has no such column.
+	if out := string(Write(product(), recs[:0], WriteOptions{})); strings.Contains(out, "field:id") {
+		t.Errorf("written with a column nobody has: %q", out)
+	}
+	// Without field:id, a type that declares id fills it from the id column,
+	// as it did.
+	if r := read(t, "id,name\nRYE-1,Rye\n", Options{Type: coded}).Rows[0]; r.ID != "" || r.Fields["id"] != "RYE-1" {
+		t.Errorf("a sheet without field:id was read as %+v", r)
+	}
+	// A type without the field leaves the column out, saying so.
+	sh := read(t, "id,field:id,name\ns1,RYE-1,Rye\n", Options{Type: product()})
+	if r := sh.Rows[0]; r.ID != "s1" || r.Fields["id"] != nil || !strings.Contains(sh.Columns[1].Note, "no field id") {
+		t.Errorf("read by a type without id as %+v %+v", r, sh.Columns)
+	}
+}
+
+// A type that declares a field id has the field:id column in every sheet
+// written for it, whether or not a record has an id of its own, so the id
+// column is read back as the store's.
+//
+// The column was written only when some record had an id of its own. A
+// sheet of records that had none was headed id alone, and a type that
+// declares id reads that column as its field: each record came back in as
+// a new one, with the store's id for its own.
+func TestATypeThatDeclaresIdAlwaysHasTheOwnIdColumn(t *testing.T) {
+	coded := product()
+	coded.Fields = append(coded.Fields, schema.Field{Name: "id", Kind: schema.Text})
+	recs := []collection.Record{{ID: "s1", Created: 1, Fields: map[string]any{"name": "Rye"}}}
+	out := string(Write(coded, recs, WriteOptions{}))
+	if !strings.HasPrefix(out, "id,field:id,") || !strings.Contains(out, "s1,,Rye") {
+		t.Fatalf("written as %q", out)
+	}
+	sh := read(t, out, Options{Type: coded})
+	if r := sh.Rows[0]; r.ID != "s1" || r.Fields["id"] != nil || r.Fields["name"] != "Rye" {
+		t.Errorf("read back as %+v", r)
+	}
+	// With no records at all, the headings still say which id is which.
+	if out := string(Write(coded, nil, WriteOptions{})); !strings.HasPrefix(out, "id,field:id,") {
+		t.Errorf("an empty sheet is headed %q", out)
+	}
+	// A type without the field, and records without it, have no such column.
+	if out := string(Write(product(), recs, WriteOptions{})); strings.Contains(out, "field:id") {
+		t.Errorf("written with a column nobody has: %q", out)
+	}
+}
+
+// A link made from words in another language is the words, spelled in the
+// letters a page link may hold.
+//
+// Every letter outside ASCII was a break between words: Ürünler was r-nler,
+// Café Menu caf-menu, and a Greek or Russian title had nothing left and was
+// refused, as if nobody had given an address. These are the public URLs.
+func TestASlugSpellsLettersFromOtherAlphabets(t *testing.T) {
+	for in, want := range map[string]string{
+		"Ürünler":            "urunler",
+		"Café Menu":          "cafe-menu",
+		"İstanbul Gezi":      "istanbul-gezi",
+		"Naïve café":         "naive-cafe",
+		"Straße":             "strasse",
+		"Łódź":               "lodz",
+		"Ærøskøbing":         "aeroskobing",
+		"Σχετικά με εμάς":    "schetika-me-emas",
+		"Привет, мир":        "privet-mir",
+		"Объявление":         "obiavlenie",
+		"🎉 Party":            "party",
+		"مرحبا":              "",
+		"Ürünler 2026/İzmir": "urunler-2026-izmir",
+	} {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

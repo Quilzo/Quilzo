@@ -103,6 +103,11 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 	// behind this, and a slow answer is worse than none.
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	// Asked without its actions: the answer above the results is sentences
+	// and has no place for an offer. With them, a search no page covers
+	// would be put to the model only to see whether it offers one
+	// (assistant.RespondTo), and the offer thrown away.
+	a.Actions = nil
 	ans, err := assistant.RespondTo(ctx, a, idx, m, query, "")
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), err == nil && !ans.Refused)

@@ -132,7 +132,7 @@ func walkFields(v any, prefix, group string, depth int, out *[]Editable) {
 				Path:   join(prefix, k),
 				Label:  labelFor(join(prefix, k)),
 				Value:  text,
-				Long:   len(text) > 80,
+				Long:   wantsLines(text),
 				Group:  group,
 				Number: number,
 			})
@@ -154,6 +154,7 @@ func walkFields(v any, prefix, group string, depth int, out *[]Editable) {
 					}
 					*out = append(*out, Editable{
 						Path: path, Label: labelFor(path), Value: text,
+						Long:  strings.ContainsAny(text, "\r\n"),
 						Group: join(prefix, k), Number: number,
 					})
 				}
@@ -162,6 +163,17 @@ func walkFields(v any, prefix, group string, depth int, out *[]Editable) {
 			walkFields(t, join(prefix, k), group, depth+1, out)
 		}
 	}
+}
+
+// wantsLines reports whether a value is edited in a textarea: long text,
+// and text of more than one line however short.
+//
+// By length alone, two short lines were given a one-line input, and a
+// browser takes the line breaks out of what one holds before submitting it:
+// a section's text written on two lines was joined into one by the next
+// save of the section, though nobody had touched it.
+func wantsLines(text string) bool {
+	return len(text) > 80 || strings.ContainsAny(text, "\r\n")
 }
 
 // scalar renders a leaf as text and says whether it was a number.

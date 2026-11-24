@@ -5,6 +5,7 @@ package shield
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,8 +166,8 @@ func TestEndedProtectionsMoveToTheHistory(t *testing.T) {
 	if _, on := g.Frozen(t0.Add(time.Minute)); !on {
 		t.Fatal("lifting one lifted another")
 	}
-	if _, err := Lift(root, "sh-nothing", "sam", t0); err == nil {
-		t.Fatal("lifting nothing succeeded")
+	if _, err := Lift(root, "sh-nothing", "sam", t0); !errors.Is(err, ErrNoProtection) {
+		t.Fatalf("lifting nothing was not refused as nothing there: %v", err)
 	}
 	if p, frozen := Frozen(root, t0.Add(time.Minute)); !frozen || p.ID != a.ID {
 		t.Fatal("the freeze is not in force")

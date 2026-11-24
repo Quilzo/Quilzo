@@ -52,6 +52,35 @@ func (m *MergeConflict) Error() string {
 // reported only when it fails is a merge nobody trusts.
 func MergeDraftFrom(s *store.Store, pages map[string]any, message, author,
 	base string) (string, collab.Merged, error) {
+	return mergeDraft(s, pages, message, author, base, base == "")
+}
+
+// SaveDraftOver writes pages a caller made from the draft it read itself,
+// merging with whatever moved underneath it since.
+//
+// read is the commit those pages came from, the draft or else what was live,
+// and the empty string when there was neither: a store with nothing in it is
+// something the caller read, not something it did not say. That is the
+// difference from MergeDraftFrom, where an empty base is a caller who named
+// no commit at all.
+//
+// For every write that reads the page set, changes some of it and writes the
+// whole set back. `quilzo add` did that with an empty base, so ten adds run
+// at once each wrote back the draft as it had read it, and whichever landed
+// last dropped every page the others had added: ten exits of 0 and two of
+// the ten pages in the draft. Refusing instead would be safe and would make
+// nine of ten writers that touched nothing in common redo their work; this
+// takes everybody's, and refuses only a field two of them changed
+// differently (MergeConflict).
+func SaveDraftOver(s *store.Store, pages map[string]any, message, author,
+	read string) (string, collab.Merged, error) {
+	return mergeDraft(s, pages, message, author, read, false)
+}
+
+// mergeDraft is the merging write, with unsaid set when the caller named no
+// base and an empty base therefore means no check rather than an empty store.
+func mergeDraft(s *store.Store, pages map[string]any, message, author,
+	base string, unsaid bool) (string, collab.Merged, error) {
 
 	var cid string
 	var merged collab.Merged
@@ -63,7 +92,7 @@ func MergeDraftFrom(s *store.Store, pages map[string]any, message, author,
 		// Nothing moved, or the caller did not say what they read. Either way
 		// there is nothing to merge against and the ordinary write applies —
 		// including its own base check, which stays the safety property.
-		if base == "" || sameCommit(base, current) {
+		if unsaid || sameCommit(base, current) {
 			var err error
 			cid, err = SaveDraftLocked(s, pages, message, author, base)
 			return err
@@ -72,11 +101,19 @@ func MergeDraftFrom(s *store.Store, pages map[string]any, message, author,
 		// The three sides. Read inside the lock, because reading the current
 		// draft outside it and merging against what it used to be is the bug
 		// compare-and-swap exists to prevent, wearing a merge as a disguise.
-		full := resolveCommit(s, base)
-		wasPages, err := PagesAt(s, full)
-		if err != nil {
-			return fmt.Errorf("cannot read the commit you were editing (%s): %w",
-				shortID(base), err)
+		//
+		// An empty base here is a store the caller found empty, so what it
+		// read is no pages at all, and everything in the draft now arrived
+		// while it was working.
+		full := ""
+		wasPages := map[string]any{}
+		if base != "" {
+			full = resolveCommit(s, base)
+			var err error
+			if wasPages, err = PagesAt(s, full); err != nil {
+				return fmt.Errorf("cannot read the commit you were editing (%s): %w",
+					shortID(base), err)
+			}
 		}
 		nowPages, err := PagesAt(s, current)
 		if err != nil {

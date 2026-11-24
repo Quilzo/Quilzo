@@ -96,8 +96,15 @@ func TestOnlyAnAnswerIsRated(t *testing.T) {
 		t.Errorf("%d", w.Code)
 	}
 	st.Assistants.Keeps = func() bool { return true }
-	if body := askPost(st, "help", "can I return opened ink?").Body.String(); strings.Contains(body, "Nothing you ask is stored") ||
+	body = askPost(st, "help", "can I return opened ink?").Body.String()
+	if strings.Contains(body, "Nothing you ask is stored") ||
 		!strings.Contains(body, "is kept for a while") {
 		t.Fatal("the page says nothing is kept when some is")
+	}
+	// And it promises only what is taken out: a name typed without "I am",
+	// or an address written some other way, is not.
+	if strings.Contains(body, "anything that could name you") ||
+		!strings.Contains(body, "email addresses, telephone and card numbers, and the names and street addresses it recognises") {
+		t.Fatal("the page promises more is taken out of a kept question than is")
 	}
 }

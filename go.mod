@@ -23,4 +23,9 @@ go 1.27
 // makes (model calls, single sign-on, webhooks, federation), fixed in
 // 1.27.3. 1.27.2 had fixed twelve found in 1.27.0, among them two in
 // html/template, which renders every admin screen.
-toolchain go1.27.3
+//
+// 1.27.4 because govulncheck found GO-2026-6859 on 12 November 2026: an
+// HTTP/1 server crash from a MaxBytesReader header race in net/http,
+// reachable through every server this program runs (admin, site, MCP
+// endpoint, SSF receiver) and its outbound client, fixed in 1.27.4.
+toolchain go1.27.4

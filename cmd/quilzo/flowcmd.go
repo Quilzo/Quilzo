@@ -33,13 +33,13 @@ func cmdFlow(args []string) error {
 	case "demo":
 		return flowDemo(args[1:])
 	default:
-		return fmt.Errorf("unknown flow command %q; try demo", args[0])
+		return errMisused{fmt.Errorf("unknown flow command %q; try demo", args[0])}
 	}
 }
 
 func flowDemo(args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	at := time.Now().UTC().Truncate(time.Hour)

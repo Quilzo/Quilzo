@@ -11,42 +11,42 @@
 // deny wins wherever it sits, and Explain answers why. That model is good
 // and this package does not replace any of it.
 //
-// The other kind arrived later and by accident. A call has a host who can
-// eject people. An incident has a commander whose instructions others
-// follow. An errand has an owner who is the only person who can confirm it.
-// A detection has somebody who promotes it out of shadow. None of those are
-// bindings. Nobody granted them, they expire when the situation does, and
-// they were each invented inside the package that needed one.
+// The other kind arrived later and by accident. A share link lets a client
+// read one draft. A visitor handed to a person holds the secret to one
+// conversation. Whoever starts an agent run may stop it. An enrolment link
+// adds somebody's first passkey. None of those are bindings. Nobody granted
+// them, they expire when the situation does, and they were each invented
+// inside the code that needed one.
 //
-// That is not a mistake in itself — a call host is genuinely not a rung on
-// a site-wide ladder, and forcing it to be one would produce the
-// over-granting internal/auth is built to avoid. The mistake is leaving the
-// relationship between the two unstated, because then two things are
-// possible and neither is visible:
+// That is not a mistake in itself — the visitor in a handoff is genuinely
+// not a rung on a site-wide ladder, and forcing them to be one would
+// produce the over-granting internal/auth is built to avoid. The mistake is
+// leaving the relationship between the two unstated, because then two
+// things are possible and neither is visible:
 //
 //   - Situational authority exceeding standing authority. Somebody who is
-//     a reader everywhere opens a call, becomes its host, and removes
-//     people from it. Nothing checked, because the call never asked.
-//   - The reverse assumption. An administrator expects to be able to close
-//     somebody else's incident and cannot, or can, and nobody decided
+//     a reader everywhere holds a link, and the link does more than show
+//     them a page. Nothing checked, because the link never asked.
+//   - The reverse assumption. An administrator expects to be able to stop
+//     somebody else's agent run and cannot, or can, and nobody decided
 //     which.
 //
 // # The rule that is not obvious
 //
 // The tempting rule is that every situational role needs a standing role
 // above some line. That is wrong, and applying it would break the thing
-// that works: the point of a call host is that an ordinary person can run
-// a meeting, and requiring an administrator to be present would mean
-// meetings are run by whoever has the most access, which is how a
+// that works: the point of a handoff is that a visitor with no account at
+// all can talk to a person, and requiring a grant first would mean only
+// the people with the most access could be helped, which is how a
 // permission model starts shaping the organisation.
 //
 // The rule that holds is about reach. A situational power that acts inside
-// its own situation needs nothing standing — ejecting somebody from a call
-// ends when the call does, and the worst case is a bad meeting. A power
-// that reaches outside it is a standing act wearing a situational costume,
-// and needs the standing authority for what it actually does. Retiring a
-// detection every team's estate depends on is not a property of one
-// person's afternoon.
+// its own situation needs nothing standing — ending a handoff conversation
+// closes that one conversation, and the worst case is a visitor who leaves.
+// A power that reaches outside it is a standing act wearing a situational
+// costume, and needs the standing authority for what it actually does. A
+// passkey added through an enrolment link signs in long after the link is
+// gone, and is not a property of one person's afternoon.
 //
 // So every situational role declares its powers and, for each, whether it
 // reaches outside. A guard checks that the register covers every package
@@ -68,7 +68,7 @@ type Power struct {
 	// Outside says the effect survives the situation.
 	//
 	// The whole distinction. Inside means the worst case ends when the
-	// call, the incident or the shift does. Outside means it does not, and
+	// conversation, the link or the run does. Outside means it does not, and
 	// then this is a standing act and needs standing authority for it.
 	Outside bool `json:"outside,omitempty"`
 	// Needs is the standing action required, and is only meaningful when
@@ -102,8 +102,8 @@ func (p Power) Validate() error {
 		return fmt.Errorf(
 			"%q acts inside its situation and also requires standing "+
 				"authority. One of those is wrong, and requiring authority "+
-				"for something that ends with the meeting is how a call "+
-				"comes to be run by whoever has the most access", p.Name)
+				"for something that ends with its situation is how ordinary "+
+				"work comes to be run by whoever has the most access", p.Name)
 	}
 	return nil
 }

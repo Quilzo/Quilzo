@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Who acted, when the actor was an agent.
@@ -181,13 +181,4 @@ func actionRecord(caller *Caller, m agent.Manifest, model assist.Model, run stri
 	return r
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for len(s) > 0 && !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s + "…"
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "…") }

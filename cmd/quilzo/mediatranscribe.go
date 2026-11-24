@@ -43,12 +43,16 @@ func mediaTranscribe(root string, args []string) error {
 	fs := flag.NewFlagSet("transcribe", flag.ContinueOnError)
 	lang := fs.String("lang", "", "the language it is spoken in, as two letters: en, fr")
 	author := fs.String("author", "", "the person accountable for these captions")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only,
+	// `quilzo media transcribe --lang en --author WHO ID` was answered with
+	// the usage line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo media transcribe RECORDING --lang en --author WHO")
+		return errMisused{fmt.Errorf("usage: quilzo media transcribe RECORDING --lang en --author WHO")}
 	}
 	who := strings.TrimSpace(*author)
 	if who == "" {

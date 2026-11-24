@@ -54,8 +54,23 @@ func (st *Site) handoffRoute(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
+// handoffStore is where a new conversation with a is kept, for a chatbot
+// that offers a person.
 func (st *Site) handoffStore(a assistant.Assistant) (handoff.Store, bool) {
-	if !a.Handoff || st.Assistants == nil || st.Assistants.Handoff == nil {
+	if !a.Handoff {
+		return handoff.Store{}, false
+	}
+	return st.conversationStore()
+}
+
+// conversationStore is where conversations already started are, whether or
+// not their chatbot still offers a person. Withdrawing the offer stops new
+// conversations; it does not end the open ones. It did: their address
+// answered 404 while the Inbox still listed them as waiting and a reply
+// was reported sent, although the visitor had been told the conversation
+// is kept for the chatbot's days and that the address is the way back.
+func (st *Site) conversationStore() (handoff.Store, bool) {
+	if st.Assistants == nil || st.Assistants.Handoff == nil {
 		return handoff.Store{}, false
 	}
 	return *st.Assistants.Handoff, true
@@ -88,7 +103,7 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 	if !st.handoffAllowed(w, r) {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, handoffForm)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "that could not be read", http.StatusBadRequest)
 		return
@@ -113,6 +128,13 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
+// validSecret reports whether s can be a conversation's secret: URL-safe
+// base64 of 24 bytes.
+func validSecret(s string) bool {
+	return len(s) == 32 && strings.Trim(s,
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == ""
+}
+
 // conversationView is what the visitor's page shows.
 type conversationView struct {
 	Assistant assistant.Assistant
@@ -132,11 +154,9 @@ type conversationView struct {
 func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	a assistant.Assistant, secret string) {
 
-	store, ok := st.handoffStore(a)
-	// A secret is URL-safe base64 of 24 bytes; anything else is not one, and
-	// is answered exactly as a wrong secret is.
-	if !ok || len(secret) != 32 || strings.Trim(secret,
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != "" {
+	store, ok := st.conversationStore()
+	// Anything that is not a secret is answered exactly as a wrong secret is.
+	if !ok || !validSecret(secret) {
 		st.notFound(w, r)
 		return
 	}
@@ -149,7 +169,12 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "this conversation could not be read just now", http.StatusServiceUnavailable)
 			return
 		}
-		st.signal(ConversationGuess, a.Name, r)
+		// About which address, by the digest the store files it under and
+		// never the secret: one stale link asked for again is one wrong
+		// address, and the shield counts different ones. Told the chatbot's
+		// name alone, every address was the same, and a visitor reloading
+		// their own expired conversation was slowed as somebody guessing.
+		st.signal(ConversationGuess, a.Name+" "+id[:16], r)
 		st.notFound(w, r)
 		return
 	}
@@ -177,7 +202,7 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 		if !st.handoffAllowed(w, r) {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, handoffForm)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "that could not be read", http.StatusBadRequest)
 			return
@@ -331,7 +356,13 @@ const askLiveJS = `(function () {
     // that the button on the page still works.
     if (Date.now() - started > 30 * 60 * 1000) return;
     fetch(src + "&after=" + after, { credentials: "omit", cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        // Not there any more: it expired or was removed while the page was
+        // open. Asking again for an address that is not there is what
+        // somebody guessing does, and the shield counts it so.
+        if (r.status === 404) { end(); return null; }
+        return r.ok ? r.json() : null;
+      })
       .then(function (d) {
         if (!d) return;
         (d.messages || []).forEach(function (m) {

@@ -104,7 +104,7 @@ func dismissUndelivered(root string, n int) (int, error) {
 		return len(list), saveUndelivered(root, nil)
 	}
 	if n < 1 || n > len(list) {
-		return 0, fmt.Errorf("there is no undelivered write %d; there are %d", n, len(list))
+		return 0, errNotFound{fmt.Errorf("there is no undelivered write %d; there are %d", n, len(list))}
 	}
 	list = append(list[:n-1], list[n:]...)
 	return 1, saveUndelivered(root, list)
@@ -128,7 +128,7 @@ func integrationsUndelivered(root string, args []string) error {
 			}
 			dismiss, i = v, i+1
 		default:
-			return fmt.Errorf("usage: quilzo integrations undelivered [--dismiss N | --clear]")
+			return errMisused{fmt.Errorf("usage: quilzo integrations undelivered [--dismiss N | --clear]")}
 		}
 	}
 	if clear || dismiss > 0 {

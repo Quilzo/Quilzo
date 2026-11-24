@@ -124,6 +124,22 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 			add(wrong, "Agent run failed, was refused or stopped in the last day", "Agent runs failed, were refused or stopped in the last day", "/agents", true)
 		}
 	}
+	// What an evaluation earned holds only on the model it measured, and
+	// nothing measures an agent again by itself, since that spends on the
+	// model: an agent left unmeasured after its model changed acts at
+	// propose with nobody told why it started asking.
+	if visible["agents"] && s.Evals != nil && s.Evals.Due != nil && s.Agents != nil && s.Agents.Load != nil {
+		if set, err := s.Agents.Load(); err == nil {
+			n := 0
+			for name := range set {
+				if s.Evals.Due(name) != "" {
+					n++
+				}
+			}
+			add(n, "Agent to measure again: another model drives it now",
+				"Agents to measure again: other models drive them now", "/agents/evals", true)
+		}
+	}
 	if visible["inbox"] && s.Inbox != nil && s.Inbox.List != nil {
 		if all, err := s.Inbox.List(); err == nil {
 			n := 0
@@ -133,6 +149,21 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			add(n, "Visitor waiting for a reply", "Visitors waiting for a reply", "/inbox", false)
+		}
+	}
+	// The person's own connected accounts that stop working within the
+	// week, or have: said here, before a post an agent makes with one
+	// fails, rather than after.
+	if visible["accounts"] && s.Connections != nil && s.Connections.Mine != nil {
+		if mine, err := s.Connections.Mine(p.Name); err == nil {
+			n := 0
+			for _, a := range mine {
+				if a.Expires.LapsesSoon(now) {
+					n++
+				}
+			}
+			add(n, "Connected account to connect again within a week", "Connected accounts to connect again within a week",
+				"/connections", true)
 		}
 	}
 	// What Quilzo is doing to protect itself, and who has to prove it is
@@ -176,7 +207,12 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
 		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),
 		"Lines": lines, "StartsHere": startPath(r) == "/today",
-		"Date": now.Format("Monday 2 January"),
+		// Starting on Pages is offered only to somebody who may open it. It
+		// was offered to everybody, so an approver could choose to start on
+		// a screen that refuses them, and every screen's way up became a
+		// link called Pages that sent them back to Approvals.
+		"OpensPages": visible["pages"],
+		"Date":       now.Format("Monday 2 January"),
 	})
 }
 
@@ -299,16 +335,38 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 			}
 		}
 	}
-	start := func(key, text, href string) {
-		if visible[key] {
+	start := func(key string, can bool, text, href string) {
+		if visible[key] && can {
 			g.Starts = append(g.Starts, glanceItem{Text: text, Href: href})
 		}
 	}
-	start("pages", "Write a page", "/#newpage-name")
-	start("media", "Upload a picture", "/media")
-	start("make", "Add a feature", "/make")
-	start("assistants", "Add a chatbot", "/assistants")
-	start("review", "Review and publish", "/review")
+	// Each lands on the part of its screen that does what it says. They
+	// opened the top of Media, Make and Chatbots, screens with other names,
+	// and on Make the form for a feature was five sections down.
+	//
+	// And each is offered only to somebody that screen shows the form to,
+	// asked as the screen asks it. They were offered to whoever could open
+	// the screen, so a reader was given Write a page, which landed on Pages
+	// with no New page box, Upload a picture, on Media with nothing to
+	// choose, and Review and publish, on a screen that said they could
+	// review but not publish; an author was given Review and publish, and
+	// Add a chatbot, on a screen with no form for one.
+	edit := s.mayUse(p, auth.ActEditDraft, "/")
+	publish := s.mayUse(p, auth.ActPublish, "/")
+	start("pages", edit, "Write a page", "/#newpage-name")
+	start("media", edit, "Upload a picture", "/media#m-file")
+	start("make", s.Features != nil, "Add a feature", "/make#make-add")
+	start("assistants", publish && !p.Limits.ReadOnly, "Add a chatbot", "/assistants#new-chatbot")
+	start("review", publish, "Review and publish", "/review")
+	// Somebody who writes and does not publish, in a store that asks for
+	// approval, starts their part of it instead: offering the draft for
+	// review, which Review shows them the form for while nothing, or other
+	// content, is offered.
+	if !publish && edit && visible["review"] {
+		if a := s.approvalFor(p, s.Store.GetRef(site.RefDraft)); a.Configured && (!a.Proposed || !a.Matches) {
+			start("review", true, "Offer for review", "/review#ap-msg")
+		}
+	}
 	return g
 }
 

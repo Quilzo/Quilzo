@@ -4,6 +4,7 @@
 package analytics
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -218,5 +219,62 @@ func TestMissingAddressesAndEmptySearchesAreCounted(t *testing.T) {
 	s := Summarise([]Day{{Missing: map[string]int{"/a": 2}}, {Missing: map[string]int{"/a": 3, "/b": 9}}})
 	if len(s.Missing) != 2 || s.Missing[0].Name != "/b" || s.Missing[1].Count != 5 {
 		t.Fatalf("%+v", s.Missing)
+	}
+}
+
+// Days kept before a page was counted under another name are counted again
+// under it.
+//
+// The site came to count addresses that are somebody's key (a chatbot
+// conversation's, a shared draft's) under their prefix, but the days it had
+// already written kept each one in clear, for as long as the files are
+// kept, where anybody who may read the totals lists them. Refolding them is
+// what takes them out; what they add up to is unchanged.
+func TestKeptDaysAreCountedAgainUnderTheirNewNames(t *testing.T) {
+	dir := t.TempDir()
+	const secret = "s3cretS3cretS3cretS3cretS3cret00"
+	old := Day{Date: "2026-11-10", Views: 4, Visitors: 3,
+		Pages: map[string]Page{"/": {Views: 1, Visitors: 1},
+			"/ask/help/c/" + secret: {Views: 2, Visitors: 1}, "/ask/help/c/other": {Views: 1, Visitors: 1}},
+		Referrers: map[string]int{}, Goals: map[string]int{},
+		Missing: map[string]int{"/ask/help/c/" + secret + "x": 2, "/nope": 1}}
+	b, _ := json.Marshal(old)
+	if err := os.WriteFile(filepath.Join(dir, "2026-11-10.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clean, _ := json.Marshal(Day{Date: "2026-11-11", Views: 1, Visitors: 1,
+		Pages: map[string]Page{"/": {Views: 1, Visitors: 1}}})
+	if err := os.WriteFile(filepath.Join(dir, "2026-11-11.json"), clean, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fold := func(p string) string {
+		if strings.HasPrefix(p, "/ask/help/c/") {
+			return "/ask/help/c/"
+		}
+		return p
+	}
+	if err := Refold(dir, fold); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, "2026-11-10.json"))
+	if strings.Contains(string(b), secret) {
+		t.Fatal("a kept day still holds the address")
+	}
+	days, err := Read(dir, 2, time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := days[0]
+	if d.Views != 4 || d.Visitors != 3 || d.Pages["/ask/help/c/"] != (Page{Views: 3, Visitors: 2}) ||
+		d.Pages["/"] != (Page{Views: 1, Visitors: 1}) || d.Missing["/ask/help/c/"] != 2 || d.Missing["/nope"] != 1 {
+		t.Fatalf("refolded into %+v", d)
+	}
+	// A day nothing changes in is left as it was written.
+	if got, _ := os.ReadFile(filepath.Join(dir, "2026-11-11.json")); string(got) != string(clean) {
+		t.Fatalf("an unchanged day was rewritten: %s", got)
+	}
+	// And a directory that is not there yet is nothing to do.
+	if err := Refold(filepath.Join(dir, "none"), fold); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -63,6 +63,10 @@ type delegation struct {
 	// note of who asked for it is the accountability gap with extra steps.
 	parent string
 	depth  int
+	// startedBy is who started the run the work is handed on from, as its
+	// record names them, which caller is not when that run went on as the
+	// person who answered it: what a delegate writes is written for them.
+	startedBy string
 }
 
 // Run carries out one delegated run and returns what the delegate answered.
@@ -114,7 +118,10 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				// The delegate, not the supervisor. A commit attributed to
 				// whoever started the pipeline is a history that names the
 				// wrong agent, and the review queue reads the author.
-				Author:  "agent/" + m.Name,
+				Author: "agent/" + m.Name,
+				// Written for whoever started the pipeline, as its
+				// supervisor's writes are.
+				For:     d.startedBy,
 				Gate:    pageGate(d.root),
 				Propose: proposeCommit(d.root, d.store, m.Name, caller),
 				// Marked as a model's work, as its parent's writes are. The
@@ -124,6 +131,10 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				Written: func(page string) {
 					markAgentWrite(d.root, d.store, page, m.Name, modelName(d.model),
 						instruction, caller, false)
+				},
+				// Told of somebody else's claim, as its supervisor is.
+				Claimed: func(page string) string {
+					return claimSaid(d.root, d.startedBy, page)
 				},
 			},
 			agentexec.Tools{
@@ -184,7 +195,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 func (d delegation) next(parent string) agentexec.Delegates {
 	deeper := delegation{
 		root: d.root, store: d.store, model: d.model, caller: d.caller,
-		goal: d.goal, parent: parent, depth: d.depth + 1,
+		goal: d.goal, parent: parent, depth: d.depth + 1, startedBy: d.startedBy,
 	}
 	return agentexec.Delegates{
 		Manifest: manifestLoader(d.root),
@@ -274,9 +285,9 @@ func manifestLoader(root string) func(string) (agent.Manifest, error) {
 		}
 		m, ok := set.Agents[name]
 		if !ok {
-			return agent.Manifest{}, fmt.Errorf(
+			return agent.Manifest{}, errNotFound{fmt.Errorf(
 				"no agent called %q; the supervisor names it as a delegate "+
-					"and this install has no such manifest", name)
+					"and this install has no such manifest", name)}
 		}
 		if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 			return agent.Manifest{}, err

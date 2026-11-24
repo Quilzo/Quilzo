@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -118,6 +119,38 @@ func TestTheHelpTextAndTheProgramAgree(t *testing.T) {
 	}
 }
 
+// The help opens by saying what the program is, in the README's words.
+//
+// It opened "content is immutable, publishing moves a pointer, and
+// templates cannot execute anything", the line from when Quilzo was a CMS
+// and nothing more, while the README and this package's own doc called it
+// the self-hosted AI agent platform. `quilzo help` is the first thing a
+// person or an agent asks the binary about itself, and it described a
+// product that is now one part of this one.
+func TestTheHelpSaysWhatQuilzoIs(t *testing.T) {
+	want := whatQuilzoIs(t)
+	opening, _, _ := strings.Cut(usageText, "\n\n")
+	said := strings.ToLower(strings.Join(strings.Fields(opening), " "))
+	if !strings.Contains(said, strings.ToLower(want)) {
+		t.Errorf("the help opens\n%s\nand the README says Quilzo is %q", opening, want)
+	}
+}
+
+// whatQuilzoIs is the README's sentence about what Quilzo is, the bold
+// line under the wordmark, without its full stop.
+func whatQuilzoIs(t *testing.T) string {
+	t.Helper()
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`<strong>([^<]+)</strong>`).FindSubmatch(readme)
+	if m == nil {
+		t.Fatal("README.md has no line in bold saying what Quilzo is")
+	}
+	return strings.TrimSuffix(strings.TrimSpace(string(m[1])), ".")
+}
+
 // inAnyGroup reports whether sub is one of the spellings the code accepts.
 func inAnyGroup(groups [][]string, sub string) bool {
 	for _, g := range groups {
@@ -164,6 +197,106 @@ var notInHelp = map[string]bool{
 	"locks": true, "stamp": true, "help": true, "-h": true, "notes": true,
 	"environments": true, "extensions": true, "record": true,
 	"sections": true, "templates": true, "types": true,
+}
+
+// Every subcommand main.go answers itself is in the help, and so is every
+// subcommand under it.
+//
+// The check above reads each command's own switch, found as the first
+// function main.go calls for the command. siem is dispatched in main.go
+// itself: verify to one function, stream to another, and anything else to
+// the export. So the check read the verify function, found no switch, and
+// compared nothing, and `quilzo siem stream status|key|send` worked, the
+// README and the manual taught it, and neither `quilzo help` nor `quilzo
+// siem --help` named it.
+func TestEverySubcommandMainAnswersItselfIsInTheHelp(t *testing.T) {
+	pkg := parsedSources(t)
+	main := pkg[filepath.Join(".", "main.go")]
+	if main == nil {
+		t.Fatal("main.go did not parse")
+	}
+	found := 0
+	ast.Inspect(main, func(n ast.Node) bool {
+		sw, ok := n.(*ast.SwitchStmt)
+		if !ok {
+			return true
+		}
+		if id, ok := sw.Tag.(*ast.Ident); !ok || id.Name != "cmd" {
+			return true
+		}
+		for _, stmt := range sw.Body.List {
+			cl, ok := stmt.(*ast.CaseClause)
+			if !ok || len(cl.List) == 0 {
+				continue
+			}
+			lit, ok := cl.List[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				continue
+			}
+			cmd := strings.Trim(lit.Value, `"`)
+			for _, body := range cl.Body {
+				ast.Inspect(body, func(n ast.Node) bool {
+					ifs, ok := n.(*ast.IfStmt)
+					if !ok {
+						return true
+					}
+					sub := firstArgumentIs(ifs.Cond)
+					if sub == "" {
+						return true
+					}
+					found++
+					if !slices.Contains(helpSubcommandsOf([]string{cmd}), sub) {
+						t.Errorf("main.go answers `quilzo %s %s` and the help does not name it", cmd, sub)
+						return true
+					}
+					fn := calledFunc(ifs.Body.List)
+					offered := helpSubcommandsOf([]string{cmd, sub})
+					for _, f := range pkg {
+						decl := findFunc(f, fn)
+						if decl == nil {
+							continue
+						}
+						for _, g := range casesOnArgs(decl) {
+							if !slices.ContainsFunc(g, func(s string) bool { return slices.Contains(offered, s) }) {
+								t.Errorf("`quilzo %s %s %s` works and the help does not name it",
+									cmd, sub, strings.Join(g, "|"))
+							}
+						}
+					}
+					return true
+				})
+			}
+		}
+		return true
+	})
+	if found < 2 {
+		t.Fatalf("found %d subcommands main.go answers itself; the scan is wrong", found)
+	}
+}
+
+// firstArgumentIs is the word a condition compares the command's first
+// argument with, cmdArgs[0] == "stream", or "" when it compares nothing so.
+func firstArgumentIs(cond ast.Expr) string {
+	word := ""
+	ast.Inspect(cond, func(n ast.Node) bool {
+		be, ok := n.(*ast.BinaryExpr)
+		if !ok || be.Op != token.EQL {
+			return true
+		}
+		ix, ok := be.X.(*ast.IndexExpr)
+		if !ok {
+			return true
+		}
+		id, ok := ix.X.(*ast.Ident)
+		zero, zok := ix.Index.(*ast.BasicLit)
+		lit, lok := be.Y.(*ast.BasicLit)
+		if ok && id.Name == "cmdArgs" && zok && zero.Value == "0" && lok && lit.Kind == token.STRING {
+			word = strings.Trim(lit.Value, `"`)
+			return false
+		}
+		return true
+	})
+	return word
 }
 
 // Every command the program tells somebody to run is one it has.
@@ -252,6 +385,99 @@ func TestEveryCommandTheProgramNamesExists(t *testing.T) {
 		if !dispatched[w] {
 			t.Errorf("%s tells somebody to run `quilzo %s`, and there is no "+
 				"such command", strings.Join(found[w], ", "), w)
+		}
+	}
+}
+
+// Every command the documentation names exists, and so does the
+// subcommand after it. The README's table listed `quilzo boundary
+// show|credentials`, and "there is no "boundary" command": it left with the
+// security operations, and the line stayed.
+func TestEveryCommandTheDocumentationNamesExists(t *testing.T) {
+	dispatched := map[string]bool{}
+	for _, c := range dispatchedCommands(t) {
+		dispatched[c] = true
+	}
+	real := realSubcommands(t)
+	docs, err := filepath.Glob(filepath.Join("..", "..", "docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"README.md", "INSTALL", "CONTRIBUTING.md", "SECURITY.md"} {
+		docs = append(docs, filepath.Join("..", "..", f))
+	}
+	// The command, and the word after it when that is a subcommand or a
+	// set of them: "show|credentials", with the pipe escaped in a table.
+	named := regexp.MustCompile("(?:^|[\\s\"'`(>])quilzo ([a-z][a-z0-9-]*)" +
+		"(?: ([a-z][a-z0-9-]*(?:\\\\?\\|[a-z][a-z0-9-]*)*))?")
+	seen := 0
+	for _, f := range docs {
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		where := strings.TrimPrefix(filepath.ToSlash(f), "../../")
+		for _, m := range named.FindAllStringSubmatch(string(body), -1) {
+			seen++
+			if !dispatched[m[1]] {
+				t.Errorf("%s names `quilzo %s`, and there is no such command", where, m[1])
+				continue
+			}
+			if m[2] == "" || len(real[m[1]]) == 0 {
+				continue
+			}
+			for _, sub := range strings.Split(strings.ReplaceAll(m[2], "\\|", "|"), "|") {
+				if !inAnyGroup(real[m[1]], sub) {
+					t.Errorf("%s names `quilzo %s %s`, and %s has no %s", where, m[1], sub, m[1], sub)
+				}
+			}
+		}
+	}
+	if seen < 50 {
+		t.Fatalf("found %d commands named in the documentation; the scan is wrong", seen)
+	}
+}
+
+// Every `quilzo help TOPIC` the program sends somebody to has lines about
+// the topic. `quilzo newsletter status` said "(quilzo help mail)", and
+// there is no mail command: the help printed all of itself, and nothing in
+// it said what goes in mail.json.
+func TestEveryHelpTheProgramPointsAtSaysSomething(t *testing.T) {
+	topic := regexp.MustCompile(`quilzo help ([a-z][a-z0-9-]*)`)
+	seen := 0
+	for _, top := range []string{".", "../../internal"} {
+		err := filepath.WalkDir(top, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				return err
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					seen++
+					for _, m := range topic.FindAllStringSubmatch(lit.Value, -1) {
+						if helpFor(m[1], nil) == "" {
+							t.Errorf("%s sends somebody to `quilzo help %s`, which has nothing about %s",
+								strings.TrimPrefix(filepath.ToSlash(path), "../../"), m[1], m[1])
+						}
+					}
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if seen < 10000 {
+		t.Fatalf("only %d strings read in the program; the scan is wrong", seen)
+	}
+	for _, p := range newsletterProblems(t.TempDir()) {
+		if strings.HasPrefix(p, "No mail is set up") && (!strings.Contains(p, `"host"`) || !strings.Contains(p, `"from"`)) {
+			t.Errorf("the newsletter's advice does not say what goes in mail.json: %s", p)
 		}
 	}
 }
@@ -356,6 +582,24 @@ func helpClaims(t *testing.T) map[string][]string {
 // `case`, because every command file is full of other switches.
 func realSubcommands(t *testing.T) map[string][][]string {
 	t.Helper()
+	pkg := parsedSources(t)
+	handler := commandHandlers(t, pkg)
+	out := map[string][][]string{}
+	for cmd, fn := range handler {
+		for _, f := range pkg {
+			decl := findFunc(f, fn)
+			if decl == nil {
+				continue
+			}
+			out[cmd] = append(out[cmd], casesOnArgs(decl)...)
+		}
+	}
+	return out
+}
+
+// parsedSources is every file of the program, without its tests, parsed.
+func parsedSources(t *testing.T) map[string]*ast.File {
+	t.Helper()
 	fset := token.NewFileSet()
 	pkg := map[string]*ast.File{}
 	files, err := filepath.Glob(filepath.Join(".", "*.go"))
@@ -372,19 +616,7 @@ func realSubcommands(t *testing.T) map[string][][]string {
 		}
 		pkg[f] = parsed
 	}
-
-	handler := commandHandlers(t, pkg)
-	out := map[string][][]string{}
-	for cmd, fn := range handler {
-		for _, f := range pkg {
-			decl := findFunc(f, fn)
-			if decl == nil {
-				continue
-			}
-			out[cmd] = append(out[cmd], casesOnArgs(decl)...)
-		}
-	}
-	return out
+	return pkg
 }
 
 // commandHandlers maps each dispatched command to the function that runs it.

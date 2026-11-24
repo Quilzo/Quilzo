@@ -139,3 +139,47 @@ func TestAMandateIsBoundedByDeclaration(t *testing.T) {
 		}
 	}
 }
+
+// Any three capital letters used to pass as a currency, so a mandate in ETH,
+// BTC or SOL was granted and counted in hundredths: "1.00 ETH" on the screen
+// was a hundred of whatever the paying tool counted, and a tool that counts
+// whole tokens was under-counted a hundred times. A currency is one ISO 4217
+// lists, with the minor units it lists, and a crypto ticker is not one.
+func TestACryptoTickerIsNotACurrency(t *testing.T) {
+	now := time.Now()
+	for _, ticker := range []string{"ETH", "BTC", "SOL", "XRP", "LTC", "DOT", "ADA", "DAI", "XBT"} {
+		if ValidCurrency(ticker) {
+			t.Errorf("%s passes as a currency", ticker)
+		}
+		m := Mandate{Agent: "buyer", Currency: ticker, PerPayment: 1, Budget: 100, Payees: []string{"0x1111"},
+			Purpose: "p", Expires: now.Add(time.Hour)}
+		err := m.Validate(now)
+		if err == nil || !strings.Contains(err.Error(), "ISO 4217") || !strings.Contains(err.Error(), "crypto") {
+			t.Errorf("a mandate in %s: %v", ticker, err)
+		}
+		// The amount is refused for its currency, not read in hundredths
+		// and then refused for having three places "where ETH has 2".
+		if _, err := ParseAmount("0.001", ticker); err == nil || strings.Contains(err.Error(), "decimal places") {
+			t.Errorf("an amount in %s: %v", ticker, err)
+		}
+		if _, err := AmountOf(1250.0, ticker, true); err == nil {
+			t.Errorf("minor units of %s were read", ticker)
+		}
+	}
+	for code, places := range map[string]int{"USD": 2, "EUR": 2, "GBP": 2, "JPY": 0, "KWD": 3, "CLF": 4,
+		"XOF": 0, "XCG": 2, "ZWG": 2, "SLE": 2, "VED": 2} {
+		if !ValidCurrency(code) || Decimals(code) != places {
+			t.Errorf("%s: valid %v, %d places, want %d", code, ValidCurrency(code), Decimals(code), places)
+		}
+	}
+	// Codes ISO lists with no minor unit (gold, the SDR, the testing code,
+	// "no currency") have nothing to count an amount in, and are refused.
+	for _, code := range []string{"XAU", "XAG", "XDR", "XTS", "XXX", "HRK", "usd", "US", "USDC"} {
+		if ValidCurrency(code) {
+			t.Errorf("%s passes as a currency", code)
+		}
+	}
+	if got, err := ParseAmount("1.2345", "CLF"); err != nil || got != 12345 || Format(got, "CLF") != "1.2345 CLF" {
+		t.Errorf("a four-place currency: %d %v", got, err)
+	}
+}

@@ -70,6 +70,13 @@ const (
 )
 
 func cmdMediaVerify(root string, args []string) error {
+	// The ids of the files to check, as many as are given, and a flag
+	// refused rather than stepped over: `media verify --zzflag` checked the
+	// whole library and exited 0.
+	ids, err := positionals(args, len(args))
+	if err != nil {
+		return err
+	}
 	lib, err := openMedia(root)
 	if err != nil {
 		return err
@@ -88,10 +95,8 @@ func cmdMediaVerify(root string, args []string) error {
 	}
 
 	wanted := map[string]bool{}
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			wanted[a] = true
-		}
+	for _, a := range ids {
+		wanted[a] = true
 	}
 
 	sort.Slice(files, func(i, j int) bool { return files[i].ID < files[j].ID })
@@ -110,7 +115,7 @@ func cmdMediaVerify(root string, args []string) error {
 	}
 
 	if len(wanted) > 0 && len(out) == 0 {
-		return fmt.Errorf("no such file in the library")
+		return errNotFound{fmt.Errorf("no such file in the library")}
 	}
 	if w.JSON(out) {
 		return nil

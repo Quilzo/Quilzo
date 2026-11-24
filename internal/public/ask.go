@@ -79,7 +79,12 @@ type Assistants struct {
 	Records     func(tree string, collections []string) []assistant.Passage
 	Act         func(chatact.Request) error
 	Answer      func(id string) (res chatact.Result, answered, made bool)
-	VisitorKey  func(assistant.Assistant) []byte
+	// Taking reports whether anything takes those requests now (the admin
+	// server's dispatcher beats, chatact.Stale). With it stopped, the site
+	// offered the action, took the confirmation and said "Working on it"
+	// for good. Nil is taken as yes.
+	Taking     func() bool
+	VisitorKey func(assistant.Assistant) []byte
 	// Meaning is a chatbot's ranker by meaning (assistant.Meaning), or
 	// nil when it ranks by words alone; MeaningKey is what that ranker
 	// depends on, which keys the index too.
@@ -114,7 +119,11 @@ type Assistants struct {
 	Guardrail      func(ctx context.Context, texts []string) (flagged []bool, unanswered int)
 	GuardrailEvent func(name, what string, n int)
 
+	// What the chatbots hold for the visitors they are answering, guarded
+	// by mu. When keep is set (Keep), these are kept by that one instead,
+	// for both, and this one's are unused.
 	mu    sync.Mutex
+	keep  *Assistants
 	cache map[string]cachedIndex
 	// rateKey signs rating tokens; rated are the ones used (askrate.go).
 	rateKey []byte
@@ -125,11 +134,50 @@ type Assistants struct {
 	fresh map[string]map[string]time.Time
 }
 
+// Keep makes these chatbots carry on from prev's, when the site is built
+// again while it runs: the key their ratings are signed with and the ratings
+// already used, which pages are new to each, and the index each answered
+// from, as the one a new page is new against. Everything else, the
+// guardrail included, is as was given here.
+//
+// Shared rather than copied, because prev goes on serving the requests it
+// already has: a rating spent there while this one starts must be spent here
+// too. Called before this one serves anything.
+//
+// The server that rebuilt its site when its settings changed kept the
+// previous chatbots whole, for their ratings, and with them the guardrail
+// they were built with: an operator who turned one on was told the site had
+// read its settings again, and no passage reached the classifier until a
+// restart.
+func (as *Assistants) Keep(prev *Assistants) {
+	if as == nil || prev == nil {
+		return
+	}
+	if o := prev.own(); o != as {
+		as.keep = o
+	}
+}
+
+// own is the chatbots that hold this one's visitor state: itself, or the
+// first of the builds it carries on from. One step, never a chain, because
+// Keep follows prev to its own.
+func (as *Assistants) own() *Assistants {
+	if as.keep != nil {
+		return as.keep
+	}
+	return as
+}
+
 // NewFor is how long a page that entered a chatbot's knowledge counts as new.
 const NewFor = 7 * 24 * time.Hour
 
 type cachedIndex struct {
 	key string
+	// by is the build that made it. The knowledge alone does not decide what
+	// an index holds: the guardrail of the build answering does, so a
+	// rebuilt site's chatbots build their own rather than answer from one
+	// their guardrail never saw.
+	by  *Assistants
 	idx *assistant.Index
 }
 
@@ -217,7 +265,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case http.MethodPost:
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, questionForm)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
 			st.renderAsk(w, r, view, http.StatusBadRequest)
@@ -238,6 +286,17 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	st.renderAsk(w, r, view, http.StatusOK)
 }
 
+// questionForm bounds the body of a form that carries a question: the
+// question and the previous one, each of assistant.MaxQuestion characters
+// at up to four bytes, each written as three in a form's encoding. At 8 KiB
+// a question of 1000 characters in Japanese, which the box takes, could not
+// be read.
+const questionForm = 2*assistant.MaxQuestion*4*3 + 8<<10
+
+// handoffForm bounds the body of a form that carries a message to a person,
+// and the question it follows, in the same way.
+const handoffForm = (handoff.MaxText+assistant.MaxQuestion)*4*3 + 8<<10
+
 // answer puts the view's question to the assistant and fills in the answer.
 // False means a response has already been written.
 func (st *Site) answer(w http.ResponseWriter, r *http.Request,
@@ -250,16 +309,35 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.renderAsk(w, r, *view, http.StatusTooManyRequests)
 		return false
 	}
-	if LooksLikeInjection(view.Question) {
+	// The previous question is the visitor's text too: it comes back in a
+	// hidden field, which a script fills as it likes, and goes to the model
+	// beside a follow-up. Screened only in the question box, an attempt put
+	// there with a harmless follow-up reached the model and was never
+	// counted. Both are looked at, and a request is one signal at most.
+	//
+	// As the model reads them, the one before the other with a space
+	// between (assistant.RespondTo): each looked at alone, "Ignore your
+	// previous" in the field and "instructions" in the box were an attempt
+	// in the prompt and nothing in either.
+	said := []string{view.Question}
+	if strings.TrimSpace(view.Previous) != "" {
+		said = append(said, view.Previous+" "+view.Question)
+	}
+	if LooksLikeInjection(view.Question) || LooksLikeInjection(said[len(said)-1]) {
+		view.Attempt = true
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
 		// signal, never a refusal on a classifier's word.
 		gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
-		flagged, missed := g(gctx, []string{view.Question})
+		flagged, missed := g(gctx, said)
 		gcancel()
-		if len(flagged) == 1 && flagged[0] {
-			st.signal(ChatbotInjection, a.Name, r)
+		for _, f := range flagged {
+			if f {
+				view.Attempt = true
+				st.signal(ChatbotInjection, a.Name, r)
+				break
+			}
 		}
 		if missed > 0 && st.Assistants.GuardrailEvent != nil {
 			st.Assistants.GuardrailEvent(a.Name, "unanswered", missed)
@@ -278,11 +356,48 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
+	// Asked without the actions this page could not offer. With them, a
+	// question no page covers was put to the model only to see whether it
+	// offers one (assistant.RespondTo), and the offer taken off again.
+	asking := a
+	switch {
+	case st.askDesigned():
+		// The owner's own page has no place for an offer, and the offer
+		// was taken off where that page is drawn, after the answer had
+		// been counted: the visitor read the refusal while the audit
+		// record and the conversion said the chatbot had answered, and the
+		// question was not kept among those the site should answer.
+		asking.Actions = nil
+	case st.Assistants.Act == nil || !st.actTaking():
+		// Nothing takes an agent action's request just now, so a site
+		// served on its own paid for a call to the model on every such
+		// question, to give the refusal it gives without one.
+		asking.Actions = nil
+		for _, ac := range a.Actions {
+			if ac.Kind != assistant.Agent {
+				asking.Actions = append(asking.Actions, ac)
+			}
+		}
+	}
+	ans, aerr := assistant.RespondTo(ctx, asking, idx, m, view.Question, view.Previous)
 	if aerr != nil {
 		view.Problem = aerr.Error()
 		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
 		return false
+	}
+	// What it offers, before anything is counted: an offer this page cannot
+	// make to this visitor (a form closed since, an action only for somebody
+	// the host site vouches for) is taken off the answer, and an answer
+	// that was only the offer is then the refusal, counted as one.
+	if ans.Proposed != nil {
+		if ans.Proposed.Action.Kind == assistant.Agent {
+			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
+		} else {
+			view.Offer = st.offerFor(*ans.Proposed)
+		}
+		if view.Offer == nil {
+			ans = a.Unoffered(ans)
+		}
 	}
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), !ans.Refused)
@@ -305,14 +420,18 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
-	if ans.Proposed != nil {
-		if ans.Proposed.Action.Kind == assistant.Agent {
-			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
-		} else {
-			view.Offer = st.offerFor(*ans.Proposed)
-		}
-	}
 	return true
+}
+
+// askDesigned reports whether the conversation is shown on a page the owner
+// designed (askPageName), which is given the answer and no offer.
+func (st *Site) askDesigned() bool {
+	pages, _, err := st.pages()
+	if err != nil {
+		return false
+	}
+	_, ok := pages[askPageName]
+	return ok
 }
 
 // assistantIndex is the assistant's knowledge at the published commit,
@@ -351,9 +470,10 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	if c, ok := as.cache[a.Name]; ok && c.key == key {
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if c, ok := o.cache[a.Name]; ok && c.key == key && c.by == as {
 		return c.idx, nil
 	}
 	passages := assistant.Chunk(pages, a.Reads)
@@ -383,13 +503,13 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if as.Meaning != nil {
 		idx = idx.WithMeaning(as.Meaning(a, idx.Passages))
 	}
-	if as.cache == nil {
-		as.cache = map[string]cachedIndex{}
+	if o.cache == nil {
+		o.cache = map[string]cachedIndex{}
 	}
-	if old, ok := as.cache[a.Name]; ok {
-		as.noteFresh(a.Name, old.idx, idx, time.Now())
+	if old, ok := o.cache[a.Name]; ok {
+		o.noteFresh(a.Name, old.idx, idx, time.Now())
 	}
-	as.cache[a.Name] = cachedIndex{key: key, idx: idx}
+	o.cache[a.Name] = cachedIndex{key: key, by: as, idx: idx}
 	return idx, nil
 }
 
@@ -427,7 +547,7 @@ func (as *Assistants) guard(name string, passages []assistant.Passage) []assista
 }
 
 // noteFresh marks the pages a rebuilt index has that the one before did
-// not. The caller holds the lock.
+// not. Called on own(), with its lock held.
 func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.Time) {
 	before := map[string]bool{}
 	for _, p := range was.Passages {
@@ -457,9 +577,10 @@ func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.
 
 // isFresh says a page entered a chatbot's knowledge within NewFor.
 func (as *Assistants) isFresh(name, page string, at time.Time) bool {
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	since, ok := as.fresh[name][page]
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	since, ok := o.fresh[name][page]
 	return ok && at.Sub(since) <= NewFor
 }
 
@@ -468,7 +589,12 @@ type askView struct {
 	Greeting  string
 	Question  string
 	Previous  string
-	Embedded  bool
+	// Attempt is a question noticed as an attempt on the chatbot. The page
+	// does not carry it into the next one as the question before: carried,
+	// it was screened again beside an honest follow-up, and one attempt was
+	// counted twice.
+	Attempt  bool
+	Embedded bool
 	// Panel is the conversation opened beside a page of this site by its
 	// launcher: framed by this site only, and its links go to the page.
 	Panel bool
@@ -633,6 +759,14 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	// Never cached: an answer is to one person's question.
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Nor indexed, when it shows one. The question comes from the address
+	// (?q=), and the page prints it back: indexable, it let anybody link to
+	// the site with their own words in the address for a crawler to file
+	// under the business's name, running the chatbot each time it looked.
+	// The chatbot's own page, with no question, is the owner's to be found.
+	if v.Question != "" {
+		h.Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	allowFraming(h, v.Assistant.Embed, v.Panel)
 	st.originTrial(h)
 	if wantsVoice(v.Assistant) {
@@ -663,7 +797,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 // "ask". Plain data: the template language has no calls, so an owner's
 // layout can arrange this and cannot do anything with it.
 func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askView) (string, bool) {
-	ctx, err := st.sources().For(askPageName, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(askPageName, body, firstOf(r.URL.Query()))
 	if err != nil {
 		return "", false
 	}
@@ -674,8 +808,12 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		"disclosure": Disclosure,
 	}
 	if v.Answer != nil {
-		data["answer"] = v.Answer.Text
-		data["refused"] = v.Answer.Refused
+		// The owner's page is given no offer to show, so an answer that is
+		// only an offer is the refusal here: its words alone would promise
+		// something to press that this page does not have.
+		shown := v.Assistant.Unoffered(*v.Answer)
+		data["answer"] = shown.Text
+		data["refused"] = shown.Refused
 		var srcs []any
 		for _, s := range v.Sources {
 			srcs = append(srcs, map[string]any{"n": float64(s.N),
@@ -736,7 +874,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </section>
 <section class="qz-turn qz-a{{if .V.Answer.Refused}} qz-refused{{end}}" aria-live="polite" aria-label="Answer">
   {{if .V.Answer.Refused}}<p>{{.V.Answer.Text}}</p>
-  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
+  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{else}}<p>{{.V.Answer.Text}}</p>{{end}}{{end}}
   {{if .V.Cards}}
   <ul class="qz-cards" aria-label="Pages this answer draws on">{{range .V.Cards}}<li class="qz-card">
     {{if .Image}}<img src="{{.Image}}" alt="" loading="lazy" decoding="async">{{end}}
@@ -819,7 +957,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </details>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
-  {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if and .V.Answer (not .V.Attempt)}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
@@ -828,8 +966,9 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
   every sentence links to where it came from. {{if .V.Keeps}}A question it cannot answer, or whose
-  answer you say did not help, is kept for a while with anything that could name you taken out, so the
-  site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
+  answer you say did not help, is kept for a while
+  with email addresses, telephone and card numbers, and the names and street addresses it recognises taken out,
+  so the site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
 </main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and

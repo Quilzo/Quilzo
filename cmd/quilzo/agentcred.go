@@ -135,14 +135,17 @@ func issuerName(root string, key ed25519.PrivateKey) string {
 
 // agentCredentialCmd is `quilzo agent credential issue|list|revoke|verify|keys`.
 func agentCredentialCmd(root string, args []string) error {
-	usage := errors.New(`usage: quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]
-       quilzo agent credential list [NAME] | revoke ID | verify FILE | keys`)
+	usage := errMisused{errors.New(`usage: quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]
+       quilzo agent credential list [NAME] | revoke ID | verify FILE | keys`)}
 	if len(args) == 0 {
 		return usage
 	}
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "keys":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		if _, err := credIssuer(root); err != nil {
 			return err
 		}
@@ -153,6 +156,10 @@ func agentCredentialCmd(root string, args []string) error {
 		fmt.Print(string(b))
 		return nil
 	case "list":
+		// One agent's, or everybody's: a second name was not read.
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
+		}
 		reg, err := loadCredRegister(root)
 		if err != nil {
 			return err
@@ -236,20 +243,20 @@ func revokeCredential(root string, caller *Caller, id string) error {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("no credential %s is in force", id)
+		return errNotFound{fmt.Errorf("no credential %s is in force", id)}
 	}
 	record(root, caller.auditRecord("agent.credential.revoke", "/", audit.Success, map[string]string{"credential": id}))
 	return nil
 }
 
 func issueCredential(root string, caller *Caller, args []string) (string, error) {
-	usage := errors.New("quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]")
+	usage := errMisused{errors.New("quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]")}
 	fs := flag.NewFlagSet("agent credential issue", flag.ContinueOnError)
 	grant := fs.String("grant", "", "the one grant it may use, as browser:NAME")
 	act := fs.Bool("act", false, "it may act on pages, not only read them")
 	holderDID := fs.String("holder", "", "the agent's own public key, as a did:key")
 	generate := fs.String("generate", "", "make the agent's key here instead, written to this file")
-	lifetime := fs.Duration("for", 24*time.Hour, "how long it is valid, up to 720h")
+	lifetime := flagDuration(fs, "for", 24*time.Hour, "how long it is valid, up to 720h")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return "", err
@@ -269,7 +276,7 @@ func issueCredential(root string, caller *Caller, args []string) (string, error)
 		return "", err
 	}
 	if _, ok := set.Agents[name]; !ok {
-		return "", fmt.Errorf("no agent called %s is declared; declare it, and name who answers for it, first", name)
+		return "", errNotFound{fmt.Errorf("no agent called %s is declared; declare it, and name who answers for it, first", name)}
 	}
 	id := set.identityOf(name)
 	now := time.Now().UTC()
@@ -286,7 +293,7 @@ func issueCredential(root string, caller *Caller, args []string) (string, error)
 		return "", errors.New("a credential carries one grant, as --grant browser:NAME")
 	}
 	if _, _, offered := browserGrantOffered(root, g); !offered {
-		return "", fmt.Errorf("no browser grant called %s is offered here", g)
+		return "", errNotFound{fmt.Errorf("no browser grant called %s is offered here", g)}
 	}
 	until := now.Add(*lifetime)
 	if !id.Expires.IsZero() && id.Expires.Before(until) {

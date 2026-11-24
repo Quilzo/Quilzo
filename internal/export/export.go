@@ -47,6 +47,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"mime"
 	"path"
 	"sort"
@@ -257,6 +258,14 @@ func exportMarkdown(s Site) ([]File, error) {
 		if !ok {
 			return nil, fmt.Errorf("page %q is not an object", name)
 		}
+		// A page's own id and collection, together, are what tells a
+		// record's file from a page's, so a lookbook page naming its own id
+		// and its season's collection came back as a record of that
+		// collection, and the page was gone. They are set apart as a
+		// record's are.
+		_, id := fields["id"]
+		_, coll := fields["collection"]
+		fields = apart(fields, func(k string) bool { return id && coll && (k == "id" || k == "collection") })
 
 		var body string
 		var front []string
@@ -280,8 +289,14 @@ func exportMarkdown(s Site) ([]File, error) {
 			}
 			front = append(front, k+": "+v)
 		}
-		if t, ok := s.Changed[name]; ok && !t.IsZero() {
-			front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+		// The day it last changed, unless the page has a date of its own: an
+		// event's day, say. Both were written, so the file gave the key twice,
+		// which a YAML reader refuses and the rest read as whichever came
+		// last, and the page could not be read back.
+		if _, own := fields["date"]; !own {
+			if t, ok := s.Changed[name]; ok && !t.IsZero() {
+				front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+			}
 		}
 		// The page's own name, so a re-import gets it back.
 		//
@@ -295,8 +310,13 @@ func exportMarkdown(s Site) ([]File, error) {
 		//
 		// `slug` rather than a key of this tool's own invention because Hugo,
 		// Jekyll and Astro all already read it and mean the same thing by it.
+		//
+		// Quoted, as every other value is. It was the one written bare, so a
+		// page called 404 or 2024 had the number for a link, true a yes and
+		// null nothing, and a page read back on its own lost its name to its
+		// title's.
 		if _, already := fields["slug"]; !already {
-			front = append(front, "slug: "+name)
+			front = append(front, "slug: "+quoteYAML(name))
 			sort.Strings(front)
 		}
 
@@ -334,6 +354,64 @@ func exportMarkdown(s Site) ([]File, error) {
 	return out, nil
 }
 
+// bookkeeping is what a record's file says about the record beside its
+// fields: which it is, the collection it belongs to, and when it was made
+// and last changed.
+var bookkeeping = map[string]bool{"id": true, "collection": true, "created": true, "updated": true}
+
+// ownKey is where a page's or record's own fields of those names are
+// written, as one map.
+//
+// They were written beside the export's own, so a product with its own
+// collection ("Spring 2027") or id ("SKU-1") gave the key twice, which a
+// YAML reader refuses, and one with its own created ("5 January") was
+// refused as not a time: one such record and the whole export no longer
+// read back. A field of this name goes with them, and so does one holding
+// what reads as them, so the reader can always tell the two apart. A page
+// or record with none of them is written as it always was, so an earlier
+// export reads as it did.
+const ownKey = "fields"
+
+// apart returns fields with those clash names moved under ownKey, and a
+// field called ownKey with them, or on its own when it reads as such a set
+// (isOwn). It returns fields itself when nothing moves, and a copy when
+// something does: the site's page or record is not the export's to change.
+func apart(fields map[string]any, clash func(string) bool) map[string]any {
+	own := map[string]any{}
+	for k, v := range fields {
+		if clash(k) {
+			own[k] = v
+		}
+	}
+	if v, ok := fields[ownKey]; ok && (len(own) > 0 || isOwn(v)) {
+		own[ownKey] = v
+	}
+	if len(own) == 0 {
+		return fields
+	}
+	out := maps.Clone(fields)
+	for k := range own {
+		delete(out, k)
+	}
+	out[ownKey] = own
+	return out
+}
+
+// isOwn says whether a value under ownKey is fields set apart: a map of
+// nothing but the names apart moves.
+func isOwn(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) == 0 {
+		return false
+	}
+	for k := range m {
+		if !bookkeeping[k] && k != ownKey {
+			return false
+		}
+	}
+	return true
+}
+
 // recordFile writes one collection record as markdown with front matter.
 func recordFile(coll string, r Record) (File, error) {
 	fields := map[string]any{}
@@ -345,6 +423,7 @@ func recordFile(coll string, r Record) (File, error) {
 		body = b
 		delete(fields, "body")
 	}
+	fields = apart(fields, func(k string) bool { return bookkeeping[k] })
 
 	keys := make([]string, 0, len(fields))
 	for k := range fields {
@@ -546,6 +625,7 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 	b.WriteString("  <link>" + xmlEscape(s.BaseURL) + "</link>\n")
 	b.WriteString("  <wp:wxr_version>1.2</wp:wxr_version>\n")
 
+	at := wxrPlaces(s)
 	for i, name := range names(s) {
 		fields, _ := s.Pages[name].(map[string]any)
 		title, _ := fields["title"].(string)
@@ -572,9 +652,12 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 		b.WriteString(fmt.Sprintf("    <wp:post_id>%d</wp:post_id>\n", i+1))
 		b.WriteString("    <wp:post_date>" +
 			when.UTC().Format("2006-01-02 15:04:05") + "</wp:post_date>\n")
-		b.WriteString("    <wp:post_name>" + xmlEscape(name) + "</wp:post_name>\n")
+		b.WriteString("    <wp:post_name>" + xmlEscape(at[name].slug) + "</wp:post_name>\n")
 		b.WriteString("    <wp:status>publish</wp:status>\n")
-		b.WriteString("    <wp:post_type>post</wp:post_type>\n")
+		if at[name].parent > 0 {
+			b.WriteString(fmt.Sprintf("    <wp:post_parent>%d</wp:post_parent>\n", at[name].parent))
+		}
+		b.WriteString("    <wp:post_type>page</wp:post_type>\n")
 
 		// Everything the WXR shape has no field for goes into postmeta rather
 		// than being dropped. A lossy export is the thing this package exists
@@ -615,6 +698,18 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 	}
 
 	b.WriteString("</channel>\n</rss>\n")
+
+	// A page WordPress puts at another address is redirected to it, beside
+	// the redirects the site already had: one at docs/v1, with no page at
+	// docs, is the page docs-v1 there. The home page is never redirected.
+	s.Redirects = append([]Redirect(nil), s.Redirects...)
+	for _, name := range names(s) {
+		if name == "index" || strings.TrimSuffix(at[name].path, "/") == "/"+name {
+			continue
+		}
+		s.Redirects = append(s.Redirects, Redirect{From: "/" + name, To: at[name].path, Permanent: true,
+			Note: "where WordPress puts this page"})
+	}
 
 	out := []File{{Path: "content/wordpress-export.xml", Body: []byte(b.String())}}
 	out = append(out, readme(WXR, s))
@@ -676,14 +771,24 @@ func readme(f Format, s Site) File {
 		b.WriteString("  the `wxr` export instead, which WordPress reads natively.\n")
 	case JSON:
 		b.WriteString("`content/pages.json` maps each page name to its fields.\n\n")
-		b.WriteString("This is the lossless format: nothing was flattened or\n")
-		b.WriteString("dropped to produce it. `last-changed.json` records\n")
+		b.WriteString("This is the lossless format for content: no page or record\n")
+		b.WriteString("was flattened or dropped to produce it, and `quilzo import`\n")
+		b.WriteString("reads it back under the same names. `last-changed.json` records\n")
 		b.WriteString("when each page's content actually last changed, which is\n")
 		b.WriteString("worth carrying across so the new system's sitemap is not\n")
 		b.WriteString("wrong from its first day.\n")
 	case WXR:
 		b.WriteString("`content/wordpress-export.xml` is a WordPress WXR file.\n\n")
 		b.WriteString("In WordPress: Tools → Import → WordPress, then upload it.\n\n")
+		b.WriteString("Pages are WordPress pages, a page under another a child page\n")
+		b.WriteString("of it, and the blog's posts are posts. With Settings →\n")
+		b.WriteString("Permalinks set to \"Post name\", a page keeps its address,\n")
+		b.WriteString("and one WordPress cannot keep is in `redirects.json`.\n\n")
+		b.WriteString("Every other collection is a custom post type named after it\n")
+		b.WriteString("(products, for one). WordPress skips an item of a type it\n")
+		b.WriteString("does not know, so register those types first, with a plugin\n")
+		b.WriteString("or your theme, then import. Their addresses are WordPress's\n")
+		b.WriteString("to give, and are not redirected here.\n\n")
 		b.WriteString("Fields with no WXR equivalent are carried as postmeta\n")
 		b.WriteString("rather than dropped.\n")
 	}
@@ -695,9 +800,21 @@ func readme(f Format, s Site) File {
 			"year.\n", len(s.Redirects))
 	}
 
+	// Said in every format, because none of them holds it. The JSON export
+	// called itself lossless and stopped there, and a site moved with it
+	// arrived with no menus, no content types and one language: an export
+	// is the content, and those are kept beside the content.
+	b.WriteString("\n## What is not here\n\n")
+	b.WriteString("This is the site's content: its pages, the records of its\n")
+	b.WriteString("collections and its redirects. The site's menus, content types,\n")
+	b.WriteString("languages, settings and media library are kept beside the\n")
+	b.WriteString("content and are not in an export. `quilzo backup create`\n")
+	b.WriteString("carries the whole store, those included, to another Quilzo.\n")
+
 	b.WriteString("\n## Media\n\n")
-	b.WriteString("Files referenced by content are not included here; they are\n")
-	b.WriteString("exported separately so this file stays small enough to read.\n")
+	b.WriteString("Files referenced by content are not included here, so this\n")
+	b.WriteString("stays small enough to read: a picture is named by its id in\n")
+	b.WriteString("the media library. `quilzo backup create` carries the library.\n")
 
 	b.WriteString("\n---\n\nEverything in this export is a plain file. There is no\n")
 	b.WriteString("archive to unpack and no manifest to parse: `ls` and `cat` are\n")
@@ -788,7 +905,75 @@ func exportROCrate(s Site, now time.Time) ([]File, error) {
 		Path: rocrate.MetadataFile, Body: append(body, '\n')}), nil
 }
 
-// wxrRecord writes one collection record as a WordPress custom-post-type item.
+// wxrPlace is where a page goes in WordPress: its slug, the item number of
+// the page it is under (0 for none), and the address that makes.
+type wxrPlace struct {
+	slug   string
+	parent int
+	path   string
+}
+
+// wxrPlaces is where each page goes in WordPress, by its name.
+//
+// Every page went out as a blog post with its name as its slug, and a slug
+// WordPress holds has no slash or dot and no capital: tr/about came in at
+// another address, with no redirect. A page under another that is in the
+// export is a child page of it, which WordPress puts at the same address
+// (/tr/about/, with permalinks set to the post's name); any other has its
+// name as one slug (docs/v1 is docs-v1). Item numbers are the order of
+// names, as the items are written.
+func wxrPlaces(s Site) map[string]wxrPlace {
+	all := names(s)
+	id := map[string]int{}
+	for i, name := range all {
+		id[name] = i + 1
+	}
+	out := map[string]wxrPlace{}
+	taken := map[string]bool{}
+	var place func(name string) wxrPlace
+	place = func(name string) wxrPlace {
+		if p, ok := out[name]; ok {
+			return p
+		}
+		var p wxrPlace
+		under := ""
+		if i := strings.LastIndex(name, "/"); i > 0 && id[name[:i]] > 0 {
+			under = name[:i]
+			p.slug, p.parent = Slug(name[i+1:]), id[under]
+		} else {
+			p.slug = Slug(name)
+		}
+		if p.slug == "" {
+			p.slug = fmt.Sprintf("page-%d", id[name])
+		}
+		// WordPress numbers a slug taken beside it, so this does too, and
+		// the redirect says where it really went.
+		base := p.slug
+		for k := 2; taken[under+"\x00"+p.slug]; k++ {
+			p.slug = fmt.Sprintf("%s-%d", base, k)
+		}
+		taken[under+"\x00"+p.slug] = true
+		p.path = "/" + p.slug + "/"
+		if under != "" {
+			p.path = place(under).path + p.slug + "/"
+		}
+		out[name] = p
+		return p
+	}
+	for _, name := range all {
+		place(name)
+	}
+	return out
+}
+
+// wxrRecord writes one collection record as a WordPress item.
+//
+// A blog's posts are WordPress posts, which is what they are there; it
+// had them as a post type named posts, which WordPress does not have. Any
+// other collection is a custom post type named after it, which has to be
+// registered before WordPress imports it (the README says so). A record
+// with a page link of its own (its slug) keeps it, rather than going out
+// named by its id.
 func wxrRecord(coll string, r Record, id int, now time.Time) string {
 	fields := r.Fields
 	title := str(fields["title"])
@@ -811,9 +996,17 @@ func wxrRecord(coll string, r Record, id int, now time.Time) string {
 	b.WriteString(fmt.Sprintf("    <wp:post_id>%d</wp:post_id>\n", id))
 	b.WriteString("    <wp:post_date>" +
 		when.UTC().Format("2006-01-02 15:04:05") + "</wp:post_date>\n")
-	b.WriteString("    <wp:post_name>" + xmlEscape(r.ID) + "</wp:post_name>\n")
+	slug := Slug(str(fields["slug"]))
+	if slug == "" {
+		slug = r.ID
+	}
+	kind := coll
+	if coll == "posts" {
+		kind = "post"
+	}
+	b.WriteString("    <wp:post_name>" + xmlEscape(slug) + "</wp:post_name>\n")
 	b.WriteString("    <wp:status>publish</wp:status>\n")
-	b.WriteString("    <wp:post_type>" + xmlEscape(coll) + "</wp:post_type>\n")
+	b.WriteString("    <wp:post_type>" + xmlEscape(kind) + "</wp:post_type>\n")
 
 	keys := make([]string, 0, len(fields))
 	for k := range fields {

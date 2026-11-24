@@ -47,6 +47,18 @@ func TestTheCookieNeverHoldsThePastedToken(t *testing.T) {
 	if !tok.IsSession() {
 		t.Fatal("the cookie's credential is not a session")
 	}
+	// And one for this door, kept to its idle clock, which a server that
+	// keeps no such clock refuses (auth.Token's SignedIn). Unmarked, it was
+	// a session like any a program exchanges, and the public site's content
+	// API took it for its whole eight hours.
+	if !tok.SignedIn() {
+		t.Fatal("the cookie's session is not marked as one somebody signed in with")
+	}
+	if pasted, _, err := srv.Tokens.Exchange(token, auth.RoleNone, "", time.Minute, time.Now()); err != nil {
+		t.Fatal(err)
+	} else if p, err := srv.Tokens.Authenticate(pasted, time.Now()); err != nil || p.SignedIn() {
+		t.Fatalf("a session a program exchanged is marked as signed in: %v %+v", err, p)
+	}
 	if life := time.Until(time.Unix(tok.ExpiresAt, 0)); life > DefaultSessionTTL+time.Minute {
 		t.Fatalf("the session lasts %s", life)
 	}
@@ -62,6 +74,46 @@ func TestTheCookieNeverHoldsThePastedToken(t *testing.T) {
 	}
 	if _, err := srv.Tokens.Authenticate(token, time.Now()); err != nil {
 		t.Fatalf("signing out destroyed the token somebody signs in with: %v", err)
+	}
+}
+
+// A session pasted into the sign-in box is one somebody signed in with as
+// well, and is marked and stored as that.
+//
+// A pasted session is used as it is, since a session cannot be exchanged
+// again, and this door keeps its idle clock for it as for any other. It
+// was left unmarked, so the session in the browser's cookie, signed out
+// here once it was left unused, went on being taken by the public site's
+// content API and by the studio for the rest of its twelve hours: the
+// defect the mark exists for, reached by pasting a session, not a token.
+func TestASessionPastedAtSignInIsMarkedAsSignedInWith(t *testing.T) {
+	srv, token := tokenSignIn(t)
+	stored := 0
+	srv.SaveTokens = func(*auth.TokenStore) error { stored++; return nil }
+	pasted, _, err := srv.Tokens.Exchange(token, auth.RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := signInPost(srv, pasted)
+	if got := cookieFrom(w); got != pasted {
+		t.Fatalf("a pasted session did not sign in as it is: %d, cookie set %v", w.Code, got != "")
+	}
+	tok, err := srv.Tokens.Authenticate(pasted, time.Now())
+	if err != nil || !tok.SignedIn() {
+		t.Fatalf("a session signed in with by pasting it is not marked: %v", err)
+	}
+	if stored == 0 {
+		t.Error("the mark was not stored, so no other server reads it")
+	}
+	// One that cannot be stored signs nobody in: unmarked on disk, it
+	// would be taken elsewhere after this door had signed it out.
+	other, _, err := srv.Tokens.Exchange(token, auth.RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SaveTokens = func(*auth.TokenStore) error { return os.ErrPermission }
+	if w := signInPost(srv, other); cookieFrom(w) != "" {
+		t.Errorf("a session whose mark could not be stored signed in: %d", w.Code)
 	}
 }
 

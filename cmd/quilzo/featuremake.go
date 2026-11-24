@@ -106,11 +106,11 @@ func featureDraftCmd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("feature draft", flag.ContinueOnError)
 	outPath := fs.String("o", "", "where to write the draft; NAME.json by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New(`usage: quilzo feature draft "what you want it to do" [-o FILE]`)
+		return errMisused{errors.New(`usage: quilzo feature draft "what you want it to do" [-o FILE]`)}
 	}
 	caller := resolveCaller(root, flagToken)
 	ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
@@ -151,11 +151,11 @@ func featureFromCmd(root string, args []string) error {
 	fs := flag.NewFlagSet("feature from", flag.ContinueOnError)
 	name := fs.String("name", "", "what the feature is called; the file's name by default")
 	outPath := fs.String("o", "", "where to write the package; NAME.json by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature from FILE.csv|FILE.json [--name N] [-o FILE]")
+		return errMisused{errors.New("usage: quilzo feature from FILE.csv|FILE.json [--name N] [-o FILE]")}
 	}
 	body, err := readBounded(pos[0], 64<<20)
 	if err != nil {

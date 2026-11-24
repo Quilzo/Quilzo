@@ -52,10 +52,13 @@ func cmdAssurance(root string, args []string) error {
 	case "record":
 		return assuranceRecord(root, args[1:])
 	case "controls":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return assuranceControls(root)
 	default:
-		return fmt.Errorf("unknown assurance command %q; try report, show, "+
-			"record or controls", args[0])
+		return errMisused{fmt.Errorf("unknown assurance command %q; try report, show, "+
+			"record or controls", args[0])}
 	}
 }
 
@@ -190,7 +193,7 @@ func assuranceReport(root string, args []string) error {
 	from := fs.String("from", "", "start of the period, as 2026-04-01")
 	to := fs.String("to", "", "end of it; today by default")
 	top := fs.Int("top", 20, "how many controls to list")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	period, err := window(*from, *to)
@@ -261,11 +264,11 @@ func assuranceShow(root string, args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	from := fs.String("from", "", "start of the period")
 	to := fs.String("to", "", "end of it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo assurance show CONTROL")
+		return errMisused{fmt.Errorf("usage: quilzo assurance show CONTROL")}
 	}
 	period, err := window(*from, *to)
 	if err != nil {
@@ -314,7 +317,7 @@ func assuranceShow(root string, args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("no control %q in %s", pos[0], controlsPath(root))
+	return errNotFound{fmt.Errorf("no control %q in %s", pos[0], controlsPath(root))}
 }
 
 func outcomeColour(o assurance.Outcome) string {
@@ -338,14 +341,14 @@ func assuranceRecord(root string, args []string) error {
 	ref := fs.String("ref", "", "where the artefact is")
 	entity := fs.String("entity", "",
 		"the company this speaks for; the group otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo assurance record CONTROL OUTCOME --from ... " +
 				"--to ... --what ... --source ... --ref ...\n" +
-				"  outcomes: operated, failed, not-observed")
+				"  outcomes: operated, failed, not-observed")}
 	}
 	period, err := window(*from, *to)
 	if err != nil {
@@ -376,10 +379,10 @@ func assuranceRecord(root string, args []string) error {
 		// Refused rather than accepted quietly. Evidence for a control
 		// nobody declared is evidence nothing will ever ask for, and it is
 		// usually a typo in an identifier.
-		return fmt.Errorf(
+		return errNotFound{fmt.Errorf(
 			"there is no control called %q in %s. Evidence for a control "+
 				"nobody declared is evidence nothing will ever look at",
-			e.Control, controlsPath(root))
+			e.Control, controlsPath(root))}
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err

@@ -215,3 +215,40 @@ func shortish(s string) string {
 	}
 	return s
 }
+
+// A writer that found the store empty is merged with what arrived since,
+// not written as though its read were the whole site.
+//
+// SaveDraftOver's empty read is something the caller saw. Taken as "no
+// base", the first two writes to a new store, made at once, kept whichever
+// landed second and dropped the other's page.
+func TestAWriterThatFoundNothingKeepsWhatArrivedSince(t *testing.T) {
+	s := newStore(t)
+	// Somebody else's first page lands after this writer looked.
+	if _, err := SaveDraft(s, map[string]any{"about": mfields("title", "About")}, "theirs", "B"); err != nil {
+		t.Fatal(err)
+	}
+	_, merged, err := SaveDraftOver(s, map[string]any{"index": mfields("title", "Home")}, "mine", "A", "")
+	if err != nil {
+		t.Fatalf("refused a write with nothing in common: %v", err)
+	}
+	got := draft(t, s)
+	if _, ok := got["about"]; !ok {
+		t.Errorf("the page that landed while this writer worked was lost: %v", got)
+	}
+	if _, ok := got["index"]; !ok {
+		t.Errorf("this writer's own page was not written: %v", got)
+	}
+	if len(merged.TookTheirs) != 1 {
+		t.Errorf("the merge does not say it kept their page: %+v", merged)
+	}
+
+	// And the same page written two ways is refused, with nothing written.
+	before := s.GetRef(RefDraft)
+	if _, _, err := SaveDraftOver(s, map[string]any{"about": mfields("title", "Who we are")}, "mine", "A", ""); err == nil {
+		t.Fatal("two different first versions of one page were merged")
+	}
+	if s.GetRef(RefDraft) != before {
+		t.Error("a refused write moved the draft")
+	}
+}

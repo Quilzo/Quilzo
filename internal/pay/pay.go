@@ -42,11 +42,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -90,34 +88,10 @@ func (o Offer) Terms() string {
 func (o Offer) Price() string { return spend.Format(o.Amount, o.Currency) }
 
 // Display is the offer's price as a shopper reads it: £4.20, or 4.20 SEK
-// for a currency with no symbol everybody agrees on.
-func (o Offer) Display() string {
-	if o.Interval != "" {
-		return o.once() + " a " + o.Interval
-	}
-	return o.once()
-}
-
-func (o Offer) once() string {
-	sym, ok := symbols[o.Currency]
-	if !ok {
-		return o.Price()
-	}
-	places := spend.Decimals(o.Currency)
-	if places == 0 {
-		return sym + strconv.FormatInt(o.Amount, 10)
-	}
-	unit := int64(math.Pow10(places))
-	return fmt.Sprintf("%s%d.%0*d", sym, o.Amount/unit, places, o.Amount%unit)
-}
-
-// symbols are the currency signs a shopper reads without a second look.
-// A dollar sign alone is the United States': "$4.20" on an Australian shop
-// is a price somebody misreads.
-var symbols = map[string]string{
-	"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥", "INR": "₹",
-	"AUD": "A$", "CAD": "CA$", "NZD": "NZ$", "HKD": "HK$", "SGD": "S$",
-}
+// for a currency with no symbol everybody agrees on. Written by the same
+// function that writes the price a catalogue row shows (internal/listing),
+// so the page and its button say one price.
+func (o Offer) Display() string { return spend.Display(o.Amount, o.Currency, o.Interval) }
 
 // OfferOf reads a catalogue row as an offer, the way the catalogue feed and
 // shopping agents read it (internal/ucp), so the button and the feed cannot
@@ -153,12 +127,37 @@ type Link struct {
 	Provider string    `json:"provider"`
 	Ref      string    `json:"ref"`
 	Made     time.Time `json:"made"`
+	// Mode is the mode of the key that made it, ModeLive or ModeTest. A
+	// link made in test mode takes no real money, and a key of one mode
+	// cannot see or retire a link of the other, so a sync has to know
+	// which a link is. Empty on a link made before modes were kept; see
+	// InMode.
+	Mode string `json:"mode,omitempty"`
 	// Retired is when it stopped selling; zero while it sells.
 	Retired time.Time `json:"retired,omitempty"`
 }
 
+// The modes a provider's key, and the links it makes, are in.
+const (
+	ModeLive = "live"
+	ModeTest = "test"
+)
+
 // Live reports whether the link still sells.
 func (l Link) Live() bool { return l.Retired.IsZero() }
+
+// InMode is the mode the link was made in. A link made before the mode was
+// kept says it in its address: Stripe serves a test-mode payment link at
+// buy.stripe.com/test_….
+func (l Link) InMode() string {
+	if l.Mode != "" {
+		return l.Mode
+	}
+	if u, err := url.Parse(l.URL); err == nil && strings.HasPrefix(u.Path, "/test_") {
+		return ModeTest
+	}
+	return ModeLive
+}
 
 // Book is every link this site has made, live and retired. Retired links
 // stay, so an order read from the provider can still be named.
@@ -223,6 +222,43 @@ func (b *Book) Plan(offers []Offer) (missing []Offer, retire []Link) {
 	sort.Slice(missing, func(i, j int) bool { return missing[i].ID < missing[j].ID })
 	sort.Slice(retire, func(i, j int) bool { return retire[i].ID < retire[j].ID })
 	return missing, retire
+}
+
+// PlanFor is Plan as a key of this mode sees the book: a live link made in
+// the other mode sells nothing that key can sell or stop, so it is to
+// retire and its offer to make again. An empty mode is a key nobody can
+// read, and plans as Plan does. Sync learns the same from the provider;
+// this is how the status says so without asking it.
+func (b *Book) PlanFor(offers []Offer, mode string) (missing []Offer, retire []Link) {
+	if b == nil || mode == "" {
+		return b.Plan(offers)
+	}
+	keyed := &Book{}
+	for _, l := range b.Links {
+		if l.Live() && l.InMode() != mode {
+			retire = append(retire, l)
+			continue
+		}
+		keyed.Links = append(keyed.Links, l)
+	}
+	missing, stale := keyed.Plan(offers)
+	retire = append(retire, stale...)
+	sort.Slice(retire, func(i, j int) bool { return retire[i].ID < retire[j].ID })
+	return missing, retire
+}
+
+// SellingIn counts the live links a key of this mode sells through; an
+// empty mode counts every live link.
+func (b *Book) SellingIn(mode string) int {
+	n := 0
+	if b != nil {
+		for _, l := range b.Links {
+			if l.Live() && (mode == "" || l.InMode() == mode) {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Add puts a newly made link in the book.
@@ -348,8 +384,15 @@ var ErrUnreachable = errors.New("the payment provider did not answer")
 // Provider is a payment provider, as far as this asks it anything.
 type Provider interface {
 	Name() string
+	// Mode is the mode of the key it holds, ModeLive or ModeTest.
+	Mode() string
 	Make(ctx context.Context, o Offer, opts Options) (Link, error)
+	// Retire stops a link selling. A link the provider no longer has in
+	// the key's mode is retired already, and is no error.
 	Retire(ctx context.Context, l Link) error
+	// Selling is the ids of the links that sell at the provider for the
+	// key it holds: active, in its account and in its mode.
+	Selling(ctx context.Context) (map[string]bool, error)
 	Orders(ctx context.Context, limit int) ([]Order, error)
 }
 
@@ -358,12 +401,45 @@ type Provider interface {
 // links come first, so a product whose price changed is never without a
 // way to buy it at the price the page shows. What succeeded stays in the
 // book when something fails, and the error says what did not.
+//
+// The book is checked against the provider first. A sync used to plan
+// from the book alone, so a link was selling for as long as its price was
+// unchanged, whatever the provider said: a shop set up on a test key and
+// then given its live key kept every Buy button on test-mode checkout,
+// where real cards are refused, while pay sync said the links matched, and
+// a link the provider had lost stayed on the page. A link the provider
+// does not sell for this key is retired here, and its offer made again
+// below.
 func Sync(ctx context.Context, p Provider, b *Book, offers []Offer, opts Options, now time.Time) (made, retired []Link, err error) {
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
 	}
-	missing, stale := b.Plan(offers)
 	var failed []string
+	if b.SellingIn("") > 0 {
+		selling, serr := p.Selling(ctx)
+		if serr != nil {
+			if errors.Is(serr, ErrUnreachable) {
+				return nil, nil, fmt.Errorf("%w, so the payment links were not checked, made or retired", serr)
+			}
+			return nil, nil, fmt.Errorf("what sells at %s could not be read, so nothing was made or retired: %w", p.Name(), serr)
+		}
+		mode := p.Mode()
+		for _, l := range b.Links {
+			if !l.Live() || selling[l.Ref] {
+				continue
+			}
+			b.Retire(l.Ref, now)
+			retired = append(retired, l)
+			if l.InMode() == ModeLive && mode != ModeLive {
+				// Not a link that is gone: one a test key cannot see. It
+				// is no longer offered on a shop now testing, and it still
+				// takes real money from anybody who kept its address.
+				failed = append(failed, fmt.Sprintf("%s at %s was made with a live key and still takes real money at %s; a %s key cannot retire it, so retire it in %s's dashboard",
+					l.ID, l.Price(), p.Name(), mode, p.Name()))
+			}
+		}
+	}
+	missing, stale := b.Plan(offers)
 	for _, o := range missing {
 		l, merr := p.Make(ctx, o, opts)
 		if errors.Is(merr, ErrUnreachable) {

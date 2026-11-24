@@ -51,8 +51,8 @@ func siteBoards(root string) *public.Boards {
 }
 
 func boardUsage() error {
-	return fmt.Errorf("usage: quilzo board list | add NAME --title T --moderation pre|post [--max N] [--closed] | " +
-		"remove NAME | held | recent | approve ID | delete ID")
+	return errMisused{fmt.Errorf("usage: quilzo board list | add NAME --title T --moderation pre|post [--max N] [--closed] | " +
+		"remove NAME | held | recent | approve ID | delete ID")}
 }
 
 func cmdBoard(root string, args []string) error {
@@ -70,6 +70,9 @@ func cmdBoard(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadBoards(root)
 		if err != nil {
 			return err
@@ -95,7 +98,7 @@ func cmdBoard(root string, args []string) error {
 		mod := fs.String("moderation", "post", "pre: held until a person approves; post: shown at once")
 		max := fs.Int("max", 0, fmt.Sprintf("longest post in characters (default %d)", board.DefaultLength))
 		closed := fs.Bool("closed", false, "keep what is there and take nothing new")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
@@ -123,7 +126,7 @@ func cmdBoard(root string, args []string) error {
 			return err
 		}
 		if !set.Remove(args[1]) {
-			return fmt.Errorf("no board %q", args[1])
+			return errNotFound{fmt.Errorf("no board %q", args[1])}
 		}
 		if err := board.Save(boardsPath(root), set); err != nil {
 			return err
@@ -131,6 +134,9 @@ func cmdBoard(root string, args []string) error {
 		w.Human("removed %s; its posts stay until deleted, and no page shows them\n", args[1])
 		return note("board.remove", args[1])
 	case "held", "recent":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		list := posts.Held()
 		if args[0] == "recent" {
 			list = posts.Recent(50)
@@ -195,7 +201,7 @@ func boardsHooks(root string) *admin.BoardsAdmin {
 				return err
 			}
 			if !set.Remove(name) {
-				return fmt.Errorf("no board %q", name)
+				return errNotFound{fmt.Errorf("no board %q", name)}
 			}
 			if err := board.Save(boardsPath(root), set); err != nil {
 				return err

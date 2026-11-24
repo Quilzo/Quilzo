@@ -96,12 +96,12 @@ func siteImportCmd(root string, args []string) error {
 	takeSite := fs.Bool("take-site", false, "with --install: let it take over a site somebody set up by hand")
 	where := fs.String("site", "", "for an export: the address the site was at, which a Ghost export needs for its pictures")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for --install")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo site import https://your-old-site.example | EXPORT.xml | EXPORT.json | FOLDER | FOLDER.zip " +
-			"[--pages N] [--name N] [--site https://…] [--no-pictures] [-o FILE] [--install]")
+		return errMisused{errors.New("usage: quilzo site import https://your-old-site.example | EXPORT.xml | EXPORT.json | FOLDER | FOLDER.zip " +
+			"[--pages N] [--name N] [--site https://…] [--no-pictures] [-o FILE] [--install]")}
 	}
 	caller := resolveCaller(root, flagToken)
 	if *install {

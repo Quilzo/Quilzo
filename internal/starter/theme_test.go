@@ -304,6 +304,23 @@ func TestNoSampleReferencesAFileTheStoreWillNotHave(t *testing.T) {
 	}
 }
 
+// Nor a picture on somebody else's site. The sections sample's share image
+// was https://example.com/share.png, so every link to the home page of a
+// site started from it was previewed with a picture from example.com, or
+// with none, and no check reads a share image's address.
+func TestNoSampleSharesAPictureFromElsewhere(t *testing.T) {
+	for _, st := range All() {
+		encoded, err := json.Marshal(st.Sample)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range regexp.MustCompile(`"[a-z_]*image[a-z_]*":"(https?:)?//[^"]+"`).
+			FindAllString(string(encoded), -1) {
+			t.Errorf("the %s sample shows %s, a picture on another site", st.Name, ref)
+		}
+	}
+}
+
 // The arrangement queries have to have something to measure.
 //
 // The breakpoint rules are @container queries — deliberately, so a split inside
@@ -491,5 +508,35 @@ func TestALayoutCanRenderSearch(t *testing.T) {
 		t.Error("no shipped layout renders search results, so the index this " +
 			"program builds on every start is reachable only as JSON — and " +
 			"fetching JSON needs a script the site's own CSP blocks")
+	}
+}
+
+// A home page titled with the site's name says the name once. Every layout
+// writes a page's title and then the site's name, and every site the
+// builder makes titles its home page with the site's name, so each one was
+// "Crumb & Co — Crumb & Co" in a browser's tab and a search result. Another
+// page, and a home page titled otherwise, keep both.
+func TestAHomePageTitledWithTheSiteNameSaysItOnce(t *testing.T) {
+	title := regexp.MustCompile(`<title>([^<]*)</title>`)
+	for _, st := range All() {
+		layout, err := st.HTML()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for page, want := range map[string]string{"Crumb &amp; Co": "Crumb &amp; Co", "crumb &amp; co": "Crumb &amp; Co",
+			"About": "About — Crumb &amp; Co", "": "Crumb &amp; Co"} {
+			body := map[string]any{"title": strings.ReplaceAll(page, "&amp;", "&")}
+			ctx, err := renderpkg.Sources{Name: "Crumb & Co"}.For("index", body, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := tmpl.Render(layout, ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := title.FindStringSubmatch(out); got == nil || got[1] != want {
+				t.Errorf("%s titled %q: %v, want %q", st.Name, page, got, want)
+			}
+		}
 	}
 }

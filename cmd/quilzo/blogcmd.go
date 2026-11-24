@@ -17,7 +17,6 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 // A blog (internal/public/posts.go): records whose listing site.blog names.
@@ -40,15 +39,30 @@ func blogCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return blogList(root, caller)
 	case "setup":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return blogSetup(root, caller)
 	case "example":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+		// The package itself under --json. It is JSON for a person too, and
+		// went only to them, so a script asking for it was answered with
+		// nothing and exit 0.
+		if w.JSON(blogPackage()) {
+			return nil
+		}
 		body, _ := json.MarshalIndent(blogPackage(), "", "  ")
 		w.Human("%s\n", body)
 		return nil
 	default:
-		return fmt.Errorf("unknown blog command %q; try list, setup or example", args[0])
+		return errMisused{fmt.Errorf("unknown blog command %q; try list, setup or example", args[0])}
 	}
 }
 
@@ -106,7 +120,7 @@ func latestPosts(root string, max int) ([]listing.Row, int, string, error) {
 	if !ok {
 		return nil, 0, name, fmt.Errorf("site.blog names %q and no listing has that name", name)
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, 0, name, err
 	}
