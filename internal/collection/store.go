@@ -62,6 +62,9 @@ func Put(s *store.Store, baseTree, collection string, r Record,
 	if err := ValidName(collection); err != nil {
 		return "", Record{}, err
 	}
+	if err := Reserved(collection); err != nil {
+		return "", Record{}, err
+	}
 	if r.ID == "" {
 		id, err := NewID()
 		if err != nil {
@@ -126,6 +129,9 @@ func putMany(s *store.Store, baseTree, collection string, records []Record,
 	now time.Time, preserve bool) (string, []Record, error) {
 
 	if err := ValidName(collection); err != nil {
+		return "", nil, err
+	}
+	if err := Reserved(collection); err != nil {
 		return "", nil, err
 	}
 	changes := make([]store.Change, 0, len(records))
@@ -194,6 +200,9 @@ func Get(s *store.Store, tree, collection, id string) (*Record, error) {
 // Delete removes a record and returns the new tree.
 func Delete(s *store.Store, baseTree, collection, id string) (string, error) {
 	if err := ValidName(collection); err != nil {
+		return "", err
+	}
+	if err := Reserved(collection); err != nil {
 		return "", err
 	}
 	if err := ValidID(id); err != nil {

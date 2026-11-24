@@ -80,6 +80,35 @@ func ValidName(s string) error {
 	return nil
 }
 
+// ReservedPrefix begins the names of the collections the security register
+// owns: sec_control, sec_evidence and the rest (internal/register).
+const ReservedPrefix = "sec_"
+
+// Reserved refuses a write to a collection the security register owns, and
+// answers nil for any other name.
+//
+// The register's records are evidence, and each is written one way: through
+// register.Put, which runs the kind's invariants, asks the policy gate,
+// checks the approval of a decision and records the write. A record put
+// into sec_control by `quilzo records add`, the content API or the agent
+// interface would have passed none of that and would look, in the tree,
+// exactly like one that had. So every write in this package asks here
+// first, and since every generic surface writes through this package, none
+// of them can write a register collection.
+//
+// It is the writes that are refused. A store that already holds a
+// collection of its own called sec_something can still read and export it,
+// which is how its owner moves it to another name.
+func Reserved(name string) error {
+	if strings.HasPrefix(name, ReservedPrefix) {
+		return fmt.Errorf(
+			"%q is reserved: names beginning %s belong to the security register, "+
+				"whose records are written through the register and read with quilzo register",
+			name, ReservedPrefix)
+	}
+	return nil
+}
+
 // IDLen is the length of a generated identifier in hex characters.
 //
 // 128 bits. Long enough that identifiers can be minted independently — by two
