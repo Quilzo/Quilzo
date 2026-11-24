@@ -1978,7 +1978,15 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		signInAgain(w, r, "unchecked")
 		return
 	}
-	s.signInDone(r, cookieTok.ID)
+	// A pasted session that is already bound keeps its binding: it was
+	// issued where it was bound, and this is the same session moved, which
+	// the next request puts to the rules (sessionMoved). It was bound again
+	// here, to wherever the form was used, so a passkey session copied off
+	// one machine and pasted on another became the copier's, with the
+	// passkey's two factors, and was never seen to have moved.
+	if cookieTok.Bound == "" {
+		s.signInDone(r, cookieTok.ID)
+	}
 
 	// Secure over TLS, or where the deployment says something in front of it
 	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a

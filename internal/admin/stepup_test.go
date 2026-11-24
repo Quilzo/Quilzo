@@ -281,3 +281,66 @@ func TestASessionOnAnotherDeviceIsCaught(t *testing.T) {
 		t.Errorf("a session copied into a script answered %d", w.Code)
 	}
 }
+
+// A session copied and pasted into the token sign-in form is the same
+// session moved, and is caught like one. The form bound every session it
+// was given to wherever the form was used, so a passkey session copied off
+// one machine and pasted on another was re-bound to the copier's device,
+// kept the passkey's two factors, and was never seen to have moved.
+func TestASessionPastedIntoTheSignInFormKeepsItsBinding(t *testing.T) {
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "ada", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	// Signed in with a passkey on Chrome in Britain, which bound it there.
+	secret, tok, _ := srv.Tokens.IssueSession("passkey", "ada", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err := srv.Tokens.BindSession(tok.ID, "Chrome on Windows|GB"); err != nil {
+		t.Fatal(err)
+	}
+	country := map[string]string{"198.51.100.7": "GB", "203.0.113.5": "AU"}
+	srv.SessionPlace = func(addr, agent string) SessionContext {
+		d := "Chrome on Windows"
+		if strings.Contains(agent, "Firefox") {
+			d = "Firefox on Linux"
+		}
+		return SessionContext{Device: d, Country: country[addr]}
+	}
+	var moves []SessionMove
+	srv.SessionMovedTo = func(m SessionMove) SignInVerdict {
+		moves = append(moves, m)
+		return SignInVerdict{StepUp: true, Reason: "moved"}
+	}
+	const firefox = "Mozilla/5.0 (X11; Linux) Firefox/140"
+
+	// The copy, pasted into the form on another machine in another country.
+	req := httptest.NewRequest(http.MethodPost, "/signin", strings.NewReader(url.Values{"token": {secret}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("User-Agent", firefox)
+	req.RemoteAddr = "203.0.113.5:4000"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("the pasted session answered %d", rec.Code)
+	}
+	for _, k := range srv.Tokens.Snapshot() {
+		if k.ID == tok.ID && k.Bound != "Chrome on Windows|GB" {
+			t.Errorf("the pasted session is now bound to %q, so the copy is where it was "+
+				"issued and its move is never seen", k.Bound)
+		}
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: secret})
+	r.Header.Set("User-Agent", firefox)
+	r.RemoteAddr = "203.0.113.5:5000"
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/signin/verify" {
+		t.Errorf("the copy's first page answered %d %q, want it sent to confirm it is ada",
+			w.Code, w.Header().Get("Location"))
+	}
+	if len(moves) != 1 || moves[0].From.Country != "GB" || moves[0].To.Country != "AU" {
+		t.Errorf("moves %+v, want the one from GB to AU", moves)
+	}
+}
