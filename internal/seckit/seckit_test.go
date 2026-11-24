@@ -49,6 +49,12 @@ func TestAFigureHasItsSourceTimeHashAndGrade(t *testing.T) {
 		"no moment it is drawn at": func(o *FigureOf) { o.Now = time.Time{} },
 		"a source with no name":    func(o *FigureOf) { o.Sources = []Source{{ID: entra.ID}} },
 		"a source not a record":    func(o *FigureOf) { o.Sources = []Source{{Name: "Entra", ID: "entra"}} },
+		// A path that begins with two slashes, or a backslash a browser
+		// reads as one, is another host's address.
+		"a source on another host": func(o *FigureOf) { o.Sources = []Source{{Name: "Entra", Href: "//example.com/sources"}} },
+		"a source behind a backslash": func(o *FigureOf) {
+			o.Sources = []Source{{Name: "Entra", Href: "/\\example.com/sources"}}
+		},
 	} {
 		o := whole()
 		change(&o)

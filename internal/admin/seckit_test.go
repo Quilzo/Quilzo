@@ -154,6 +154,35 @@ func TestEverySecurityKitPartIsAccessible(t *testing.T) {
 	}
 }
 
+// An approval request that cannot be shown whole, without the hash of what
+// is approved or without who may approve, offers no button: the hash beside
+// the button is what the person's authentication is bound to, and a button
+// beside nothing approves something they were not shown.
+func TestAnApprovalRequestWithoutItsHashOffersNoButton(t *testing.T) {
+	srv, _ := setup(t)
+	whole := kitParts(t)["kit-approval"].(seckit.Approval)
+	for what, change := range map[string]func(*seckit.Approval){
+		"no hash":          func(a *seckit.Approval) { a.Hash = "" },
+		"nobody who may":   func(a *seckit.Approval) { a.Who = "" },
+		"nothing to say":   func(a *seckit.Approval) { a.What = "" },
+		"no number needed": func(a *seckit.Approval) { a.Needed = 0 },
+	} {
+		a := whole
+		change(&a)
+		var b bytes.Buffer
+		if err := srv.tpl.ExecuteTemplate(&b, "kit-approval", a); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(b.String(), "<button") || strings.Contains(b.String(), "<form") {
+			t.Errorf("an approval request with %s offers its button: %s", what, b.String())
+		}
+	}
+	var b bytes.Buffer
+	if err := srv.tpl.ExecuteTemplate(&b, "kit-approval", whole); err != nil || !strings.Contains(b.String(), "<button") {
+		t.Errorf("a whole approval request offers no button (%v): %s", err, b.String())
+	}
+}
+
 // A figure that was never made shows that nothing was measured, never a
 // nought: an empty tile is not a tile that counted none.
 func TestAnUnmeasuredFigureIsNotANought(t *testing.T) {

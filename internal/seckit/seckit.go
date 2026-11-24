@@ -165,7 +165,7 @@ func New(f FigureOf) (Figure, error) {
 		if s.ID != "" && !s.ID.Valid() {
 			return Figure{}, fmt.Errorf("the source %q is named by something that is not a record's identifier", name)
 		}
-		if s.Href != "" && !strings.HasPrefix(s.Href, "/") {
+		if s.Href != "" && !ownScreen(s.Href) {
 			return Figure{}, fmt.Errorf("the source %q links somewhere that is not a screen of this program", name)
 		}
 		out.sources = append(out.sources, Source{Name: name, ID: s.ID, Href: s.Href})
@@ -174,6 +174,14 @@ func New(f FigureOf) (Figure, error) {
 	out.age = Age(old)
 	out.stale = f.Window > 0 && old > f.Window
 	return out, nil
+}
+
+// ownScreen reports whether a link is to a screen of this program: a path
+// from its root. A path that begins with two slashes, or with a slash and a
+// backslash, which browsers read as two, is another host's address.
+func ownScreen(href string) bool {
+	return strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") && !strings.ContainsRune(href, '\\') &&
+		!strings.ContainsAny(href, " \t\r\n")
 }
 
 // Must is New for a figure code knows to be whole; it panics on one that is

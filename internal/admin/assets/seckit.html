@@ -11,6 +11,10 @@
   with scripts off and under the admin's policy, and each reflows to 320
   pixels (the "security kit" section of style.css).
 
+  An approval request that is not whole (seckit.Approval.Valid) is said to
+  be so, and offers no button: the hash beside the button is what a
+  person's authentication is bound to.
+
   A part's headings: the header is the page's one h1; the approval request
   and the error summary are h2, because each is a section of the page they
   are on; nothing else writes a heading, so a part never breaks the order
@@ -54,7 +58,7 @@
 {{if .Hash}}{{template "kit-hash" .}}{{end}}
 </li>{{end}}</ul>{{end}}
 
-{{define "kit-approval"}}<section class="kit-approval" aria-labelledby="kit-approval-{{.Short}}">
+{{define "kit-approval"}}{{with .Valid}}<p class="notice warn">{{icon "warning"}} This approval request cannot be shown whole, so it cannot be decided here: {{.}}.</p>{{else}}<section class="kit-approval" aria-labelledby="kit-approval-{{.Short}}">
 <h2 id="kit-approval-{{.Short}}">{{.What}}</h2>
 <dl class="kit-facts">
 <dt>What you are shown</dt><dd>Exactly this page's record, with the evidence it cites, under the hash <code class="kit-hash">{{.Hash}}</code></dd>
@@ -65,7 +69,7 @@
 {{if .Action}}<form method="post" action="{{.Action}}">{{range .Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
 <p class="kit-approve-row"><button type="submit">{{.Button}}</button> <span class="hint">Your passkey signs the hash <code>{{.Short}}</code>, and the receipt carries it.</span></p>
 </form>{{else}}<p class="hint">This can't be decided from this page.</p>{{end}}
-</section>{{end}}
+</section>{{end}}{{end}}
 
 {{define "kit-timeline"}}<ol class="kit-timeline">{{range .}}<li><time datetime="{{.Stamp}}">{{.When}}</time> <span class="kit-event">{{.What}}</span>{{with .By}} <span class="hint">by {{.}}</span>{{end}}{{if not .Status.Zero}} {{template "kit-badge" .Status}}{{end}}{{if .Hash}} {{template "kit-hash" .}}{{end}}</li>{{end}}</ol>{{end}}
 
