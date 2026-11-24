@@ -421,6 +421,9 @@ func TestInternalWarnsOnPublicBind(t *testing.T) {
 		"0.0.0.0:8080": true, "[::]:8080": true, ":8080": true, "203.0.113.7:8080": true,
 		"[2001:db8::1]:8080": true, "127.0.0.1:8080": false, "localhost:8080": false,
 		"10.1.2.3:8080": false, "192.168.0.10:8080": false, "[::1]:8080": false, "[fd00::5]:8080": false,
+		// Shared address space (RFC 6598), which carriers and overlay
+		// networks use and the internet does not route.
+		"100.101.102.103:8080": false, "100.64.0.1:8080": false, "100.128.0.1:8080": true,
 	} {
 		if got := publicBindWarning(addr) != ""; got != warns {
 			t.Errorf("%s: warns %v, want %v (%q)", addr, got, warns, publicBindWarning(addr))

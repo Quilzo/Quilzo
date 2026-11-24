@@ -193,11 +193,17 @@ func publicBindWarning(addr string) string {
 	switch {
 	case ip.IsUnspecified():
 		return "the admin listens on every interface, which is a public address on any host that has one. " + where
-	case ip.IsLoopback(), ip.IsPrivate(), ip.IsLinkLocalUnicast():
+	case ip.IsLoopback(), ip.IsPrivate(), ip.IsLinkLocalUnicast(), sharedAddressSpace.Contains(ip):
 		return ""
 	}
 	return "the admin listens on " + host + ", a public address. " + where
 }
+
+// sharedAddressSpace is RFC 6598's 100.64.0.0/10, which a carrier's network
+// or an overlay network such as a mesh VPN numbers its hosts from and the
+// internet does not route. An admin reached that way is on a network of its
+// own, and calling its address public would be untrue.
+var sharedAddressSpace = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
 // -- the internal instance's side --------------------------------------------
 
