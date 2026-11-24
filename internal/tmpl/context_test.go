@@ -88,6 +88,49 @@ func TestAnUnquotedValueCannotStartAnotherAttribute(t *testing.T) {
 	}
 }
 
+// An unquoted URL cannot start another attribute either.
+//
+// A URL attribute was escaped for HTML and its scheme checked, and nothing
+// else, wherever its value stood: in quotes that is enough, and without
+// them a space ends the value. So href={{ page.link }} with "/next
+// onmouseover=alert(1)" was an address and an event handler, in an <a>,
+// an <img src> or a <form action> alike, and so was any unquoted value
+// after an unquoted address in the same tag, which was taken for part of
+// it.
+func TestAnUnquotedURLCannotStartAnotherAttribute(t *testing.T) {
+	for _, tpl := range []string{
+		`<a href={{ x }}>y</a>`,
+		`<img src={{ x }} alt="">`,
+		`<form action={{ x }}></form>`,
+		`<button formaction={{ x }}>y</button>`,
+		`<a href=/about title={{ x }}>y</a>`,
+	} {
+		out, err := Render(tpl, map[string]any{"x": "/next onmouseover=alert(1)"})
+		if err != nil {
+			t.Fatalf("%s: %v", tpl, err)
+		}
+		if strings.Contains(out, " onmouseover=") {
+			t.Errorf("the value started a second attribute:\n  %s\n  %s", tpl, out)
+		}
+	}
+	// Still an address: what the browser decodes is what was given, and a
+	// scheme that runs is still refused.
+	out, err := Render(`<a href={{ x }}>y</a>`, map[string]any{"x": "/shop?a=1&b=2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `<a href=/shop?a&#61;1&#38;b&#61;2>y</a>`; out != want {
+		t.Errorf("an unquoted address became\n  %s\nnot\n  %s", out, want)
+	}
+	out, err = Render(`<a href={{ x }}>y</a>`, map[string]any{"x": "javascript:alert(1)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "#unsafe-url") {
+		t.Errorf("an unquoted javascript: address was not refused:\n  %s", out)
+	}
+}
+
 // A comment is not markup, and an apostrophe in one is an apostrophe.
 //
 // This is a regression test for a bug introduced by the fix above rather than
