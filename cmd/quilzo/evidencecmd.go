@@ -462,36 +462,17 @@ func evidenceVerify(root string, names []string) error {
 	return nil
 }
 
-// expireAction is the name an erasure of raw files whose time was up is
-// recorded under.
-const expireAction = "evidence.expire"
-
 func evidenceExpire(root string) error {
-	caller := resolveCaller(root, flagToken)
-	if err := auditReady(root); err != nil {
-		return err
-	}
-	g, err := evidenceReader(root)
+	g, by, err := evidenceIngester(root, resolveCaller(root, flagToken))
 	if err != nil {
 		return err
 	}
-	gone, err := g.Expire()
+	gone, err := g.Expire(by)
 	if err != nil {
-		return err
+		return registerError(err)
 	}
 	if gone == nil {
 		gone = []evidence.Sealed{}
-	}
-	if len(gone) > 0 {
-		var digests []string
-		for _, s := range gone {
-			digests = append(digests, string(s.Digest))
-		}
-		if err := recordE(root, audit.Record{Action: expireAction, Resource: register.Area, Outcome: audit.Success,
-			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-			Detail: map[string]string{"erased": fmt.Sprint(len(gone)), "files": clip(strings.Join(digests, ","), 2000)}}); err != nil {
-			return err
-		}
 	}
 	if w.JSON(map[string]any{"erased": gone}) {
 		return nil
@@ -680,6 +661,29 @@ func registerEvidenceOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 		return map[string]any{"checks": checks}, err
+	})
+	srv.Register(mcp.Operation{
+		Name: "evidence_expire", NeedsRole: "author", Area: register.Area, Writes: true,
+		Summary: "erase the raw files whose time to be kept is up; their seals and what was read from them are kept",
+		Detail: "Nothing is erased before its time. Every fact a file yielded still checks after its bytes are erased, " +
+			"against the file's seal and the list of what was read from it. The erasure is recorded in the audit log.",
+		Keywords: []string{"evidence", "expire", "retention", "erase", "raw"},
+	}, func(map[string]any) (any, error) {
+		if err := may(auth.ActEditDraft); err != nil {
+			return nil, err
+		}
+		g, by, err := evidenceIngester(root, caller)
+		if err != nil {
+			return nil, err
+		}
+		gone, err := g.Expire(by)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		if gone == nil {
+			gone = []evidence.Sealed{}
+		}
+		return map[string]any{"erased": gone}, nil
 	})
 	srv.Register(mcp.Operation{
 		Name: "evidence_ingest", NeedsRole: "author", Area: register.Area, Writes: true,

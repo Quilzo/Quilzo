@@ -1,7 +1,9 @@
 {{template "head" .}}
 {{template "kit-header" .Header}}
+{{template "kit-live" .Said}}
 <p class="actions">{{if .CanImport}}<a class="btn" href="/evidence/import">Bring a file in</a> {{end}}<a href="/evidence/keys">Column maps and pinned keys</a></p>
 {{with .Empty}}{{template "kit-empty" .}}{{else}}{{template "kit-table" .Table}}{{end}}
 {{with .Next}}<p><a href="{{.}}">The next files</a></p>{{end}}
+{{if .CanImport}}<form method="post" action="/evidence/expire"><p class="actions"><button type="submit" class="btn-tonal">Erase the raw files whose time is up</button></p></form>{{end}}
 <p class="hint">A file whose raw bytes were erased when its time to be kept was up still checks: its seal, and the list of what was read from it, are kept. <code>quilzo evidence list</code> answers the same from a terminal, and <code>quilzo evidence verify</code> checks every file.</p>
 {{template "foot" .}}

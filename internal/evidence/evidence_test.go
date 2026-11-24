@@ -213,13 +213,19 @@ func TestFactsVerifyAfterRawExpiry(t *testing.T) {
 		t.Fatalf("before expiry: %+v", c)
 	}
 
-	if gone, _ := w.g.Expire(); len(gone) != 0 {
+	if gone, _ := w.g.Expire(person); len(gone) != 0 {
 		t.Fatal("a raw file was erased before its time")
 	}
 	w.clock.t = w.clock.t.Add(31 * 24 * time.Hour)
-	gone, err := w.g.Expire()
+	gone, err := w.g.Expire(person)
+	if _, err := w.g.Expire(register.Actor{Name: "crew", Kind: audit.KindAI, May: allow}); !errors.Is(err, register.ErrModel) {
+		t.Fatalf("a model erased raw evidence: %v", err)
+	}
 	if err != nil || len(gone) != 1 {
 		t.Fatalf("expire: %v, %d", err, len(gone))
+	}
+	if last := w.audited[len(w.audited)-1]; last.Action != ExpireAction || last.Principal != person.Name {
+		t.Errorf("the erasure is recorded as %+v", last)
 	}
 	var exp *Expired
 	if _, err := w.g.Raw.Open(res.Batch.Digest); !errors.As(err, &exp) {

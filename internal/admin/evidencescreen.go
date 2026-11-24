@@ -51,6 +51,7 @@ func init() {
 			{path: "/evidence/import/confirm", handle: (*Server).handleEvidenceConfirm},
 			{path: "/evidence/map", handle: (*Server).handleEvidenceMap},
 			{path: "/evidence/keys", handle: (*Server).handleEvidenceKeys},
+			{path: "/evidence/expire", handle: (*Server).handleEvidenceExpire},
 			{path: "/evidence/file/", handle: (*Server).handleEvidenceFile},
 		},
 		nav: []navEntry{{
@@ -172,7 +173,13 @@ func (s *Server) handleEvidence(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Evidence", "Nav": "evidence", "Principal": p,
 		"Header": seckit.Header{Title: "Evidence", Lead: "Files brought in as evidence. Each was sealed by its hash before " +
 			"anything read it, and every fact it yielded names the file, the place it was read from and how it came in."},
-		"Table": table, "Total": total, "CanImport": s.allows(p, auth.ActEditDraft, register.Area)}
+		"Table": table, "Total": total, "CanImport": s.allows(p, auth.ActEditDraft, register.Area), "Said": ""}
+	if n := r.URL.Query().Get("erased"); n != "" {
+		data["Said"] = "Erased the raw bytes of " + n + " files whose time to be kept was up. Their seals, and the lists of what was read from them, are kept."
+		if n == "0" {
+			data["Said"] = "No raw file's time to be kept is up, so nothing was erased."
+		}
+	}
 	if total == 0 {
 		data["Empty"] = seckit.Empty{Title: "No file has been brought in yet",
 			Body: "Findings from a cloud scanner, a bill of materials, a code scan, an advisory, a signed attestation, " +
@@ -646,4 +653,30 @@ func statusOf(problems []seckit.Problem) int {
 		return http.StatusUnprocessableEntity
 	}
 	return http.StatusOK
+}
+
+// handleEvidenceExpire erases the raw files whose time to be kept is up, as
+// the person who asked, recorded in the audit log. Nothing is erased before
+// its time; the seals and the lists of what was read are kept.
+func (s *Server) handleEvidenceExpire(w http.ResponseWriter, r *http.Request) {
+	p, _, ok := s.evidenceReady(w, r, auth.ActEditDraft)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	wr, by, err := s.evidenceWriter(p)
+	if err != nil {
+		s.evidenceUnreadable(w, r, p, err)
+		return
+	}
+	gone, err := wr.Expire(by)
+	if err != nil {
+		s.evidenceUnreadable(w, r, p, err)
+		return
+	}
+	http.Redirect(w, r, "/evidence?erased="+strconv.Itoa(len(gone)), http.StatusSeeOther)
 }

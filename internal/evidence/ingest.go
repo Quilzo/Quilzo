@@ -64,9 +64,6 @@ type Result struct {
 	// Proposed is the receipt of what was proposed for a person, when the
 	// file proposed anything new.
 	Proposed *register.Receipt `json:"proposed,omitempty"`
-	// Expired is the raw files whose time was up, erased as this import
-	// began.
-	Expired []Sealed `json:"expired,omitempty"`
 }
 
 // Prepare reads the column map and the pinned keys an input needs from the
@@ -155,10 +152,6 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 		}
 	}
 	now := g.now()
-	expired, err := g.Raw.Expire(now)
-	if err != nil {
-		return Result{}, err
-	}
 	sealed, err := g.Raw.Seal(in.Body, now, g.Keep)
 	if err != nil {
 		return Result{}, fmt.Errorf("the file could not be sealed, so it was not read: %w", err)
@@ -167,20 +160,20 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 	in.Received = sealed.Received
 	b, err := Read(in)
 	if err != nil {
-		return Result{Sealed: sealed, Expired: expired}, err
+		return Result{Sealed: sealed}, err
 	}
 	recs, err := g.withSource(b)
 	if err != nil {
-		return Result{Sealed: sealed, Expired: expired}, err
+		return Result{Sealed: sealed}, err
 	}
 	if _, err := g.Raw.PutYield(b.yield); err != nil {
-		return Result{Sealed: sealed, Expired: expired}, err
+		return Result{Sealed: sealed}, err
 	}
 	if why == "" {
 		why = fmt.Sprintf("%s file %s, %s", b.Format, string(b.Digest)[7:19], b.Grade)
 	}
 	rc, err := g.Reg.Put(by, label(why), recs...)
-	res := Result{Batch: b, Sealed: sealed, Receipt: rc, Expired: expired}
+	res := Result{Batch: b, Sealed: sealed, Receipt: rc}
 	if err != nil {
 		return res, err
 	}
@@ -530,5 +523,52 @@ func (g *Ingester) replay(rf register.RawFile, body, list []byte) string {
 	return "same"
 }
 
-// Expire erases the raw files whose time to be kept is up.
-func (g *Ingester) Expire() ([]Sealed, error) { return g.Raw.Expire(g.now()) }
+// ExpireAction is the name an erasure of raw files whose time was up is
+// recorded under in the audit log.
+const ExpireAction = "evidence.expire"
+
+// Expire erases the bytes of the raw files whose time to be kept is up, as
+// by, and records it in the register's audit log. Like a write, it does
+// nothing while that log cannot take the entry: an erasure of evidence that
+// nobody can show was made, when and by whom is the one sort that must not
+// happen. The seals and the lists of what was read are kept, so every fact
+// still checks.
+func (g *Ingester) Expire(by register.Actor) ([]Sealed, error) {
+	if g.Reg.Audit == nil {
+		return nil, fmt.Errorf("the register has no audit log to record an erasure in, so nothing is erased")
+	}
+	if by.Kind != audit.KindHuman && by.Kind != audit.KindService {
+		return nil, fmt.Errorf("%w: erasing evidence, even at the end of its time, is a person's or a service's to do", register.ErrModel)
+	}
+	if by.May == nil {
+		return nil, fmt.Errorf("%w: this surface did not say how to ask it", register.ErrRefused)
+	}
+	spec, _ := register.SpecOf(string(register.KindRawFile))
+	if err := by.May(auth.ActEditDraft, spec.Resource()); err != nil {
+		return nil, fmt.Errorf("%w: %v", register.ErrRefused, err)
+	}
+	if g.Reg.Ready != nil {
+		if err := g.Reg.Ready(); err != nil {
+			return nil, fmt.Errorf("nothing was erased, because the audit log cannot record it: %w", err)
+		}
+	}
+	gone, err := g.Raw.Expire(g.now())
+	if err != nil || len(gone) == 0 {
+		return gone, err
+	}
+	var digests []string
+	for _, s := range gone {
+		digests = append(digests, string(s.Digest))
+	}
+	kind := by.Kind
+	if !kind.Valid() {
+		kind = audit.KindUnknown
+	}
+	err = g.Reg.Audit(audit.Record{Action: ExpireAction, Resource: register.Area, Outcome: audit.Success, Principal: by.Name,
+		Kind: kind, Model: by.Model, Verified: by.Verified && kind != audit.KindUnknown,
+		Detail: map[string]string{"erased": fmt.Sprint(len(gone)), "files": plaintext.Clip(strings.Join(digests, ","), 2000, "…")}})
+	if err != nil {
+		return gone, fmt.Errorf("%w: %v", register.ErrUnrecorded, err)
+	}
+	return gone, nil
+}
