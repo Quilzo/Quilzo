@@ -198,6 +198,14 @@ func TestTheKitsStylesHoldInForcedColoursAndAtNarrowWidths(t *testing.T) {
 	if !strings.Contains(kit, "overflow-wrap: anywhere") {
 		t.Error("a hash in the kit does not wrap, and takes a narrow page with it")
 	}
+	// A live region is in the page before its words arrive. One hidden
+	// while it is empty is not in the accessibility tree when they do, and
+	// is not announced by every screen reader; an empty one takes no room.
+	for _, m := range regexp.MustCompile(`(?s)([^{}]*\.kit-(?:live|errors)[^{}]*)\{([^}]*)\}`).FindAllStringSubmatch(kit, -1) {
+		if regexp.MustCompile(`display:\s*none|visibility:\s*hidden`).MatchString(m[2]) {
+			t.Errorf("the kit hides a live region: %s{%s}", strings.TrimSpace(m[1]), m[2])
+		}
+	}
 }
 
 func kitSource(t *testing.T) string {

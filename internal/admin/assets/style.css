@@ -3632,7 +3632,11 @@ td code, td .mono { overflow-wrap: break-word; }
 .kit-errors h2 { margin-top: 0; }
 .kit-errors a { color: var(--error); font-weight: 600; }
 .kit-field-error { display: flex; align-items: center; gap: .3rem; margin: .25rem 0; color: var(--error); font-weight: 600; }
-.kit-live:empty { display: none; }
+/* The live region is never hidden: one that is not displayed when its
+   words arrive is not announced by every screen reader, and an empty one
+   takes no room. */
+.kit-live { margin: .5rem 0; }
+.kit-live:empty { margin: 0; }
 @media (forced-colors: active) {
   .kit-tile, .kit-badge, .kit-approval, .kit-empty { border: 1px solid CanvasText; }
   .kit-errors { border-color: CanvasText; }
