@@ -972,15 +972,28 @@ func (s *Server) contentLimit(p principal, act auth.Action, resource string) str
 		return ""
 	}
 	page := strings.Trim(resource, "/")
+	fields, ok := s.pageFieldsAt(site.RefDraft, page)
+	if !ok {
+		fields, _ = s.pageFieldsAt(site.RefLive, page)
+	}
+	return s.fieldsLimit(p, act, page, fields)
+}
+
+// fieldsLimit is contentLimit for a page as given rather than as stored: by
+// the type its name is bound to and the language these fields give. A save
+// asks it of the page as the form leaves it, as the content API's PUT asks
+// it of its body, because can asks about the page before the form is read:
+// a token issued `--locales fr` saved the French page as English, and
+// started English pages, here.
+func (s *Server) fieldsLimit(p principal, act auth.Action, page string, fields any) string {
+	if !p.Limits.LimitsContent() {
+		return ""
+	}
 	typeName := ""
 	if s.Types != nil && s.Types.Load != nil {
 		if st, err := s.Types.Load(); err == nil && st != nil {
 			typeName = st.Bound[page]
 		}
-	}
-	fields, ok := s.pageFieldsAt(site.RefDraft, page)
-	if !ok {
-		fields, _ = s.pageFieldsAt(site.RefLive, page)
 	}
 	return p.Limits.Why(act, typeName, auth.PageLocale(fields))
 }
@@ -3726,6 +3739,16 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	body := s.pageFromForm(pages, name, r.Form)
 	pages[name] = body
+	// The page as this save leaves it, whose language the form may change
+	// (fieldsLimit), as well as the page as it was (can).
+	if why := s.fieldsLimit(p, auth.ActEditDraft, name, body); why != "" {
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
+			"Title": "Not permitted", "Principal": p,
+			"Heading": "This credential cannot do that",
+			"Body":    why,
+		})
+		return
+	}
 
 	msg := r.FormValue("__message")
 	if strings.TrimSpace(msg) == "" {

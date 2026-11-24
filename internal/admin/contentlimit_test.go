@@ -66,3 +66,47 @@ func TestATokenLimitedToTypesOrLocalesIsLimitedInTheAdmin(t *testing.T) {
 		t.Errorf("a token limited to policy saved the product page: %d", w.Code)
 	}
 }
+
+// A credential limited to some languages saves a page in those languages
+// only, as the content API's PUT does: the page as the save leaves it is
+// asked, and not only the page as it stands.
+//
+// can asks about the page before the form is read, so a token issued
+// `--locales fr` saved the French page as English, and started an English
+// page, through the editor.
+func TestATokenLimitedToALanguageSavesNoOther(t *testing.T) {
+	srv, _ := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{
+		"index":   map[string]any{"title": "Home"},
+		"returns": map[string]any{"title": "Retours", "locale": "fr"},
+	}, "typed", "test"); err != nil {
+		t.Fatal(err)
+	}
+	srv.MFAFrom = time.Now().Add(time.Hour)
+	secret, _, err := srv.Tokens.IssueScoped("fr", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{Locales: []string{"fr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		form string
+		want int
+	}{
+		{"__name=returns&title=Returns&locale=en", http.StatusForbidden},
+		{"__name=fresh&title=Fresh&locale=en", http.StatusForbidden},
+		{"__name=index&title=Home&locale=en", http.StatusForbidden},
+		{"__name=returns&title=Retours+et+remboursements&locale=fr", http.StatusSeeOther},
+		{"__name=index&title=Accueil&locale=fr", http.StatusSeeOther},
+	} {
+		if w := postForm(t, srv, "/save", secret, tc.form); w.Code != tc.want {
+			t.Errorf("a token limited to French saving %s: %d, want %d", tc.form, w.Code, tc.want)
+		}
+	}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pages["fresh"]; ok {
+		t.Error("a token limited to French started a page in English")
+	}
+}

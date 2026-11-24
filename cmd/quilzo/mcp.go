@@ -473,6 +473,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		isNew := existing == nil
 		pages[name] = body
+		// And the page as it would be, whose language the fields may give
+		// it (writeLimits): authorise asked about the page as it was.
+		if why := writeLimits(root, caller, name, body); why != "" {
+			return nil, &mcp.Refusal{Reason: why}
+		}
 
 		// The same gate the CLI and the web UI use. An agent given a looser
 		// contract than a person is the most likely writer to produce content

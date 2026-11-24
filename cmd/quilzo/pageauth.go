@@ -95,6 +95,28 @@ func contentLimits(root string, c *Caller) func(action auth.Action, resource str
 	}
 }
 
+// writeLimits is contentLimits for a page as a command is about to write it:
+// why a caller whose credential is limited to some content types or
+// languages may not store these fields under this name, or "" when it may.
+// The type is the one the name is bound to and the language the one the new
+// fields give, as the content API's PUT asks of its body.
+//
+// authorise asks about a page as it stands, before the command has read what
+// it is to write, so a token issued `--locales fr` stored the French returns
+// page as English, and started English pages, with `quilzo add`, `quilzo
+// import` and write_page, while the content API refused the same token the
+// same write.
+func writeLimits(root string, c *Caller, page string, fields any) string {
+	if c == nil || !c.Limits.LimitsContent() {
+		return ""
+	}
+	typeName := ""
+	if st, err := schema.Load(root); err == nil && st != nil {
+		typeName = st.Bound[page]
+	}
+	return c.Limits.Why(auth.ActEditDraft, typeName, auth.PageLocale(fields))
+}
+
 // visiblePages keeps the pages a caller may read.
 func visiblePages(root string, c *Caller, pages map[string]any) (map[string]any, error) {
 	may, err := pageCheck(root, c, auth.ActView)

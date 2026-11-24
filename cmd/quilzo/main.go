@@ -1724,6 +1724,15 @@ func cmdAdd(root string, args []string) error {
 		pages[name] = out
 	}
 
+	// Each page as it is to be written, in the language it is written in
+	// (writeLimits), which the gate could not ask before the files were read.
+	caller := resolveCaller(root, "")
+	for _, name := range changedNames(fs.Args()) {
+		if why := writeLimits(root, caller, name, pages[name]); why != "" {
+			return errBlocked{fmt.Errorf("%s: %s", name, why)}
+		}
+	}
+
 	types, err := gateWrite(root, pages)
 	if err != nil {
 		return err
@@ -1732,7 +1741,6 @@ func cmdAdd(root string, args []string) error {
 	// Recorded as the caller's, and --author naming somebody else credits
 	// them in the message (recordedAs): recorded under the name given, dana's
 	// change was lee's to every rule about who may approve it.
-	caller := resolveCaller(root, "")
 	who, message := caller.recordedAs(*author, *msg)
 	changed := changedNames(fs.Args())
 	var cid string

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/importer"
@@ -138,7 +139,14 @@ func cmdImport(root string, args []string) error {
 			len(clashes), strings.Join(clashes, ", "))}
 	}
 
+	// The caller's real identity, for the commit as for the record below.
+	caller := resolveCaller(root, "")
 	for _, p := range rep.Pages {
+		// Each page in the language the file gives it (writeLimits): the
+		// gate asked about the whole site, which is no one language.
+		if why := writeLimits(root, caller, *prefix+p.Name, p.Fields); why != "" {
+			return errBlocked{fmt.Errorf("%s: %s", *prefix+p.Name, why)}
+		}
 		pages[*prefix+p.Name] = p.Fields
 	}
 
@@ -149,8 +157,6 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The caller's real identity, for the commit as for the record below.
-	caller := resolveCaller(root, "")
 	who, message := caller.recordedAs(*author, fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src))
 	// Merged with whatever landed since it was read, and refused where
 	// somebody else wrote a page this brings (a merge conflict), so a page
@@ -859,6 +865,13 @@ func importRecords(root string, s *store.Store, rep *importer.Report,
 		})
 	}
 	caller := resolveCaller(root, "")
+	// Into the collection the file names, asked about that collection as
+	// `quilzo records import` asks. The gate could not know it and asked
+	// about the whole site, so a token issued `--types policy` wrote a file
+	// of products into the products collection.
+	if err := authorise(root, caller, auth.ActEditDraft, auth.DataResource(rep.Collection)); err != nil {
+		return err
+	}
 	author, _ := caller.recordedAs(named, "")
 	// Checked and written against the draft as it is under the lock
 	// (commitTree), so a record somebody wrote meanwhile is neither replaced
