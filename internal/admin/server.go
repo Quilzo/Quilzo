@@ -84,6 +84,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/collection"
@@ -1482,6 +1483,23 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 		p, err := s.authenticate(r)
 		if err != nil || !p.Limits.ReadOnly {
 			next.ServeHTTP(w, r)
+			return
+		}
+		// The content API's callers are programs that sent JSON and parse
+		// JSON back, so its writes are refused in its own shape (api.Error).
+		// They were refused with the page below, 45 KB of HTML, and a token
+		// issued --api is read-only: the integration that flag is for met
+		// this interface's markup on its first write.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(api.Error{
+				Error: "not permitted",
+				Detail: "this token was issued read-only (--read-only, or --api), " +
+					"so it refuses every write whatever the role it carries",
+				Fix: "write with a token issued without --read-only or --api",
+			})
 			return
 		}
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
