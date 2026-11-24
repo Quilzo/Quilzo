@@ -216,3 +216,62 @@ func TestAKeptViewFollowsAccessAndAReaderIsNotOfferedAsking(t *testing.T) {
 		t.Errorf("a reader asked: %d", w.Code)
 	}
 }
+
+// The question box spends the store's models, so it is offered to whoever
+// may use them on the site's content, and to nobody whose work is an area.
+//
+// It asked whether somebody held use-models anywhere under "/", and an area
+// is under "/": the analyst, compliance and support jobs, administrators or
+// authors of their areas, hold every action of their rung there, use-models
+// among them, though it means nothing in an area. So each was offered the
+// box and spent the models from it, while the writing assistant and `quilzo
+// assist`, which ask about the site, refused them.
+func TestOnlyThoseWhoMayUseTheModelsOnContentAreOfferedAsking(t *testing.T) {
+	srv, _ := setup(t)
+	labData(t, srv)
+	m, _ := withAsk(srv, `{"title":"x","cards":[]}`)
+	for _, j := range []string{"analyst", "compliance", "support"} {
+		job, _ := auth.JobNamed(j)
+		for _, b := range job.Bindings {
+			b.Principal = j
+			if err := srv.Policy.Grant(b); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "bea", Role: auth.RoleAuthor, Resource: "/blog"}); err != nil {
+		t.Fatal(err)
+	}
+	session := func(who string) string {
+		tok, _, err := srv.Tokens.IssueSession(who, who, auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	for _, who := range []string{"analyst", "compliance", "support"} {
+		tok := session(who)
+		if strings.Contains(get(t, srv, "/today", tok).Body.String(), `id="ask"`) {
+			t.Errorf("the %s job is offered asking", who)
+		}
+		if w := postForm(t, srv, "/today/ask", tok, "question=how+many"); w.Code != http.StatusForbidden {
+			t.Errorf("the %s job asked: %d", who, w.Code)
+		}
+	}
+	if len(m.asked) != 0 {
+		t.Errorf("the model was asked %d time(s) for somebody whose job holds no use-models", len(m.asked))
+	}
+	// An author of part of the site may use the models there, and asks.
+	if w := postForm(t, srv, "/today/ask", session("bea"), "question=how+many"); w.Code != http.StatusSeeOther {
+		t.Errorf("an author of /blog may not ask: %d", w.Code)
+	}
+	// And a credential that may not use the models does not ask through
+	// its person's grant.
+	capped, _, err := srv.Tokens.IssueSession("editor-r", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postForm(t, srv, "/today/ask", capped, "question=how+many"); w.Code != http.StatusForbidden {
+		t.Errorf("an administrator's session capped at reader asked: %d", w.Code)
+	}
+}

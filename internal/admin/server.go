@@ -1043,21 +1043,33 @@ func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
 	if s.Policy == nil {
 		return s.can(w, r, p, act, "/")
 	}
-	// The credential's own limits still apply. Its role cap and its read-only
-	// and type dimensions are site-wide by nature — a read-only token is
-	// read-only everywhere — so they are asked here in full. Only its path
-	// dimension is asked about itself rather than about "/", because a token
-	// scoped to /blog failing to cover "/" is the same wrong question this
-	// function exists to stop asking.
+	if s.allowsAnywhere(p, act) {
+		return true
+	}
+	return s.can(w, r, p, act, "/")
+}
+
+// allowsAnywhere is canAnywhere without an answer written: whether somebody
+// may do this somewhere in the site's content, through this session, for
+// deciding what a screen offers before it names a page.
+//
+// The content and not the areas (auth.Policy.Anywhere), so an analyst's
+// grant on /@security does not open the Pages list. The credential's own
+// limits still apply. Its role cap and its read-only and type dimensions are
+// site-wide by nature — a read-only token is read-only everywhere — so they
+// are asked here in full. Only its path dimension is asked about itself
+// rather than about "/", because a token scoped to /blog failing to cover
+// "/" is the same wrong question this function exists to stop asking.
+func (s *Server) allowsAnywhere(p principal, act auth.Action) bool {
+	if s.Policy == nil {
+		return s.allows(p, act, "/")
+	}
 	within := strings.TrimSpace(p.Scope)
 	if within == "" {
 		within = "/"
 	}
-	if s.Policy.Anywhere(p.Name, act) &&
-		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil {
-		return true
-	}
-	return s.can(w, r, p, act, "/")
+	return s.Policy.Anywhere(p.Name, act) &&
+		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil
 }
 
 // pageResource is the resource path for a page name.
