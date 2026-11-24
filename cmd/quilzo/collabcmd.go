@@ -64,9 +64,13 @@ func claimsByOthers(root, who string, pages []string) []collab.Lock {
 // sayClaims tells whoever just wrote pages, in words, of the claims other
 // people hold on them. One function, so the next command that writes a page
 // has one line to add rather than a sentence to get the same.
+//
+// The holder, the page and the note are what somebody else wrote, so the
+// sentence is printed as text on one line (onOneLine), as lockList prints
+// them: an escape in a colleague's note cleared the line above.
 func sayClaims(claims []collab.Lock) {
 	for _, l := range claims {
-		w.Human("  %s%s%s\n", yellow, claimNotice(l), reset)
+		w.Human("  %s%s%s\n", yellow, onOneLine(claimNotice(l)), reset)
 	}
 }
 
@@ -138,9 +142,9 @@ func lockClaim(root string, args []string) error {
 	w.Human("%s is yours until %s\n", pos[0],
 		time.Unix(mine.Until, 0).Format("15:04"))
 	if existing != nil {
-		w.Human("  %s%s had it", yellow, existing.Holder)
+		w.Human("  %s%s had it", yellow, onOneLine(existing.Holder))
 		if existing.Note != "" {
-			w.Human(" — %s", existing.Note)
+			w.Human(" — %s", onOneLine(existing.Note))
 		}
 		w.Human("%s\n", reset)
 		w.Human("  %stalk to them. This is a courtesy, not a lock: if you both\n"+
@@ -182,11 +186,14 @@ func lockList(root string) error {
 		w.Human("nobody has claimed anything\n")
 		return nil
 	}
+	// Whoever claimed a page named it and wrote the note, so each is
+	// printed as text on this line (onOneLine). Printed as kept, an escape
+	// in a colleague's note cleared the line above and wrote another.
 	for _, l := range active {
-		w.Human("  %-18s %s%s%s until %s", l.Page, bold, l.Holder, reset,
+		w.Human("  %-18s %s%s%s until %s", onOneLine(l.Page), bold, onOneLine(l.Holder), reset,
 			time.Unix(l.Until, 0).Format("15:04"))
 		if l.Note != "" {
-			w.Human("  %s%s%s", dim, l.Note, reset)
+			w.Human("  %s%s%s", dim, onOneLine(l.Note), reset)
 		}
 		w.Human("\n")
 	}
@@ -484,10 +491,15 @@ func reviewStatus(root string) error {
 	if people := prop.ForWhom(); len(people) > 0 {
 		by += " for " + strings.Join(people, ", ")
 	}
+	// The message the draft was saved with, who wrote it and the notes its
+	// approvals were given with are other people's words, printed as text
+	// (onOneLine, and indentedForTerminal for a message of several lines):
+	// an escape in a draft's message cleared a line of this and wrote
+	// another.
 	w.Human("%sdraft %s%s by %s (%s)\n", bold, short(prop.Content), reset,
-		by, prop.AuthorKind)
+		onOneLine(by), onOneLine(prop.AuthorKind))
 	if prop.Message != "" {
-		w.Human("  %s%s%s\n", dim, prop.Message, reset)
+		w.Human("  %s%s%s\n", dim, indentedForTerminal(prop.Message, "  "), reset)
 	}
 	w.Human("\n")
 	if pol.Required == 0 && !pol.RequireHumanForAI {
@@ -501,9 +513,9 @@ func reviewStatus(root string) error {
 		if a.Content != prop.Content {
 			continue
 		}
-		w.Human("  %sapproved%s by %s", green, reset, a.By)
+		w.Human("  %sapproved%s by %s", green, reset, onOneLine(a.By))
 		if a.Note != "" {
-			w.Human(" — %s", a.Note)
+			w.Human(" — %s", onOneLine(a.Note))
 		}
 		w.Human("\n")
 	}
@@ -513,9 +525,9 @@ func reviewStatus(root string) error {
 	}
 
 	w.Human("\n  %s%s%s\n", map[bool]string{true: green, false: yellow}[d.Allowed],
-		d.Reason, reset)
+		onOneLine(d.Reason), reset)
 	if !d.Allowed && len(d.Missing) > 0 {
-		w.Human("  %swaiting on: %s%s\n", dim, strings.Join(d.Missing, ", "), reset)
+		w.Human("  %swaiting on: %s%s\n", dim, onOneLine(strings.Join(d.Missing, ", ")), reset)
 	}
 	return nil
 }

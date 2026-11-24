@@ -63,7 +63,8 @@ const (
 	ctxText = iota
 	ctxAttr
 	ctxURL
-	ctxBare // an unquoted attribute value, or where a name would go
+	ctxBare    // an unquoted attribute value, or where a name would go
+	ctxBareURL // an unquoted value of a URL attribute
 )
 
 var (
@@ -396,6 +397,13 @@ func (c *htmlContext) context(s string) (int, error) {
 		return ctxText, nil
 	}
 	if reURLAttr.MatchString(s[c.tagStart:]) {
+		// An address with no quotes round it is ended by a space as any
+		// unquoted value is, so it is escaped as one as well as checked as
+		// an address. Escaped for HTML alone, href={{ page.link }} with
+		// "/next onmouseover=alert(1)" was an address and an event handler.
+		if c.quote == 0 {
+			return ctxBareURL, nil
+		}
 		return ctxURL, nil
 	}
 	if c.quote == 0 {
@@ -470,15 +478,35 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 // needs escaping and runs anyway. An unsafe scheme is replaced rather than
 // emitted and hoped about, because hoping the browser declines is not a control.
 func escapeURL(v string) string {
-	s := strings.TrimSpace(v)
-	u, err := url.Parse(s)
-	if err != nil {
-		return "#unsafe-url"
-	}
-	if !safeSchemes[strings.ToLower(u.Scheme)] {
+	s, ok := safeURL(v)
+	if !ok {
 		return "#unsafe-url"
 	}
 	return html.EscapeString(s)
+}
+
+// escapeBareURL is escapeURL for an address written without quotes round
+// it: the scheme checked as escapeURL checks it, and the address escaped as
+// escapeBare escapes any unquoted value, so that a space or an = in it
+// cannot end it and begin another attribute. The browser decodes what this
+// writes back into the address it was given.
+func escapeBareURL(v string) string {
+	s, ok := safeURL(v)
+	if !ok {
+		return "#unsafe-url"
+	}
+	return escapeBare(s)
+}
+
+// safeURL is an address with the space round it taken off, and whether its
+// scheme is one that cannot execute.
+func safeURL(v string) (string, bool) {
+	s := strings.TrimSpace(v)
+	u, err := url.Parse(s)
+	if err != nil || !safeSchemes[strings.ToLower(u.Scheme)] {
+		return "", false
+	}
+	return s, true
 }
 
 func stringify(v any) string {
@@ -614,6 +642,8 @@ func walk(nodes []node, data map[string]any, out *strings.Builder, b *budget, de
 			switch ctx {
 			case ctxURL:
 				esc = escapeURL(text)
+			case ctxBareURL:
+				esc = escapeBareURL(text)
 			case ctxAttr:
 				esc = html.EscapeString(text)
 			case ctxBare:

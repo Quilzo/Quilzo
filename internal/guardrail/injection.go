@@ -294,6 +294,20 @@ func AsksForSecrets(text string) bool {
 // with one. That is the text a model is given; this is only what the
 // patterns are matched against. "AI" with a non-joiner inside it was kept
 // by the one and matched by none of the other.
+//
+// And every letter that looks like a Latin one written as that letter
+// (lookalike), with the marks drawn over letters taken off, since they
+// take no room of their own either. The patterns are written in ASCII, and
+// "Ignore your previous instructions" in fullwidth letters, with a
+// Cyrillic о and і, in the mathematical bold a "fancy text" site makes, or
+// struck through letter by letter, matched none of them, while a model
+// reads each as the sentence it looks like.
+//
+// A mark is taken off however it is written: on its own after the letter,
+// round it (Me, a combining circle), or as part of a letter that is one
+// character, as a keyboard types "ï". Only the first was, so "Ïgnore"
+// written as the keyboard writes it passed where the same word written
+// letter and mark was noticed.
 func shown(text string) string {
 	if strings.IndexFunc(text, hidden) < 0 {
 		return text
@@ -302,16 +316,130 @@ func shown(text string) string {
 		switch {
 		case unicode.Is(unicode.Zs, r):
 			return ' '
-		case unicode.Is(unicode.Cf, r):
+		case unicode.Is(unicode.Cf, r), unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r):
 			return -1
 		}
-		return r
+		return lookalike(r)
 	}, text)
 }
 
 // hidden reports whether a character is one shown changes.
 func hidden(r rune) bool {
-	return r > 0x7f && (unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Cf, r))
+	return r > 0x7f && (unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Cf, r) ||
+		unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || lookalike(r) != r)
+}
+
+// lookalike is the ASCII character r is written to look like, or r.
+//
+// The alphabets that are ASCII drawn another way, a range each: the
+// fullwidth forms, the thirteen mathematical alphabets and their digits,
+// the circled letters, and the bracketed, squared and negative ones beside
+// them. Then the letters of other scripts that are drawn as Latin ones
+// are, the phonetic alphabet's small capitals and the raised letters: only
+// those, so a sentence in Russian or Greek is still that sentence to the
+// patterns, and only a word built to pass for English reads as one. Then
+// the Latin letters with a mark that are one character, as the letter
+// without it (latinMarked), after the rest so that the o with an ogonek a
+// small-capitals site writes for a q is still a q.
+func lookalike(r rune) rune {
+	switch {
+	case r < 0x80:
+		return r
+	case 0xFF01 <= r && r <= 0xFF5E: // fullwidth ASCII
+		return r - 0xFF01 + '!'
+	case 0x1D400 <= r && r <= 0x1D6A3: // 13 alphabets of A to Z and a to z
+		k := (r - 0x1D400) % 52
+		if k < 26 {
+			return 'A' + k
+		}
+		return 'a' + k - 26
+	case 0x1D7CE <= r && r <= 0x1D7FF: // 5 sets of mathematical digits
+		return '0' + (r-0x1D7CE)%10
+	case 0x24B6 <= r && r <= 0x24CF: // circled capitals
+		return 'A' + r - 0x24B6
+	case 0x24D0 <= r && r <= 0x24E9: // circled small letters
+		return 'a' + r - 0x24D0
+	case 0x249C <= r && r <= 0x24B5: // bracketed small letters
+		return 'a' + r - 0x249C
+	case 0x1F110 <= r && r <= 0x1F189 && (r-0x1F110)%32 < 26:
+		// Bracketed, squared, negative circled and negative squared
+		// capitals, 32 apart, each followed by signs that are not letters.
+		return 'A' + (r-0x1F110)%32
+	}
+	if l, ok := lookalikes[r]; ok {
+		return l
+	}
+	switch {
+	case 0xC0 <= r && r <= 0x24F && latinMarked[r-0xC0] != '.':
+		return rune(latinMarked[r-0xC0])
+	case 0x1E00 <= r && r <= 0x1EFF && latinMarkedMore[r-0x1E00] != '.':
+		return rune(latinMarkedMore[r-0x1E00])
+	}
+	return r
+}
+
+// latinMarked is the letter each of U+00C0 to U+024F is with its marks
+// taken off, or a full stop for one that is not a Latin letter with a
+// mark, and latinMarkedMore the same for U+1E00 to U+1EFF. Each is the
+// first character of the letter's canonical decomposition, so "é" is "e"
+// and "ß" and "æ" are themselves.
+const (
+	latinMarked = "AAAAAA.CEEEEIIII.NOOOOO..UUUUY..aaaaaa.ceeeeiiii.nooooo..uuuuy.y" +
+		"AaAaAaCcCcCcCcDd..EeEeEeEeEeGgGgGgGgHh..IiIiIiIiI...JjKk.LlLlLl." +
+		"...NnNnNn...OoOoOo..RrRrRrSsSsSsSsTtTt..UuUuUuUuUuUuWwYyYZzZzZz." +
+		"................................Oo.............Uu..............." +
+		".............AaIiOoUuUuUuUuUu.AaAa....GgKkOoOo..j...Gg..NnAa...." +
+		"AaAaEeEeIiIiOoOoRrRrUuUuSsTt..Hh......AaEeOoOoOoOoYy............" +
+		"................"
+	latinMarkedMore = "AaBbBbBbCcDdDdDdDdDdEeEeEeEeEeFfGgHhHhHhHhHhIiIiKkKkKkLlLlLlLlMm" +
+		"MmMmNnNnNnNnOoOoOoOoPpPpRrRrRrRrSsSsSsSsSsTtTtTtTtUuUuUuUuUuVvVv" +
+		"WwWwWwWwWwXxXxYyZzZzZzhtwy......AaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEe" +
+		"EeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy......"
+)
+
+// lookalikes are the letters read as Latin ones that are not in a range of
+// their own: Cyrillic, Greek and Armenian letters drawn as Latin ones are,
+// the Latin letters with a stroke through them, which decompose into
+// nothing, the phonetic alphabet's small capitals, the raised letters, and
+// the letterlike symbols that stand in the mathematical alphabets' gaps,
+// such as the italic h.
+var lookalikes = map[rune]rune{
+	// Cyrillic.
+	'а': 'a', 'с': 'c', 'ԁ': 'd', 'е': 'e', 'һ': 'h', 'і': 'i', 'ј': 'j',
+	'ӏ': 'l', 'о': 'o', 'р': 'p', 'ԛ': 'q', 'г': 'r', 'ѕ': 's', 'ԝ': 'w',
+	'х': 'x', 'у': 'y', 'ү': 'y',
+	'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Ԍ': 'G', 'Н': 'H', 'І': 'I',
+	'Ӏ': 'I', 'Ј': 'J', 'К': 'K', 'М': 'M', 'О': 'O', 'Р': 'P', 'Ԛ': 'Q',
+	'Ѕ': 'S', 'Т': 'T', 'Ԝ': 'W', 'Х': 'X', 'Ү': 'Y',
+	// Greek.
+	'α': 'a', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p', 'υ': 'u',
+	'χ': 'x', 'γ': 'y',
+	'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K',
+	'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X',
+	// Armenian.
+	'ց': 'g', 'հ': 'h', 'ո': 'n', 'օ': 'o', 'զ': 'q', 'ս': 'u', 'ա': 'w',
+	// Latin letters that are other Latin letters to the eye, and small
+	// capitals.
+	'ı': 'i', 'ɑ': 'a', 'ɡ': 'g',
+	'ᴀ': 'a', 'ʙ': 'b', 'ᴄ': 'c', 'ᴅ': 'd', 'ᴇ': 'e', 'ꜰ': 'f', 'ɢ': 'g',
+	'ʜ': 'h', 'ɪ': 'i', 'ᴊ': 'j', 'ᴋ': 'k', 'ʟ': 'l', 'ᴍ': 'm', 'ɴ': 'n',
+	'ᴏ': 'o', 'ᴘ': 'p', 'ǫ': 'q', 'ʀ': 'r', 'ꜱ': 's', 'ᴛ': 't', 'ᴜ': 'u',
+	'ᴠ': 'v', 'ᴡ': 'w', 'ʏ': 'y', 'ᴢ': 'z',
+	'Ø': 'O', 'ø': 'o', 'Đ': 'D', 'đ': 'd', 'Ħ': 'H', 'ħ': 'h', 'Ł': 'L',
+	'ł': 'l', 'Ŧ': 'T', 'ŧ': 't',
+	// Raised letters, which a "tiny text" site writes words in.
+	'ᵃ': 'a', 'ᵇ': 'b', 'ᶜ': 'c', 'ᵈ': 'd', 'ᵉ': 'e', 'ᶠ': 'f', 'ᵍ': 'g',
+	'ʰ': 'h', 'ⁱ': 'i', 'ᶦ': 'i', 'ʲ': 'j', 'ᵏ': 'k', 'ˡ': 'l', 'ᵐ': 'm',
+	'ⁿ': 'n', 'ᵒ': 'o', 'ᵖ': 'p', 'ʳ': 'r', 'ˢ': 's', 'ᵗ': 't', 'ᵘ': 'u',
+	'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y', 'ᶻ': 'z',
+	'ᴬ': 'A', 'ᴮ': 'B', 'ᴰ': 'D', 'ᴱ': 'E', 'ᴳ': 'G', 'ᴴ': 'H', 'ᴵ': 'I',
+	'ᴶ': 'J', 'ᴷ': 'K', 'ᴸ': 'L', 'ᴹ': 'M', 'ᴺ': 'N', 'ᴼ': 'O', 'ᴾ': 'P',
+	'ᴿ': 'R', 'ᵀ': 'T', 'ᵁ': 'U', 'ⱽ': 'V', 'ᵂ': 'W',
+	// Letterlike symbols.
+	'ℂ': 'C', 'ℊ': 'g', 'ℋ': 'H', 'ℌ': 'H', 'ℍ': 'H', 'ℎ': 'h', 'ℐ': 'I',
+	'ℑ': 'I', 'ℒ': 'L', 'ℓ': 'l', 'ℕ': 'N', 'ℙ': 'P', 'ℚ': 'Q', 'ℛ': 'R',
+	'ℜ': 'R', 'ℝ': 'R', 'ℤ': 'Z', 'ℨ': 'Z', 'ℬ': 'B', 'ℭ': 'C', 'ℯ': 'e',
+	'ℰ': 'E', 'ℱ': 'F', 'ℳ': 'M', 'ℴ': 'o', 'ℹ': 'i',
 }
 
 // Injection is why text met in a view reads as addressed to a machine,

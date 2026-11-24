@@ -172,8 +172,12 @@ func fediverseFollowers(root string) error {
 		return nil
 	}
 	w.Human("%s%d follower(s)%s\n", bold, len(all), reset)
+	// A follower's address is what a server anywhere sent, so it is
+	// printed as text on its line (onOneLine). The inbox takes only a URL,
+	// which keeps out the escape character but not the C1 one, U+009B,
+	// and printed as sent that cleared the screen the list was on.
 	for _, f := range all {
-		w.Human("  %s\n", f.Actor)
+		w.Human("  %s\n", onOneLine(f.Actor))
 	}
 	if len(all) == 0 {
 		w.Human("  %snobody yet. They arrive when somebody follows the "+

