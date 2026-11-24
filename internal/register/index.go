@@ -14,6 +14,7 @@ import (
 	"sort"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The index: every record as one small fixed row.
@@ -553,9 +554,12 @@ func decodeRow(r *Row, b []byte) {
 // zero bytes for none.
 func oid64(oid string) string { return pad(oid, 64) }
 
+// pad is a name as the file holds it, in n bytes: zero-filled when it is
+// shorter, and cut when it is longer, which no name the index writes is,
+// since each is a store object's 64 characters or a shard's two.
 func pad(s string, n int) string {
 	if len(s) >= n {
-		return s[:n]
+		return plaintext.Clip(s, n, "")
 	}
 	return s + string(bytes.Repeat([]byte{0}, n-len(s)))
 }
