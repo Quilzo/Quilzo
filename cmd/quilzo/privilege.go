@@ -622,9 +622,14 @@ var commandNeeds = map[string]need{
 	"posture rules":      {action: auth.ActView},
 	"posture explain":    {action: auth.ActView},
 	"posture frameworks": {action: auth.ActView},
-	"webhook list":       {action: auth.ActView},
-	"webhooks list":      {action: auth.ActView},
 	"oidc check":         {action: auth.ActView},
+	// Listing the webhooks is the Integrations screen's, an administrator's
+	// of the whole site: each endpoint is listed by its whole address, which
+	// is often the receiver's credential itself (an incoming hook is nothing
+	// else), with the first characters of its signing key. As view, any
+	// reader of the content was listed every one.
+	"webhook list":  {action: auth.ActGrant},
+	"webhooks list": {action: auth.ActGrant},
 	// How the log is protected, which /logs shows whoever reads the log.
 	"logd status": {action: auth.ActView, alsoIn: []string{auth.AreaLog}},
 
