@@ -4,6 +4,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -537,20 +540,25 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 			Fix:   "quilzo publish"})
 		return
 	}
-	// The listing's validator is the commit: if the site has not changed,
-	// neither has any listing of it. Exact rather than a hash of the response,
-	// because the commit already commits to every page in it.
-	etag := quote(commit + "-" + fmt.Sprintf("%d-%d", offset, limit))
-	if matches(r.Header.Get("If-None-Match"), etag) {
-		w.Header().Set("ETag", etag)
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
 
 	pages, tree, err := s.pagesAt(commit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the site could not be read", Detail: err.Error()})
+		return
+	}
+	withheld := s.withhold(pages)
+
+	// The listing's validator is the commit and the pages its publish
+	// windows withhold now: if neither has changed, neither has any listing
+	// of it. The commit alone was exact until the windows were asked, and
+	// then it was not: a page whose embargo lifts at noon changes the
+	// listing with the commit unchanged, and a client revalidating with the
+	// morning's validator was told 304 and never saw it.
+	etag := quote(commit + "-" + fmt.Sprintf("%d-%d", offset, limit) + withheldTag(withheld))
+	if matches(r.Header.Get("If-None-Match"), etag) {
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	names := sortedNames(pages)
@@ -688,6 +696,12 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	// issued precisely so it could not learn that, which turns every scoped
 	// token into a way to enumerate the pages it cannot read.
 	if visible, _ := s.visibleTo(tokenFrom(r), name, pages[name]); !visible {
+		writeError(w, http.StatusNotFound, Error{Error: "no such page"})
+		return
+	}
+	// Outside its publish window it is not published yet, or not any more,
+	// and answers as a page that is not there, as the public site does.
+	if !inWindow(pages[name], s.now()) {
 		writeError(w, http.StatusNotFound, Error{Error: "no such page"})
 		return
 	}
@@ -933,6 +947,51 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 	})
 }
 
+// inWindow reports whether a page's publish window is open at now: its
+// starts date passed, its expires date not reached (site.WindowOf).
+//
+// A window that cannot be read is closed, as on the public site. Open
+// would mean a mistyped date lifting an embargo, which is the mistake
+// nobody notices.
+func inWindow(body any, now time.Time) bool {
+	w, err := site.WindowOf(body)
+	return err == nil && w.Public(now)
+}
+
+// withhold takes the pages whose publish windows are closed now out of a
+// page set, and names them in order.
+//
+// Everything this API serves as published goes through this or inWindow.
+// It went through neither: the public site asks every page's window when
+// the page is asked for, so that an embargo cannot lift because a job was
+// wedged, and this API served a page set to start at noon from the moment
+// it was published, by name and in every listing, to any read token, and
+// a page past its expires date for as long as it stayed in the tree.
+func (s *Server) withhold(pages map[string]any) []string {
+	now := s.now()
+	var out []string
+	for name, body := range pages {
+		if !inWindow(body, now) {
+			delete(pages, name)
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// withheldTag is what a listing's validator carries for the pages withheld
+// from it: nothing when none are, so a site with no window closed keeps the
+// validators it had, and otherwise a hash of their names, which changes
+// whenever a window opens or closes.
+func withheldTag(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	h := sha256.Sum256([]byte(strings.Join(names, "\n")))
+	return "-" + hex.EncodeToString(h[:8])
+}
+
 func (s *Server) pagesAt(commit string) (map[string]any, map[string]string, error) {
 	if commit == "" {
 		return nil, nil, fmt.Errorf("nothing published")
@@ -986,16 +1045,21 @@ func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	v, ok := idx.Vectors[name]
+	closed, ok := s.closedAt(w, idx)
 	if !ok {
+		return
+	}
+	v, ok := idx.Vectors[name]
+	if !ok || closed[name] {
 		// Not indexed and not found answer alike, because distinguishing them
 		// tells a caller which pages exist but hold no text — which is a
-		// question about the store, not about similarity.
+		// question about the store, not about similarity. A page outside its
+		// publish window is not found either, as it is everywhere else.
 		writeError(w, http.StatusNotFound, Error{
 			Error: "no such page, or it has no text to compare"})
 		return
 	}
-	s.answerNeighbours(w, r, idx, v, name)
+	s.answerNeighbours(w, r, idx, v, name, closed)
 }
 
 // vectorSearch returns the pages nearest to a query.
@@ -1027,7 +1091,11 @@ func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "")
+	closed, ok := s.closedAt(w, idx)
+	if !ok {
+		return
+	}
+	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "", closed)
 }
 
 func (s *Server) index(w http.ResponseWriter) *vector.Index {
@@ -1051,9 +1119,31 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 	return idx
 }
 
+// closedAt is the pages of the commit an index was built from that their
+// publish windows withhold now, for leaving out of what it answers.
+//
+// The index holds every published page, the embargoed among them, so a
+// search for a word only an embargoed press release used named it, with
+// the words it shared, before its window opened. Asked here, at the time
+// of asking, because the index is built once a commit and the windows
+// open and close without one.
+func (s *Server) closedAt(w http.ResponseWriter, idx *vector.Index) (map[string]bool, bool) {
+	pages, err := site.PagesAt(s.Store, idx.Commit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, Error{
+			Error: "the index could not be queried", Detail: err.Error()})
+		return nil, false
+	}
+	closed := map[string]bool{}
+	for _, name := range s.withhold(pages) {
+		closed[name] = true
+	}
+	return closed, true
+}
+
 // answerNeighbours writes a result set, filtered by what the caller may see.
 func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
-	idx *vector.Index, q vector.Vector, exclude string) {
+	idx *vector.Index, q vector.Vector, exclude string, closed map[string]bool) {
 
 	limit := 10
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -1081,6 +1171,9 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 	for _, n := range found {
 		if len(out) >= limit {
 			break
+		}
+		if closed[n.Page] {
+			continue
 		}
 		if err := s.may(r, auth.ActView, "/"+n.Page); err != nil {
 			continue
