@@ -4,6 +4,10 @@
   or a browser that sends no fetch metadata. Answering it there signed the
   person out for whatever page had the address in it.
 
+  Who is empty when the request named no session: a link or a redirect on
+  another site, which the browser sends without the cookie. The form posts
+  from here, with it.
+
   Its own document, like the sign-in page and Confirm it's you, because a
   session waiting to prove its person may reach this and nothing else.
 */}}
@@ -21,7 +25,7 @@
   <section class="signin-panel">
     <p class="brand">{{template "lockup" .}}</p>
     <h1>Sign out?</h1>
-    <p class="lead">Signed in as <strong>{{.Who}}</strong>. Signing out ends this session, and nothing it started will continue.</p>
+    <p class="lead">{{with .Who}}Signed in as <strong>{{.}}</strong>. {{end}}Signing out ends this session, and nothing it started will continue.</p>
     {{with .IdP}}<p>Your session at {{.}} is its own, and goes on unless you sign out there as well.</p>{{end}}
     <form method="post" action="/signout" class="actions"><button type="submit" class="btn">Sign out</button>
       {{if .IdPOut}}<button type="submit" name="idp" value="1" class="btn tonal">Sign out here and at {{.IdP}}</button>{{end}}</form>

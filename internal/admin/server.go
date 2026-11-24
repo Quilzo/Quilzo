@@ -2203,7 +2203,14 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	if err == nil && p.Session {
 		via = s.sessionVia(p.TokenID)
 	}
-	if err == nil && !signOutAsked(r, p) {
+	// Asked whether or not the request names a session. A link or a script
+	// redirect on another site arrives without the cookie, which is
+	// SameSite=Strict, and was let through to clearing it: the browser takes
+	// a cookie cleared in answer to a navigation from anywhere, so any site
+	// signed a person out with a link, without the question, and left the
+	// session itself going, since nothing in the request named it to revoke.
+	// The question's form posts from this origin, with the cookie.
+	if !signOutAsked(r, p) {
 		data := map[string]any{"Title": "Sign out", "Who": p.Name}
 		if via != "" {
 			data["IdP"] = s.idpName(via)
