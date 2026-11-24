@@ -253,7 +253,7 @@ func membersDigest(ids []register.ID) register.Digest {
 		lines[i] = string(id)
 	}
 	sort.Strings(lines)
-	return digestOf("quilzo programme members v1\n", lines)
+	return digestOf("quilzo/programme members v1\n", lines)
 }
 
 // readDigest is the digest of everything a run read: each record's kind,
@@ -266,7 +266,7 @@ func readDigest(reads ...[]Read) register.Digest {
 		}
 	}
 	sort.Strings(lines)
-	return digestOf("quilzo programme snapshot v1\n", lines)
+	return digestOf("quilzo/programme snapshot v1\n", lines)
 }
 
 // clip is a value cut to fit a message.

@@ -197,7 +197,7 @@ func (s *Starter) Content() register.Digest {
 		Crosswalk          []Relation
 	}{s.Framework, s.Version, s.Clauses, s.Crosswalk})
 	h := sha256.New()
-	h.Write([]byte("quilzo programme starter v1\n"))
+	h.Write([]byte("quilzo/programme starter v1\n"))
 	h.Write(b)
 	return register.Digest("sha256:" + hex.EncodeToString(h.Sum(nil)))
 }

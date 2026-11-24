@@ -88,7 +88,7 @@ type person struct {
 }
 
 func (k *FileKeeper) personPath(name string) string {
-	sum := sha256.Sum256([]byte("quilzo programme person v1\n" + name))
+	sum := sha256.Sum256([]byte("quilzo/programme person v1\n" + name))
 	return filepath.Join(k.Dir, "subjects", hex.EncodeToString(sum[:])+".json")
 }
 

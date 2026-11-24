@@ -86,7 +86,7 @@ func approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time
 	}
 	surface := register.SurfaceOf(rec)
 	h := sha256.New()
-	h.Write([]byte("quilzo approval evidence v1\n" + string(surface) + "\n" + d.Proof))
+	h.Write([]byte("quilzo/approval evidence v1\n" + string(surface) + "\n" + d.Proof))
 	a := &register.Approval{Atom: string(auth.ActApprove), Rule: "raiser-is-not-approver", Needed: 1, Of: eligible,
 		Surface: surface, Raised: raised,
 		Signers: []register.Signer{{Subject: d.By.Subject, At: register.TimeOf(at),

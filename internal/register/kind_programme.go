@@ -340,7 +340,7 @@ func SurfaceOf(rec Record) Digest {
 
 // surfaceDomain separates the hash of a decision from every other use of
 // SHA-256 in the program.
-const surfaceDomain = "quilzo decision surface v1\n"
+const surfaceDomain = "quilzo/decision surface v1\n"
 
 // Op is how a term of a query compares a field.
 type Op string

@@ -10,7 +10,7 @@ package programme
 // control: superset-of says the point asks for more than the control
 // gives, so meeting the control does not on its own meet the point.
 var _ = starter(Starter{
-	Framework: "nis2", Name: "NIS2 Directive", Version: "Directive (EU) 2022/2555, Article 21(2)",
+	Framework: "nis2", Name: "NIS2", Version: "Directive (EU) 2022/2555, Article 21(2)",
 	About: "The EU's law on the cybersecurity of essential and important entities; Article 21(2) lists the measures each takes.",
 	Level: "points of Article 21(2)",
 	Clauses: []Clause{

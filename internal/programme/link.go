@@ -65,7 +65,7 @@ func Correlate(v *register.View, on register.LinkOn, a, b Side) (Correlation, er
 			lo, hi = hi, lo
 		}
 		out.Links = append(out.Links, register.Link{A: lo, B: hi, On: on,
-			Match: digestOf("quilzo link identifier v1\n"+string(on)+"\n", []string{value})})
+			Match: digestOf("quilzo/link identifier v1\n"+string(on)+"\n", []string{value})})
 	}
 	sort.Slice(out.Links, func(i, j int) bool {
 		if out.Links[i].A != out.Links[j].A {
