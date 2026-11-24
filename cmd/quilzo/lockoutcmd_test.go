@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/lockout"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // The operator lets a locked-out administrator in again from the command
@@ -56,5 +58,107 @@ func TestAuthUnlockLetsALockedOutAccountIn(t *testing.T) {
 	body, _ := os.ReadFile(auditPath(root))
 	if !strings.Contains(string(body), "account.unlocked") {
 		t.Error("the unlock was not recorded")
+	}
+}
+
+// lockedOutStore is a store with two administrators, dana and lee, and a
+// token for each, where dana is locked out.
+func lockedOutStore(t *testing.T) (root, dana, lee string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root, dana, lee = twoAdmins(t)
+	for i := 0; i < lockout.Ceiling; i++ {
+		if _, _, err := lockoutStore(root).Fail("dana", "192.0.2.10", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root, dana, lee
+}
+
+// Nobody unlocks themselves while another administrator is there to ask.
+//
+// The Sign-ins screen refuses it: "Somebody else has to unlock you: that
+// is the point of a lockout." The command line asked only whether the
+// caller may grant access, so a locked-out administrator, or whoever held
+// their token, ran `quilzo auth unlock` on their own name and was let in
+// again from everywhere, with a second administrator a message away. The
+// command is how a store's only administrator gets back, and is still
+// that.
+func TestNobodyUnlocksThemselvesWhileAnotherAdministratorCan(t *testing.T) {
+	root, dana, lee := lockedOutStore(t)
+	unlock := func(token, name string) error {
+		return as(t, token, func() error { return cmdAuth(root, []string{"unlock", name}) })
+	}
+	err := unlock(dana, "dana")
+	if err == nil || exitCode(err) != out.ExitBlocked || !strings.Contains(err.Error(), "omebody else has to unlock you") {
+		t.Fatalf("a locked-out administrator unlocking themselves, with another there: %v", err)
+	}
+	// However their name is written.
+	if err := unlock(dana, "Dana"); err == nil {
+		t.Fatal("unlocked themselves under another spelling of their name")
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 1 {
+		t.Fatalf("no longer held: %+v", held)
+	}
+	refused := auditFor(t, root, "account.unlocked")
+	if len(refused) != 2 || refused[0].Outcome != audit.Denied {
+		t.Fatalf("the refusals are not in the log: %+v", refused)
+	}
+	// The other administrator unlocks them, as on the screen.
+	if err := unlock(lee, "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 0 {
+		t.Fatalf("still held: %+v", held)
+	}
+	done := auditFor(t, root, "account.unlocked")
+	if last := done[len(done)-1]; last.Outcome != audit.Success || last.Detail["alone"] != "" {
+		t.Fatalf("the unlock by another administrator: %+v", last)
+	}
+	// Somebody who is not locked out is told that, as before, and refused
+	// nothing.
+	if err := unlock(dana, "dana"); err != nil || len(auditFor(t, root, "account.unlocked")) != len(done) {
+		t.Fatalf("asking about an account that is not held: %v", err)
+	}
+}
+
+// The only administrator there is unlocks themselves, and the record says
+// it was done alone; not for a day after another administrator stopped
+// being one, as with everything else one administrator does alone.
+func TestTheOnlyAdministratorUnlocksThemselvesAndTheRecordSaysSo(t *testing.T) {
+	root, dana, _ := lockedOutStore(t)
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		p.RevokeNamed("lee", "admin", "/")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unlock := func() error {
+		return as(t, dana, func() error { return cmdAuth(root, []string{"unlock", "dana"}) })
+	}
+	err := unlock()
+	if err == nil || exitCode(err) != out.ExitBlocked || !strings.Contains(err.Error(), "a day after another") {
+		t.Fatalf("the only administrator, a moment after the other left: %v", err)
+	}
+	if got := auditFor(t, root, "dual.alone-refused"); len(got) != 1 {
+		t.Fatalf("the refusal to act alone is not in the log: %+v", got)
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 1 {
+		t.Fatalf("no longer held: %+v", held)
+	}
+	// A day on, with nobody else to ask, they are who unlocks them.
+	if err := os.Remove(dualStore(root).Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 0 {
+		t.Fatalf("still held: %+v", held)
+	}
+	done := auditFor(t, root, "account.unlocked")
+	if last := done[len(done)-1]; last.Outcome != audit.Success || last.Detail["alone"] != "true" {
+		t.Fatalf("the record does not say it was done alone: %+v", last)
 	}
 }
