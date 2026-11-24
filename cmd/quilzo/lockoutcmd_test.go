@@ -162,3 +162,73 @@ func TestTheOnlyAdministratorUnlocksThemselvesAndTheRecordSaysSo(t *testing.T) {
 		t.Fatalf("the record does not say it was done alone: %+v", last)
 	}
 }
+
+// Nobody unlocks themselves by writing their name so the lockout record
+// takes it for theirs and the check before it does not.
+//
+// The record finds an account by its name in any case, strings.EqualFold,
+// to which the long s, ſ (U+017F), is an s; the check that the lockout
+// was not the caller's own compared the name as typed with
+// auth.SamePerson, to which it is not. Locked out, ross ran
+// `quilzo auth unlock roſs` and was let in again from everywhere, with
+// dana and lee a message away.
+func TestNobodyUnlocksThemselvesUnderAFoldedSpellingOfTheirName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root, _, lee := twoAdmins(t)
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "ross", Role: auth.RoleAdmin, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ross, _, err := ts.Issue("ross", "ross", auth.RoleAdmin, "", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < lockout.Ceiling; i++ {
+		if _, _, err := lockoutStore(root).Fail("ross", "192.0.2.10", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unlock := func(token, name string) error {
+		return as(t, token, func() error { return cmdAuth(root, []string{"unlock", name}) })
+	}
+	for _, name := range []string{"ro\u017fs", "RO\u017fS", "Ro\u017f\u017f"} {
+		if err := unlock(ross, name); err == nil || exitCode(err) != out.ExitBlocked {
+			t.Errorf("ross unlocked himself as %q: %v", name, err)
+		}
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 1 {
+		t.Fatalf("ross is no longer held: %+v", held)
+	}
+	// The refusals name the account, not the spelling.
+	key, err := os.ReadFile(auditKeyPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rossInTheLog := audit.Pseudonym(key, "ross")
+	for _, r := range auditFor(t, root, "account.unlocked") {
+		if r.Outcome != audit.Denied || r.Detail["for"] != rossInTheLog {
+			t.Fatalf("a refusal: %+v", r)
+		}
+	}
+	// Another administrator unlocks him, however they write his name, and
+	// the record says whose lockout it was.
+	if err := unlock(lee, "ro\u017fs"); err != nil {
+		t.Fatal(err)
+	}
+	if held, _ := lockoutStore(root).Held(time.Now()); len(held) != 0 {
+		t.Fatalf("still held: %+v", held)
+	}
+	done := auditFor(t, root, "account.unlocked")
+	if last := done[len(done)-1]; last.Outcome != audit.Success || last.Detail["for"] != rossInTheLog {
+		t.Fatalf("the unlock by another administrator: %+v", last)
+	}
+}

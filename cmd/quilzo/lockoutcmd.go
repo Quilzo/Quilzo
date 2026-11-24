@@ -22,16 +22,25 @@ func lockoutStore(root string) *lockout.Store {
 	return &lockout.Store{Path: filepath.Join(root, "lockout.json")}
 }
 
-// lockedOut reports whether an account is held now. A record that cannot
-// be read holds nobody here, and Unlock then says why it cannot be read.
-func lockedOut(root, name string, now time.Time) bool {
+// heldAs is the account Unlock(name) would let in again now, by the name
+// the lockout record keeps it under, and whether one is held. A record
+// that cannot be read holds nobody here, and Unlock then says why it
+// cannot be read.
+//
+// The record finds an account by its name in any case (strings.EqualFold),
+// which folds more than auth.SamePerson does: the long s, ſ (U+017F), is
+// an s to it. So `quilzo auth unlock roſs` let ross in again while the
+// check that it was not his own lockout compared "roſs" with "ross" and
+// saw two people. Who is asked about is the account that would be
+// unlocked, not how its name was typed.
+func heldAs(root, name string, now time.Time) (string, bool) {
 	held, _ := lockoutStore(root).Held(now)
 	for _, a := range held {
 		if strings.EqualFold(a.Name, name) {
-			return true
+			return a.Name, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // authUnlock is `quilzo auth unlock NAME`.
@@ -56,8 +65,12 @@ func authUnlock(root string, args []string) error {
 		return err
 	}
 	now := time.Now()
+	acct, held := heldAs(root, name, now)
+	if held {
+		name = acct
+	}
 	detail := map[string]string{"for": name}
-	if caller.Verified && auth.SamePerson(name, caller.Name) && lockedOut(root, name, now) {
+	if caller.Verified && held && (auth.SamePerson(acct, caller.Name) || strings.EqualFold(acct, caller.Name)) {
 		const own = "somebody else has to unlock you: that is the point of a lockout"
 		if rm := aloneRefusal(root, caller.Name, now); rm != nil {
 			_ = refuseAlone(root, caller, rm, map[string]string{"for": name, "command": "auth unlock"})

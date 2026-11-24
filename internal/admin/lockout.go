@@ -164,6 +164,23 @@ func (s *Server) handleSignInsUnlock(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/security/signins?"+url.Values{k: {v}}.Encode(), http.StatusSeeOther)
 	}
 	who := strings.TrimSpace(r.FormValue("person"))
+	// Who is asked about is the account the record would let in again, by
+	// the name it keeps it under. The record finds an account by its name
+	// in any case (strings.EqualFold), which folds more than the checks
+	// below did: the policy compares names exactly, so "BOSS" was nobody,
+	// and a session confined to /@security let boss, who administers the
+	// whole site, in again; and SamePerson does not take the long s,
+	// ſ (U+017F), for an s, so ross unlocked himself as "roſs".
+	if s.Lockout != nil && who != "" {
+		if held, err := s.Lockout.Held(time.Now()); err == nil {
+			for _, a := range held {
+				if strings.EqualFold(a.Name, who) {
+					who = a.Name
+					break
+				}
+			}
+		}
+	}
 	switch {
 	case s.Lockout == nil:
 		back("e", "This server was started without lockout.")
@@ -171,7 +188,7 @@ func (s *Server) handleSignInsUnlock(w http.ResponseWriter, r *http.Request) {
 	case who == "":
 		back("e", "Unlock whom?")
 		return
-	case auth.SamePerson(who, p.Name):
+	case auth.SamePerson(who, p.Name) || strings.EqualFold(who, p.Name):
 		back("e", "Somebody else has to unlock you: that is the point of a lockout.")
 		return
 	// The standing is this session's, as shieldSiteAdmin explains: a
