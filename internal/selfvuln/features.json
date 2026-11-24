@@ -65,7 +65,8 @@
   ],
   "crypto/hmac": [
    "*",
-   "chatbots"
+   "chatbots",
+   "forms"
   ],
   "crypto/mldsa": [
    "*"
@@ -135,6 +136,7 @@
    "*",
    "api",
    "chatbots",
+   "forms",
    "mcp",
    "signals",
    "signup"
