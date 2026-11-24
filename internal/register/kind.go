@@ -54,6 +54,10 @@ type Spec struct {
 	// Unconfirmed marks a kind that holds what a model read out of a
 	// document. No figure, status or coverage is ever drawn from it.
 	Unconfirmed bool `json:"unconfirmed,omitempty"`
+	// RetainDays is how many days the free text and files its records
+	// name are kept in the side store after a record of it last named
+	// them. Zero keeps them until a person erases them (retention.go).
+	RetainDays int `json:"retain_days,omitempty"`
 
 	typ reflect.Type
 }

@@ -113,7 +113,7 @@ func TestSideEntryDigestMismatchRefused(t *testing.T) {
 // long as it declares, the entry is deleted, and reading it says it was
 // erased, when and why. A kind that keeps its entries until a person erases
 // them keeps an entry it shares.
-func TestRetentionDeletesSideEntries(t *testing.T) {
+func TestAnEntryExpiresWhenEveryKindHoldingItHasKeptItLongEnough(t *testing.T) {
 	s, c, _ := newSide(t)
 	keep := map[string]time.Duration{"Observation": 30 * 24 * time.Hour, "Evidence": 90 * 24 * time.Hour}
 	retain := func(kind string) time.Duration { return keep[kind] }
