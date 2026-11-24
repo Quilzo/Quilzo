@@ -302,11 +302,11 @@ func TestAPDFThatActsIsRefusedHoweverItsNamesAreSpelled(t *testing.T) {
 
 // A name is refused as itself, not as the start of a longer one, and a
 // document that opens at a page does nothing by it. ReportLab names a
-// font's subset AAAAAA+, which is not /AA, and LibreOffice and hyperref
-// give the page a document opens at as an /OpenAction destination, which
-// runs nothing. The byte search refused
-// both; once object streams are read as well, it would have refused every
-// document written with them that did either.
+// font's subset AAAAAA+, which is not /AA, and LibreOffice gives the page
+// a document opens at as an /OpenAction destination, which runs nothing
+// (TestAPaperThatOpensAtAPageIsTaken has the way pdfLaTeX gives it). The
+// byte search refused both; once object streams are read as well, it
+// would have refused every document written with them that did either.
 func TestAPDFIsRefusedForWhatItDoesNotForTheLettersOfAName(t *testing.T) {
 	for _, ordinary := range []string{
 		"/OpenAction [2 0 R /XYZ null null 0]",
@@ -391,6 +391,95 @@ func TestAPDFThatActsInsideAnObjectStreamIsRefused(t *testing.T) {
 	} {
 		if _, err := Accept("report.pdf", f, now); err != nil {
 			t.Errorf("an ordinary PDF %s was refused: %v", name, err)
+		}
+	}
+}
+
+// pdfNumbered builds a PDF of objects numbered from 1: kept in one object
+// stream, compressed, when stream is true, as pdfTeX keeps them, and
+// written out one by one otherwise. more is written after them, as an
+// update to a file appends objects. As in pdfObjects, what follows the
+// objects in the stream gives the compressor something to do.
+func pdfNumbered(t *testing.T, stream bool, more string, objects ...string) []byte {
+	t.Helper()
+	var f strings.Builder
+	f.WriteString("%PDF-1.5\n")
+	if !stream {
+		for i, o := range objects {
+			f.WriteString(strconv.Itoa(i+1) + " 0 obj\n" + o + "\nendobj\n")
+		}
+	} else {
+		var header, body strings.Builder
+		for i, o := range objects {
+			header.WriteString(strconv.Itoa(i+1) + " " + strconv.Itoa(body.Len()) + " ")
+			body.WriteString(o + "\n")
+		}
+		var z bytes.Buffer
+		zw := zlib.NewWriter(&z)
+		_, _ = zw.Write([]byte(header.String() + body.String() +
+			strings.Repeat("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n", 20)))
+		_ = zw.Close()
+		if bytes.Contains(z.Bytes(), []byte("/OpenAction")) {
+			t.Fatalf("the fixture's catalog is in the file as written: %q", z.Bytes())
+		}
+		f.WriteString(strconv.Itoa(len(objects)+1) + " 0 obj\n<< /Type /ObjStm /N " +
+			strconv.Itoa(len(objects)) + " /First " + strconv.Itoa(header.Len()) +
+			" /Filter /FlateDecode /Length " + strconv.Itoa(z.Len()) + " >>\nstream\n" +
+			z.String() + "\nendstream\nendobj\n")
+	}
+	f.WriteString(more + "trailer\n<< /Root 1 0 R >>\n%%EOF\n")
+	return []byte(f.String())
+}
+
+// A paper opens at its first page by an action that goes there, and that
+// is all it does. pdfLaTeX and LuaLaTeX write the page hyperref opens a
+// paper at as /OpenAction 4 0 R, object 4 being << /S /GoTo /D [...] >>,
+// and keep both in an object stream. The check let through only an
+// /OpenAction written as a destination array, so once it read object
+// streams it refused every paper written that way with hyperref, which it
+// had taken when it could not see inside them.
+//
+// An action that goes anywhere else, does something more after going
+// there, or cannot be found to be sure of, is still refused.
+func TestAPaperThatOpensAtAPageIsTaken(t *testing.T) {
+	catalog := "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R /PageMode /UseOutlines >>"
+	pages := "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
+	page := "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"
+	goTo := "<< /S /GoTo /D [3 0 R /Fit] >>"
+	for name, f := range map[string][]byte{
+		"in an object stream, as pdfTeX writes it": pdfNumbered(t, true, "", catalog, pages, page, goTo),
+		"written out, as pdfTeX writes a PDF 1.4":  pdfNumbered(t, false, "", catalog, pages, page, "<</D[3 0 R/Fit]/S/GoTo>>"),
+		"its names escaped":                        pdfNumbered(t, true, "", catalog, pages, page, "<< /S /Go#54o /D [3 0 R /Fit] >>"),
+		"going to a destination kept on its own":   pdfNumbered(t, true, "", catalog, pages, page, "[3 0 R /XYZ null null 0]"),
+		"with the action in the catalog": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /Pages 2 0 R /OpenAction << /Type /Action /S /GoTo /D [3 0 R /Fit] >> >>", pages, page),
+	} {
+		if _, err := Accept("paper.pdf", f, now); err != nil {
+			t.Errorf("a paper that opens at a page, %s, was refused: %v", name, err)
+		}
+	}
+
+	for name, f := range map[string][]byte{
+		"a web address": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /URI /URI (https://tracker.example/opened) >>"),
+		"another file": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /GoToR /F (\\\\\\\\files.example\\\\share\\\\x.pdf) /D [0 /Fit] >>"),
+		"going there and then doing more": pdfNumbered(t, true, "", catalog, pages, page,
+			"<< /S /GoTo /D [3 0 R /Fit] /Next 5 0 R >>", "<< /S /URI /URI (https://tracker.example/) >>"),
+		"going there and then doing more, in the catalog": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /OpenAction << /S /GoTo /D [3 0 R /Fit] /Next << /S /URI /URI (https://x.example/) >> >> >>"),
+		"an object that is not there": pdfNumbered(t, true, "",
+			"<< /Type /Catalog /Pages 2 0 R /OpenAction 9 0 R >>", pages, page),
+		"an object written twice, once as something else": pdfNumbered(t, true,
+			"4 0 obj\n<< /S /URI /URI (https://tracker.example/) >>\nendobj\n", catalog, pages, page, goTo),
+		"an end of the object inside a string": pdfNumbered(t, false, "", catalog, pages, page,
+			"<< /S /GoTo /D [3 0 R /Fit] /X (endobj) /S /URI /URI (https://tracker.example/) >>"),
+		"an object in a stream whose objects cannot be told apart": []byte("%PDF-1.5\n1 0 obj\n" + catalog +
+			"\nendobj\n5 0 obj\n<< /Type /ObjStm /N 1 /First 6 0 R >>\nstream\n4 0 << /S /URI /URI (https://tracker.example/) >>\nendstream\nendobj\n" +
+			"6 0 obj\n4\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"),
+	} {
+		if _, err := Accept("paper.pdf", f, now); err == nil {
+			t.Errorf("a PDF that opens with %s was accepted", name)
 		}
 	}
 }

@@ -55,6 +55,8 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -941,13 +943,15 @@ func verifyWAV(b []byte) error {
 // (pdfObjectStreams).
 //
 // A name is refused as a whole name, not as the start of a longer one,
-// and an /OpenAction that is a destination is not refused. The byte search
-// found /AA in the font AAAAAA+DejaVuSans, which is how ReportLab names a
-// font's subset, and /OpenAction in the page a LibreOffice export opens
-// at, which does nothing. Refused in a file's own bytes they were refused
-// already, and once the search could see inside object streams it would
-// have refused the same in every document written with them, a LaTeX
-// paper that hyperref makes open at its first page among them.
+// and an /OpenAction that only goes to a page is not refused: a
+// destination, or a GoTo action with nothing more, written in place or
+// in an object of its own (pdfOpensAtAPage). The byte search found /AA in
+// the font AAAAAA+DejaVuSans, which is how ReportLab names a font's
+// subset, and /OpenAction in the page a LibreOffice export opens at, which
+// does nothing. Refused in a file's own bytes they were refused already,
+// and once the search could see inside object streams it would have
+// refused the same in every document written with them, a LaTeX paper
+// that hyperref makes open at its first page among them.
 //
 // Still not a parser. A file built to defeat a scan this simple can hide a
 // dictionary from it, which is why a PDF is served as a download and never
@@ -966,10 +970,15 @@ func verifyPDF(b []byte) error {
 	if !bytes.Contains(tail, []byte("%%EOF")) {
 		return fmt.Errorf("no end-of-file marker; it is truncated or crafted")
 	}
-	if err := pdfActs(b); err != nil {
+	opens, err := pdfActs(b)
+	if err != nil {
 		return err
 	}
-	return pdfObjectStreams(b)
+	streams, kept, err := pdfObjectStreams(b)
+	if err != nil {
+		return err
+	}
+	return pdfOpensAtAPage(b, streams, append(opens, kept...))
 }
 
 // pdfDangers are the names verifyPDF refuses, each with why. One that
@@ -992,8 +1001,16 @@ var pdfDangers = []struct {
 
 // pdfActs refuses PDF text, a whole file or what an object stream holds,
 // that names one of pdfDangers, spelled any way a viewer reads it.
-func pdfActs(b []byte) error {
+//
+// An /OpenAction that names another object is not refused here. It
+// returns the numbers of the objects so named, for pdfOpensAtAPage to
+// look at once every object stream has been read, since the object may be
+// kept in any of them: pdfLaTeX writes the page hyperref opens a paper at
+// as /OpenAction 4 0 R, object 4 being an action that goes to the page,
+// and keeps the two side by side in an object stream.
+func pdfActs(b []byte) ([]int, error) {
 	names := pdfNames(b)
+	var opens []int
 	for _, danger := range pdfDangers {
 		for at := 0; ; {
 			i := bytes.Index(names[at:], []byte(danger.token))
@@ -1005,15 +1022,181 @@ func pdfActs(b []byte) error {
 			if !danger.family && end < len(names) && !pdfDelimiter(names[end]) {
 				continue // a longer name, such as the font AAAAAA+DejaVuSans
 			}
-			if danger.token == "/OpenAction" &&
-				bytes.HasPrefix(bytes.TrimLeft(names[end:], pdfSpace), []byte("[")) {
-				continue // a destination: the page it opens at, and nothing run
+			if danger.token == "/OpenAction" {
+				rest := bytes.TrimLeft(names[end:], pdfSpace)
+				rest = rest[:min(len(rest), 1024)]
+				if bytes.HasPrefix(rest, []byte("[")) || rePDFGoesTo.Match(rest) {
+					continue // a destination, or an action that goes to one: the page it opens at, and nothing run
+				}
+				if m := rePDFRef.FindSubmatch(rest); m != nil {
+					if n, err := strconv.Atoi(string(m[1])); err == nil {
+						opens = append(opens, n)
+						continue
+					}
+				}
 			}
-			return fmt.Errorf("%s (%s). A document being published should not "+
+			return nil, fmt.Errorf("%s (%s). A document being published should not "+
 				"do anything when opened", danger.why, danger.token)
 		}
 	}
+	return opens, nil
+}
+
+// pdfWS is a character of PDF's white space, in a regular expression.
+const pdfWS = `[\x00\t\n\f\r ]`
+
+var (
+	// rePDFGoesTo is what an /OpenAction may be and run nothing: a
+	// destination, or a GoTo action with a destination and nothing else,
+	// so not one with a /Next that does something more once it is there.
+	// Every entry has to be one of those few, and the destination has no
+	// string or dictionary in it, so where it ends is not in doubt.
+	rePDFGoesTo = regexp.MustCompile(`^(?:` + rePDFDest + `|<<` + pdfWS + `*(?:(?:/S` + pdfWS +
+		`*/GoTo|/Type` + pdfWS + `*/Action|/D` + pdfWS + `*` + rePDFDest + `)` + pdfWS + `*)+>>)`)
+	// rePDFRef is a reference to another object, 4 0 R, and its number.
+	rePDFRef = regexp.MustCompile(`^(\d+)` + pdfWS + `+\d+` + pdfWS + `+R(?:[\x00\t\n\f\r ()<>\[\]{}/%]|$)`)
+)
+
+// rePDFDest is a destination as an array: a page and how to show it.
+const rePDFDest = `\[[^\[\]()<>{}%]*\]`
+
+// pdfObjectStream is what an object stream holds, as written in it, and
+// where in that its first object begins, or -1 when its dictionary does
+// not say so plainly.
+type pdfObjectStream struct {
+	objects []byte
+	first   int
+}
+
+// objectsIn calls each with the number of every object the stream holds
+// and where in it the object begins, and reports false when the numbers
+// and offsets before its first object cannot all be read.
+func (s pdfObjectStream) objectsIn(each func(n, at int)) bool {
+	if s.first < 0 || s.first > len(s.objects) {
+		return false
+	}
+	fields := bytes.FieldsFunc(s.objects[:s.first], func(r rune) bool {
+		return strings.ContainsRune(pdfSpace, r)
+	})
+	if len(fields)%2 != 0 {
+		return false
+	}
+	for i := 0; i < len(fields); i += 2 {
+		n, err := strconv.Atoi(string(fields[i]))
+		o, err2 := strconv.Atoi(string(fields[i+1]))
+		if err != nil || err2 != nil || o < 0 || o > len(s.objects)-s.first {
+			return false
+		}
+		each(n, s.first+o)
+	}
+	return true
+}
+
+// pdfFirst is where an object stream's first object begins, as its
+// dictionary says, or -1 when it does not say so plainly: by reference
+// to another object, say, or twice.
+func pdfFirst(dict []byte) int {
+	at := pdfNameAt(dict, "First")
+	if at < 0 || pdfNameAt(dict[at+1:], "First") >= 0 {
+		return -1
+	}
+	m := rePDFFirst.FindSubmatch(dict[at+len("/First"):])
+	if m == nil || m[2] != nil {
+		return -1
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+var rePDFFirst = regexp.MustCompile(`^` + pdfWS + `*(\d+)(` + pdfWS + `+\d+` + pdfWS + `+R\b)?`)
+
+// pdfOpensAtAPage refuses a PDF whose /OpenAction names an object that
+// does more than go to a page. Every object of that number, written out
+// in the file or kept in an object stream, has to be a destination or an
+// action that goes to one and does nothing else (rePDFGoesTo), and there
+// has to be one. A viewer reads one of them, and which is for the file's
+// cross-reference to say, so a file that writes the object twice, once as
+// something else, is judged by both; and one with an object stream whose
+// objects cannot be told apart is refused, since the object may be there.
+func pdfOpensAtAPage(b []byte, streams []pdfObjectStream, opens []int) error {
+	if len(opens) == 0 {
+		return nil
+	}
+	refuse := fmt.Errorf("it runs an action when opened (/OpenAction). " +
+		"A document being published should not do anything when opened")
+	// Every object of each number named, from where it begins. Only those
+	// are kept: a file may hold millions of objects, and names few.
+	named := map[int][][]byte{}
+	for _, n := range opens {
+		named[n] = nil
+	}
+	keep := func(in []byte) func(n, at int) {
+		return func(n, at int) {
+			if found, ok := named[n]; ok {
+				named[n] = append(found, in[at:])
+			}
+		}
+	}
+	pdfEachWritten(b, keep(b))
+	for _, s := range streams {
+		if !s.objectsIn(keep(s.objects)) {
+			return refuse
+		}
+	}
+	for _, found := range named {
+		if len(found) == 0 {
+			return refuse
+		}
+		for _, object := range found {
+			if !pdfGoesTo(object) {
+				return refuse
+			}
+		}
+	}
 	return nil
+}
+
+// pdfGoesTo reports whether the object an /OpenAction names, beginning
+// at the start of b, only goes to a page. A GoTo action is a few dozen
+// characters, so no more than a kilobyte is read.
+func pdfGoesTo(b []byte) bool {
+	b = pdfNames(b[:min(len(b), 1024)])
+	return rePDFGoesTo.Match(bytes.TrimLeft(b, pdfSpace))
+}
+
+// pdfEachWritten calls each with the number of every object written out
+// in a file and where it begins, just after its number, its generation
+// and the keyword obj.
+func pdfEachWritten(b []byte, each func(n, at int)) {
+	space := func(c byte) bool { return strings.IndexByte(pdfSpace, c) >= 0 }
+	digit := func(c byte) bool { return '0' <= c && c <= '9' }
+	back := func(i int, is func(byte) bool) int {
+		for i > 0 && is(b[i-1]) {
+			i--
+		}
+		return i
+	}
+	for from := 0; ; {
+		i := bytes.Index(b[from:], []byte("obj"))
+		if i < 0 {
+			return
+		}
+		i += from
+		from = i + len("obj")
+		gen := back(i, space)
+		num := back(gen, digit)
+		sp := back(num, space)
+		start := back(sp, digit)
+		if gen == i || num == gen || sp == num || start == sp {
+			continue // endobj, or not an object's beginning
+		}
+		if n, err := strconv.Atoi(string(b[start:sp])); err == nil {
+			each(n, from)
+		}
+	}
 }
 
 // pdfSpace is the white space of PDF.
@@ -1077,7 +1260,9 @@ func unhex(c byte) byte {
 const maxObjectStreams = maxDocument
 
 // pdfObjectStreams refuses a PDF whose object streams name one of
-// pdfDangers, or that has one this cannot read.
+// pdfDangers, or that has one this cannot read. It returns the object
+// streams it read, and the objects an /OpenAction in them names, for
+// pdfOpensAtAPage.
 //
 // A stream is one whose dictionary says it holds objects: its /Type is
 // /ObjStm, or it has the /First that a viewer reads one by, since not
@@ -1089,13 +1274,15 @@ const maxObjectStreams = maxDocument
 // and any other is refused, encoded another way, with decoding parameters,
 // with its filter named elsewhere, or damaged or encrypted, since then what
 // it holds cannot be checked.
-func pdfObjectStreams(b []byte) error {
+func pdfObjectStreams(b []byte) ([]pdfObjectStream, []int, error) {
 	budget := maxObjectStreams
 	from := 0
+	var streams []pdfObjectStream
+	var opens []int
 	for at := 0; ; {
 		i := bytes.Index(b[at:], []byte("stream"))
 		if i < 0 {
-			return nil
+			return streams, opens, nil
 		}
 		i += at
 		at = i + len("stream")
@@ -1120,14 +1307,22 @@ func pdfObjectStreams(b []byte) error {
 		}
 		objects, err := pdfInflate(dict, data, budget)
 		if err != nil {
-			return fmt.Errorf("it keeps objects in a stream that cannot be read "+
+			return nil, nil, fmt.Errorf("it keeps objects in a stream that cannot be read "+
 				"here, %v, so what they would do cannot be checked. Exported "+
 				"again without a password, it can be", err)
 		}
 		budget -= len(objects)
-		if err := pdfActs(objects); err != nil {
-			return err
+		if objects == nil {
+			// Not compressed, so searched with the file already, and kept
+			// so that what it holds can be found by number.
+			objects = data
 		}
+		named, err := pdfActs(objects)
+		if err != nil {
+			return nil, nil, err
+		}
+		opens = append(opens, named...)
+		streams = append(streams, pdfObjectStream{objects: objects, first: pdfFirst(dict)})
 	}
 }
 
