@@ -60,6 +60,8 @@ type paging struct {
 	// Query is the rest of the request's query string, so a link keeps the
 	// filter somebody is inside. Without it, turning the page silently drops
 	// what they searched for — which looks like the search being cleared.
+	// Already encoded, so a link is built from it by Href and never by
+	// joining it on in a template, which encodes it a second time.
 	Query string
 
 	// Needed says whether to draw the controls at all. A list that fits on one
@@ -128,13 +130,34 @@ func (p paging) slice(n int) (int, int) {
 	return start, end
 }
 
+// Href is the link to the rows from an offset in this list at path.
+//
+// Built whole here because the template cannot build it. The links were
+// written as ?from={{.Next}}{{.Query}}, and html/template escapes a value in
+// a query as one parameter's value, so "&e=…&fs=…" became "%26e%3d…" and the
+// server read from as "50&e=…": not a number, so the first page again. Next
+// was stuck on page one after any action that came back with a message, and
+// on the picture chooser, whose address always carries the page, always.
+// Given as the whole attribute, the value is only made safe as a URL.
+func (p paging) Href(path string, from int) string {
+	return path + "?from=" + strconv.Itoa(from) + p.Query
+}
+
 // otherQuery rebuilds the query string without one parameter.
 //
 // So a page link carries whatever else the reader had set — a filter, a search
 // — and changes only where they are in the list.
+//
+// Not the message an action came back with, or its signature: it was about
+// that action, and carried along it would be said again on every page turned
+// to, as though each had just done it.
 func otherQuery(r *http.Request, drop string) string {
 	q := r.URL.Query()
 	q.Del(drop)
+	for _, k := range flashParams {
+		q.Del(k)
+	}
+	q.Del(flashSig)
 	if len(q) == 0 {
 		return ""
 	}

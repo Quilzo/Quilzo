@@ -318,3 +318,61 @@ var samples = map[string]string{
 <link rel="stylesheet" href="/site.css"></head>
 <body><main id="main"><h1>Hello</h1><p>Ordinary markup.</p></main></body></html>`,
 }
+
+// A stylesheet from another host is removed and reported, whatever comes
+// before its address in the tag.
+//
+// The address was found in strings.ToLower of the tag and read from the tag
+// at that offset. A title with İ in it, two bytes that lower to one, moved
+// the read a byte early for each İ: the address came back as `="https://…`,
+// which names no host, so a stylesheet the policy would refuse was kept and
+// nothing said so.
+func TestAStylesheetFromElsewhereIsRemovedWhateverItsTitleSays(t *testing.T) {
+	for _, title := range []string{"İstanbul", "Yazı tipi: İnce", "300 \u212A"} {
+		r := Adopt(`<!doctype html><html lang="tr"><head><title>x</title>` +
+			`<link title="` + title + `" rel="stylesheet" href="https://fonts.example/css2.css">` +
+			`</head><body><h1>x</h1></body></html>`)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%q: the stylesheet was kept, or not reported:\n%s\n%v", title, r.Template, r.Removed)
+		}
+	}
+}
+
+// The address a stylesheet is judged by is its own href, however the tag is
+// written: spaces around the equals sign, another attribute whose name ends
+// in href, or a title whose words happen to say href=.
+//
+// The address was read from the first "href=" anywhere in the tag. With
+// spaces there was none, and a decoy before the real one gave a local path
+// or the rest of a title, which names no host; either way the stylesheet
+// from elsewhere was kept and nothing said so. The other way round, a decoy
+// naming another host took a local stylesheet out.
+func TestAStylesheetIsJudgedByItsOwnHref(t *testing.T) {
+	adopt := func(link string) *Result {
+		return Adopt(`<!doctype html><html lang="en"><head><title>x</title>` + link +
+			`</head><body><h1>x</h1></body></html>`)
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" href = "https://fonts.example/a.css">`,
+		`<link rel="stylesheet"` + "\n\t" + `HREF=` + "\n" + `'https://fonts.example/a.css'>`,
+		`<link title="href=x" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link data-href="/x.css" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link rel=stylesheet href=https://fonts.example/a.css>`,
+	} {
+		r := adopt(link)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%s: the stylesheet was kept, or not reported:\n%s\n%v", link, r.Template, r.Removed)
+		}
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" title="see href=//fonts.example/" href="/site.css">`,
+		`<link rel="stylesheet" data-href="https://fonts.example/a.css" href="/site.css">`,
+	} {
+		r := adopt(link)
+		if !strings.Contains(r.Template, `href="/site.css"`) || len(r.Removed) != 0 {
+			t.Errorf("%s: a stylesheet of this site's own was taken out:\n%s\n%v", link, r.Template, r.Removed)
+		}
+	}
+}

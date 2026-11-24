@@ -676,9 +676,4 @@ func AgentCard(body []byte, o Options) (*Imported, error) {
 }
 
 // clip bounds what a card says, at a character boundary.
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return strings.ToValidUTF8(s[:n], "")
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "") }

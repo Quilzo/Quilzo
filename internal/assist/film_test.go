@@ -151,3 +151,42 @@ func TestAVideoIsMadeOnFalsQueue(t *testing.T) {
 		t.Error("a chat model made a video")
 	}
 }
+
+// fal's queue's status words are read in whatever case it writes them,
+// from one table. Matched exactly, a queue answering "in_progress" or
+// "Completed" was "a status this does not know", and a video that was
+// made was never collected.
+func TestFalsQueueStatusesAreReadInAnyCase(t *testing.T) {
+	fastPolls(t)
+	store := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(mp4) }))
+	defer store.Close()
+	answers := []string{"in_queue", "In_Progress", " Completed "}
+	polls := 0
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fal-ai/some-video":
+			_, _ = w.Write([]byte(`{"request_id":"r1","status_url":"` + srv.URL + `/fal-ai/some-video/requests/r1/status","response_url":"` +
+				srv.URL + `/fal-ai/some-video/requests/r1"}`))
+		case "/fal-ai/some-video/requests/r1/status":
+			_, _ = w.Write([]byte(`{"status":"` + answers[min(polls, len(answers)-1)] + `"}`))
+			polls++
+		case "/fal-ai/some-video/requests/r1":
+			_, _ = w.Write([]byte(`{"video":{"url":"` + store.URL + `/files/out.mp4"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	h := &HTTPModel{BaseURL: srv.URL, APIKey: "fal-key", Model: "fal-ai/some-video", Client: srv.Client(), Auth: "key", Wire: WireFalQueue}
+	h.Client.Transport.(*http.Transport).TLSClientConfig.RootCAs.AddCert(store.Certificate())
+	video, _, err := h.Film(context.Background(), "a bakery at dawn", "")
+	if err != nil || string(video[4:8]) != "ftyp" || polls != 3 {
+		t.Fatalf("%d polls, %v", polls, err)
+	}
+	// A word the table does not hold is still said, not waited on.
+	answers, polls = []string{"CANCELLED"}, 0
+	if _, _, err := h.Film(context.Background(), "a bakery at dawn", ""); err == nil || !strings.Contains(err.Error(), "CANCELLED") || polls != 1 {
+		t.Fatalf("%d polls, %v", polls, err)
+	}
+}

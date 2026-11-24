@@ -49,6 +49,17 @@ func loadJSONL(path string, each func([]byte) error) error {
 	return sc.Err()
 }
 
+// loadGivenJSONL is loadJSONL for a file somebody named on the command
+// line, which is refused when it is not there. Read as an empty file, a
+// mistyped path to an evaluation's cases was reported as a file that
+// "holds no cases", and a decider's evaluation went on with none.
+func loadGivenJSONL(path string, each func([]byte) error) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("no such file: %s", path)
+	}
+	return loadJSONL(path, each)
+}
+
 // jsonNamesIn lists the .json files in a directory, without a suffix.
 func jsonNamesIn(dir, exclude string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
@@ -69,6 +80,43 @@ func jsonNamesIn(dir, exclude string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// stdio is "-", which a command line takes for standard input where a file
+// is read and standard output where one is written. It was a file name like
+// any other: `quilzo add about=-` was "open -: no such file", and `records
+// export -o -` wrote a file called "-", which is awkward to remove and never
+// what was meant, while a script piping the export into gzip got nothing.
+const stdio = "-"
+
+// readInput reads a file a person named, or standard input for "-",
+// refusing more than limit bytes.
+func readInput(path string, limit int64) ([]byte, error) {
+	if path != stdio {
+		return readBounded(path, limit)
+	}
+	b, err := io.ReadAll(io.LimitReader(os.Stdin, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("standard input is larger than %d bytes", limit)
+	}
+	return b, nil
+}
+
+// toStdout reports whether a command's output goes to standard output: no
+// file was named, or "-" was. A command says where it wrote only when that
+// was a file, so the stream piped on carries the output and nothing else.
+func toStdout(path string) bool { return path == "" || path == stdio }
+
+// notStdio refuses "-" where a directory is written: `export json --to -`
+// made a directory of that name.
+func notStdio(path, flag string) error {
+	if path == stdio {
+		return errMisused{fmt.Errorf("%s is a directory to write into, and - is standard output; name a directory", flag)}
+	}
+	return nil
 }
 
 // readBounded reads a file, refusing one larger than limit.

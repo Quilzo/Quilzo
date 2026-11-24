@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A run, kept.
@@ -46,11 +48,29 @@ type Record struct {
 	// budget was interrupted.
 	State string    `json:"state,omitempty"`
 	Beat  time.Time `json:"beat,omitzero"`
+	// Held says the process working on the run holds a lock on it that the
+	// kernel lets go of when that process ends, however it ends, and Gone is
+	// set by whoever read the record and found it let go of. A run killed
+	// half way through said it was running until StaleAfter had passed, so
+	// for five minutes it was listed as running and could not be resumed.
+	Held bool `json:"held,omitempty"`
+	Gone bool `json:"-"`
 	// From is the run and step this one was run again from.
 	From string `json:"from,omitempty"`
 	// Trigger is what started it when no person did: a schedule, or an
 	// event and what it was about.
 	Trigger string `json:"trigger,omitempty"`
+	// ReadOnly is a run whoever started it could only read for: a
+	// read-only credential, or a chatbot's request that only looks things
+	// up. Kept because a run that waited goes on as whoever answered it,
+	// and was bounded by them as well, so a read-only token's run that an
+	// administrator let read went on offered, and making, a post to
+	// another system.
+	ReadOnly bool `json:"read_only,omitempty"`
+	// Bound is how far whoever started it reached, kept for the same
+	// reason: a run dana started, confined to /docs, that sam answered
+	// went on bounded by sam alone, and wrote wherever sam may.
+	Bound *Bound `json:"bound,omitempty"`
 	// Answers are what people decided about the actions it stopped at.
 	Answers []Answer `json:"answers,omitempty"`
 	// Eval names the evaluation this run was made for, and Plant the
@@ -58,6 +78,18 @@ type Record struct {
 	// nothing, call no tool and start no other agent; see internal/evals.
 	Eval  string `json:"eval,omitempty"`
 	Plant string `json:"plant,omitempty"`
+}
+
+// Bound is the reach of whoever started a run: the role they held, the
+// part of the site they were confined to, and the content types and
+// locales their credential was narrowed to. An empty part of the site, and
+// an empty list of types or locales, restrict nothing; an empty role is no
+// role at all, the least there is, as somebody nobody verified holds.
+type Bound struct {
+	Role    string   `json:"role,omitempty"`
+	Scope   string   `json:"scope,omitempty"`
+	Types   []string `json:"types,omitempty"`
+	Locales []string `json:"locales,omitempty"`
 }
 
 // Answer is one person's decision on one pending action, kept.
@@ -88,9 +120,7 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 	kept := t
 	kept.Steps = append([]Step(nil), t.Steps...)
 	for i := range kept.Steps {
-		if len(kept.Steps[i].Result) > MaxStored {
-			kept.Steps[i].Result = kept.Steps[i].Result[:MaxStored] + "…"
-		}
+		kept.Steps[i].Result = plaintext.Clip(kept.Steps[i].Result, MaxStored, "…")
 		kept.Steps[i].Action = keptAction(kept.Steps[i].Action)
 	}
 	if kept.Waiting != nil {
@@ -98,9 +128,7 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 		w.Action = keptAction(w.Action)
 		kept.Waiting = &w
 	}
-	if len(kept.Answer) > MaxStored {
-		kept.Answer = kept.Answer[:MaxStored] + "…"
-	}
+	kept.Answer = plaintext.Clip(kept.Answer, MaxStored, "…")
 	return Record{ID: id, Agent: t.Agent, Kind: r.Kind, Goal: t.Goal, By: by,
 		Model: model, Started: started.UTC(), Trace: kept, Receipt: r}
 }
@@ -124,6 +152,13 @@ func keptAction(a Action) Action {
 	return a
 }
 
+// Ended reports whether the process a run was in has gone: it finished
+// the stretch, its lock was let go of, or it has not written the run for
+// StaleAfter. What is left for a process that has ended is never read.
+func (r Record) Ended(now time.Time) bool {
+	return r.State != Running || r.Gone || now.Sub(r.Beat) > StaleAfter
+}
+
 // Outcome is a run in a word, for a list.
 func (r Record) Outcome() string {
 	return r.OutcomeAt(time.Time{})
@@ -135,7 +170,7 @@ func (r Record) OutcomeAt(now time.Time) string {
 	switch {
 	case r.Trace.Waiting != nil:
 		return "waiting"
-	case r.State == Running && !now.IsZero() && now.Sub(r.Beat) > StaleAfter:
+	case r.State == Running && (r.Gone || !now.IsZero() && now.Sub(r.Beat) > StaleAfter):
 		return "interrupted"
 	case r.State == Running:
 		return "running"

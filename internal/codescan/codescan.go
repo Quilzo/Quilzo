@@ -40,6 +40,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Severity orders findings.
@@ -179,7 +181,7 @@ func excerpt(r Rule, m string) string {
 	}
 	m = strings.TrimSpace(m)
 	if len(m) > 90 {
-		return m[:87] + "..."
+		return plaintext.Clip(m, 87, "...")
 	}
 	return m
 }

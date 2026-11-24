@@ -26,7 +26,10 @@ import (
 // identity has run out, does not start. It runs capped at the author role
 // whatever its sponsor holds, so nothing that starts unattended can do more
 // than draft and propose: publishing, and anything else that goes out, is
-// still a person's decision. See cmd/quilzo/agenttriggers.go.
+// still a person's decision. A call of a tool that writes to another system
+// waits for a person, whatever the manifest asks first, unless
+// administrators let the agent send through it unattended. See
+// cmd/quilzo/agenttriggers.go and cmd/quilzo/agentsends.go.
 //
 // # It does not run away
 //
@@ -112,10 +115,15 @@ func (t Trigger) Validate() error {
 		}
 		return nil
 	}
-	if !event.Known(event.Type(t.On)) {
+	on, ok := event.Parse(t.On)
+	if !ok {
 		return fmt.Errorf("%q is neither an event nor %q", t.On, OnSchedule)
 	}
-	if !event.Triggerable(event.Type(t.On)) {
+	if on == event.PublishScheduled {
+		return fmt.Errorf("no agent starts from %s: one that wants a launch starts from %s, when it goes out",
+			t.On, event.PagePublished)
+	}
+	if !event.Triggerable(on) {
 		return fmt.Errorf("no agent starts from %s: an agent started by another's waiting is how a queue feeds itself", t.On)
 	}
 	if t.Every != 0 || t.At != "" || t.Zone != "" {
@@ -149,15 +157,29 @@ func (t Trigger) PerDayOrDefault() int {
 // Key names a trigger for what is kept about it, so changing a trigger is
 // starting a new one: its count for the day and when it next fires begin
 // again.
+//
+// The event is hashed by its own name, whichever name it was declared by.
+// A manifest refuses a trigger whose Key is an earlier one's, and with the
+// name hashed as typed, page.published and published were two triggers on
+// one event: the agent started twice for every publish. A trigger declared
+// by its event's own name, as every one was before the webhook names were
+// taken, keeps the key it had.
 func (t Trigger) Key() string {
-	h := sha256.Sum256([]byte(strings.Join([]string{t.On, t.Where, time.Duration(t.Every).String(),
+	on := t.On
+	if e, ok := event.Parse(t.On); ok {
+		on = string(e)
+	}
+	h := sha256.Sum256([]byte(strings.Join([]string{on, t.Where, time.Duration(t.Every).String(),
 		t.At, t.Zone, t.Goal}, "\x00")))
 	return hex.EncodeToString(h[:6])
 }
 
-// Matches reports whether an event starts this trigger.
+// Matches reports whether an event starts this trigger. The event is named
+// either way, as a trigger is kept as it was declared: "published" is
+// page.published, as a webhook knows it.
 func (t Trigger) Matches(e event.Event) bool {
-	return t.On != OnSchedule && event.Type(t.On) == e.Type && e.Within(t.Where)
+	on, ok := event.Parse(t.On)
+	return t.On != OnSchedule && ok && on == e.Type && e.Within(t.Where)
 }
 
 // Next is when a schedule fires next, strictly after after.
@@ -199,7 +221,11 @@ func (t Trigger) Describe() string {
 		}
 		return s
 	}
-	s := "when " + event.Describe(event.Type(t.On))
+	on, ok := event.Parse(t.On)
+	if !ok {
+		on = event.Type(t.On)
+	}
+	s := "when " + event.Describe(on)
 	if t.Where != "" {
 		s += " (" + t.Where + ")"
 	}

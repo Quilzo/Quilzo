@@ -482,6 +482,11 @@ func Apply(root string, p Protection, now time.Time) (Protection, bool, error) {
 	return out, fresh, err
 }
 
+// ErrNoProtection is an id that names no protection in force, for
+// errors.Is: the command line exits 4 for it, "not found", as the help
+// documents, where `quilzo shield lift` of an id nobody has exited 1.
+var ErrNoProtection = errors.New("no protection")
+
 // Lift ends a protection early: one by its id, or every one with "all".
 func Lift(root, id, by string, now time.Time) ([]Protection, error) {
 	var lifted []Protection
@@ -494,7 +499,7 @@ func Lift(root, id, by string, now time.Time) ([]Protection, error) {
 			}
 		}
 		if len(lifted) == 0 && id != "all" {
-			return fmt.Errorf("no protection %s is in force", id)
+			return fmt.Errorf("%w %s is in force", ErrNoProtection, id)
 		}
 		return nil
 	})

@@ -183,7 +183,9 @@
 <p class="field">
   <label for="f-{{.Path}}">{{.Label}}</label>
   {{if .Long}}
-  <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">{{.Value}}</textarea>
+  {{/* The line break after the start tag is the one a browser drops, so the value keeps its own. */}}
+  <textarea id="f-{{.Path}}" name="v.{{.Path}}" rows="4" spellcheck="true">
+{{.Value}}</textarea>
   {{else}}
   <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
     {{if .Number}}inputmode="numeric"{{end}}

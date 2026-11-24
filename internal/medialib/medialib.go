@@ -194,6 +194,11 @@ func (l *Library) describe(f *media.File, body []byte) {
 			"%s was stored without its dimensions: %v", f.Name, err))
 	} else if known {
 		f.Width, f.Height, f.Seconds = sh.Width, sh.Height, sh.Seconds
+		// Whether it has sound, which the accessibility gate asks: a
+		// recording with none needs a text alternative rather than a
+		// captions track (see media.File.Sound).
+		sound := sh.Sound
+		f.Sound = &sound
 	}
 
 	// A moment in rather than the first frame, because the first frame of a
@@ -247,13 +252,15 @@ func (l *Library) describe(f *media.File, body []byte) {
 }
 
 // posterName gives the still a name somebody can recognise beside its
-// recording.
+// recording: RECORDING-still.png. It was RECORDING-poster.png, which is what
+// somebody names the poster they upload for a recording, so the library
+// listed two pictures of one name at two sizes.
 func posterName(f media.File) string {
 	base := displayOf(f)
 	if i := strings.LastIndex(base, "."); i > 0 {
 		base = base[:i]
 	}
-	return base + "-poster.png"
+	return base + "-still.png"
 }
 
 // displayOf is a file's name, or its short id when it has none.
@@ -399,6 +406,56 @@ func (l *Library) Open(id string) (media.File, *os.File, error) {
 		return media.File{}, nil, err
 	}
 	return f, h, nil
+}
+
+// Arriving settles an upload against what the library already holds.
+//
+// The library is content-addressed, so a second upload of the same picture
+// is the same file, and storing the upload's record over it replaced the
+// first person's description on every page that used it (or, ticked
+// decorative, erased it), took its rights, origin and focus with it, and
+// said only "stored". So a file already here keeps its record: arriving is
+// what to store, was the record already here, and here whether there was
+// one. replaceAlt is the uploader asking, explicitly, for their description
+// to replace the one it has, which is the only change an upload of the same
+// bytes makes.
+//
+// Here means the bytes as well as the record. A record whose bytes are gone
+// (a folder copied without them, a file removed by hand) was taken for a
+// file already here, so the upload that used to put a broken picture back
+// stored nothing and said it was kept as it was. Such an upload is stored as
+// a new file is, which is what puts the bytes back.
+func (l *Library) Arriving(f media.File, replaceAlt bool) (arriving, was media.File, here bool) {
+	was, err := l.Stat(f.ID)
+	if err != nil {
+		return f, media.File{}, false
+	}
+	if _, err := os.Stat(l.path(f.ID)); err != nil {
+		return f, media.File{}, false
+	}
+	arriving = was
+	if replaceAlt {
+		arriving.Alt = f.Alt
+	}
+	return arriving, was, true
+}
+
+// AlreadyHere says that an upload named name was a file the library holds,
+// and what it is now described as, for every surface that uploads to say
+// the same.
+func AlreadyHere(name string, was, now media.File) string {
+	described := func(f media.File) string {
+		if f.Alt == "" {
+			return "no description"
+		}
+		return fmt.Sprintf("the description %q", f.Alt)
+	}
+	if was.Alt == now.Alt {
+		return fmt.Sprintf("%s is already in the library as %s, with %s, and is kept as it was",
+			name, displayOf(was), described(was))
+	}
+	return fmt.Sprintf("%s is already in the library as %s; it now has %s instead of %s, wherever it is used",
+		name, displayOf(was), described(now), described(was))
 }
 
 // Stat returns what a file is, without reading it.

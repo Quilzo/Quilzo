@@ -243,8 +243,10 @@ func TestWritesAreOffByDefault(t *testing.T) {
 // The read-only API's 405 said to run `quilzo serve --api-writable`, and
 // serve has no such flag: it exits "flag provided but not defined". Writes
 // are `quilzo site --api --api-writable`; --api-writable alone serves no API
-// at all. The records API said `quilzo site --api-writable`, and then `quilzo
-// site --api --api-writable`, and the site serves no records with any flags:
+// at all, and confined it refuses to start, since it cannot write the draft:
+// --confine=false is in the line. The records API said `quilzo site
+// --api-writable`, and then `quilzo site --api --api-writable`, and the
+// site serves no records with any flags:
 // it answers "this server does not serve records". Records are written
 // through the admin's API, `quilzo serve`. A search for similar pages on a
 // server without a vector index said `quilzo site --vectors`, which is not a
@@ -257,7 +259,7 @@ func TestARefusalNamesACommandThatWorks(t *testing.T) {
 		body         any
 		fix          string
 	}{
-		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable"},
+		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable --confine=false"},
 		{"POST", "/api/v1/records/samples", map[string]any{"fields": map[string]any{"a": "b"}},
 			"quilzo serve"},
 		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo serve"},
@@ -907,5 +909,162 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 	}
 	if len(used) != 1 || used[0] != "reader" {
 		t.Fatalf("told of %v", used)
+	}
+}
+
+// A session the host says nobody has used for its idle period is refused
+// here, as it is at the admin's screens; one in use is let through, and
+// every authenticated request is asked about.
+//
+// The admin keeps the idle clock and this server, mounted inside it, never
+// asked it, so a sign-in session used only at /api/v1, in a header or in
+// the cookie, was never idle and lasted the whole of session.max.
+func TestASessionTheHostSaysIsIdleIsRefused(t *testing.T) {
+	s, read, _ := setup(t)
+	var asked []string
+	idle := false
+	s.Idle = func(r *http.Request, tok *auth.Token) bool {
+		asked = append(asked, tok.Principal)
+		return idle
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a session in use: %d %s", w.Code, w.Body)
+	}
+	idle = true
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a session the host ended for idling: %d %s", w.Code, w.Body)
+	}
+	if len(asked) != 2 || asked[0] != "reader" {
+		t.Fatalf("asked about %v", asked)
+	}
+}
+
+// The session cookie is taken from a page of this server's own origin and
+// no other: the scheme as well as the host, the host in any case, and the
+// whole origin rather than its ending (sameorigin.Check).
+//
+// The check asked only whether Origin ended in "//" and this request's
+// Host, so another scheme's pages, and an origin spelled
+// "http://evil.example//h", were this server's own, while this server's
+// own host in capitals was not.
+func TestASessionCookieIsTakenOnlyFromThisServersOwnOrigin(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"http://h":               200,
+		"http://H":               200,
+		"https://h":              401,
+		"http://evil.example//h": 401,
+		"http://h.evil.example":  401,
+		"null":                   401,
+		"http://h:8080":          401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
+	}
+}
+
+// Mounted inside the admin, the session cookie is taken from a page of the
+// admin's own origin as the admin works it out (Server.Origin), so the two
+// agree about one request behind a proxy that ends TLS.
+//
+// The scheme was this connection's alone. Behind such a proxy, with
+// admin.behind_tls_proxy set, a browser that sends Origin and no fetch
+// metadata had a page of https://h refused here while the admin's screens
+// took it, and a page of http://h taken here while the admin refused it.
+func TestTheSessionCookieIsTakenFromTheOriginTheAdminSaysIsItsOwn(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	s.Origin = func(*http.Request) string { return "https://h" }
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"https://h": 200,
+		"https://H": 200,
+		"http://h":  401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
+	}
+}
+
+// A sign-in session is refused by a server that keeps no idle clock for it,
+// saying what to send instead; a token, and a session a program exchanged
+// from one, are taken as before; and the admin, which keeps the clock,
+// takes sign-in sessions as it did.
+//
+// The idle timeout is kept by the admin's process (session.idle), and
+// `quilzo site --api` is another process with no such clock: a person's
+// sign-in session copied into a header went on working there for the
+// whole of session.max after the admin would have signed it out.
+func TestASignInSessionIsRefusedWhereNoIdleClockIsKept(t *testing.T) {
+	s, read, _ := setup(t)
+	signedIn, _, err := s.Tokens.IssueSession("passkey:reader", "reader", auth.RoleReader, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := req(t, s, "GET", "/api/v1/pages", signedIn, nil, nil)
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "quilzo token") {
+		t.Fatalf("a sign-in session at a server with no idle clock: %d %s", w.Code, w.Body)
+	}
+	exchanged, _, err := s.Tokens.Exchange(read, auth.RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range []string{read, exchanged} {
+		if w := req(t, s, "GET", "/api/v1/pages", tok, nil, nil); w.Code != http.StatusOK {
+			t.Fatalf("a token was refused: %d %s", w.Code, w.Body)
+		}
+	}
+	// The admin keeps the clock, and asks it.
+	s.Idle = func(*http.Request, *auth.Token) bool { return false }
+	if w := req(t, s, "GET", "/api/v1/pages", signedIn, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a sign-in session at the admin: %d %s", w.Code, w.Body)
+	}
+}
+
+// A page name the store cannot hold is the caller's to fix, and is refused
+// as one, before the lock is taken and before anything is written.
+//
+// It was checked only deep in the store, at the commit, and that error
+// answered 500 "the write failed" for Ürün, "a b", -dash and a name of 300
+// characters. A client treats a 5xx as the server's fault and retries, and
+// this refusal is permanent.
+func TestAPageNameTheStoreCannotHoldIsRefusedAs400(t *testing.T) {
+	s, _, tok := setup(t)
+	s.Writable = true
+	for _, path := range []string{
+		"/api/v1/pages/%C3%9Cr%C3%BCn", "/api/v1/pages/a%20b", "/api/v1/pages/-dash",
+		"/api/v1/pages/about%2520us", "/api/v1/pages/" + strings.Repeat("x", 300),
+	} {
+		w := req(t, s, "PUT", path, tok, map[string]any{"title": "T", "body": "API body"},
+			map[string]string{"If-Match": "*"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("PUT %s answered %d, not 400: %s", path, w.Code, w.Body)
+			continue
+		}
+		var e Error
+		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil || e.Fix == "" {
+			t.Errorf("PUT %s: the refusal says no fix: %s", path, w.Body)
+		}
+	}
+	// A name the store holds is still written.
+	w := req(t, s, "PUT", "/api/v1/pages/docs/About_Us.v1", tok, map[string]any{"title": "T"},
+		map[string]string{"If-Match": "*"})
+	if w.Code != http.StatusOK {
+		t.Errorf("a name the store holds answered %d: %s", w.Code, w.Body)
 	}
 }

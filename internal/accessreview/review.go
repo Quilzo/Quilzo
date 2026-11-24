@@ -243,24 +243,10 @@ func (i Item) Covers(b auth.Binding) bool {
 	return b.Via == "" && b.What() == i.Role && b.Resource == i.Resource
 }
 
-// SamePerson reports whether two names are one person's.
-//
-// Policy decisions compare names exactly and people do not: "Dana" and
-// "dana " are two principals to Evaluate and one person to anybody asked.
-// A reviewer refused their own binding as "dana" must not approve it as
-// "Dana", so the comparison here is the loose one, which can only refuse
-// more.
-func SamePerson(a, b string) bool {
-	a = personKey(a)
-	return a != "" && strings.EqualFold(a, personKey(b))
-}
-
-// personKey is a name as SamePerson compares it: without the spaces around
-// it, its case or a mailto: in front.
-func personKey(s string) string {
-	s, _ = strings.CutPrefix(strings.ToLower(strings.TrimSpace(s)), "mailto:")
-	return s
-}
+// SamePerson reports whether two names are one person's: auth.SamePerson,
+// the rule every second-person check asks. A reviewer refused their own
+// binding as "dana" must not approve it as "Dana".
+func SamePerson(a, b string) bool { return auth.SamePerson(a, b) }
 
 // Inputs is what a snapshot is taken from.
 type Inputs struct {
@@ -377,7 +363,7 @@ func Snapshot(in Inputs) []Item {
 	// request that started a review and in every hourly posture scan.
 	used := map[string]time.Time{}
 	for _, t := range tokens {
-		if k := personKey(t.Principal); k != "" && t.LastUsed > 0 {
+		if k := auth.PersonKey(t.Principal); k != "" && t.LastUsed > 0 {
 			if at := time.Unix(t.LastUsed, 0).UTC(); at.After(used[k]) {
 				used[k] = at
 			}
@@ -397,7 +383,7 @@ func Snapshot(in Inputs) []Item {
 		for _, n := range names {
 			later(seen(n))
 		}
-		if k := personKey(who); k != "" {
+		if k := auth.PersonKey(who); k != "" {
 			later(used[k])
 		}
 		return last
@@ -527,6 +513,10 @@ type Decider struct {
 	Verified bool
 	// Model is what an AI decider runs, for the record that refuses it.
 	Model string
+	// Credential is the name of the token the decider was proved by, when
+	// it was one, so a refusal of a program's token names the token and
+	// not the person it acts as.
+	Credential string
 }
 
 // check refuses a decider who cannot review: nobody named, or not a
@@ -541,6 +531,10 @@ func (d Decider) check() error {
 		return fmt.Errorf("%s is a model. Whether somebody still needs access is a question about what "+
 			"they do all day, which a model cannot see; it may read the list, and a person decides", d.Name)
 	case audit.KindService, audit.KindUnknown:
+		if d.Credential != "" {
+			return fmt.Errorf("the token %s is not recorded as %s's own but as a program's, and a program reviews "+
+				"nothing. Decide with your own sign-in, or with a token issued to you with --person", d.Credential, d.Name)
+		}
 		return fmt.Errorf("%s is a program's credential, not a person: a service token reviews nothing. "+
 			"Decide with your own sign-in", d.Name)
 	}

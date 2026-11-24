@@ -40,8 +40,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Project is one research question and what was done about it.
@@ -332,14 +334,21 @@ func (s *Store) Work(name string) string { return filepath.Join(s.Dir, name, "wo
 // RunDir is where a computation's record and outputs are kept.
 func (s *Store) RunDir(name, id string) string { return filepath.Join(s.Dir, name, "runs", id) }
 
+// ErrNoProject is a name no research project has, for errors.Is: the
+// command line exits 4 for it, "not found", as the help documents, where
+// `quilzo research show` of a project nobody made exited 1.
+var ErrNoProject = errors.New("no research project")
+
 // Load reads a project.
 func (s *Store) Load(name string) (Project, error) {
 	if !ValidName(name) {
-		return Project{}, fmt.Errorf("%q is not a project's name", name)
+		// Quoted short: it is whatever a caller sent, and the agent interface
+		// passes on whatever that was.
+		return Project{}, fmt.Errorf("%q is not a project's name", plaintext.Clip(name, 80, "…"))
 	}
 	b, err := os.ReadFile(s.projectPath(name))
 	if os.IsNotExist(err) {
-		return Project{}, fmt.Errorf("no research project called %q; quilzo research list", name)
+		return Project{}, fmt.Errorf("%w called %q; quilzo research list", ErrNoProject, name)
 	}
 	if err != nil {
 		return Project{}, err
@@ -362,7 +371,9 @@ func (s *Store) Create(p Project) error {
 		return fmt.Errorf("%q is not a project's name: lower-case letters, digits and hyphens", p.Name)
 	}
 	p.Question = strings.TrimSpace(p.Question)
-	if p.Question == "" || len(p.Question) > MaxQuestion {
+	// Characters, as the refusal says: counted in bytes, a question of 400
+	// characters in Japanese was over 1000.
+	if p.Question == "" || utf8.RuneCountInString(p.Question) > MaxQuestion {
 		return fmt.Errorf("a project starts from a question of at most %d characters", MaxQuestion)
 	}
 	if _, err := os.Stat(s.projectPath(p.Name)); err == nil {

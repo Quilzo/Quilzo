@@ -45,6 +45,7 @@ package decide
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -242,11 +243,44 @@ func systemPrompt(d Decider) string {
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// nothing reports a state with nothing in it: none, a JSON null, blank
+// text, or an object or a list that holds nothing, as a value or written
+// out as text, which is how a run hands on the object its model gave.
+//
+// Only none and null were refused. An agent that fills every field it is
+// asked for sends "" or {} where it has nothing to give, and the model was
+// asked about that as it had been about no state at all, and answered with
+// the same confidence. A number, false, or an object with one empty field
+// says something, and is a state.
+func nothing(state any) bool {
+	switch v := state.(type) {
+	case nil:
+		return true
+	case string:
+		switch strings.TrimSpace(v) {
+		case "", "null", "{}", "[]":
+			return true
+		}
+	case map[string]any:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
+}
+
 // Decide answers a decider's questions about state.
 //
 // state is any JSON value. m may be nil, in which case everything escalates.
 func Decide(ctx context.Context, d Decider, m Model, state any) (Result, error) {
 	res := Result{Decider: d.Name}
+	// Nothing to decide about is not a question: asked about it, a model
+	// answers with confidence all the same, and a confident answer with no
+	// escalation may drive things with no person involved.
+	if nothing(state) {
+		return res, errors.New("there is no state to decide about: give the JSON the questions are about, " +
+			"such as the ticket, the comment or the alert")
+	}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return res, fmt.Errorf("the state is not JSON: %w", err)

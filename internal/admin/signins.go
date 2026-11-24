@@ -437,7 +437,7 @@ func (s *Server) handleSignInsAct(w http.ResponseWriter, r *http.Request) {
 		back("e", "No such session.")
 		return
 	}
-	if strings.EqualFold(who, p.Name) {
+	if auth.SamePerson(who, p.Name) {
 		back("e", "Somebody else has to let you in: that is the point of asking.")
 		return
 	}

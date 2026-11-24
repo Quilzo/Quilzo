@@ -5,10 +5,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/oscal"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -18,11 +20,13 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auditstream"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/frameworks"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
@@ -146,9 +150,18 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		// Reported as three states rather than a boolean, because "configured
 		// and not answering" is worse than "not configured" and collapsing them
 		// would hide the worse one.
+		//
+		// Not answering is a socket nothing answers on, and no socket where
+		// this account cannot write the log itself (mayWriteLog), as under
+		// the reference compose with logd stopped. Neither was asked: with
+		// no socket the scan said the CMS opens the log directly, of a log
+		// it could not open, and a socket left behind read as a writer in
+		// force while every record sent to it was refused.
 		switch sock := logSocketPath(root); {
-		case !fileExists(sock):
+		case !fileExists(sock) && mayWriteLog(auditPath(root)):
 			s.Extra["log_writer"] = "none"
+		case !fileExists(sock) || logd.Reachable(sock) != nil:
+			s.Extra["log_writer"] = "unreachable"
 		default:
 			if ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); ok {
 				s.Extra["log_writer"] = "separated"
@@ -164,11 +177,39 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	if toks, err := loadTokens(root); err == nil {
 		s.Tokens = toks
 	}
+	// Who signs in as a person, for the rule that a program's token is not
+	// to act as one (agent.shared-human-credential).
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err == nil {
+		for _, c := range pk.Credentials {
+			s.Passkeys = append(s.Passkeys, c.Principal)
+		}
+	}
 	if types, err := schema.Load(root); err == nil {
 		s.Types = types
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	// Every whole entry, and the lines that are not entries as breaks, unless
+	// a write a crash cut short left them: auditlog verify and the audit log
+	// screen report those, as what they are. Any such line stopped the log
+	// being read here, and the scan then checked nothing about it.
+	events, err := audit.Read(auditPath(root))
+	if _, cerr := audit.Check(events, err); cerr == nil {
 		s.Audit, s.AuditRead = events, true
+		var bad *audit.Unreadable
+		if errors.As(err, &bad) {
+			for i, p := range bad.Problems() {
+				if !bad.Lines[i].Torn {
+					s.AuditBreaks = append(s.AuditBreaks, p)
+				}
+			}
+		}
+		// And against every head saved beside it, as auditlog verify checks
+		// it: entries removed from the end leave a chain that verifies.
+		if heads, err := savedHeads(root); err == nil {
+			if p := audit.AgainstHeads(events, heads); p != nil {
+				s.AuditBreaks = append(s.AuditBreaks, *p)
+			}
+		}
 	}
 
 	// File modes. Only files that hold something worth protecting: listing
@@ -313,7 +354,26 @@ func observeUpkeep(root string, st *store.Store) posture.UpkeepFacts {
 			}
 		}
 	}
+	u.LeftRooms, u.LeftRoomFiles = leftRooms(root)
 	return u
+}
+
+// leftRooms counts what a store still holds under rooms/ from before rooms
+// left Quilzo: the rooms, by the record each kept at its top level, and the
+// files in all. Read only; deciding what happens to them is the operator's.
+func leftRooms(root string) (rooms, files int) {
+	dir := filepath.Join(root, "rooms")
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		files++
+		if filepath.Dir(path) == dir && strings.HasSuffix(d.Name(), ".json") {
+			rooms++
+		}
+		return nil
+	})
+	return rooms, files
 }
 
 func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
@@ -445,14 +505,17 @@ func cmdPosture(root string, args []string) error {
 	case "explain":
 		return postureExplain(args[1:])
 	case "rules":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return postureRules()
 	case "suppress":
 		return postureSuppress(root, args[1:])
 	case "frameworks":
 		return postureFrameworks(root, args[1:])
 	default:
-		return fmt.Errorf("unknown posture command %q; try scan, explain, "+
-			"rules, frameworks or suppress", args[0])
+		return errMisused{fmt.Errorf("unknown posture command %q; try scan, explain, "+
+			"rules, frameworks or suppress", args[0])}
 	}
 }
 
@@ -468,7 +531,11 @@ func postureScan(root string, args []string) error {
 	proxy := fs.Bool("behind-proxy", false, "a reverse proxy terminates TLS")
 	asOSCAL := fs.Bool("oscal", false,
 		"emit OSCAL assessment results instead of a report")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 0); err != nil {
+		return err
+	}
+	// Observing made the store it was looking for, and the scan was of that.
+	if err := needStore(root); err != nil {
 		return err
 	}
 
@@ -531,11 +598,21 @@ func postureScan(root string, args []string) error {
 	for _, f := range shown {
 		w.Human("  %s%-8s%s %s\n", colourFor(f.Severity), f.Severity, reset, f.Title)
 		w.Human("           %s\n", f.Detail)
-		if who := holders[f.Resource]; who != "" && f.Resource != "" {
+		who := ""
+		if f.Resource != "" {
+			who = holders[f.Resource]
+		}
+		if who != "" {
 			w.Human("           %sheld by %s%s\n", dim, onOneLine(who), reset)
 		}
 		if f.Fix != "" {
-			w.Human("           %sfix:%s %s\n", dim, reset, f.Fix)
+			// The holder as "held by" shows them: a name is the operator's
+			// own words, and is marked where it holds a control character.
+			holder := ""
+			if who != "" {
+				holder = onOneLine(who)
+			}
+			w.Human("           %sfix:%s %s\n", dim, reset, posture.FixFor(f.Fix, holder))
 		}
 		meta := f.Rule
 		if len(f.Controls) > 0 {
@@ -624,11 +701,11 @@ func colourFor(s posture.Severity) string {
 
 func postureExplain(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo posture explain <rule-id>")
+		return errMisused{fmt.Errorf("usage: quilzo posture explain <rule-id>")}
 	}
 	r, ok := posture.Explain(args[0])
 	if !ok {
-		return fmt.Errorf("there is no rule %q; run quilzo posture rules", args[0])
+		return errNotFound{fmt.Errorf("there is no rule %q; run quilzo posture rules", args[0])}
 	}
 	if w.JSON(map[string]any{
 		"id": r.ID, "title": r.Title, "severity": r.Severity,
@@ -666,22 +743,30 @@ func postureSuppress(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("suppress", flag.ContinueOnError)
 	reason := fs.String("reason", "", "why this is being accepted")
-	by := fs.String("by", "", "who is accepting it")
+	by := fs.String("by", "", "who to credit with accepting it; it is recorded as the signed-in principal's")
 	daysFor := fs.Int("days", 30, "how long, at most 90")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo posture suppress <finding-id> " +
-			"--reason ... --by ... [--days N]")
+		return errMisused{fmt.Errorf("usage: quilzo posture suppress <finding-id> " +
+			"--reason ... --by ... [--days N]")}
 	}
 	if strings.TrimSpace(*reason) == "" {
 		return fmt.Errorf("a suppression needs a reason. An exception nobody " +
 			"wrote down is indistinguishable from an oversight")
 	}
-	if strings.TrimSpace(*by) == "" {
+	// Recorded as the verified caller's, with a name typed after --by
+	// credited beside them (Caller.namedBy). Only a store that knows nobody
+	// needs the name typed.
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
+	if who == "" {
 		return fmt.Errorf("a suppression needs a name. Somebody is accepting " +
 			"this risk and the record should say who")
+	}
+	if credited != "" {
+		who += " (" + credit(credited) + ")"
 	}
 	limit := int(posture.MaxSuppression.Hours() / 24)
 	if *daysFor > limit {
@@ -699,28 +784,32 @@ func postureSuppress(root string, args []string) error {
 	replaced := false
 	for i, s := range next {
 		if s.ID == pos[0] {
-			next[i] = posture.Suppression{ID: pos[0], Reason: *reason, By: *by,
+			next[i] = posture.Suppression{ID: pos[0], Reason: *reason, By: who,
 				Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()}
 			replaced = true
 		}
 	}
 	if !replaced {
 		next = append(next, posture.Suppression{ID: pos[0], Reason: *reason,
-			By: *by, Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()})
+			By: who, Until: now.AddDate(0, 0, *daysFor).Unix(), AddedAt: now.Unix()})
 	}
 	f.Suppressions = next
 	if err := saveJSON(suppressPath(root), f); err != nil {
 		return err
 	}
 
-	record(root, audit.Record{
-		Action: "posture.suppress", Resource: pos[0], Outcome: audit.Success,
-		Principal: *by, Kind: audit.KindHuman,
-		Detail: map[string]string{
-			"reason": truncate(*reason, 120),
-			"until":  now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"),
-		},
-	})
+	detail := map[string]string{
+		"reason": truncate(*reason, 120),
+		"until":  now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"),
+	}
+	// The name typed is kept in the record wherever it is not the one the
+	// entry is under. On a store with no access control the entry is the
+	// account at the keyboard's, unverified, and the name typed is who the
+	// suppression is by: left out, the log named nobody who accepted it.
+	if typed := strings.TrimSpace(*by); typed != "" && typed != caller.Name {
+		detail["credited"] = typed
+	}
+	record(root, caller.auditRecord("posture.suppress", pos[0], audit.Success, detail))
 
 	w.Human("%s is silenced until %s\n", pos[0],
 		now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"))
@@ -774,6 +863,9 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 		return facts
 	}
 	lastEval := map[string]time.Time{}
+	// The model each last evaluation measured, as a person reads it; none
+	// for a record from before evaluations named their model.
+	lastModel := map[string]string{}
 	for _, e := range events {
 		if e.Action != "assistant.evaluated" {
 			continue
@@ -782,14 +874,23 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			name := strings.TrimPrefix(e.Resource, "/ask/")
 			if at.After(lastEval[name]) {
 				lastEval[name] = at
+				delete(lastModel, name)
+				if model, named := e.Detail["model"]; named {
+					lastModel[name] = evals.Served{Model: model, Route: e.Detail["route"]}.String()
+				}
 			}
 		}
 	}
 	disclosed := askPageDiscloses(root, tplDir)
 	for _, a := range set.Assistants {
-		facts.Chatbots = append(facts.Chatbots, posture.ChatbotFact{
+		f := posture.ChatbotFact{
 			Name: a.Name, Public: a.Public, UseModel: a.UseModel,
-			Disclosed: disclosed, LastEval: lastEval[a.Name]})
+			Disclosed: disclosed, LastEval: lastEval[a.Name], EvalModel: lastModel[a.Name]}
+		if a.UseModel {
+			m, _ := assistantModelAt(root, a)
+			f.Model = servedBy(m).String()
+		}
+		facts.Chatbots = append(facts.Chatbots, f)
 	}
 	if agents, aerr := loadAgents(root); aerr == nil {
 		facts.Agents = len(agents.Agents)
@@ -1011,7 +1112,7 @@ func postureFrameworks(root string, args []string) error {
 	fs := flag.NewFlagSet("posture frameworks", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "template directory")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	sup, _ := loadSuppressions(root)
@@ -1037,7 +1138,7 @@ func postureFrameworks(root string, args []string) error {
 		for _, f := range frameworks.Catalogue {
 			ids = append(ids, f.ID)
 		}
-		return fmt.Errorf("no framework %q; one of %s", pos[0], strings.Join(ids, ", "))
+		return errNotFound{fmt.Errorf("no framework %q; one of %s", pos[0], strings.Join(ids, ", "))}
 	}
 	view := posture.ByFramework(rep, fw.ID)
 	if w.JSON(view) {

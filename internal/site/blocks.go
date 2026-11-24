@@ -160,6 +160,52 @@ func BlockUses(pages map[string]any) map[string][]string {
 	return out
 }
 
+// RetargetBlocks makes every reuse of the block was name now instead, and
+// is the pages it changed, sorted. A reuse is a reference to its block, and
+// a rename that leaves it behind leaves those pages showing nothing where
+// the block was, with no message anywhere: `quilzo move` did, while deleting
+// the same block was refused. The bodies changed are copies, so a decoded
+// tree somebody else is reading is not written into.
+func RetargetBlocks(pages map[string]any, was, now string) []string {
+	var changed []string
+	for name, body := range pages {
+		m, ok := body.(map[string]any)
+		if !ok {
+			continue
+		}
+		sections, _ := m["sections"].([]any)
+		var next []any
+		for i, sec := range sections {
+			ref, ok := BlockRef(sec)
+			if !ok || ref != was {
+				continue
+			}
+			if next == nil {
+				next = append([]any(nil), sections...)
+			}
+			old := sec.(map[string]any)
+			moved := make(map[string]any, len(old))
+			for k, v := range old {
+				moved[k] = v
+			}
+			moved[BlockField] = map[string]any{"page": now}
+			next[i] = moved
+		}
+		if next == nil {
+			continue
+		}
+		page := make(map[string]any, len(m))
+		for k, v := range m {
+			page[k] = v
+		}
+		page["sections"] = next
+		pages[name] = page
+		changed = append(changed, name)
+	}
+	sort.Strings(changed)
+	return changed
+}
+
 func appendOnce(list []string, s string) []string {
 	for _, x := range list {
 		if x == s {
@@ -209,8 +255,16 @@ func BlockChange(name string, pages map[string]any, on bool) error {
 
 // CanReuse refuses a block reused where it would show nothing.
 func CanReuse(page, block string, pages map[string]any) error {
+	if _, ok := pages[block]; !ok {
+		return fmt.Errorf("there is no page %s", block)
+	}
 	if !IsBlock(pages[block]) {
 		return fmt.Errorf("%s is not a block", block)
+	}
+	if _, ok := blockSections(pages[block]); !ok {
+		// Members only: blockSections never puts it on a page, and saying so
+		// is better than a reuse that quietly shows nothing.
+		return fmt.Errorf("%s is for members only, and a block is shown on public pages", block)
 	}
 	if IsBlock(pages[page]) {
 		return fmt.Errorf("%s is a block itself, and a block in a block shows nothing", page)

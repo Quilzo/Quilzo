@@ -364,25 +364,23 @@ func TestAnAlgorithmThisProgramSignsWithIsNotListedAsOnlyVerified(t *testing.T) 
 	}
 }
 
-// demonstrations are the commands that run a call, its keys and its media
-// against identities made for the run, and the packages only they reach.
-// Nothing a deployment does on its own calls any of them.
+// demonstrations are the commands that run against material made for the
+// run, and the packages only they reach. Nothing a deployment does on its
+// own calls any of them.
 var (
-	demoCommands = map[string]bool{"callcmd.go": true, "huddlecmd.go": true, "scribecmd.go": true,
-		"sframecmd.go": true, "screencmd.go": true, "errandcmd.go": true, "annotatecmd.go": true}
-	demoPackages = map[string]bool{"groupkey": true, "sframe": true, "huddle": true, "scribe": true,
-		"errand": true, "screen": true, "annotate": true}
+	demoCommands = map[string]bool{"screencmd.go": true, "annotatecmd.go": true}
+	demoPackages = map[string]bool{"screen": true, "annotate": true}
 )
 
-// The inventory claimed product use of call cryptography that only the
-// terminal demonstrations reach. ML-KEM with X25519 was "generated" for "the
-// per-epoch secret of a call", HKDF for "per-sender media keys", and
-// Ed25519 and ML-DSA named groupkey where they are used, while no call, key
-// agreement or media encryption runs anywhere but `quilzo call`, `huddle`,
-// `scribe` and their kind. An agency hands this to a client as what the
-// product does. So a package only demonstrations reach is not named where
-// an algorithm is used, and an algorithm only they reach says so in its use.
-func TestCallCryptographyIsMarkedAsDemonstrationOnly(t *testing.T) {
+// The inventory claimed product use of cryptography that only the terminal
+// demonstrations of a call reached: ML-KEM with X25519 was "generated" for
+// "the per-epoch secret of a call", HKDF for "per-sender media keys", and
+// Ed25519 and ML-DSA named the group key package where they were used. An
+// agency hands this to a client as what the product does. So a package only
+// demonstrations reach is not named where an algorithm is used, and an
+// algorithm only they reach says so in its use. The call demonstrations have
+// left Quilzo; the rule stays for whatever demonstration comes next.
+func TestDemonstrationCryptographyIsMarkedAsDemonstrationOnly(t *testing.T) {
 	importRe := regexp.MustCompile(`"(crypto/[a-z0-9/]+|github\.com/quilzo/quilzo/internal/[a-z0-9]+)"`)
 	// crypto package -> where it is imported, split by what reaches it.
 	demo, product := map[string]map[string]bool{}, map[string]map[string]bool{}
@@ -421,8 +419,10 @@ func TestCallCryptographyIsMarkedAsDemonstrationOnly(t *testing.T) {
 			return nil
 		})
 	}
-	if len(demo) == 0 {
-		t.Fatal("no demonstration imports any cryptography; this test has stopped looking")
+	// The demonstrations that remain use no cryptography, so the walk is
+	// known to have looked by what the product imports instead.
+	if len(product) == 0 {
+		t.Fatal("nothing imports any cryptography; this test has stopped looking")
 	}
 
 	for _, a := range Inventory() {

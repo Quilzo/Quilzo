@@ -210,6 +210,11 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string
 			Error: "the collection could not be read", Detail: err.Error()})
 		return
 	}
+	// An empty list is [], not the null a nil slice is written as: a
+	// collection nothing matched answered "records": null.
+	if recs == nil {
+		recs = []collection.Record{}
+	}
 	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"collection": name, "total": total, "records": recs,
@@ -260,6 +265,18 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
+	}
+	// An id that can address no record is the caller's to fix, as a page
+	// name the store cannot hold is: it was met only by the write, and
+	// answered 500 "the write failed", which a client retries.
+	if id != "" {
+		if err := collection.ValidID(id); err != nil {
+			writeError(w, http.StatusBadRequest, Error{
+				Error: "that is not a record id", Detail: err.Error(),
+				Fix: "POST to the collection to create a record, and use the id it is given",
+			})
+			return
+		}
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, int64(s.bodyMax())+1))
 	if err != nil || len(body) > s.bodyMax() {

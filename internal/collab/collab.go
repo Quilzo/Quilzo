@@ -52,9 +52,12 @@ package collab
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Conflict describes a write that was based on something no longer current.
@@ -236,10 +239,30 @@ type Proposal struct {
 	Author string `json:"author"`
 	// AuthorKind is human, service or ai. An AI-authored proposal always needs
 	// a human, whatever the numeric threshold says.
-	AuthorKind string     `json:"author_kind"`
-	CreatedAt  int64      `json:"created_at"`
-	Message    string     `json:"message,omitempty"`
-	Approvals  []Approval `json:"approvals,omitempty"`
+	AuthorKind string `json:"author_kind"`
+	// OnBehalfOf is the person a machine wrote it for, when its commit
+	// names one (WrittenFor): whose client at the machine interface, or
+	// whose writing assistant. Author is then the machine. They may approve
+	// it where the one approval asked for is a person's reading of a
+	// model's work, and are otherwise who asked for it (Policy.Requested).
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
+	// AlsoOnBehalfOf are the other people a machine wrote some of it for,
+	// when it wrote for more than one (ForWhom), and each is who asked for
+	// it as OnBehalfOf is. OnBehalfOf names one person, so that a proposal
+	// recorded before this reads as it did: dana's client rewrote the
+	// pricing, lee's client then wrote the about page, the proposal named
+	// lee alone, and with a count of approvals set dana's approval counted
+	// for her own client's prices.
+	AlsoOnBehalfOf []string   `json:"also_on_behalf_of,omitempty"`
+	CreatedAt      int64      `json:"created_at"`
+	Message        string     `json:"message,omitempty"`
+	Approvals      []Approval `json:"approvals,omitempty"`
+	// Machine is the change a machine wrote among what this would put live,
+	// when one did (MarkMachine), so a refusal names it.
+	//
+	// Not stored. It is an answer about the history as it stands when the
+	// proposal is read, and AuthorKind is the part of it worth keeping.
+	Machine *MachineChange `json:"-"`
 }
 
 // Policy is how many people must agree, and who counts.
@@ -272,6 +295,17 @@ type Policy struct {
 	// without two people, and the machines can hold as many credentials as
 	// they like.
 	RequiredHumans int `json:"required_humans,omitempty"`
+}
+
+// Counts reports whether the list of approvers lets name's approval count:
+// any name when the list is empty, and otherwise only the names on it.
+//
+// One answer for every surface that asks. Evaluate kept to the list, and
+// the review screen and the list of what waits asked only who may publish,
+// so with approvers named they offered the approval to somebody it would
+// not count from: recorded, and counted for nothing.
+func (p Policy) Counts(name string) bool {
+	return len(p.Approvers) == 0 || slices.Contains(p.Approvers, name)
 }
 
 // NewPolicy returns the default: two people, and a human on anything a model
@@ -322,11 +356,6 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		return Decision{Allowed: true, Reason: "dual authorization is not configured"}
 	}
 
-	allowed := map[string]bool{}
-	for _, a := range p.Approvers {
-		allowed[a] = true
-	}
-
 	seen := map[string]bool{}
 	var valid []Approval
 	var humans int
@@ -334,16 +363,18 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if a.Content != prop.Content {
 			continue // an approval of different bytes
 		}
-		if a.By == prop.Author {
+		if p.Requested(prop, a.By) {
 			continue // self-approval, handled explicitly below
 		}
-		if len(allowed) > 0 && !allowed[a.By] {
+		if !p.Counts(a.By) {
 			continue
 		}
-		if seen[a.By] {
-			continue // one person, one approval, however many times they click
+		// One person, one approval, however many times they click and
+		// however they spell their name (auth.PersonKey).
+		if seen[auth.PersonKey(a.By)] {
+			continue
 		}
-		seen[a.By] = true
+		seen[auth.PersonKey(a.By)] = true
 		valid = append(valid, a)
 		if kindOf != nil && kindOf(a.By) == "human" {
 			humans++
@@ -353,8 +384,9 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	// Self-approval is reported specifically, because "you need two approvals"
 	// when somebody has already clicked approve reads as the system being
 	// broken rather than as the rule doing its job.
+	asked := ""
 	for _, a := range prop.Approvals {
-		if a.By == prop.Author && a.Content == prop.Content {
+		if auth.SamePerson(a.By, prop.Author) && a.Content == prop.Content {
 			return Decision{
 				Have: len(valid), Need: p.Required,
 				Reason: fmt.Sprintf(
@@ -364,15 +396,42 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 					prop.Author),
 			}
 		}
+		if asked == "" && a.Content == prop.Content && p.Requested(prop, a.By) {
+			asked = a.By
+		}
+	}
+	// And the person a model wrote it for, where a count is set: what they
+	// asked a model to write is theirs to ask for, as their own work is, and
+	// not theirs to count as somebody else's reading. Said only when what
+	// is left falls short, and not as the answer whatever else is there:
+	// an approval they gave while no count was set, or before an upgrade
+	// named them, stopped a change somebody else had approved as the count
+	// asked from being published at all. Said before what is still missing
+	// rather than in its place, which somebody else's approval may not have
+	// made up either.
+	refuse := func(d Decision) Decision {
+		if asked != "" {
+			d.Reason = fmt.Sprintf(
+				"%s wrote this change for %s, who asked for it and cannot "+
+					"also approve it: with a count of approvals set, "+
+					"somebody else reads it. Without theirs, %s", prop.WrittenBy(asked), asked, d.Reason)
+		}
+		return d
 	}
 
 	if p.RequireHumanForAI && prop.AuthorKind == "ai" && humans == 0 {
-		return Decision{
-			Have: len(valid), Need: p.Required,
-			Reason: "this change was written by a model, so it needs approval " +
-				"from a person. Two machines agreeing with each other is not " +
-				"review.",
+		reason := "this change was written by a model, so it needs approval " +
+			"from a person. Two machines agreeing with each other is not " +
+			"review."
+		// Which change, when it is known: the person asked to read it
+		// may be looking at a draft whose newest commit is their own.
+		if prop.Machine != nil {
+			reason += " " + prop.Machine.Describe(prop.Content)
 		}
+		return refuse(Decision{
+			Have: len(valid), Need: p.Required,
+			Reason: reason,
+		})
 	}
 
 	// Two-person integrity, checked before the count.
@@ -381,7 +440,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	// when two approvals exist and both are machines is a refusal nobody can
 	// act on, and the action needed is a person, not another approval.
 	if p.RequiredHumans > 0 && humans < p.RequiredHumans {
-		return Decision{
+		return refuse(Decision{
 			Have: len(valid), Need: p.Required,
 			Reason: fmt.Sprintf(
 				"this needs %d approval(s) from people and has %d. There "+
@@ -389,7 +448,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 					"model accounts, and a change nobody has read is not "+
 					"reviewed however many credentials agreed to it.",
 				p.RequiredHumans, humans, len(valid)),
-		}
+		})
 	}
 
 	if len(valid) < p.Required {
@@ -398,15 +457,13 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 			Reason: fmt.Sprintf("%d of %d approvals; %d more needed",
 				len(valid), p.Required, p.Required-len(valid)),
 		}
-		if len(allowed) > 0 {
-			for who := range allowed {
-				if !seen[who] && who != prop.Author {
-					d.Missing = append(d.Missing, who)
-				}
+		for _, who := range p.Approvers {
+			if !seen[auth.PersonKey(who)] && !p.Requested(prop, who) && !slices.Contains(d.Missing, who) {
+				d.Missing = append(d.Missing, who)
 			}
-			sort.Strings(d.Missing)
 		}
-		return d
+		sort.Strings(d.Missing)
+		return refuse(d)
 	}
 
 	who := make([]string, 0, len(valid))
@@ -431,11 +488,14 @@ func (prop *Proposal) Approve(by, note string, now time.Time) error {
 	if strings.TrimSpace(by) == "" {
 		return fmt.Errorf("an approval needs a name")
 	}
-	if by == prop.Author {
+	// The author, and an approver who has, under any spelling of their
+	// name (auth.SamePerson): compared exactly, "dana" approved "Dana"'s
+	// change, and "Sam" and "sam" were two approvals.
+	if auth.SamePerson(by, prop.Author) {
 		return fmt.Errorf("%s wrote this change and cannot approve it", by)
 	}
 	for _, a := range prop.Approvals {
-		if a.By == by && a.Content == prop.Content {
+		if auth.SamePerson(a.By, by) && a.Content == prop.Content {
 			return fmt.Errorf("%s has already approved this", by)
 		}
 	}

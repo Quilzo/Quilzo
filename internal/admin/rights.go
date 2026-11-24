@@ -95,7 +95,7 @@ func (s *Server) handleMediaRights(w http.ResponseWriter, r *http.Request) {
 	}
 
 	next := media.Rights{
-		Licence: strings.TrimSpace(r.FormValue("licence")),
+		Licence: media.LicenceID(r.FormValue("licence")),
 		Holder:  strings.TrimSpace(r.FormValue("holder")),
 		Note:    strings.TrimSpace(r.FormValue("note")),
 	}

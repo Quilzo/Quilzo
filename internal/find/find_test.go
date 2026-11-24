@@ -287,3 +287,33 @@ func TestATermMatchesTheStartOfAWordAndNotTheMiddle(t *testing.T) {
 		}
 	}
 }
+
+// The finder matched words lowered by strings.ToLower, under which the
+// capital I of Turkish lowers to i and never to its own small letter ı:
+// "HAKKINDA" did not find the page titled "Hakkında", and "cilbir" typed
+// without the marks found nothing. Case and marks fold away on both sides,
+// for pages and for the rest of what it searches.
+func TestTurkishIsFoundInCapitalsAndWithoutMarks(t *testing.T) {
+	src := Sources{
+		Pages: map[string]any{
+			"tr/about": map[string]any{"title": "Marginalia Hakkında"},
+		},
+		Media:   []File{{ID: "cc33", Alt: "Bir tabak çılbır"}},
+		Screens: []Destination{{Title: "Diller", Path: "/languages", Group: "İçerik"}},
+	}
+	for query, want := range map[string]string{
+		"HAKKINDA": "/page/tr/about", "hakkinda": "/page/tr/about",
+		"ÇILBIR": "/media", "cilbir": "/media",
+		"icerik": "/languages", "İÇERİK": "/languages",
+	} {
+		found := false
+		for _, h := range Search(query, src, 10) {
+			if h.Path == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%q did not find %s", query, want)
+		}
+	}
+}

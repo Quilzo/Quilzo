@@ -4,11 +4,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/shield"
@@ -48,35 +50,46 @@ import (
 // different account.
 
 func cmdRecover(root string, args []string) error {
-	var principal, reason string
-	confirmed := false
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--principal" && i+1 < len(args):
-			principal = args[i+1]
-			i++
-		case args[i] == "--reason" && i+1 < len(args):
-			reason = args[i+1]
-			i++
-		case args[i] == "--i-have-filesystem-access":
-			confirmed = true
-		}
+	// A flag set, so what is not one of the three is refused. The words
+	// were walked by hand and anything else passed over: `--reason locked
+	// out` went on with the reason "locked", which is what the log then
+	// keeps of why somebody broke the glass.
+	fs := flag.NewFlagSet("auth recover", flag.ContinueOnError)
+	principalFlag := fs.String("principal", "", "who the new administrator token is for")
+	reasonFlag := fs.String("reason", "", "why, for the audit log")
+	confirmedFlag := fs.Bool("i-have-filesystem-access", false, "say that you can already edit the store's files")
+	if err := parseFlags(fs, args, nil, 0); err != nil {
+		return err
 	}
+	principal, reason, confirmed := *principalFlag, *reasonFlag, *confirmedFlag
 
 	toks, err := loadTokens(root)
 	if err != nil {
 		return err
 	}
 
-	// Usable means: not revoked, not expired, carrying admin, and not
-	// refused by a lockdown in force, which would refuse it at the admin
-	// however alive it is here.
+	// Usable means: not revoked, not expired, carrying admin, held by
+	// somebody the policy still lets administer, and not refused by a
+	// lockdown in force, which would refuse it at the admin however alive
+	// it is here.
+	//
+	// The policy is asked because a token carries a ceiling, not a grant.
+	// One carrying admin for somebody whose admin binding had gone was
+	// counted, and the recovery answered a store nobody could administer
+	// with "an admin token is still usable, ask whoever holds one".
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
 	usable := 0
 	now := time.Now()
 	lock, locked := shield.Find(root, shield.Lockdown, "", now)
 	for i := range toks.Tokens {
 		t := &toks.Tokens[i]
 		if ok, _ := t.Usable(now); !ok || t.Role != auth.RoleAdmin {
+			continue
+		}
+		if !pol.Evaluate(t.Principal, auth.ActGrant, "/").Allowed {
 			continue
 		}
 		if locked && shield.LockedOut(lock, t.CreatedAt, t.Session) {
@@ -121,7 +134,33 @@ func cmdRecover(root string, args []string) error {
 
 	// The grant, and a token to use it with. Both, because granting a role to
 	// somebody who then cannot authenticate is the lockout this exists to end.
+	//
+	// The grant only when they do not hold it. The store's first
+	// administrator, made by `quilzo init --admin`, holds it and has a
+	// passkey and no token, and is the person most likely to lose the one
+	// way in; the recovery refused them, "that binding already exists".
+	//
+	// Held means held as the recovery makes it: for good, and over every
+	// page. One that has ended, or that reaches only the pages they
+	// created, is replaced by it. Taken as held, it was left as it was, and
+	// the credential printed could administer nothing.
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		theGrant := func(b auth.Binding) bool {
+			return b.Principal == principal && b.Role == auth.RoleAdmin && b.Permission == "" &&
+				b.Resource == "/" && !b.Deny && b.Via == ""
+		}
+		for _, b := range p.Bindings {
+			if theGrant(b) && b.Expires == 0 && !b.OwnOnly {
+				return atomicfile.ErrUnchanged
+			}
+		}
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if !theGrant(b) {
+				kept = append(kept, b)
+			}
+		}
+		p.Bindings = kept
 		return p.Grant(auth.Binding{Principal: principal, Role: auth.RoleAdmin, Resource: "/"})
 	}); err != nil {
 		return err
@@ -141,6 +180,12 @@ func cmdRecover(root string, args []string) error {
 	secret, tok, err := toks.Issue("break-glass", principal, auth.RoleAdmin,
 		"/", ttl, auth.RoleAdmin)
 	if err != nil {
+		return err
+	}
+	// The person at the keyboard getting back in, so their own: a
+	// program's would not let them decide the access review a recovery is
+	// often followed by.
+	if err := toks.RecordKind(tok.ID, auth.KindPerson); err != nil {
 		return err
 	}
 	if err := saveTokens(root, toks); err != nil {
@@ -165,14 +210,14 @@ func cmdRecover(root string, args []string) error {
 
 	fmt.Println(secret)
 	fmt.Fprintf(os.Stderr, "\n  %sid %s · admin on / · expires in %s%s\n",
-		dim, tok.ID, ttl, reset)
-	fmt.Fprintf(os.Stderr, "  %sthis is the only time it is shown%s\n", dim, reset)
+		noteDim, tok.ID, ttl, noteReset)
+	fmt.Fprintf(os.Stderr, "  %sthis is the only time it is shown%s\n", noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "\n  %sit is deliberately short-lived: use it to "+
-		"issue a proper token%s\n", yellow, reset)
+		"issue a proper token%s\n", noteYellow, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sand to find out why every admin credential "+
-		"was lost%s\n", yellow, reset)
+		"was lost%s\n", noteYellow, noteReset)
 	fmt.Fprintf(os.Stderr, "  %sthe recovery is in the audit log, where it cannot "+
-		"be removed, and the security contact is told of it%s\n", dim, reset)
+		"be removed, and the security contact is told of it%s\n", noteDim, noteReset)
 	return nil
 }
 

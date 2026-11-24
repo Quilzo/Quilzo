@@ -6,10 +6,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,7 +39,7 @@ func cmdMCP(root string, args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	list := fs.Bool("list", false, "print the operations and exit")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -49,6 +51,28 @@ func cmdMCP(root string, args []string) error {
 	srv := buildMCP(root, s, caller, *tplDir)
 
 	if *list {
+		// The operations as one document under --json. This printed its
+		// table whatever was asked for, so a program finding out what the
+		// agent interface offers had columns to cut apart.
+		type operation struct {
+			Name    string `json:"name"`
+			Kind    string `json:"kind"`
+			Summary string `json:"summary"`
+		}
+		ops := make([]operation, 0, len(srv.Operations()))
+		for _, op := range srv.Operations() {
+			kind := "read"
+			if op.Writes {
+				kind = "write"
+			}
+			if op.Publishes {
+				kind = "publish"
+			}
+			ops = append(ops, operation{op.Name, kind, op.Summary})
+		}
+		if w.JSON(map[string]any{"operations": ops, "tools": len(srv.Tools())}) {
+			return nil
+		}
 		for _, op := range srv.Operations() {
 			kind := "read"
 			if op.Writes {
@@ -83,6 +107,14 @@ func cmdMCP(root string, args []string) error {
 			continue
 		}
 		resp := srv.Handle(req)
+		// Every call recorded, reads and refusals included, as over HTTP
+		// (wireInterface's Called): on standard input only a write left a
+		// record, so what a local agent read, and a publish it was refused,
+		// were invisible to the shield and to whoever reads the log.
+		if req.Method == "tools/call" {
+			tool, op := mcp.CallNames(req.Params)
+			record(root, stdioCallRecord(caller, tool, op, resp.Error))
+		}
 		// A notification has no id and expects no reply.
 		if len(req.ID) == 0 {
 			continue
@@ -92,6 +124,33 @@ func cmdMCP(root string, args []string) error {
 		}
 	}
 	return in.Err()
+}
+
+// quoteInput is something a caller sent, as a refusal quotes it: enough to
+// say which, and no more. read_page quoted a page name whole, so a reader
+// naming one just under the 2 MiB body limit had it sent back, and stored in
+// the log with the refusal, on every request.
+func quoteInput(s string) string { return strconv.Quote(clip(s, 80)) }
+
+// draftRefusal is what an agent is told when a write to the draft is
+// refused.
+//
+// A refusal, not a failure: an agent that reads "conflict" as "the server
+// broke" will retry blindly. And a retryable one when somebody else's write
+// got there first and changed the same thing, because every write here
+// reads the draft itself, so the next call is made against the draft as it
+// is then rather than against the one this call read. It said otherwise,
+// retryable:false beside a comment that a retry "fails identically forever",
+// and a client that believed it gave up on writes a second call would make.
+func draftRefusal(err error) *mcp.Refusal {
+	var moved *site.Conflict
+	var disagreed *site.MergeConflict
+	if errors.As(err, &moved) || errors.As(err, &disagreed) {
+		return &mcp.Refusal{Retryable: true, Reason: err.Error() +
+			"\n  read what you were changing again and send what you still mean to: " +
+			"the next call is made against the draft as it is then"}
+	}
+	return &mcp.Refusal{Reason: err.Error()}
 }
 
 func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.Server {
@@ -169,6 +228,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Keywords: []string{"read", "get", "page", "content", "fields"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["page"].(string)
+		// No page is the call's mistake, not a page that is missing. Left
+		// out, or given as "" or null, it was read as the empty name, and an
+		// agent was told there is no page "" and concluded the content was
+		// missing, as it had been told for a page given as a number.
+		if strings.TrimSpace(name) == "" {
+			return nil, &mcp.ArgumentError{Reason: "read_page needs arguments.page, the name of the page to read"}
+		}
 		if err := authorise(root, caller, auth.ActView, pageResource(name)); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
@@ -178,7 +244,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		body, ok := pages[name]
 		if !ok {
-			return nil, &mcp.Refusal{Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		b, _ := json.MarshalIndent(body, "", "  ")
 		return string(b), nil
@@ -212,6 +278,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"query": "the words to look for",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"search", "content", "pages", "words", "which page"},
 	}, func(a map[string]any) (any, error) {
@@ -258,6 +325,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"page":  "the page to compare against",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"similar", "related", "like", "nearest", "duplicate"},
 	}, func(a map[string]any) (any, error) {
@@ -278,8 +346,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		idx := vector.Build(s.GetRef(site.RefDraft), pages, search.Tokenise)
 		v, ok := idx.Vectors[name]
 		if !ok {
-			return nil, &mcp.Refusal{
-				Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		near, err := idx.Nearest(v, mcpHits(a), name)
 		if err != nil {
@@ -327,6 +394,12 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		var b strings.Builder
 		for _, c := range changes {
 			fmt.Fprintf(&b, "%s %s\n", c.Kind, c.Path)
+			// And what changed inside it, for whoever approves it to read.
+			if c.Kind == "modified" {
+				if fields, ferr := site.FieldChanges(s, c); ferr == nil {
+					b.WriteString(fieldChangesText(fields, "  "))
+				}
+			}
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
@@ -338,9 +411,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Detail: "Writes to the draft only. The page is recorded as AI-generated, " +
 			"which the EU AI Act requires and which you cannot opt out of.",
 		Args: map[string]string{
-			"page":   "page name: letters, digits, dot, dash, underscore",
-			"fields": "object of field names to string values",
+			"page": "page name: letters, digits, dot, dash, underscore",
+			"fields": "object of field names to values: text, or a number, true or false or a list " +
+				"where the page's content type takes one",
 		},
+		Types:  map[string]string{"fields": "object"},
 		Writes: true, NeedsRole: "author", Area: "/",
 		Keywords: []string{"write", "edit", "create", "update", "page", "change"},
 	}, func(a map[string]any) (any, error) {
@@ -357,11 +432,30 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if len(fields) == 0 {
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}
 		}
+		// A field with no name, or a null for a value, is in no page any
+		// other door writes and in no content type, and was kept in the
+		// draft as it came. A number, true or false, a list or an object
+		// stays a value: content types declare number, boolean and list
+		// fields, and some pages hold structured ones.
+		for k, v := range fields {
+			if strings.TrimSpace(k) == "" {
+				return nil, &mcp.ArgumentError{Reason: "write_page: a field in arguments.fields has no name"}
+			}
+			if v == nil {
+				// By a short form of its name, which is the caller's, as
+				// every name a refusal quotes is (quoteInput).
+				return nil, &mcp.ArgumentError{Reason: fmt.Sprintf(
+					"write_page: arguments.fields.%s is null; give it as \"\" to empty it", clip(k, 80))}
+			}
+		}
 
-		base := s.GetRef(site.RefDraft)
-		pages, err := site.PagesAt(s, site.RefDraft)
+		// The page set and the commit it is read from, which is what this
+		// write is made against (site.SaveDraftOver). An unreadable draft is
+		// an error rather than an empty site: written over, it would have
+		// become a draft holding this one page.
+		base, pages, err := draftOrLive(s)
 		if err != nil {
-			pages = map[string]any{}
+			return nil, err
 		}
 		existing, _ := pages[name].(map[string]any)
 		body := map[string]any{}
@@ -382,21 +476,29 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 
-		cid, err := site.SaveDraftFrom(s, pages, "mcp: write "+name,
+		// Merged with whatever landed since it was read. Checked against the
+		// base alone, the first of ten agents writing ten different pages at
+		// once landed and the other nine were refused, each told the draft
+		// had moved because of a page it never touched.
+		cid, _, err := site.SaveDraftOver(s, pages, "mcp: write "+name,
 			caller.Name, base)
 		if err != nil {
-			// A refusal, not a failure. An agent that reads "conflict" as "the
-			// server broke" will retry, and retrying a conflict against the
-			// same stale base fails identically forever.
-			return nil, &mcp.Refusal{Reason: err.Error()}
+			return nil, draftRefusal(err)
 		}
 
 		// Marked without being asked. An agent is a model, and a model writing
 		// a page is exactly what Article 50 is about — leaving this to the
 		// caller would mean the one interface built for agents is the one that
 		// forgets.
+		//
+		// By the client that wrote it (interfaceClient): the app, when an app
+		// was given the token. Every page was marked as written by
+		// mcp-client, so with two apps connected for one person the mark
+		// could not say which wrote it, and only the call's own record named
+		// the app.
+		who, model := interfaceClient(caller.Name, caller.Client)
 		if err := markAssisted(root, s, cid, []string{name},
-			map[string]bool{name: isNew}, "mcp-client", "written over MCP",
+			map[string]bool{name: isNew}, model, "written over MCP",
 			caller.Name); err != nil {
 			return nil, fmt.Errorf("the page was written but not marked: %w", err)
 		}
@@ -405,13 +507,54 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, err
 		}
 
+		// Verified as the caller was: a token proves it over HTTP, and the
+		// interface's own record of the call says so. This said false
+		// whoever called, so every write an app made with a token was in
+		// the log as verified and as not, and the agent watch counted the
+		// second as an act nobody verified was behind.
 		record(root, audit.Record{
 			Action: "mcp.write_page", Resource: "/" + name, Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
-			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Principal: who, Kind: audit.KindAI, Model: model,
+			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
-		return fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
-			"and is not public until someone publishes", name, short(cid)), nil
+		said := fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
+			"and is not public until someone publishes", name, short(cid))
+		// Somebody's claim on the page, as the browser's editor shows it: an
+		// agent writing over an afternoon's rewrite was told nothing.
+		if claim := claimSaid(root, caller.Name, name); claim != "" {
+			said += ". " + claim
+		}
+		return said, nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "list_locks", NeedsRole: "reader",
+		Summary: "who has claimed which pages for editing, and why",
+		Detail: "Claims are advisory: they never stop a write. Check them before " +
+			"rewriting a page, as a person would look before starting on it.",
+		Area:     "/",
+		Keywords: []string{"lock", "locks", "claim", "claimed", "editing", "busy", "who"},
+	}, func(map[string]any) (any, error) {
+		locks, err := loadLocks(root)
+		if err != nil {
+			return nil, err
+		}
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
+		var b strings.Builder
+		for _, l := range locks.Active(time.Now()) {
+			if !may(l.Page) {
+				continue
+			}
+			fmt.Fprintf(&b, "%s\t%s\tuntil %s\t%s\n", l.Page, l.Holder,
+				time.Unix(l.Until, 0).Format("15:04"), l.Note)
+		}
+		if b.Len() == 0 {
+			return "nobody has claimed anything", nil
+		}
+		return strings.TrimSpace(b.String()), nil
 	})
 
 	srv.Register(mcp.Operation{
@@ -446,7 +589,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// error since the day somebody noticed the same shape there, and the
 		// comment it carries says why at length: a gate that cannot run must
 		// not exit like a gate that passed.
-		reports, err := checkAccessibility(root, s, draft, tplDir)
+		checked, reports, err := checkAccessibilityOf(root, s, draft, tplDir)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 				"the accessibility check could not run, so publishing would "+
@@ -507,14 +650,31 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if beforeLiveMoves != nil {
 			beforeLiveMoves()
 		}
+		// The design the gate above rendered through goes with it, a
+		// change to it alone included, as it does from the command line.
+		designChanged, undoDesign, derr := markDesignPublished(root, tplDir, designDigest(checked))
+		var moved errDesignMoved
+		if errors.As(derr, &moved) {
+			return nil, &mcp.Refusal{Reason: derr.Error()}
+		}
+		if derr != nil {
+			return nil, derr
+		}
 		pub, err := site.Publish(s, draft)
 		if err != nil {
+			undoDesign()
 			return nil, err
+		}
+		// Verified as the caller was, as mcp.write_page is.
+		who, model := interfaceClient(caller.Name, caller.Client)
+		detail := map[string]string{"on_behalf_of": caller.Name}
+		if designChanged {
+			detail["design"] = "changed"
 		}
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
-			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Principal: who, Kind: audit.KindAI, Model: model,
+			Verified: caller.Verified, Detail: detail,
 		})
 		var changed []string
 		for _, c := range pub.Changes {
@@ -523,6 +683,9 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		fireWebhooks(root, "published", pub.Published, changed)
 		// Nothing printed: standard output may be this conversation.
 		go func() { _, _, _ = syncPay(root, caller) }()
+		if designChanged && len(pub.Changes) == 0 {
+			return "published; the design is live, and the pages were live already", nil
+		}
 		return fmt.Sprintf("published; %d change(s) are live", len(pub.Changes)), nil
 	})
 
@@ -568,15 +731,20 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			len(unmarked), strings.Join(unmarked, ", ")), nil
 	})
 
-	// What the law asks of the published site, read-only. Admin, as the
-	// inventory is: it names the forms and where personal data sits.
+	// What the law asks of the published site, read-only. Asked in the
+	// compliance area, as `quilzo compliance site` is: it names the forms
+	// and where personal data sits, so a role over the site reaches it only
+	// as administrator (auth's guarded areas), and the compliance officer
+	// and the auditor, whose jobs are granted there, reach it too. Asked of
+	// the whole site, it refused them the report their command gives them.
 	srv.Register(mcp.Operation{
-		Name: "site_report", NeedsRole: "admin",
+		Name: "site_report", NeedsRole: "reader", Area: auth.AreaCompliance,
 		Summary: "what the law asks of the published site and where it stands: " +
 			"accessibility, the statement, forms, personal data, AI disclosure and marking, browser protections",
 		Detail: "Read-only. A duty marked clear means the checks found nothing, not that the duty is met. " +
 			"Pass statement=true for the draft accessibility statement as Markdown.",
 		Args:     map[string]string{"statement": "true for only the draft accessibility statement"},
+		Types:    map[string]string{"statement": "boolean"},
 		Keywords: []string{"compliance", "accessibility", "statement", "gdpr", "ai act", "eaa", "headers", "privacy", "site"},
 	}, func(a map[string]any) (any, error) {
 		rep, err := buildSiteReport(root, tplDir, time.Now())
@@ -607,7 +775,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	// Records, types, media, the pipeline and the read-only assurance
 	// operations. In another file because this one was already the length where
 	// somebody adding an operation stops reading the gates at the top.
-	registerContentOps(srv, root, s, caller)
+	registerContentOps(srv, root, s, caller, tplDir)
 	registerShieldOps(srv, root, caller)
 	registerEvalOps(srv, root, caller)
 	registerAssistantOps(srv, root, caller)
@@ -674,11 +842,14 @@ func actionForRole(role string) (auth.Action, error) {
 	case "publisher":
 		return auth.ActPublish, nil
 	case "admin":
-		// The posture, inventory, integrity and agent-activity reports. The
-		// admin restricts these screens to an administrator on the grounds
-		// that a detailed list of where this system's defences are thin is a
-		// target list, and this surface handed the same list to anybody who
-		// could start the process.
+		// The agent-activity, evaluation and scanning reports. The admin
+		// restricts these screens to an administrator on the grounds that a
+		// detailed list of where this system's defences are thin is a target
+		// list, and this surface handed the same list to anybody who could
+		// start the process. The posture, the inventory, the shield and the
+		// site report are asked in their own areas instead (Operation.Area),
+		// which a role over the site reaches only as administrator, as
+		// their commands are.
 		return auth.ActGrant, nil
 	}
 	return "", fmt.Errorf("%q is not a role this program has", role)

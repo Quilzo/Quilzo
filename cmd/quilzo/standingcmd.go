@@ -14,19 +14,17 @@ import (
 //
 // internal/auth is the standing kind: a binding, an administrator granted
 // it, it is revocable, deny wins wherever it sits. The other kind arrived
-// later and by accident — a call has a host who can eject people, a share
-// link lets a client read one draft, an errand has an owner who is the only
-// person who can confirm it. Nobody granted those and they expire when the
-// situation does. (A room's moderator was named here too; taking down
-// somebody else's words needs publish on the whole site, and the register
-// says so.)
+// later and by accident — a share link lets a client read one draft, a
+// visitor handed to a person holds the secret to one conversation, whoever
+// starts an agent run may stop it. Nobody granted those and they expire
+// when the situation does.
 //
-// That is not wrong. A call host is genuinely not a rung on a site-wide
-// ladder, and making it one would produce exactly the over-granting
-// internal/auth exists to avoid. What was missing is the relationship, and
-// the rule is about reach: a power that acts inside its situation needs
-// nothing standing, and one that survives it is a standing act wearing a
-// situational costume.
+// That is not wrong. A handoff's visitor is genuinely not a rung on a
+// site-wide ladder, and making them one would produce exactly the
+// over-granting internal/auth exists to avoid. What was missing is the
+// relationship, and the rule is about reach: a power that acts inside its
+// situation needs nothing standing, and one that survives it is a standing
+// act wearing a situational costume.
 
 func cmdStanding(args []string) error {
 	if len(args) == 0 {
@@ -34,9 +32,12 @@ func cmdStanding(args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return standingList()
 	default:
-		return fmt.Errorf("unknown standing command %q; try list", args[0])
+		return errMisused{fmt.Errorf("unknown standing command %q; try list", args[0])}
 	}
 }
 
@@ -79,10 +80,10 @@ func standingList() error {
 	w.Human("  %s%s%s\n\n", bold, wrapAt(shape.Why(), 66, "  "), reset)
 	w.Human("  %sthe tempting rule is that every situational role needs a\n"+
 		"  standing one above some line. That is wrong, and applying it\n"+
-		"  would break the thing that works: the point of a call host is\n"+
-		"  that an ordinary person can run a meeting, and requiring an\n"+
-		"  administrator would mean meetings are run by whoever has the\n"+
-		"  most access — a permission model shaping the organisation%s\n",
+		"  would break the thing that works: the point of a handoff is\n"+
+		"  that a visitor with no account can talk to a person, and\n"+
+		"  requiring a grant would mean only those with the most access\n"+
+		"  are helped — a permission model shaping the organisation%s\n",
 		dim, reset)
 	return nil
 }

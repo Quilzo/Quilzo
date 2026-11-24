@@ -116,6 +116,36 @@ const agentRunTime = 3 * time.Minute
 type keptRun struct {
 	root string
 	rec  agent.Record
+	// alive is the lock this process holds while it works on the run
+	// (holdRunAlive), so whoever reads the run can tell when it has ended.
+	alive *os.File
+}
+
+// aliveLock is where a run's lock is kept.
+func aliveLock(root string, rec agent.Record) string {
+	return filepath.Join(runDirFor(root, rec), rec.ID+".alive")
+}
+
+// running takes the run's lock for this process, once, and says in the
+// record whether it holds it. One it could not take leaves the record
+// judged by when it was last written, as every run was.
+func (k *keptRun) running(rec *agent.Record) {
+	if k.alive == nil {
+		if err := os.MkdirAll(runDirFor(k.root, *rec), 0o700); err == nil {
+			k.alive, _ = holdRunAlive(aliveLock(k.root, *rec))
+		}
+	}
+	rec.Held = k.alive != nil
+}
+
+// letGo gives the run's lock up, once the record says the stretch ended.
+func (k *keptRun) letGo() {
+	if k.alive == nil {
+		return
+	}
+	_ = os.Remove(aliveLock(k.root, k.rec))
+	k.alive.Close()
+	k.alive = nil
 }
 
 // checkpoint writes the run as it stands after a step. A write that fails
@@ -125,11 +155,13 @@ func (k *keptRun) checkpoint(t agent.Trace) {
 	rec.Trace = agent.Keep(rec.ID, rec.By, rec.Model, rec.Started, t,
 		rec.Receipt).Trace
 	rec.State = agent.Running
+	k.running(&rec)
 	_ = writeAgentRun(k.root, rec)
 }
 
 // finish writes the run as it ended this stretch.
 func (k *keptRun) finish(out agentOutcome) error {
+	defer k.letGo()
 	started := k.rec.Started
 	if started.IsZero() {
 		started = out.Started
@@ -142,7 +174,8 @@ func (k *keptRun) finish(out agentOutcome) error {
 	if rec.Agent == "" {
 		rec.Agent = k.rec.Agent
 	}
-	rec.From, rec.Answers, rec.Trigger = k.rec.From, k.rec.Answers, k.rec.Trigger
+	rec.From, rec.Answers, rec.Trigger, rec.ReadOnly = k.rec.From, k.rec.Answers, k.rec.Trigger, k.rec.ReadOnly
+	rec.Bound = k.rec.Bound
 	rec.Eval, rec.Plant = k.rec.Eval, k.rec.Plant
 	k.rec = rec
 	if err := writeAgentRun(k.root, rec); err != nil {
@@ -180,7 +213,8 @@ func runAgentKeptFor(ctx context.Context, root, name, goal string, withModel, pr
 		return "", agentOutcome{}, err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name,
-		Goal: goal, By: caller.Name, Started: started, Trigger: trigger}}
+		Goal: goal, By: caller.Name, Started: started, Trigger: trigger, ReadOnly: caller.Limits.ReadOnly,
+		Bound: caller.bound(root)}}
 	if withModel {
 		if m, _ := agentRunModel(root, name); m != nil {
 			k.rec.Model = m.Name()
@@ -468,9 +502,28 @@ func prepareReplay(root, id string, n int, caller *Caller) (*keptRun, agent.Reco
 	}
 	from := prior
 	from.Trace = cut
+	// Run again by a person, it is their run and no trigger's, as its own
+	// record says: what it sends is decided as in a run a person starts,
+	// and not held as in one nobody started (agentsends.go).
+	from.Trigger = ""
+	// What bounded the run it is made from still bounds it, as it bounds
+	// that run taken on (executeAgentFrom): it reads only where its
+	// starter could only read, and goes no further than they reached. Its
+	// own record keeps both, for whoever takes the new run on. The new
+	// record kept neither, so a run dana started confined to /about and
+	// ran again, or one a read-only token ran again, was bounded by nobody
+	// once it waited: sam answered it, and it wrote wherever sam may.
+	// Whoever runs it again is held first to what the access policy lets
+	// them do now (Caller.carried), as the run itself is (executeAgentFrom),
+	// so a refusal here is the one the run would give.
+	held, err := caller.carried(root).within(prior.Bound)
+	if err != nil {
+		return nil, prior, err
+	}
 	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
 		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
-		From: fmt.Sprintf("%s@%d", id, n)}}
+		From:     fmt.Sprintf("%s@%d", id, n),
+		ReadOnly: prior.ReadOnly || caller.Limits.ReadOnly, Bound: held.bound(root)}}
 	return k, from, nil
 }
 
@@ -599,7 +652,7 @@ func loadAgentRun(root, id string) (agent.Record, error) {
 		b, err = readBounded(filepath.Join(agentEvalRunsDir(root), id+".json"), 16<<20)
 	}
 	if os.IsNotExist(err) {
-		return rec, fmt.Errorf("there is no run %s", id)
+		return rec, errNotFound{fmt.Errorf("there is no run %s", id)}
 	}
 	if err != nil {
 		return rec, err
@@ -609,6 +662,11 @@ func loadAgentRun(root, id string) (agent.Record, error) {
 	}
 	if rec.ID != id {
 		return rec, fmt.Errorf("the file for %s holds %q", id, rec.ID)
+	}
+	// A run that says it is running, kept by a process holding its lock,
+	// has ended if the lock has been let go of: the process is gone.
+	if rec.State == agent.Running && rec.Held {
+		rec.Gone = runAliveLetGo(aliveLock(root, rec))
 	}
 	return rec, nil
 }
@@ -663,8 +721,9 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	case isNew && exists:
 		return fmt.Errorf("an agent called %s is already declared", m.Name)
 	case !isNew && !exists:
-		return fmt.Errorf("no agent called %s is declared", m.Name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", m.Name)}
 	}
+	m.Program = keepPin(set.Agents[m.Name].Program, m.Program)
 	// The amendment's reach, computed rather than summarised: what this
 	// agent may now do that it may not before, listed exactly, and gated
 	// where it widens. An amendment that reads as a review of the same
@@ -672,7 +731,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	// the oldest trick on a tired reader, and the answer to it is the diff
 	// itself, in the reader's words.
 	var delta agent.Delta
-	if !isNew {
+	gate := func() error {
+		if isNew {
+			return nil
+		}
 		delta = agent.DeltaOf(set.Agents[m.Name], m)
 		if delta.Widens && !widen {
 			return fmt.Errorf(
@@ -680,6 +742,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 					"read the list, and declare it again with --widen when it is what you mean",
 				m.Name, strings.Join(delta.Added, "\n  "))
 		}
+		return nil
+	}
+	if err := gate(); err != nil {
+		return err
 	}
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
@@ -697,6 +763,19 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 			return fmt.Errorf("giving an agent a program is an administrator's decision: %w", err)
 		}
 		if err := clearOfStore(root, m.Program); err != nil {
+			return err
+		}
+		// Declaring it is reviewing it, so the file is pinned as it is now,
+		// or held to the digest the declaration names.
+		if err := reviewProgram(m.Name, m.Program); err != nil {
+			return err
+		}
+		// And read for its reach again, now that the file is: the reach
+		// above was read before it, so an amendment that only narrowed the
+		// program, less memory, pinned whatever had replaced the file since
+		// its review, without --widen and without a word that it was not the
+		// file reviewed. Another file at the same path is another program.
+		if err := gate(); err != nil {
 			return err
 		}
 	}
@@ -743,6 +822,11 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 		// read: a log that says "3 things changed" is a log nobody audits.
 		detail["widened"] = clip(delta.Lines(), 2000)
 	}
+	// Which file was approved, not only where it was: what a package's
+	// install or a declaration agreed to run.
+	if pr := m.Program; pr != nil && pr.Digest != "" {
+		detail["program"], detail["pinned"] = clip(pr.Command[0], 300), pr.Digest
+	}
 	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
 }
 
@@ -769,7 +853,7 @@ func withdrawAgent(root, name string, caller *Caller) error {
 		return err
 	}
 	if _, ok := set.Agents[name]; !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	for other, m := range set.Agents {
 		for _, d := range m.Delegates {
@@ -788,6 +872,9 @@ func withdrawAgent(root, name string, caller *Caller) error {
 		}
 		delete(set.Agents, name)
 		delete(set.Identities, name)
+		// And what it was let send unattended, which another agent given
+		// its name later has not been granted.
+		delete(set.Sends, name)
 		return nil
 	}); err != nil {
 		return err
@@ -837,14 +924,16 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 		return "", err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal, By: caller.Name,
-		Started: started, State: agent.Running}}
+		Started: started, State: agent.Running, ReadOnly: caller.Limits.ReadOnly, Bound: caller.bound(root)}}
 	if mm, _ := agentRunModel(root, name); mm != nil {
 		k.rec.Model = mm.Name()
 	}
 	if liveRuns.Load() >= MaxLiveRuns {
 		return "", errTooManyLive
 	}
+	k.running(&k.rec)
 	if err := writeAgentRun(root, k.rec); err != nil {
+		k.letGo()
 		return "", err
 	}
 	err = goLive(time.Duration(m.Budget.Duration), func(ctx context.Context) {
@@ -854,8 +943,9 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 		finishLive(k, out, err)
 	})
 	if err != nil {
-		k.rec.State, k.rec.Trace.Stopped = "", err.Error()
+		k.rec.State, k.rec.Held, k.rec.Trace.Stopped = "", false, err.Error()
 		_ = writeAgentRun(root, k.rec)
+		k.letGo()
 		return "", err
 	}
 	return id, nil
@@ -906,6 +996,10 @@ func finishLive(k *keptRun, out agentOutcome, err error) {
 }
 
 func agentRuns(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
@@ -931,7 +1025,7 @@ func agentRuns(root string, args []string) error {
 
 func agentTrace(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent trace RUN")
+		return errMisused{fmt.Errorf("usage: quilzo agent trace RUN")}
 	}
 	r, err := loadAgentRun(root, args[0])
 	if err != nil {
@@ -1044,7 +1138,7 @@ func printable(s string) string {
 
 func runAndStep(args []string, usage string) (string, int, error) {
 	if len(args) != 2 {
-		return "", 0, fmt.Errorf("usage: quilzo agent %s", usage)
+		return "", 0, errMisused{fmt.Errorf("usage: quilzo agent %s", usage)}
 	}
 	n, err := strconv.Atoi(args[1])
 	if err != nil || n < 0 {
@@ -1057,7 +1151,7 @@ func runAndStep(args []string, usage string) (string, int, error) {
 // person's answers to the decider's question a run is waiting on.
 func agentAnswerQuestion(root string, args []string) error {
 	if len(args) < 3 {
-		return fmt.Errorf("usage: quilzo agent answer RUN STEP NAME=VALUE...")
+		return errMisused{fmt.Errorf("usage: quilzo agent answer RUN STEP NAME=VALUE...")}
 	}
 	id, n, err := runAndStep(args[:2], "answer RUN STEP NAME=VALUE...")
 	if err != nil {
@@ -1102,7 +1196,7 @@ func agentAnswer(root string, approve bool, args []string) error {
 
 func agentResumeCmd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent resume RUN")
+		return errMisused{fmt.Errorf("usage: quilzo agent resume RUN")}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), agentRunTime)
 	defer cancel()

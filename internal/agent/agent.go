@@ -310,6 +310,13 @@ type Manifest struct {
 	Memory    Memory    `json:"memory,omitempty"`
 	Tools     []Tool    `json:"tools,omitempty"`
 	Budget    Budget    `json:"budget"`
+	// Withheld are tools the declaration names that this run may not call,
+	// by lower-cased name, each with why: a tool that writes to another
+	// system, for a caller who may only read. Taken out of Tools, so no
+	// model is offered one; one asked for anyway is refused with its reason
+	// rather than as a tool nobody declared, so whoever reads the refusal
+	// learns it was the caller and not the declaration. Never declared.
+	Withheld map[string]string `json:"-"`
 
 	// Delegates are the agents a supervisor may hand work to. Named, so the
 	// graph is a declaration rather than something a model decides at runtime.

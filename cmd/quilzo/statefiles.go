@@ -28,11 +28,33 @@ import (
 // way: revoked or denied on the command line or on People, or
 // deprovisioned by the identity provider.
 func updatePolicy(root string, change func(*auth.Policy) error) (*auth.Policy, error) {
+	return updatePolicyKeeping(root, change, true)
+}
+
+// provisionPolicy is updatePolicy for provisioning (scimSync), which may
+// leave nobody able to administer the store for as long as one request
+// takes: a rename moves what provisioning gave from the old name to the
+// new in two changes, taking it from the old first, and refusing the
+// first refused renaming the last administrator. Provisioning keeps its
+// own rule instead, under the same lock: a suspension never denies the
+// last person who can grant (scimSync, lastGranter), and nothing but a
+// rename takes from them what makes them able to.
+func provisionPolicy(root string, change func(*auth.Policy) error) (*auth.Policy, error) {
+	return updatePolicyKeeping(root, change, false)
+}
+
+func updatePolicyKeeping(root string, change func(*auth.Policy) error, keep bool) (*auth.Policy, error) {
 	var out *auth.Policy
 	err := atomicfile.Update(policyPath(root), func(p *auth.Policy) error {
 		out = p
 		before := dual.Administrators(p)
+		// Nobody left able to administer a store somebody did is refused
+		// here, for every surface at once (dual.ErrLastAdministrator).
+		was := keep && dual.Administered(p)
 		if err := change(p); err != nil {
+			return err
+		}
+		if err := dual.KeepsAnAdministrator(was, p); err != nil {
 			return err
 		}
 		return dualStore(root).NoteAdministrators(before, dual.Administrators(p), time.Now())

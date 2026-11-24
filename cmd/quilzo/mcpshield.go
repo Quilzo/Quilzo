@@ -17,8 +17,12 @@ import (
 // tools, which its agents reach through those tools' own interfaces.
 
 func registerShieldOps(srv *mcp.Server, root string, caller *Caller) {
+	// Asked in the security area, as `quilzo shield status` is: what the
+	// analyst's job is granted on. Asked of the whole site, it refused the
+	// analyst, whose job reaches nothing else. A role over the site reaches
+	// the area only as administrator (auth's guarded areas), as before.
 	srv.Register(mcp.Operation{
-		Name: "shield_status", NeedsRole: "admin",
+		Name: "shield_status", NeedsRole: "reader", Area: auth.AreaSecurity,
 		Summary: "what Quilzo is doing to protect itself: protections in " +
 			"force, the playbooks and how often each has been right",
 		Detail: "Each protection in force (what it blocks or turns down, " +

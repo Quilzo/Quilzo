@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -182,4 +183,28 @@ func doorRig(t *testing.T, turns ...string) (string, func() []string) {
 		t.Fatal(err)
 	}
 	return root, func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), seen...) }
+}
+
+// Each person's client at the door is recorded under the person, as at the
+// agent interface: recorded as one principal, model-client, every person's
+// client was one agent to the agent watch, and two people each refused once
+// were one client refused twice.
+func TestEachPersonsClientAtTheDoorIsTheirs(t *testing.T) {
+	root, _ := doorRig(t, answerTurn)
+	rae := remoteCaller(auth.Token{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	_, _ = doorChat(context.Background(), root, rae, "", "openai", "quilzo", say("hi"))
+	_, _ = doorChat(context.Background(), root, dana(), "", "openai", "agent/nobody", say("hi"))
+	events, _ := audit.Read(auditPath(root))
+	who := map[string]bool{}
+	for _, e := range events {
+		if e.Action == "model.door" && e.Kind == audit.KindAI && e.Model == "model-client" {
+			who[e.Principal] = true
+		}
+	}
+	if len(who) != 2 {
+		t.Fatalf("two people's clients were recorded as %d principal(s)", len(who))
+	}
+	if reports := agentwatch.Look(events, time.Now()); len(reports) != 2 {
+		t.Errorf("the agent watch saw %d agent(s)", len(reports))
+	}
 }

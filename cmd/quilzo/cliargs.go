@@ -1,0 +1,422 @@
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"bytes"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/out"
+)
+
+// One rule for the words on a command line: a word a command does not take
+// is refused, with the command's usage and exit 2, and is never dropped or
+// read as something else.
+//
+// Go's flag package stops at the first word that is not a flag and leaves
+// the rest in fs.Args(), which most commands never looked at. So whatever
+// followed an unquoted value was thrown away with every flag after it:
+// `auth grant fay publisher --note covering for Bea --for 30d --on /news`
+// made a permanent grant on the whole site, `rollback 2` went back one
+// publication, `init mysite` made ./.quilzo, and `auth deny`, which put its
+// --deny at the end of the line, granted the role it was asked to deny.
+// Each command parsing for itself is how the check was missing from all of
+// them at once, so it is made here, in the helpers they share.
+
+// errMisused is a command line that does not parse. It exits 2, which the
+// help documents as "misused", rather than 1, which is a command that ran
+// and failed.
+type errMisused struct{ error }
+
+func (e errMisused) Unwrap() error { return e.error }
+
+// badFlag is what the flag package said of a flag it could not read: one the
+// command does not define, or a value missing or not of the flag's kind. It
+// is a command line that does not parse, and so misused: it was handed back
+// bare and exited 1, so `add --bogus` and some three hundred other command
+// lines with a mistyped flag were failures a script would retry.
+type badFlag struct{ error }
+
+func (e badFlag) Unwrap() error { return e.error }
+
+// invoked is the command and the arguments main dispatched, so that a
+// refusal can quote the lines of the help about the command rather than a
+// flag set's bare name. Empty in a test that calls a command directly.
+//
+// root is the store the line was given (--root), so that a refusal that
+// prints the line to type next names the same store.
+var invoked struct {
+	cmd  string
+	args []string
+	root string
+}
+
+// parseFlags parses fs's flags wherever they stand among args, adds the
+// positional arguments to *pos until it holds n of them, and refuses a word
+// past those. pos may be nil for a command that takes nothing but flags.
+//
+// Wherever, because leadingArgs gathered names only up to the first flag:
+// `auth grant --on /news fay publisher` found no names and answered with its
+// usage, while `agent new --kind operator b2` took the same order.
+// Everything after "--" is positional, as the flag package has it.
+func parseFlags(fs *flag.FlagSet, args []string, pos *[]string, n int) error {
+	got, at, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	have := 0
+	if pos != nil {
+		have = len(*pos)
+	}
+	// The first word past the n is the one refused. A caller that came with
+	// more than n names of its own has none here to refuse and counts them
+	// itself: `research add NAME FILE…` did, was told it took one name, and
+	// the refusal reached for a word that was not there and stopped the
+	// program.
+	if i := max(n-have, 0); i < len(got) {
+		return strayWord(fs, args, at[i], have > 0 || i > 0)
+	}
+	if pos != nil {
+		*pos = append(*pos, got...)
+	}
+	return nil
+}
+
+// parseInterspersed is the loop under parseFlags and parseAnywhere: each
+// positional argument and where it stood in args.
+func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int, err error) {
+	off := 0
+	for off <= len(args) {
+		if err := parseOnce(fs, args[off:]); err != nil {
+			return nil, nil, err
+		}
+		rest := fs.Args()
+		next := len(args) - len(rest)
+		// "--" ends the flags: what follows belongs to whatever the command
+		// hands it to, a program's own --root among it, and is not parsed.
+		if next > off && args[next-1] == "--" && endsTheFlags(fs, args[off:next]) {
+			for i := next; i < len(args); i++ {
+				pos, at = append(pos, args[i]), append(at, i)
+			}
+			return pos, at, nil
+		}
+		if len(rest) == 0 {
+			return pos, at, nil
+		}
+		pos, at = append(pos, rest[0]), append(at, next)
+		off = next + 1
+	}
+	return pos, at, nil
+}
+
+// parseOnce is fs.Parse, with what the flag package could not read said to
+// be a misused command line (badFlag), for the few commands that parse their
+// flags themselves as well as for the loop above. A flag that asked for help
+// is left as it is, for main to answer.
+//
+// And without the flag package's own answer to a flag it could not read,
+// which was every flag of the set under "Usage of move:", each written with
+// one dash where the help writes two, and then the error again from main:
+// `quilzo move about x --dryrun` was eight lines, none of them saying that
+// --dry-run was meant. What it could not read is said instead by
+// flagRefusal. Asked for help, the set still lists its flags: that list is
+// the answer then (answersOwnHelp).
+func parseOnce(fs *flag.FlagSet, args []string) error {
+	var said bytes.Buffer
+	output := fs.Output()
+	fs.SetOutput(&said)
+	err := fs.Parse(args)
+	fs.SetOutput(output)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, flag.ErrHelp):
+		_, _ = output.Write(said.Bytes())
+		return err
+	}
+	return flagRefusal(fs, err)
+}
+
+// flagRefusal is the refusal of a flag the set could not read: the flag
+// package's line, the flag most likely meant, written as the help writes
+// it, and the help's lines for the command. A set with no flags (positionals)
+// is left to name the word itself, as strayWord does. Either way it is a
+// misused command line (badFlag), exit 2.
+func flagRefusal(fs *flag.FlagSet, err error) error {
+	var names []string
+	fs.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
+	if len(names) == 0 {
+		return errMisused{badFlag{err}}
+	}
+	msg := err.Error()
+	if typed, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		typed, _, _ = strings.Cut(strings.TrimLeft(typed, "-"), "=")
+		if near := nearestWords(typed, names); len(near) > 0 {
+			for i := range near {
+				near[i] = "--" + near[i]
+			}
+			msg += "\n  did you mean " + strings.Join(near, ", or ") + "?"
+		}
+	}
+	if help := helpFor(invoked.cmd, invoked.args); invoked.cmd != "" && help != "" {
+		msg += "\n" + strings.TrimRight(help, "\n")
+	}
+	return errMisused{badFlag{errors.New(msg)}}
+}
+
+// endsTheFlags reports whether the "--" that read ends with, the words Parse
+// has just taken, ended the flags, and was not the value of the flag before
+// it. In `auth grant --note -- dana publisher --on /legal` the note is "--";
+// taken for the end of the flags, it made a name of every word after it, the
+// --on and its path among them.
+//
+// Every word of read is a flag, a flag's value or the "--" that stopped the
+// parse, so walking the flags and stepping over their values finds which.
+func endsTheFlags(fs *flag.FlagSet, read []string) bool {
+	for i := 0; i < len(read); i++ {
+		if read[i] == "--" {
+			return true
+		}
+		name, _, beside := strings.Cut(strings.TrimLeft(read[i], "-"), "=")
+		if f := fs.Lookup(name); f != nil && !beside && !isBoolFlag(f) {
+			i++
+		}
+	}
+	return false
+}
+
+// isBoolFlag reports whether a flag takes no value, as the flag package
+// asks it.
+func isBoolFlag(f *flag.Flag) bool {
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
+}
+
+// strayWord is the refusal of args[i], a word the command does not take.
+//
+// It says what the word most likely was. A word after a flag's value is the
+// rest of that value, unquoted, as `--note contract ended` is: the hint
+// quotes the value back so the line can be typed again as it was meant. A
+// word after the names a command takes (afterName) is the rest of the last
+// of them, as `note add index the price is wrong` is.
+func strayWord(fs *flag.FlagSet, args []string, i int, afterName bool) error {
+	name := "this command"
+	if invoked.cmd != "" {
+		name = "quilzo " + invoked.cmd
+		// The subcommand, where the first word is one: the help has lines
+		// of its own for it. `lock about` is a page.
+		if len(invoked.args) > 0 && !strings.HasPrefix(invoked.args[0], "-") &&
+			helpFor(invoked.cmd, invoked.args[:1]) != helpFor(invoked.cmd, nil) {
+			name += " " + invoked.args[0]
+		}
+	}
+	msg := fmt.Sprintf("usage: %s does not take %q", name, args[i])
+	if flagAt, value := valueBefore(fs, args, i); flagAt >= 0 {
+		end := i + 1
+		for end < len(args) && !strings.HasPrefix(args[end], "-") {
+			end++
+		}
+		words := strings.Join(append(value, args[i:end]...), " ")
+		flagName, _, _ := strings.Cut(args[flagAt], "=")
+		msg += fmt.Sprintf("; if it is part of %s's value, the value goes in quotes: %s %q", flagName, flagName, words)
+	} else if afterName {
+		msg += "; words that go together go in quotes"
+	}
+	if help := helpFor(invoked.cmd, invoked.args); invoked.cmd != "" && help != "" {
+		msg += "\n" + strings.TrimRight(help, "\n")
+	}
+	return errMisused{fmt.Errorf("%s", msg)}
+}
+
+// valueBefore finds the flag whose value args[i] follows, if the words
+// between them are all that value's: the flag's index and its value's
+// words, or -1.
+func valueBefore(fs *flag.FlagSet, args []string, i int) (int, []string) {
+	for j := i - 1; j >= 0; j-- {
+		a := args[j]
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		if a == "--" {
+			return -1, nil
+		}
+		name, inline, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		f := fs.Lookup(name)
+		if f == nil {
+			return -1, nil
+		}
+		if isBoolFlag(f) {
+			return -1, nil
+		}
+		// The flag's own value, then the words between it and args[i]; any
+		// more than one word there were not its value but a positional
+		// argument, and the hint would be wrong.
+		if hasValue {
+			if j != i-1 {
+				return -1, nil
+			}
+			return j, []string{inline}
+		}
+		if j != i-2 {
+			return -1, nil
+		}
+		return j, []string{args[j+1]}
+	}
+	return -1, nil
+}
+
+// positionals is parseFlags for a command that takes no flags: up to n
+// names, and a word or a flag past them refused. The commands that read
+// names with leadingArgs and threw the rest away took `assistant remove
+// help now` as `assistant remove help`.
+//
+// A flag is refused the way a word is. Left to the flag package, `verify
+// --all` was answered "flag provided but not defined: -all", then "Usage of
+// arguments:" with nothing under it, since the set has no flags to list, then
+// the error again from main, and exit 1, which is a command that ran and
+// failed. So the set is silent, and the flag is named with the help's lines
+// for the command and exit 2.
+func positionals(args []string, n int) ([]string, error) {
+	fs := flag.NewFlagSet("arguments", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var pos []string
+	err := parseFlags(fs, args, &pos, n)
+	var misused errMisused
+	var bad badFlag
+	switch {
+	case err == nil:
+		return pos, nil
+	case errors.As(err, &bad):
+		// Named below, with the help's lines.
+	case errors.As(err, &misused), errors.Is(err, flag.ErrHelp):
+		return nil, err
+	}
+	// The set has no flags, so the first word written as one is the one the
+	// parse stopped at.
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if len(a) > 1 && a[0] == '-' {
+			return nil, strayWord(fs, args, i, false)
+		}
+	}
+	return nil, err
+}
+
+// noArguments refuses anything after a subcommand that takes nothing. Such a
+// subcommand was called with the store's root alone, so what followed it was
+// never read: `config show site.name` showed all of the settings and said
+// nothing of the key, and `verify everything` checked what it always checks.
+func noArguments(args []string) error {
+	_, err := positionals(args, 0)
+	return err
+}
+
+// durationFlag is a length of time on the command line: Go's own (90m,
+// 72h, 1h30m) or a whole number of days or weeks (30d, 2w), read by
+// config.ParseDuration, which the settings already read theirs with.
+//
+// The help teaches `auth grant WHO JOB --for 30d`, and that one flag read
+// days with a parser of its own; every other length of time was Go's
+// flag.Duration, which stops at hours. So an administrator who granted a
+// job for 30d and issued its token --ttl 30d was told "invalid value "30d"
+// for flag -ttl: parse error", and `agent sponsor --for 90d` and `shield
+// pause --for 1d` the same. One syntax for every length of time, so the
+// second flag takes what the first taught.
+type durationFlag struct{ d *time.Duration }
+
+func (f durationFlag) String() string {
+	if f.d == nil {
+		return ""
+	}
+	return config.FormatDuration(*f.d)
+}
+
+func (f durationFlag) Set(s string) error {
+	d, err := config.ParseDuration(strings.TrimSpace(s))
+	if err != nil {
+		return errors.New("a length of time, like 90m, 72h, 30d or 2w")
+	}
+	*f.d = d
+	return nil
+}
+
+// flagDuration declares a durationFlag on fs, as fs.Duration would.
+func flagDuration(fs *flag.FlagSet, name string, value time.Duration, usage string) *time.Duration {
+	d := value
+	fs.Var(durationFlag{&d}, name, usage)
+	return &d
+}
+
+// stdinIsTerminal reports whether a person is at the keyboard: standard
+// input is a terminal. A variable, so a test can be the person.
+//
+// Not /dev/null, which is a character device as a terminal is, and what
+// cron and a service manager give a job for its input: read as a terminal,
+// every unattended erasure would have waited for a --yes nobody can type.
+//
+// Asked of the terminal itself, as whether stdout and stderr are read at
+// one is (out.IsTerminal). It was a question of its own, a character
+// device other than the null device's file: so a script reading from any
+// other device that is not a terminal was held, and on Windows, where a
+// console and NUL read as the same file, an erasure typed at the console
+// never was.
+var stdinIsTerminal = func() bool { return out.IsTerminal(os.Stdin) }
+
+// erasureHeld holds back an erasure that cannot be undone, asked at a
+// terminal without --yes: it says what would be erased and how to go
+// ahead, erases nothing, and reports that it held it.
+//
+// `quilzo demo remove` run bare says what taking the demonstration out
+// would remove, and somebody who learnt the program that way ran `quilzo
+// memory forget` the same way and every agent forgot them at once, and
+// `fediverse block` dropped the instance's follows. A person at a
+// terminal is asked for --yes. A script, whose standard input is not a
+// terminal, goes ahead as it always has, which the help says, so nothing
+// that runs these unattended stops working.
+func erasureHeld(yes bool, would string) bool {
+	if yes || !stdinIsTerminal() {
+		return false
+	}
+	// The line as it was typed, against the store it was typed against: it
+	// left --root out, so the line printed for `quilzo --root /srv/site
+	// memory forget` made the agents of whatever store was in the working
+	// directory forget. Each word as a shell reads it back, so a value with
+	// a space is one word when pasted. Never --token, which is a secret.
+	again := "the same command with --yes"
+	if invoked.cmd != "" {
+		line := []string{"quilzo"}
+		if invoked.root != "" && invoked.root != defaultRoot {
+			line = append(line, "--root", invoked.root)
+		}
+		line = append(append(append(line, invoked.cmd), invoked.args...), "--yes")
+		for i := range line {
+			line[i] = shellWord(line[i])
+		}
+		again = onOneLine(strings.Join(line, " "))
+	}
+	if w.JSON(map[string]any{"erased": false, "would": would, "to_erase": again}) {
+		return true
+	}
+	w.Human("%s\n\n  nothing has been erased, and it cannot be undone. To erase it:\n    %s\n", would, again)
+	return true
+}
+
+// shellWord is s as a shell reads it back as one word: bare when it is made
+// of letters, digits and the punctuation a shell leaves alone, and in
+// single quotes otherwise.
+func shellWord(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./_-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

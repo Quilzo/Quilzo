@@ -23,7 +23,11 @@ import (
 // the run's caller, and the handler's own checks and records. The
 // interface is built once, when the run first needs it, for the caller
 // acting in sess, so what its operations spend on models is the run's.
-func platformCall(root string, s *store.Store, caller *Caller, sess *agent.Session) func(context.Context, string, bool, map[string]any) (string, error) {
+//
+// What its operations write in the draft is written for startedBy, the
+// person who started the run, as its write_page is (writesFor).
+func platformCall(root string, s *store.Store, caller *Caller, sess *agent.Session,
+	startedBy string) func(context.Context, string, bool, map[string]any) (string, error) {
 	var (
 		once sync.Once
 		srv  *mcp.Server
@@ -31,7 +35,7 @@ func platformCall(root string, s *store.Store, caller *Caller, sess *agent.Sessi
 	return func(_ context.Context, op string, writes bool, args map[string]any) (string, error) {
 		once.Do(func() {
 			inRun := *caller
-			inRun.run = sess
+			inRun.run, inRun.runFor = sess, startedBy
 			srv = buildMCP(root, s, &inRun, "templates")
 		})
 		tool := "quilzo_read"
@@ -63,14 +67,20 @@ func platformCall(root string, s *store.Store, caller *Caller, sess *agent.Sessi
 	}
 }
 
-// runPayers are who besides its own consumer a model an operation asks is
-// charged to: the person who started the run the caller acts in, as the
-// run's own calls are, and nobody when the caller acts in no run.
-func (c *Caller) runPayers() []string {
-	if c == nil || c.run == nil {
-		return nil
+// writesFor is who a change this caller makes in the draft is recorded
+// under, as the person it was written for: the person who started the run
+// it acts in, when it acts in one, and otherwise the caller.
+//
+// A run that waited for a person goes on as whoever answered it, and the
+// agent interface is built for that caller. So the record dana's run wrote,
+// let through by sam, was recorded under sam, as written for him, and with
+// a count of approvals set dana approved what her own run wrote. Who may
+// do it is still asked of the caller.
+func (c *Caller) writesFor() string {
+	if c.runFor != "" {
+		return c.runFor
 	}
-	return personConsumer(c)
+	return c.Name
 }
 
 // chargeRun counts a model call the caller's operation made against the

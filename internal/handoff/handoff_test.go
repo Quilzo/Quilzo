@@ -4,12 +4,15 @@
 package handoff
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var day0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
@@ -303,24 +306,185 @@ func TestALongConversationStillGoingIsKept(t *testing.T) {
 	}
 }
 
-// The question a visitor had asked is cut where a character starts. It is
-// the first thing the person who answers reads, and it is as likely to be in
-// Japanese as in English.
-func TestALongQuestionIsCutBetweenCharacters(t *testing.T) {
-	s := Store{Dir: t.TempDir()}
-	_, id, err := NewSecret()
+// A message's bound is in characters, as the message box's maxlength
+// counts them and as the refusal says: 1000 characters of Japanese, 3000
+// bytes, were refused as over 2000 characters. The question a conversation
+// starts from is cut between characters, not inside one.
+func TestAMessageIsBoundedInCharacters(t *testing.T) {
+	s, _, id := opened(t)
+	if _, err := s.Say("help", id, Visitor, "", strings.Repeat("返品", MaxText/2), day0); err != nil {
+		t.Fatalf("a %d-character message was refused: %v", MaxText, err)
+	}
+	if _, err := s.Say("help", id, Visitor, "", strings.Repeat("返", MaxText+1), day0); err == nil {
+		t.Fatal("a message over the bound in characters was accepted")
+	}
+	_, id2, _ := NewSecret()
+	c, err := s.Open("help", id2, "x"+strings.Repeat("返", MaxText), "hello", day0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept := strings.Repeat("a", MaxText-1)
-	if _, err := s.Open("help", id, kept+"中文", "may I talk to somebody?", day0); err != nil {
+	if !utf8.ValidString(c.Question) || utf8.RuneCountInString(c.Question) != MaxText {
+		t.Fatalf("the question was cut to %d characters, valid %v",
+			utf8.RuneCountInString(c.Question), utf8.ValidString(c.Question))
+	}
+}
+
+// A conversation the store takes stays one it can read.
+//
+// A message may be MaxText long and a conversation MaxMessages long, but a
+// message of '<' is stored six bytes to the character, so at about 88 of
+// them the file passed MaxFile, which is checked only when reading. From
+// then on the visitor's page answered 503, the conversation vanished from
+// the Inbox (List skipped it) and staff could not reply. The message that
+// would take it past is refused now, as the 201st is, and the conversation
+// can still be read, answered by nobody else and ended.
+func TestAConversationIsNeverWrittenPastWhatCanBeRead(t *testing.T) {
+	s, _, id := opened(t)
+	long := strings.Repeat("<", MaxText)
+	refused := false
+	for i := 0; i < MaxMessages; i++ {
+		if _, err := s.Say("help", id, Visitor, "", long, day0); err != nil {
+			if !strings.Contains(err.Error(), "start another") {
+				t.Fatalf("message %d was refused with %v", i+1, err)
+			}
+			refused = true
+			break
+		}
+	}
+	if !refused {
+		t.Fatal("no message was refused, so the test did not reach the read limit")
+	}
+	if _, err := s.Get("help", id); err != nil {
+		t.Fatalf("a conversation the store took cannot be read: %v", err)
+	}
+	if all, _ := s.List(); len(all) != 1 {
+		t.Fatal("the conversation is not in the list")
+	}
+	if err := s.Close("help", id, "Ada", day0); err != nil {
 		t.Fatal(err)
 	}
-	c, err := s.Get("help", id)
+	if c, err := s.Get("help", id); err != nil || !c.Closed {
+		t.Fatalf("ending it left it unreadable or open: %v", err)
+	}
+}
+
+// A conversation the store cannot read is still deleted on time.
+//
+// Expire walked List, which leaves out what Get cannot read, so a
+// conversation written past the read limit (as they were before the limit
+// was kept on writing) was kept for ever although the visitor was told it
+// is deleted. It goes by when its file last changed.
+func TestAConversationThatCannotBeReadIsStillDeletedOnTime(t *testing.T) {
+	s, _, id := opened(t)
+	p := filepath.Join(s.Dir, "help", id+".jsonl")
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Question != kept {
-		t.Fatalf("%d bytes, ending %q", len(c.Question), c.Question[len(c.Question)-3:])
+	if _, err := f.Write(bytes.Repeat([]byte("x"), MaxFile+1)); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := os.Chtimes(p, day0, day0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get("help", id); err == nil || err == ErrNotFound {
+		t.Fatalf("the test needs a conversation that cannot be read: %v", err)
+	}
+	keep := func(string) time.Duration { return 20 * 24 * time.Hour }
+	if n, err := s.Expire(keep, day0.Add(10*24*time.Hour)); err != nil || n != 0 {
+		t.Fatalf("one inside its period was deleted: %d %v", n, err)
+	}
+	if n, err := s.Expire(keep, day0.Add(21*24*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("one past its period was not deleted: %d %v", n, err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("the file is still there")
+	}
+}
+
+// Messages sent at the same moment do not take a conversation past what
+// can be read either.
+//
+// Whether a message fits was asked of the file's size, and the message
+// written after, with nothing holding the file between the two. Two sent
+// together near the limit (a visitor's page posting twice, or a visitor
+// and the person answering them) were each told there was room, and the
+// file passed MaxFile by the second: the visitor's page answered 503 and
+// the conversation left the Inbox, as before any limit was kept on
+// writing. A visitor could do it to a conversation staff had just been
+// told was waiting. The size is read and the line written under a lock, so
+// of any number sent together only what fits is kept.
+func TestMessagesSentTogetherDoNotPassWhatCanBeRead(t *testing.T) {
+	long := strings.Repeat("<", MaxText)
+	line, err := json.Marshal(event{Kind: "say", At: day0, From: Visitor, Text: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for one more long message and not for two.
+	target := int64(MaxFile - closeRoom - len(line) - 2 - 16)
+	for round := 0; round < 30; round++ {
+		s, _, id := opened(t)
+		p := filepath.Join(s.Dir, "help", id+".jsonl")
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Filled to that size with blank lines, which a conversation's file
+		// may hold and which cost nothing to read back, so that the messages
+		// reach the size check as nearly together as they were sent.
+		blank := bytes.Repeat([]byte(" "), int(target-fi.Size()))
+		for i := 4095; i < len(blank); i += 4096 {
+			blank[i] = '\n'
+		}
+		blank[len(blank)-1] = '\n'
+		f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(blank); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+
+		const together = 24
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		kept := make(chan bool, together)
+		for i := 0; i < together; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				_, err := s.Say("help", id, Visitor, "", long, day0)
+				kept <- err == nil
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(kept)
+		n := 0
+		for ok := range kept {
+			if ok {
+				n++
+			}
+		}
+		if _, err := s.Get("help", id); err != nil {
+			t.Fatalf("round %d: %d messages sent together were kept, and the conversation cannot be read: %v",
+				round, n, err)
+		}
+		if n != 1 {
+			t.Fatalf("round %d: %d messages were kept where one fits", round, n)
+		}
+		if err := s.Close("help", id, "Ada", day0); err != nil {
+			t.Fatal(err)
+		}
+		if c, err := s.Get("help", id); err != nil || !c.Closed {
+			t.Fatalf("round %d: ending it left it unreadable or open: %v", round, err)
+		}
+		// What the writers locked is not taken for a conversation.
+		if all, err := s.List(); err != nil || len(all) != 1 {
+			t.Fatalf("round %d: the list has %d conversations: %v", round, len(all), err)
+		}
 	}
 }

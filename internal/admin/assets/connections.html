@@ -1,5 +1,5 @@
 {{template "head" .}}
-<h1>Connected accounts</h1>
+<h1>Your accounts</h1>
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 <p class="lead">Your own accounts elsewhere, for agents acting for you: an agent you
@@ -16,13 +16,16 @@
   <thead><tr><th scope="col">Provider</th><th scope="col">What agents may do there</th>
     <th scope="col">Tokens go to</th><th scope="col">Yours</th></tr></thead>
   <tbody>
-  {{range .Providers}}{{$c := index $.Connected .Name}}
+  {{range .Providers}}{{$c := index $.Connected .Name}}{{$name := .Name}}
   <tr>
     <th scope="row">{{.Title}}</th>
     <td>{{if .Scopes}}{{range .Scopes}}<code>{{.}}</code> {{end}}{{else}}<span class="hint">what the provider grants by default</span>{{end}}</td>
     <td>{{range .Hosts}}<code>{{.}}</code> {{end}}</td>
     <td>{{if $c.Provider}}
       <p>Connected {{$c.Connected.Format "2 Jan 2006"}}</p>
+      <p class="hint">{{$c.EndsSaid}}</p>
+      {{with $c.Notice $.Now}}<p class="notice warn" role="status">{{.}}</p>
+      <form method="post" action="/connections/change"><input type="hidden" name="op" value="connect"><input type="hidden" name="provider" value="{{$name}}"><button type="submit">Connect again</button></form>{{end}}
       <form method="post" action="/connections/change"><input type="hidden" name="op" value="revoke"><input type="hidden" name="provider" value="{{.Name}}"><button class="danger" type="submit">Disconnect</button></form>
     {{else}}
       <form method="post" action="/connections/change"><input type="hidden" name="op" value="connect"><input type="hidden" name="provider" value="{{.Name}}"><button type="submit">Connect</button></form>

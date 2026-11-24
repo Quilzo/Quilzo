@@ -4,12 +4,15 @@
 package main
 
 import (
+	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
-	"strings"
 )
 
 // Bounding an agent by whoever started it.
@@ -117,6 +120,12 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// And what it may read on the web: a token says nothing of hosts.
 		Web: m.Web,
 
+		// And its desktop cell, whose one setting is pictures, of which a
+		// token says nothing either. Left out, every run's cell narrowed
+		// to none, and desktop_look was refused for an agent declared to
+		// see the screen whoever ran it.
+		Cell: m.Cell,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,
@@ -137,12 +146,73 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 			b.Shell = m.Shell.ReadOnlyCopy()
 		}
 	}
+	// And its desktop the same, for any caller who cannot write: the
+	// screen read and looked at, and nothing typed, pressed or keyed into
+	// an app. The cell has no host to read only from, as the browser does,
+	// so the acts are what is taken away; without this, a read-only
+	// token's run typed into the desktop and pressed its buttons as any
+	// other run did. By what the caller may do and not by read-only alone:
+	// a token issued as a reader is one that only reads too, and its run
+	// lost its writes here and its browser's sends (boundManifest) while
+	// it went on typing and pressing.
+	if autonomy == agent.AutonomyPropose {
+		b.Capabilities = readsDesktop(b.Capabilities)
+	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.
 	if sc := strings.Trim(c.Scope, "/"); sc != "" {
 		b.Retrieval.Path = "/" + sc
 	}
 	return b
+}
+
+// desktopActs says whether a capability works the desktop rather than
+// reading it: what a read-only caller's run does not hold.
+func desktopActs(c string) bool {
+	return agent.IsDesktop(c) && c != "desktop_read" && c != "desktop_look"
+}
+
+// readsDesktop is a run's capabilities without the desktop's acts, for a
+// run that proposes and does not write: by its caller or the agent's own
+// standing (boundOf), or by what its evaluations earned (boundManifest).
+func readsDesktop(caps []string) []string {
+	return slices.DeleteFunc(slices.Clone(caps), desktopActs)
+}
+
+// withholdWrites takes out of a run's manifest the tools that write to
+// another system when its caller may only read (a read-only credential,
+// or a chatbot's request that only looks things up), and says why each
+// went, for the gate to refuse one asked for anyway (agent.Manifest's
+// Withheld).
+//
+// boundOf keeps the manifest's tools whatever the caller, since a tool
+// call is not a write to this store, and a caller's silence about hosts
+// is not a caller forbidding them; that is right for the tools that read.
+// For the ones that write it let a token issued read-only run an agent
+// that posted to another system, and a chatbot's read-only request
+// offered its model the same post. Done here and not in boundOf, because
+// whether a tool writes is the integration's to say as well as the
+// manifest's (stepWrites), and only the store knows its integrations.
+func withholdWrites(root string, m *agent.Manifest, c *Caller) map[string]string {
+	if c == nil || !c.Limits.ReadOnly {
+		return nil
+	}
+	var withheld map[string]string
+	kept := m.Tools[:0:0]
+	for _, t := range m.Tools {
+		if !stepWrites(root, *m, t.Name) {
+			kept = append(kept, t)
+			continue
+		}
+		if withheld == nil {
+			withheld = map[string]string{}
+		}
+		withheld[strings.ToLower(strings.TrimSpace(t.Name))] = fmt.Sprintf("%s writes to %s, and this run only "+
+			"reads: whoever started it may not change anything (a read-only credential, or a chatbot's "+
+			"request that only looks things up)", t.Name, t.Host)
+	}
+	m.Tools = kept
+	return withheld
 }
 
 // mayCall keeps the capabilities an agent at this autonomy could use.
@@ -252,4 +322,147 @@ func refOf(m agent.Manifest) string {
 		return site.RefLive
 	}
 	return m.Retrieval.Ref
+}
+
+// bound is how far this caller reaches, as a run they start keeps it
+// (agent.Record's Bound): as far as the access policy lets them now
+// (carried), and not only as far as their token says.
+func (c *Caller) bound(root string) *agent.Bound {
+	if c == nil {
+		return nil
+	}
+	c = c.carried(root)
+	return &agent.Bound{Role: string(c.Role), Scope: c.Scope,
+		Types: c.Limits.Types, Locales: c.Limits.Locales}
+}
+
+// carried is this caller held to what the access policy lets them do now:
+// their token's part of the site no wider than the part their roles are
+// granted on (auth.Policy.PartWithin), and its role no higher than the one
+// they hold on every page of that part (auth.Policy.HeldThroughout). A run
+// is narrowed by it, and keeps it for whoever takes the run on (bound).
+//
+// A token is a ceiling, and what its holder holds is what they may do
+// under it. A run read its reach from the token alone: dana, an
+// administrator when her token was issued and an author of /about since,
+// ran an agent with it that wrote the returns page, and a run she started
+// was kept as an administrator's over the whole site, so sam, taking it
+// on, wrote the returns page too. A token over the whole site for
+// somebody whose grants are all on /about did the same.
+//
+// The role held on every page, and not the highest held on any
+// (auth.Policy.Carries): a run is one role over one part, and nothing asks
+// again of each page it writes. Held to the highest, a reader of the site
+// who is an author of /about, or an author of /about and of /blog, ran an
+// agent that wrote the returns page as an author, and an administrator
+// denied author over the site wrote it as an administrator.
+//
+// Somebody granted roles only outside the token's part of the site holds
+// nothing in it, which is the lowest reach there is (within), and so does
+// somebody granted no role at all, or none still in force, in a store
+// where others have been granted something: authorise refuses them every
+// role's actions. Kept at the token's role, dana, demoted from
+// administrator to the permission to run agents and nothing else, or whose
+// administrator's grant had ended, ran an agent with her old token that
+// wrote the returns page as an administrator. Only a store nobody has been
+// granted anything in has no policy to hold anybody to, and there the
+// token is all there is to go by. A caller nobody verified is not shown to
+// be the person the policy names, and is left as resolved.
+func (c *Caller) carried(root string) *Caller {
+	if c == nil || !c.Verified {
+		return c
+	}
+	pol, err := loadPolicy(root)
+	if err != nil || pol == nil || len(pol.Snapshot()) == 0 {
+		// Unreadable is refused at every gate (policyInUse), and an absent
+		// or empty policy holds nothing to narrow by.
+		return c
+	}
+	out := *c
+	part := pol.PartWithin(c.Name, c.Scope)
+	if part == "" {
+		out.Role = auth.RoleNone
+		return &out
+	}
+	if strings.Trim(part, "/") != strings.Trim(c.Scope, "/") {
+		out.Scope = part
+	}
+	if held := pol.HeldThroughout(c.Name, part); !held.AtLeast(c.Role) {
+		out.Role = held
+	}
+	return &out
+}
+
+// within is this caller narrowed to what whoever started the run they
+// take on reached as well: the lower role, the deeper part of the site,
+// and the content types and locales both hold.
+//
+// A run that waited goes on as whoever answered it, and was bounded by
+// them alone, so a run an author confined to /docs started, answered by
+// an administrator, went on to write anywhere on the site. Read-only was
+// carried over already (agent.Record's ReadOnly); the rest was not. Two
+// reaches with nothing in common are refused, saying so, rather than
+// going on as either: a run kept before its starter's reach was is taken
+// on as before.
+//
+// A starter who held no role is the lowest there is, and not a starter
+// who restricts nothing: somebody nobody verified, in a store with no
+// access rules, runs an agent that proposes and writes nothing
+// (autonomyFor). Their empty role was read as no limit, so their run,
+// answered by an administrator, went on to write.
+func (c *Caller) within(b *agent.Bound) (*Caller, error) {
+	if c == nil || b == nil {
+		return c, nil
+	}
+	out := *c
+	if r := auth.Role(b.Role); !r.AtLeast(c.Role) {
+		out.Role = r
+	}
+	mine, theirs := strings.Trim(c.Scope, "/"), strings.Trim(b.Scope, "/")
+	switch {
+	case inSubtreeOf(mine, theirs):
+		// Already as deep as theirs, or deeper.
+	case inSubtreeOf(theirs, mine):
+		out.Scope = b.Scope
+	default:
+		return nil, fmt.Errorf("this run was started by somebody confined to /%s, and %s holds /%s: "+
+			"nobody holds both, so it cannot go on as %s. Somebody who holds /%s can take it on",
+			theirs, c.Name, mine, c.Name, theirs)
+	}
+	var ok bool
+	if out.Limits.Types, ok = bothHold(c.Limits.Types, b.Types); !ok {
+		return nil, fmt.Errorf("this run was started by somebody limited to the content types %s, and %s "+
+			"holds none of them, so it cannot go on as %s", strings.Join(b.Types, ", "), c.Name, c.Name)
+	}
+	if out.Limits.Locales, ok = bothHold(c.Limits.Locales, b.Locales); !ok {
+		return nil, fmt.Errorf("this run was started by somebody limited to the locales %s, and %s "+
+			"holds none of them, so it cannot go on as %s", strings.Join(b.Locales, ", "), c.Name, c.Name)
+	}
+	return &out, nil
+}
+
+// inSubtreeOf reports whether path p is in the subtree at root, by whole
+// segments, both without their slashes: an empty root is the whole site.
+func inSubtreeOf(p, root string) bool {
+	p, root = strings.ToLower(p), strings.ToLower(root)
+	return root == "" || p == root || strings.HasPrefix(p, root+"/")
+}
+
+// bothHold is what two lists that each restrict to their entries both
+// allow, where an empty list restricts nothing, and false when both
+// restrict and share nothing.
+func bothHold(a, b []string) ([]string, bool) {
+	switch {
+	case len(b) == 0:
+		return a, true
+	case len(a) == 0:
+		return b, true
+	}
+	var out []string
+	for _, v := range a {
+		if slices.ContainsFunc(b, func(w string) bool { return strings.EqualFold(v, w) }) {
+			out = append(out, v)
+		}
+	}
+	return out, len(out) > 0
 }

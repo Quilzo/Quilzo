@@ -160,7 +160,8 @@ type ContentType struct {
 // is also the cheapest kind of wrong answer — it costs a click and teaches
 // where something lives.
 func Search(query string, src Sources, limit int) []Hit {
-	terms := search.Tokenise(query)
+	// Folded as what they are matched against is, by beginsAWord.
+	terms := search.Tokenise(search.FoldLetters(query))
 	if len(terms) == 0 {
 		return nil
 	}
@@ -319,9 +320,15 @@ func hitsIn(terms []string, hay []string) (int, string) {
 	return n, first
 }
 
-// beginsAWord reports whether term starts a word in s, case-insensitively.
+// beginsAWord reports whether term starts a word in s, without regard to
+// case or to the marks on its letters. term is folded already.
+//
+// Lowered by strings.ToLower, the capital I of Turkish became i and never
+// its own small letter ı, so "HAKKINDA" did not find "Hakkında", and a word
+// typed without its marks found nothing: search.FoldLetters is the one fold
+// the site search uses too.
 func beginsAWord(s, term string) bool {
-	s = strings.ToLower(s)
+	s = search.FoldLetters(s)
 	atStart := true
 	for i, r := range s {
 		if !isWordRune(r) {

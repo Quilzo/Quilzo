@@ -5,6 +5,7 @@ package theme_test
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -196,5 +197,52 @@ func TestMonochromeHasNoHueAndUnknownOptionsAreRefused(t *testing.T) {
 	}
 	if _, err := theme.GenerateWith("#0b57d0", theme.Options{Contrast: "extreme"}); err == nil {
 		t.Error("an unknown contrast level was accepted")
+	}
+}
+
+// A generated palette passes over a backdrop as well as on the page.
+//
+// The generator chose every colour against the page's pairs and left the
+// veil at the shipped 82%, so every palette it made at standard contrast,
+// and every site `site new` built, failed all eight pairs over a backdrop:
+// putting a picture behind a hero was refused at publish with eight
+// blocking failures, while generate and the Design screen said every colour
+// passed. The veil a palette needs is part of the palette now, as strong as
+// the words on it need and no stronger, and a palette that needs no more
+// than the shipped strength does not set one.
+func TestAGeneratedPalettePassesOverABackdrop(t *testing.T) {
+	seeds := []string{"#e4572e", "#3b6ea5", "#7b2ff7", "#ff2bd6", "#2a9d8f", "#222222",
+		// The colours `site new` gives each kind of site.
+		"#1d4ed8", "#4f46e5", "#c2410c", "#0f766e", "#15803d", "#be123c"}
+	for hue := 0; hue < 360; hue += 30 {
+		seeds = append(seeds, seedAt(hue, 0.62, 0.48))
+	}
+	for _, scheme := range theme.Schemes {
+		for _, level := range theme.ContrastLevels {
+			for _, seed := range seeds {
+				out, err := theme.GenerateWith(seed, theme.Options{Scheme: scheme, Contrast: level})
+				if err != nil {
+					// A seed the generator cannot build at a level is
+					// answered with an error when it is asked, which is a
+					// different failure from a palette that is handed over
+					// and refused at publish, and not this test's subject.
+					continue
+				}
+				th, problems := theme.New(out, nil)
+				if theme.Blocks(problems) {
+					t.Fatalf("%s %s %s: %v", scheme, level, seed, problems)
+				}
+				for _, f := range th.CheckBackdrop() {
+					if f.Blocking {
+						t.Errorf("%s %s %s: %s", scheme, level, seed, f.Detail)
+					}
+				}
+				if v, set := out["scrim-strength"]; set {
+					if n, _ := strconv.Atoi(strings.TrimSuffix(v, "%")); n <= 82 || n > 100 {
+						t.Errorf("%s %s %s sets the veil to %s, which is no stronger than the shipped one", scheme, level, seed, v)
+					}
+				}
+			}
+		}
 	}
 }

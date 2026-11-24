@@ -26,6 +26,7 @@
   <section class="signin-panel">
     <p class="brand">{{template "lockup" .}}</p>
     <h1>Sign in with a passkey</h1>
+    {{if .Added}}<p class="notice ok" role="status">Your passkey was added. Sign in with it now.</p>{{end}}
 
     {{if .Unavailable}}
       <p class="notice bad" role="alert">{{.Unavailable}}</p>

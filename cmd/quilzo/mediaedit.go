@@ -47,14 +47,17 @@ func mediaEdit(root string, args []string) error {
 	alt := fs.String("alt", "",
 		"what the edited picture shows; inherited from the original when omitted")
 	dryRun := fs.Bool("dry-run", false, "say what it would make, store nothing")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media edit --crop 16:9 ID` was
+	// answered with the usage line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media edit ID [--crop 16:9] [--box x,y,w,h] " +
-				"[--turn right] [--flip across] [--grey]")
+				"[--turn right] [--flip across] [--grey]")}
 	}
 
 	e := media.Edit{Aspect: strings.TrimSpace(*crop), Grey: *grey}

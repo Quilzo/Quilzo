@@ -578,3 +578,85 @@ func TestARecordPastTheRowsStillHasAPage(t *testing.T) {
 		t.Errorf("by id: %v %v", row, err)
 	}
 }
+
+// The price a row shows a person is written from the price it is sold at.
+//
+// It was a copy kept by hand. A product type holds the price twice, in
+// minor units for the Buy button and the catalogue feed and written out
+// for the page, and nothing wrote the second again when the first changed:
+// an owner moved indigo ink from 1200 to 1300 and published, and the page
+// said £12.00 beside a button that charged £13.00, while /catalogue.json
+// told shopping agents both. So a row's price_display is the price and
+// currency it carries, written as the Buy button writes them, and the
+// stored copy is what a row shows only when it has no price to write.
+func TestTheWrittenPriceIsThePriceTheRowCharges(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := []collection.Record{
+		{Fields: map[string]any{"slug": "indigo-ink", "price": 1300.0, "currency": "GBP",
+			"price_display": "£12.00", "secret": "kept back"}},
+		{Fields: map[string]any{"slug": "euro-ink", "price": 950.0, "currency": "eur",
+			"price_display": "£9.50"}},
+		{Fields: map[string]any{"slug": "ink-club", "price": 420.0, "currency": "GBP",
+			"interval": "month", "price_display": "£4.00"}},
+		{Fields: map[string]any{"slug": "yen-ink", "price": 1500.0, "currency": "JPY",
+			"price_display": "¥1,400"}},
+		{Fields: map[string]any{"slug": "commission", "currency": "GBP",
+			"price_display": "Price on request"}},
+		{Fields: map[string]any{"slug": "half-penny", "price": 12.5, "currency": "GBP",
+			"price_display": "£12.50"}},
+	}
+	tree, _, err := collection.PutMany(st, "", "products", recs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := collection.Build(st, tree, "products", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"indigo-ink": "£13.00", "euro-ink": "€9.50", "ink-club": "£4.20 a month",
+		"yen-ink": "¥1500",
+		// No price to write from, or none the Buy button and the feed can
+		// read: the text somebody wrote is all there is.
+		"commission": "Price on request", "half-penny": "£12.50",
+	}
+	for _, l := range []*Listing{
+		{Name: "shop", Collection: "products", Rows: 20,
+			Fields: []string{"slug", "price", "currency", "price_display"}},
+		// With no allow-list, a record that carries the written price.
+		{Name: "everything", Collection: "products", Rows: 20},
+	} {
+		got, err := Resolve(l, idx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Rows) != len(want) {
+			t.Fatalf("%s: %d rows", l.Name, len(got.Rows))
+		}
+		for _, row := range got.Rows {
+			slug := row["slug"].(string)
+			if row["price_display"] != want[slug] {
+				t.Errorf("%s: %s is shown at %v, want %q", l.Name, slug, row["price_display"], want[slug])
+			}
+		}
+		// A record's own page, the one a Buy button is on.
+		row, err := Find(l, idx, nil, "slug", "indigo-ink")
+		if err != nil || row["price_display"] != "£13.00" {
+			t.Errorf("%s: the product page shows %v (%v), want £13.00", l.Name, row["price_display"], err)
+		}
+	}
+	// A listing that does not expose the written price is not given one.
+	l := &Listing{Name: "names", Collection: "products", Rows: 20, Fields: []string{"slug", "price"}}
+	got, err := Resolve(l, idx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range got.Rows {
+		if _, ok := row["price_display"]; ok {
+			t.Errorf("%v: a field the listing does not name was added", row["slug"])
+		}
+	}
+}

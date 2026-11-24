@@ -47,6 +47,14 @@ mkdir -p ~/.quilzo && umask 077 && printf '%s\n' 'qz_…' > ~/.quilzo/token
 file is preferred because every program you start inherits your environment,
 including an agent you are letting drive the command line.
 
+The admin signs people in with a passkey. A token there is one factor, and
+signs in to "Confirm it's you" and no further, so give yourself the link that
+adds a passkey:
+
+```bash
+../quilzo auth enrol you                # prints the link, once
+```
+
 Then start both processes:
 
 ```bash
@@ -54,9 +62,11 @@ Then start both processes:
 ../quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
 
-Open `http://127.0.0.1:8080` for the admin and `http://127.0.0.1:8081` for the
-site. The manual is at [quilzo.github.io](https://quilzo.github.io), and every
-screen's Help link opens the guide for that screen.
+Open the link `auth enrol` printed, add your passkey, and sign in with it. The
+admin is at `http://localhost:8080`, by name, because a browser will not use a
+passkey at an address, and the site at `http://127.0.0.1:8081`. The manual is
+at [quilzo.github.io](https://quilzo.github.io), and every screen's Help link
+opens the guide for that screen.
 
 Things worth trying, because they are the parts that are hard to believe:
 
@@ -90,8 +100,13 @@ your PATH can call a file clean that CI then rejects.
 
 CI runs formatting and vet, a build for every released platform, the published
 injection figure, govulncheck against the toolchain, the full suite, and a
-container build. All of them must pass, and code scanning (CodeQL) must find
-nothing new. There is no separate lint step and no configuration to learn.
+container build; beside them, the race detector over every package that starts
+goroutines, and thirty seconds of fuzzing for every fuzz target. All of them
+must pass, and code scanning (CodeQL) must find nothing new. There is no
+separate lint step and no configuration to learn. Every night the whole suite
+runs again under the race detector in a shuffled order; a failing package
+prints the seed it was shuffled with, and `go test -race -shuffle=N` on that
+package repeats the order.
 
 ## The one rule that will surprise you
 

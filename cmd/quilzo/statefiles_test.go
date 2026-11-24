@@ -78,8 +78,15 @@ func TestRecordingADeliveryDoesNotPutBackARemovedEndpoint(t *testing.T) {
 func TestPolicyChangesAtOnceLoseNothingAndUndoNothing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := demoStore(t)
+	// Beside an administrator who stays: the last one's role is not
+	// revoked by anybody (dual.ErrLastAdministrator).
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
-		return p.Grant(auth.Binding{Principal: "leaver", Role: auth.RoleAdmin, Resource: "/"})
+		for _, who := range []string{"stays", "leaver"} {
+			if err := p.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}

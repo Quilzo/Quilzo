@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -105,6 +106,36 @@ func TestAnAnswerIsHeldToTheCardsAndWhatThePersonMayRead(t *testing.T) {
 	}
 }
 
+// The question box takes 300 characters, and so does the server. It cut at
+// 300 bytes: a question of 200 characters in Japanese reached the model as
+// its first 100, and one cut inside a character as text that is not text.
+func TestAQuestionIsBoundedInCharactersAsItsBoxIs(t *testing.T) {
+	srv, token := setup(t)
+	labData(t, srv)
+	m, _ := withAsk(srv, `{"title":"Samples","cards":[{"kind":"figure","collection":"samples","op":"count"}]}`)
+	long := strings.Repeat("\u691c\u4f53", 100)
+	mixed := "a" + strings.Repeat("\u00e9", 250)
+	for _, q := range []string{long, mixed} {
+		if w := postForm(t, srv, "/today/ask", token, url.Values{"question": {q}}.Encode()); w.Code != http.StatusSeeOther {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		m.mu.Lock()
+		told := m.asked[len(m.asked)-1]
+		m.mu.Unlock()
+		if !strings.Contains(told, q) || !utf8.ValidString(told) {
+			t.Errorf("a question of %d characters did not reach the model whole", utf8.RuneCountInString(q))
+		}
+	}
+	over := strings.Repeat("\u691c", 400)
+	postForm(t, srv, "/today/ask", token, url.Values{"question": {over}}.Encode())
+	m.mu.Lock()
+	told := m.asked[len(m.asked)-1]
+	m.mu.Unlock()
+	if strings.Contains(told, over) || !strings.Contains(told, over[:3*maxQuestion]) || !utf8.ValidString(told) {
+		t.Errorf("a question of 400 characters was not cut to %d", maxQuestion)
+	}
+}
+
 // What the model is told is the collections the person may read, by their
 // fields, and never a record.
 func TestAQuestionIsAnsweredFromFieldsNotFromRecords(t *testing.T) {
@@ -183,25 +214,5 @@ func TestAKeptViewFollowsAccessAndAReaderIsNotOfferedAsking(t *testing.T) {
 	}
 	if w := postForm(t, srv, "/today/ask", tok, "question=pay"); w.Code != http.StatusForbidden {
 		t.Errorf("a reader asked: %d", w.Code)
-	}
-}
-
-// The question a person asks of Today is cut where a character starts. It
-// is the answer's title when the model gives none and is kept with the view,
-// and a question in Japanese would otherwise end in U+FFFD on both.
-func TestALongQuestionIsCutBetweenCharacters(t *testing.T) {
-	srv, token := setup(t)
-	labData(t, srv)
-	_, kept := withAsk(srv, `{"title":"Samples","cards":[{"kind":"figure","collection":"samples","op":"count"}]}`)
-	q := strings.Repeat("a", maxQuestion-1)
-	if w := postForm(t, srv, "/today/ask", token, url.Values{"question": {q + "中文"}}.Encode()); w.Code != http.StatusSeeOther {
-		t.Fatalf("%d %s", w.Code, w.Body)
-	}
-	postForm(t, srv, "/today/pin", token, "do=pin")
-	if len(kept["editor"]) != 1 {
-		t.Fatalf("kept %+v", kept)
-	}
-	if got := kept["editor"][0].Question; got != q {
-		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
 	}
 }

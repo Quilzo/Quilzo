@@ -561,8 +561,8 @@ func TestRevocation(t *testing.T) {
 	if grants[0].Ended.IsZero() || !r.toks.revoked[grants[0].ID] {
 		t.Fatal("not ended")
 	}
-	if err := r.End(grants[0].ID, "sam", "x"); err == nil {
-		t.Fatal("ended twice")
+	if err := r.End(grants[0].ID, "sam", "x"); !errors.Is(err, ErrNoConnection) {
+		t.Fatalf("ended twice: %v", err)
 	}
 }
 
@@ -841,5 +841,46 @@ func TestACodeRedeemedAfterItsAppWasRemovedConnectsNothing(t *testing.T) {
 				t.Errorf("tokens were issued: %v", r.toks.issued)
 			}
 		})
+	}
+}
+
+// A token may be asked for by the address of any of the interface's MCP
+// endpoints, a gateway's or a browser grant's as well as /mcp, and by no
+// other: a client connecting to a gateway asks for the gateway, and was
+// refused invalid_target.
+func TestEveryEndpointOfTheInterfaceIsAResource(t *testing.T) {
+	cfg := Config{Issuer: "https://admin.example.org"}
+	for given, want := range map[string]bool{
+		"https://admin.example.org/mcp":                   true,
+		"https://admin.example.org/mcp/gateway/tracker":   true,
+		"HTTPS://Admin.Example.Org/mcp/browser/shop/":     true,
+		"https://admin.example.org/mcp/gateway/":          false,
+		"https://admin.example.org/mcp/gateway/a/b":       false,
+		"https://admin.example.org/mcp/gateway/../oauth":  false,
+		"https://admin.example.org/mcp/elsewhere":         false,
+		"https://other.example/mcp/gateway/tracker":       false,
+		"https://admin.example.org/mcp/gateway/tracker?x": false,
+	} {
+		if cfg.SameResource(given) != want {
+			t.Errorf("%s: %v", given, !want)
+		}
+	}
+	if m := cfg.ResourceMetadataAt("/mcp/gateway/tracker", ""); m["resource"] != "https://admin.example.org/mcp/gateway/tracker" ||
+		cfg.MetadataURLAt("/mcp/gateway/tracker") != "https://admin.example.org/.well-known/oauth-protected-resource/mcp/gateway/tracker" {
+		t.Fatalf("%v", m)
+	}
+}
+
+// The resource's metadata lists every scope a token for it is asked for
+// with, as RFC 9728 has scopes_supported, and the 401 still names the
+// least. It listed mcp:read alone, so a client that asks for what the
+// resource lists asked for reading only, and every write it tried was
+// refused.
+func TestTheResourceListsEveryScope(t *testing.T) {
+	cfg := Config{Issuer: "https://admin.example.org"}
+	for _, m := range []map[string]any{cfg.ResourceMetadata(""), cfg.ResourceMetadataAt("/mcp/gateway/tracker", "")} {
+		if got, _ := m["scopes_supported"].([]string); strings.Join(got, " ") != strings.Join(ScopeNames(), " ") {
+			t.Errorf("%v", m["scopes_supported"])
+		}
 	}
 }

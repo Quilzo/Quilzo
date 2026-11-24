@@ -40,15 +40,24 @@
 // to reach the same log. A unix socket lets the writer outlive any of them, and
 // the filesystem enforces who may connect — which is the same permission model
 // as the log file itself rather than a second one to get wrong.
+//
+// # Why the writer also signs
+//
+// The key that signs the log's tree heads is the writer's too, and the CMS
+// asks for a head over the same socket, naming how many entries it covers
+// and nothing else: the writer computes the root over its own file. See
+// sign.go for why the CMS can neither hold that key nor choose the root.
 package logd
 
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +106,9 @@ type Response struct {
 	Seq   int64  `json:"seq,omitempty"`
 	Hash  string `json:"hash,omitempty"`
 	Error string `json:"error,omitempty"`
+	// Head and Statement answer a signing request (sign.go).
+	Head      *audit.SignedHead `json:"head,omitempty"`
+	Statement *audit.Statement  `json:"statement,omitempty"`
 }
 
 // Server accepts submissions and appends them.
@@ -109,9 +121,43 @@ type Server struct {
 	// OnRefusal is called when a submission is rejected, so a refusal is
 	// visible rather than being a silent gap in the log.
 	OnRefusal func(reason string, uid int)
+	// Heads signs tree heads over Log, and statements, for the accounts
+	// that submit records and may not hold the key (sign.go). Nil refuses
+	// every signing request, saying HeadsWhy.
+	Heads    *audit.HeadSigner
+	HeadsWhy string
+	// Statements are the contexts a statement may be signed under. Empty
+	// signs none.
+	Statements []string
+	// SignUID and SignGID are who may ask for a head or a statement, of the
+	// accounts AllowUID lets submit: by uid, and by the group the account
+	// connected as. Empty SignUID is every account that may submit, and
+	// empty SignGID any group, as before these existed.
+	//
+	// Records and signatures are not the same trust. Every process that
+	// does something submits a record, the public site among them; a
+	// signature is the log's key speaking, and a feature package or a
+	// research plan the writer signs is taken as this site's own. In the
+	// reference compose the site and the admin are one uid, so anything that
+	// could run code as the public site could have the writer sign a feature
+	// package. There the site connects in a group of its own and the writer
+	// signs for the admin's (deploy/compose.yaml), which holds while the
+	// site runs with no-new-privileges: a set-group-ID program of its own
+	// would otherwise connect as the admin's group (peerCreds).
+	SignUID []int
+	SignGID []int
 
 	mu sync.Mutex
+	// headSlot is held by the one head being computed (oneHead), and made
+	// once, on the first request for one.
+	headOnce sync.Once
+	headSlot chan struct{}
 }
+
+// askPeer is how the writer learns who connected: peerCreds, from the
+// kernel. A variable so a test can be another account, or a platform where
+// the kernel cannot say, which on Linux it always can.
+var askPeer = peerCreds
 
 // Serve accepts connections until the listener closes.
 func (s *Server) Serve(l net.Listener) error {
@@ -131,9 +177,12 @@ func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(SubmitTimeout))
 
-	uid := -1
-	if u, err := peerUID(conn); err == nil {
-		uid = u
+	uid, gid := -1, -1
+	u, g, err := askPeer(conn)
+	named := err == nil
+	switch {
+	case err == nil:
+		uid, gid = u, g
 		if !s.allowed(u) {
 			// Refused before anything is read. A connection from an account
 			// that should not be submitting is itself worth knowing about, and
@@ -143,9 +192,25 @@ func (s *Server) handle(conn net.Conn) {
 				"uid %d is not permitted to submit audit records", u), u)
 			return
 		}
+	case len(s.AllowUID) > 0:
+		// An account nobody could name, where only some may submit. Taken,
+		// as it was, the list was one nobody was checked against, for
+		// records and for signatures alike, while the writer said it
+		// accepted submissions from those accounts only. Without a list
+		// the account does not matter, and any that can reach the socket
+		// may submit, as ever.
+		s.refuse(conn, "the account connecting cannot be named here, so it cannot be told "+
+			"from the accounts --allow-uid permits: "+err.Error(), uid)
+		return
 	}
 
-	r := bufio.NewReaderSize(conn, MaxRecordBytes)
+	// Limited as it is read. The size was checked once the line was whole,
+	// and ReadBytes keeps a line until its newline comes: a submitter sending
+	// one without made the writer hold everything it sent until the deadline,
+	// hundreds of megabytes a connection, enough for a compromised site to
+	// have the writer killed for want of memory. Reading stops at the limit,
+	// and what reaches it is refused below.
+	r := bufio.NewReaderSize(io.LimitReader(conn, MaxRecordBytes), MaxRecordBytes)
 	line, err := r.ReadBytes('\n')
 	if err != nil && len(line) == 0 {
 		return
@@ -155,6 +220,9 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
+	if s.signing(conn, line, uid, gid, named) {
+		return
+	}
 	var sub Submission
 	if err := json.Unmarshal(line, &sub); err != nil {
 		s.refuse(conn, "the submission is not JSON", uid)
@@ -190,6 +258,29 @@ func (s *Server) allowed(uid int) bool {
 		}
 	}
 	return false
+}
+
+// maySign says why the account that connected may not ask for a head or a
+// statement (SignUID, SignGID), or nothing when it may. named is whether
+// the kernel could say who it is: where only some may ask, one nobody can
+// name is refused, as it is where only some may submit.
+func (s *Server) maySign(uid, gid int, named bool) string {
+	if len(s.SignUID) == 0 && len(s.SignGID) == 0 {
+		return ""
+	}
+	if !named {
+		return "the account asking cannot be named here, so it cannot be told from the accounts " +
+			"--sign-uid and --sign-gid let ask for a signature"
+	}
+	if len(s.SignUID) > 0 && !slices.Contains(s.SignUID, uid) {
+		return fmt.Sprintf("uid %d may submit records and may not ask for a signature: only uid %v may",
+			uid, s.SignUID)
+	}
+	if len(s.SignGID) > 0 && !slices.Contains(s.SignGID, gid) {
+		return fmt.Sprintf("uid %d, connecting as group %d, may submit records and may not ask for a "+
+			"signature: only group %v may", uid, gid, s.SignGID)
+	}
+	return ""
 }
 
 func (s *Server) refuse(conn net.Conn, reason string, uid int) {
@@ -250,15 +341,21 @@ func Reachable(path string) error {
 // The client learns the sequence number it was given, which is what lets a
 // caller report where something landed without ever holding the log.
 func Submit(path string, sub Submission) (*Response, error) {
+	return exchange(path, sub, SubmitTimeout)
+}
+
+// exchange sends one line to the writer and reads its answer: a record, or a
+// request for a signature.
+func exchange(path string, v any, timeout time.Duration) (*Response, error) {
 	conn, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("the log writer is not reachable at %s: %w",
 			path, err)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(SubmitTimeout))
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 
-	body, err := json.Marshal(sub)
+	body, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}

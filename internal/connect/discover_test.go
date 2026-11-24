@@ -74,7 +74,7 @@ func TestARemoteServersAuthorizationIsDiscovered(t *testing.T) {
 		form = f
 		return []byte(`{"access_token":"t","token_type":"Bearer"}`), nil
 	}
-	if _, err := Refresh(context.Background(), post, p, "", "r", time.Now()); err != nil || form.Get("resource") != p.Resource {
+	if _, err := Refresh(context.Background(), post, nil, p, "", Token{Refresh: "r"}, time.Now()); err != nil || form.Get("resource") != p.Resource {
 		t.Fatalf("no resource on the token request: %v %v", form, err)
 	}
 }

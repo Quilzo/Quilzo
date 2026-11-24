@@ -21,7 +21,7 @@ func analyticsDir(root string) string { return filepath.Join(root, "analytics") 
 func cmdAnalytics(root string, args []string) error {
 	fs := flag.NewFlagSet("analytics", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how many days, ending today")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

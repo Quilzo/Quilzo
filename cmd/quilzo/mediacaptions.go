@@ -46,8 +46,13 @@ func mediaCaptions(root string, args []string) error {
 	asDefault := fs.Bool("default", false,
 		"show this one without being asked")
 	remove := fs.String("remove", "", "take a track off instead")
-	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	// The flags wherever they are: before the ids, between them, after
+	// them or on both sides. The ids were read from the front only, so with
+	// the flags first, as most commands take them, the command saw no ids
+	// and answered with its usage line; and then, with flags after the ids
+	// too, it took those for ids.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 
@@ -57,15 +62,18 @@ func mediaCaptions(root string, args []string) error {
 	}
 
 	if id := strings.TrimSpace(*remove); id != "" {
-		if len(rest) < 1 {
-			return fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")
+		// One video. A second word was not looked at, so `media captions
+		// VIDEO OTHER --remove TRACK` took the track off the first and said
+		// nothing of the other.
+		if len(rest) != 1 {
+			return errMisused{fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")}
 		}
 		return removeTrack(root, rest[0], id)
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media captions VIDEO CAPTIONFILE --lang en " +
-				"[--label English] [--kind captions|subtitles] [--default]")
+				"[--label English] [--kind captions|subtitles] [--default]")}
 	}
 
 	video, err := lib.Stat(rest[0])
@@ -124,6 +132,12 @@ func mediaCaptions(root string, args []string) error {
 		}
 		kept = append(kept, t)
 	}
+	// Attached again as subtitles, the last captions track is taken off as
+	// surely as by --remove, and on the live page as soon.
+	if err := keepLiveCaptions(root, video, append(kept, next),
+		"attaching its last captions track again as "+next.Kind); err != nil {
+		return err
+	}
 	video.Tracks = append(kept, next)
 
 	if err := putSameBytes(lib, video); err != nil {
@@ -176,6 +190,9 @@ func removeTrack(root, videoID, trackID string) error {
 		return fmt.Errorf("%s carries no track %s",
 			shortID(video.ID), shortID(trackID))
 	}
+	if err := keepLiveCaptions(root, video, kept, "taking off its last captions track"); err != nil {
+		return err
+	}
 	video.Tracks = kept
 	if err := putSameBytes(lib, video); err != nil {
 		return err
@@ -193,6 +210,42 @@ func removeTrack(root, videoID, trackID string) error {
 			"this will not publish%s\n", yellow, reset)
 	}
 	return nil
+}
+
+// keepLiveCaptions refuses to give video the tracks given when that would
+// leave it with no captions while the live site shows it, and says what
+// would have done it.
+//
+// The last captions of a video the live site shows stay on. Tracks are on
+// the video, which the running site reads for every page outside the
+// content commit, so taking the last one off took the captions off the
+// published page at once: no publish, no review, no accessibility gate, and
+// the live commit unchanged, so neither history nor rollback could put them
+// back. The refusal at the next publish, which this used to rely on, comes
+// after the page is already being served without them. Attaching that
+// track again as subtitles did the same by another route, since only
+// captions satisfy WCAG 1.2.2. A silent video needs no captions, and one no
+// live page shows is the draft's, which the publish gate checks.
+func keepLiveCaptions(root string, video media.File, tracks []media.Track, doing string) error {
+	after := video
+	after.Tracks = tracks
+	if !video.Captions() || after.Captions() || video.Silent() {
+		return nil
+	}
+	used, err := mediaInUse(root, video.ID)
+	if err != nil {
+		return fmt.Errorf("whether the live site shows %s could not be "+
+			"checked, so its last captions track stays on: %w", shortID(video.ID), err)
+	}
+	if !used {
+		return nil
+	}
+	return errBlocked{fmt.Errorf(
+		"%s is shown on the live site, and %s would take the captions off "+
+			"the published page now, with no publish.\n"+
+			"  attach its replacement first (quilzo media captions %s "+
+			"FILE --lang TAG), or publish pages that do not show it",
+		video.Name, doing, shortID(video.ID))}
 }
 
 // putSameBytes writes a record back without touching the file it describes.

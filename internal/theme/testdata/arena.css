@@ -1,0 +1,42 @@
+/* arena: a layer over the generated stylesheet; every colour is a token */
+:root { color-scheme: dark; }
+body { background:
+  radial-gradient(60rem 40rem at 85% -10%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 70%),
+  radial-gradient(50rem 30rem at -10% 30%, color-mix(in srgb, var(--focus-ring) 10%, transparent), transparent 70%),
+  var(--surface); }
+h1, h2, h3, .brand { font-family: var(--font-display); letter-spacing: 0.02em; }
+h1, .section-head h2 { text-transform: uppercase; }
+h1 { text-shadow: 0 0 18px color-mix(in srgb, var(--primary) 70%, transparent),
+                  0 0 42px color-mix(in srgb, var(--primary) 35%, transparent); }
+.section-head h2 { background: linear-gradient(90deg, var(--on-surface), var(--primary) 60%, var(--focus-ring));
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+@media (forced-colors: active) { .section-head h2 { color: CanvasText; background: none; } }
+.btn { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  border-radius: 0; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+.btn:not(.btn-outlined):not(.btn-quiet) { box-shadow: 0 0 24px color-mix(in srgb, var(--primary) 55%, transparent); }
+.card, .plan, .metric { position: relative; border-radius: 0;
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px); }
+.card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--focus-ring), transparent); }
+.card:hover { box-shadow: 0 0 0 1px var(--primary), 0 0 32px color-mix(in srgb, var(--primary) 30%, transparent); }
+.site-header { border-bottom: 1px solid color-mix(in srgb, var(--primary) 40%, transparent); }
+
+/* the full-bleed hero */
+.arena-hero { position: relative; isolation: isolate; min-height: min(88vh, 60rem);
+  display: grid; align-items: end; overflow: hidden; margin-block-end: var(--space-7); }
+.arena-hero .backdrop, .arena-hero .backdrop video, .arena-hero .backdrop img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+.arena-hero::after { content: ""; position: absolute; inset: 0; z-index: -1;
+  background:
+    linear-gradient(0deg, var(--surface) 2%, color-mix(in srgb, var(--surface) 55%, transparent) 38%, transparent 70%),
+    linear-gradient(90deg, color-mix(in srgb, var(--surface) 82%, transparent) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--surface) 22%, transparent) 0 1px, transparent 1px 3px); }
+.arena-hero .wrap { padding-block: var(--space-8); display: flex; flex-direction: column; gap: var(--space-4); max-width: 76rem; }
+.arena-hero h1 { font-size: clamp(2.8rem, 6.5vw, 6rem); line-height: 0.95; max-width: 14ch; margin: 0; }
+.arena-hero .lead { max-width: 44ch; font-size: 1.25rem; color: var(--on-surface); }
+.arena-hero .chip { align-self: start; background: color-mix(in srgb, var(--focus-ring) 16%, transparent);
+  color: var(--on-tertiary-container); border: 1px solid var(--focus-ring); }
+.arena-calm { position: absolute; inset-block-start: var(--space-4); inset-inline-end: var(--space-4); z-index: 1;
+  font-size: 0.875rem; color: var(--on-surface-variant); display: flex; gap: 0.5rem; align-items: center; }
+#arena-calm:checked ~ .backdrop video { display: none; }
+@media (prefers-reduced-motion: reduce) { .arena-hero .backdrop video { display: none; } }

@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/scim"
@@ -59,7 +60,7 @@ func accessReviewEvery(root string) time.Duration {
 // events is the log already read, or nil to read it here.
 func auditActivity(root string, events []audit.Event) (func(string) time.Time, map[string]time.Time) {
 	if events == nil {
-		events, _ = audit.Read(auditPath(root))
+		events, _ = auditEntries(root)
 	}
 	key, _ := os.ReadFile(auditKeyPath(root))
 	latest := map[string]time.Time{}
@@ -120,7 +121,7 @@ func reviewInputs(root string, events []audit.Event, now time.Time) (accessrevie
 }
 
 func reviewer(c *Caller) accessreview.Decider {
-	return accessreview.Decider{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model}
+	return accessreview.Decider{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model, Credential: c.Credential}
 }
 
 // reviewStart takes the snapshot and opens a review over it.
@@ -212,8 +213,10 @@ func reviewDecide(root string, c *Caller, id string, v accessreview.Verdict, why
 
 // errLastAdministrator is a revoke that would leave nobody able to
 // administer the store.
-var errLastAdministrator = errors.New("that would leave nobody able to administer this store, so it is refused; " +
-	"grant another administrator first")
+//
+// The one updatePolicy refuses for every surface, so a review's refusal
+// and a command's read the same.
+var errLastAdministrator = dual.ErrLastAdministrator
 
 // nobodyAdministers is lastAdminIn's question (internal/admin/people.go)
 // asked of the policy as a revoke would leave it: is anybody at all still
@@ -221,14 +224,7 @@ var errLastAdministrator = errors.New("that would leave nobody able to administe
 // one principal before it, so a person who administers through a second
 // binding keeps the store administered, and a group mapping that made
 // three people administrators is judged by all three.
-func nobodyAdministers(p *auth.Policy) bool {
-	for _, who := range p.Principals() {
-		if p.Evaluate(who, auth.ActGrant, "/").Allowed {
-			return false
-		}
-	}
-	return true
-}
+func nobodyAdministers(p *auth.Policy) bool { return !dual.Administered(p) }
 
 // administrators is everybody a policy lets grant on the whole store,
 // which is who may decide a review's items; an agent is not among them,
@@ -524,7 +520,7 @@ func cmdAccess(root string, args []string) error {
 	case "review":
 		return cmdAccessReview(root, args[1:])
 	}
-	return fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])
+	return errMisused{fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])}
 }
 
 // accessReviewUsage is how to use quilzo access review.
@@ -585,6 +581,15 @@ func cmdAccessReview(root string, args []string) error {
 		return nil
 	}
 	c := resolveCaller(root, flagToken)
+	// start, items and close take nothing after them, and nothing looked:
+	// `access review close q3` closed the review that was open, whichever
+	// it was.
+	switch args[0] {
+	case "start", "items", "close":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+	}
 	switch sub := args[0]; sub {
 	case "start":
 		r, err := reviewStart(root, c)
@@ -648,11 +653,11 @@ func cmdAccessReview(root string, args []string) error {
 		pos, flags := leadingArgs(args[1:], 2)
 		fs := flag.NewFlagSet("access review decide", flag.ContinueOnError)
 		why := fs.String("why", "", "why; keeping privileged access needs one")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseOnce(fs, flags); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo access review decide ITEM keep|revoke [--why TEXT]")
+			return errMisused{errors.New("usage: quilzo access review decide ITEM keep|revoke [--why TEXT]")}
 		}
 		// Anything left over is refused rather than dropped: a reason
 		// typed without its quotes (--why edits the handbook) was kept as
@@ -705,7 +710,7 @@ func cmdAccessReview(root string, args []string) error {
 			accessreview.ControlID, r.Closed.Add(accessReviewEvery(root)).UTC().Format("2 Jan 2006"), reset)
 		return nil
 	}
-	return fmt.Errorf("unknown access review command %q; start, items, decide or close", args[0])
+	return errMisused{fmt.Errorf("unknown access review command %q; start, items, decide or close", args[0])}
 }
 
 // itemFacts is an item's second line: how and when it was granted, until
