@@ -102,8 +102,11 @@ type MapColumn struct {
 	// the source reports by it. Name is the column its name is read from.
 	Asset AssetType `json:"asset,omitempty" about:"the column names an asset of this type, which the field points at"`
 	Name  string    `json:"name,omitempty" reg:"label" about:"the heading of the column the asset's name is read from"`
-	// ID says the column holds register identifiers already.
-	ID bool `json:"id,omitempty" about:"the column holds register identifiers"`
+	// ID says the column holds register identifiers already, and Of says
+	// it holds the natural key of a record of that kind made in Quilzo, a
+	// control's reference: the field points at the record the key names.
+	ID bool   `json:"id,omitempty" about:"the column holds register identifiers"`
+	Of string `json:"of,omitempty" reg:"label" about:"the column holds the natural key of a record of this kind, which the field points at"`
 }
 
 // MapFact is one fact an Observation map reads from each row.
@@ -135,6 +138,11 @@ type ColumnMap struct {
 	Rows    string      `json:"rows,omitempty" reg:"label" about:"where in a JSON file the list of records is, as a JSON pointer"`
 	Columns []MapColumn `json:"columns,omitempty" reg:"max=200" about:"where each field comes from"`
 	Facts   []MapFact   `json:"facts,omitempty" reg:"max=200" about:"for observations, the facts each row holds"`
+	// Tool names the tool whose export the map reads, when it reads one: a
+	// GRC tool's list of tests, a device manager's inventory. What such a
+	// map reads is graded imported; a table without one is a person's,
+	// and graded uploaded.
+	Tool string `json:"tool,omitempty" reg:"label" about:"the tool whose export it reads; its facts are graded imported"`
 }
 
 const KindColumnMap Kind = "ColumnMap"
@@ -168,6 +176,19 @@ func (m ColumnMap) Check() error {
 	for _, f := range spec.Fields {
 		fields[f.Name] = f
 	}
+	// What the importer says of every record it writes is not a column's to
+	// say: the grade is how the file came in, the raw digest and the place
+	// are where it was read, and a map that read them from the file would
+	// let the file say how far it is to be trusted.
+	for _, c := range m.Columns {
+		switch c.Field {
+		case "grade", "raw", "place", "taint":
+			return fmt.Errorf("the field %q is the importer's to write, never a column's", c.Field)
+		}
+		if spec.Kind == KindObservation && c.Field == "source" {
+			return fmt.Errorf("an observation's source is the one it is imported under, never a column")
+		}
+	}
 	seen := map[string]bool{}
 	for _, c := range m.Columns {
 		f, ok := fields[c.Field]
@@ -181,11 +202,19 @@ func (m ColumnMap) Check() error {
 		if (c.Column == "") == (c.Value == "") {
 			return fmt.Errorf("the field %q is read from a column or given a value: one, and only one", c.Field)
 		}
-		if (c.Asset != "" || c.ID) && f.Type != "id" {
-			return fmt.Errorf("the field %q is not an identifier, so it cannot point at an asset", c.Field)
+		if (c.Asset != "" || c.ID || c.Of != "") && f.Type != "id" {
+			return fmt.Errorf("the field %q is not an identifier, so it cannot point at a record", c.Field)
 		}
-		if c.Asset != "" && c.ID {
-			return fmt.Errorf("the field %q points at an asset or holds identifiers, not both", c.Field)
+		if b2i(c.Asset != "")+b2i(c.ID)+b2i(c.Of != "") > 1 {
+			return fmt.Errorf("the field %q points at an asset, holds identifiers or holds a natural key: one of the three", c.Field)
+		}
+		if c.Of != "" {
+			if _, ok := SpecOf(c.Of); !ok {
+				return fmt.Errorf("the field %q holds the keys of %q, which is not a kind the register has", c.Field, c.Of)
+			}
+			if c.Column == "" {
+				return fmt.Errorf("the field %q reads a natural key from a column", c.Field)
+			}
 		}
 		if c.Asset != "" && c.Column == "" {
 			return fmt.Errorf("the field %q names an asset by a column", c.Field)
@@ -202,6 +231,13 @@ func (m ColumnMap) Check() error {
 		facts[f.Fact] = true
 	}
 	return nil
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // attested says a column map is a person's to write: Put refuses one from
