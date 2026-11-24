@@ -108,8 +108,32 @@ func (r *Register) putSide(by Actor, kind Kind, media string, content []byte, ab
 		}
 		people = append(people, string(id))
 	}
-	return r.Side().Put(string(kind), media, content, people...)
+	// Kept as a write is: not while nothing can record it, and recorded
+	// with what it is, never what it says.
+	if r.Audit == nil {
+		return "", fmt.Errorf("the register has no audit log to record a write in, so it keeps nothing beside it")
+	}
+	if r.Ready != nil {
+		if err := r.Ready(); err != nil {
+			return "", fmt.Errorf("nothing was kept, because the audit log cannot record it: %w", err)
+		}
+	}
+	d, err := r.Side().Put(string(kind), media, content, people...)
+	if err != nil {
+		return "", err
+	}
+	if aerr := r.Audit(audit.Record{Action: SideAction, Resource: Area, Outcome: audit.Success, Principal: by.Name,
+		Kind: by.Kind, Model: by.Model, Verified: by.Verified,
+		Detail: map[string]string{"kind": spec.Collection, "digest": d, "media": media,
+			"bytes": strconv.Itoa(len(content)), "about": strconv.Itoa(len(people))}}); aerr != nil {
+		return d, fmt.Errorf("%w: %v", ErrUnrecorded, aerr)
+	}
+	return d, nil
 }
+
+// SideAction is the name words or a file kept beside the register are
+// recorded under in the audit log.
+const SideAction = "register.side"
 
 // What a record names in the side store, as a screen says it.
 const (

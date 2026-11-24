@@ -362,4 +362,26 @@ func TestTextIsPutThroughTheGate(t *testing.T) {
 	if held := b.TextOf(Text(digest(9))); held.State != TextNotHeld {
 		t.Errorf("words never put here read as %+v", held)
 	}
+	// Kept as a write is: in the audit log, with what was kept and never
+	// what it says, and not at all while nothing can record it.
+	var kept *audit.Record
+	for i := range b.log {
+		if b.log[i].Action == SideAction {
+			kept = &b.log[i]
+		}
+	}
+	if kept == nil || kept.Detail["digest"] != string(words) || kept.Detail["kind"] != "sec_risk" {
+		t.Errorf("the words kept are recorded as %+v", kept)
+	}
+	for _, rec := range b.log {
+		for _, v := range rec.Detail {
+			if strings.Contains(v, "fine line") {
+				t.Errorf("an audit entry holds the words: %+v", rec)
+			}
+		}
+	}
+	b.Audit = nil
+	if _, err := b.PutText(dana, KindRisk, "Unrecorded."); err == nil {
+		t.Error("words were kept with no audit log to record it")
+	}
 }
