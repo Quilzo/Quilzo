@@ -225,6 +225,15 @@ func (h *Hints) SaysDestructive() bool {
 	return h != nil && h.Destructive != nil && *h.Destructive
 }
 
+// SaysReadOnly reports whether the server says, in so many words, that the
+// tool changes nothing, and does not also say that it destroys. MCP's
+// default for a tool that does not say is that it may change anything, so
+// annotations that are missing, or that say nothing of it, are not read as
+// read-only: they were, by whoever asked only MayChange.
+func (h *Hints) SaysReadOnly() bool {
+	return h != nil && h.ReadOnly != nil && *h.ReadOnly && !h.SaysDestructive()
+}
+
 // Matches reports whether a pinned tool is still the tool that was pinned.
 func (t Tool) Matches() bool { return t.Pinned != "" && t.Pinned == t.Definition }
 

@@ -204,3 +204,33 @@ func TestHintsThatAreNotBooleansDoNotLoseTheTools(t *testing.T) {
 		t.Errorf("a server's own destructive hint was lost: %+v", tools[2].Annotations)
 	}
 }
+
+// A tool is read-only only where its server says so in so many words.
+//
+// MCP's default for a tool whose annotations say nothing of it is that it
+// may change anything and destroy it. Asked only whether the server said a
+// tool changes something, a tool that gave no annotations at all was
+// offered through the gateway as read-only.
+func TestOnlyAToolThatSaysItChangesNothingIsReadOnly(t *testing.T) {
+	yes, no := true, false
+	for _, c := range []struct {
+		name string
+		h    *Hints
+		want bool
+	}{
+		{"no annotations", nil, false},
+		{"annotations that say nothing of it", &Hints{OpenWorld: &no}, false},
+		{"not read-only", &Hints{ReadOnly: &no}, false},
+		{"read-only", &Hints{ReadOnly: &yes}, true},
+		{"read-only and only adding", &Hints{ReadOnly: &yes, Destructive: &no}, true},
+		{"read-only and destructive", &Hints{ReadOnly: &yes, Destructive: &yes}, false},
+	} {
+		if got := c.h.SaysReadOnly(); got != c.want {
+			t.Errorf("%s: read-only is %v", c.name, got)
+		}
+	}
+	var h Hints
+	if err := json.Unmarshal([]byte(`{"readOnlyHint":"true"}`), &h); err != nil || h.SaysReadOnly() {
+		t.Errorf("a hint that is not a boolean was taken as read-only: %v %+v", err, h)
+	}
+}

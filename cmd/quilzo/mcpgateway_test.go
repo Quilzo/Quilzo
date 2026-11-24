@@ -321,8 +321,9 @@ func TestABrandFindingThroughTheGatewayWaitsForAPerson(t *testing.T) {
 }
 
 // annotatedServer is a tool server whose tools say what they do: one
-// destructive, one read-only, one that says nothing and one that says
-// nothing and is on the gateway's list of tools a person approves.
+// destructive, one read-only, one that says nothing, one that says nothing
+// and is on the gateway's list of tools a person approves, and one whose
+// annotations say something and nothing of whether it changes anything.
 type annotatedServer struct{}
 
 func (annotatedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -337,7 +338,9 @@ func (annotatedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		`{"name":"delete_everything","description":"Delete it all.","inputSchema":%s,"annotations":{"title":"Delete","readOnlyHint":false,"destructiveHint":true}},`+
 		`{"name":"list_things","description":"List them.","inputSchema":%s,"annotations":{"readOnlyHint":true}},`+
 		`{"name":"count_things","description":"Count them.","inputSchema":%s},`+
-		`{"name":"move_things","description":"Move them.","inputSchema":%s}]}}`, msg.ID, schema, schema, schema, schema)
+		`{"name":"move_things","description":"Move them.","inputSchema":%s},`+
+		`{"name":"tag_things","description":"Tag them.","inputSchema":%s,"annotations":{"openWorldHint":false}}]}}`,
+		msg.ID, schema, schema, schema, schema, schema)
 }
 
 // What a forwarded tool says it does is the server's to say, and the
@@ -348,6 +351,14 @@ func (annotatedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // and no "writes" mark a tool the server called destructive was offered to
 // other systems' agents as read-only, and a client that runs read-only
 // tools without asking would have run it.
+//
+// And a tool that says nothing is what MCP says such a tool is: one that
+// may change anything, and destroy it. Read-only was the gateway's reading
+// of a tool that gave no annotations, or none about what it changes, so on
+// an integration declared without "writes" a tool whose server said
+// nothing at all was offered to other systems' agents as safe to run
+// unasked; only a server that says, in so many words, that its tool
+// changes nothing has it offered as read-only.
 func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
 	root, pol := identityStore(t)
 	if err := pol.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
@@ -358,7 +369,7 @@ func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
 	}
 	mcpTransport = viaHandler(annotatedServer{})
 	t.Cleanup(func() { mcpTransport = nil })
-	uses := []string{"count_things", "delete_everything", "list_things", "move_things"}
+	uses := []string{"count_things", "delete_everything", "list_things", "move_things", "tag_things"}
 	set := agent.Integrations{Declared: []agent.Integration{{Name: "things", Kind: agent.IntegrationMCP, Enabled: true,
 		Purpose: "keep things", Endpoint: "things.example", Uses: uses,
 		Gateway: &agent.GatewayPolicy{Role: "author", Ask: []string{"move_things"}}}}}
@@ -376,17 +387,22 @@ func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
 	for _, tool := range srv.Direct.Tools {
 		got[tool.Name] = tool.Annotations
 	}
-	if len(got) != 4 {
+	if len(got) != 5 {
 		t.Fatalf("offered %v", got)
 	}
 	for name, want := range map[string]bool{"delete_everything": false, "list_things": true,
-		"count_things": true, "move_things": false} {
+		"count_things": false, "move_things": false, "tag_things": false} {
 		if got[name]["readOnlyHint"] != want {
 			t.Errorf("%s is offered with readOnlyHint %v; want %v (%v)", name, got[name]["readOnlyHint"], want, got[name])
 		}
 	}
-	if got["delete_everything"]["destructiveHint"] != true {
-		t.Errorf("the destructive tool is not offered as destructive: %v", got["delete_everything"])
+	for _, name := range []string{"delete_everything", "count_things", "move_things", "tag_things"} {
+		if got[name]["destructiveHint"] != true {
+			t.Errorf("%s, which may destroy what is there, is not offered as destructive: %v", name, got[name])
+		}
+	}
+	if _, ok := got["list_things"]["destructiveHint"]; ok {
+		t.Errorf("a read-only tool is offered with a destructive hint: %v", got["list_things"])
 	}
 	if _, ok := got["delete_everything"]["title"]; ok {
 		t.Errorf("the far side's own words were offered as a hint: %v", got["delete_everything"])
