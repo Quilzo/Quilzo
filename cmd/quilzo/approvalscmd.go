@@ -48,6 +48,19 @@ func waitingIn(root string, s *store.Store, c *Caller, now time.Time) ([]waiting
 // person's.
 func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitlist.Sources {
 	var declared *agentSet
+	// One store for every source that reads one: the server's, or one
+	// opened once, when the first source asks, for a command that holds
+	// none. Opening a store reads the key to an encrypted one, and two
+	// sources opening their own asked for it twice.
+	held := func() (*store.Store, error) {
+		if s == nil {
+			var err error
+			if s, err = open(root); err != nil {
+				return nil, err
+			}
+		}
+		return s, nil
+	}
 	return waitlist.Sources{
 		Name:     c.Name,
 		ReadOnly: c.Limits.ReadOnly,
@@ -84,7 +97,13 @@ func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitl
 			}
 			return out, err
 		},
-		Review: func() (*waitlist.Review, error) { return reviewWaiting(root, s) },
+		Review: func() (*waitlist.Review, error) {
+			st, err := held()
+			if err != nil {
+				return nil, err
+			}
+			return reviewWaiting(root, st)
+		},
 		Issues: func() ([]newsletter.Issue, error) {
 			list, err := openNewsletter(root)
 			if err != nil {
@@ -94,7 +113,7 @@ func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitl
 		},
 		Memories: memoryStore(root).List,
 		// Records proposed for the security register (registercmd.go).
-		Register: registerWaiting(root),
+		Register: registerWaiting(held),
 	}
 }
 

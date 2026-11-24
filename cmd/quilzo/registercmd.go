@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/store"
 	waitlist "github.com/quilzo/quilzo/internal/waiting"
 )
 
@@ -267,14 +268,15 @@ func proposerOf(p register.Proposal) string {
 }
 
 // registerWaiting is what waits on the register's proposals ref, for the
-// one list of what waits for a person (approvalscmd.go).
-func registerWaiting(root string) func() ([]waitlist.Proposed, error) {
+// one list of what waits for a person (approvalscmd.go), read from the
+// store that list reads, which a server holds and a command opens once.
+func registerWaiting(held func() (*store.Store, error)) func() ([]waitlist.Proposed, error) {
 	return func() ([]waitlist.Proposed, error) {
-		r, err := openRegister(root)
+		s, err := held()
 		if err != nil {
 			return nil, err
 		}
-		list, err := r.Proposals()
+		list, err := register.Open(s).Proposals()
 		var out []waitlist.Proposed
 		for _, p := range list {
 			spec, _ := register.SpecOf(string(p.Kind))
