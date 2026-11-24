@@ -100,6 +100,12 @@ type Server struct {
 	// OnWrite records a successful write, so the audit trail does not have a
 	// hole shaped like the API.
 	OnWrite func(principal, page, commit string)
+	// OnDelete records a successful deletion of a record, as collection/id.
+	// A deletion was told to OnWrite, so the audit log held api.write for
+	// it, with the same resource as the write that made the record, and
+	// nothing anywhere said it had been deleted. Nil tells OnWrite, so a
+	// host told of writes alone has no hole in its trail for deletions.
+	OnDelete func(principal, record, commit string)
 	// OnBadToken is told every credential presented that did not
 	// authenticate, and why, for the shield's decoys and guess counting
 	// (internal/shield). Nil tells nobody.
@@ -672,14 +678,73 @@ func (s *Server) describe(name string, fields any) (typeName, locale string) {
 	return typeName, locale
 }
 
+// readRef is the commit a read of one page is answered from, and whether it
+// is the draft read for writing the page (?ref=draft), refusing what cannot
+// be had.
+//
+// A write replaces the page as the draft holds it, and GET serves it as it
+// is published. The two are one page until the first write, and after it
+// they are not: a client that read the page to edit it a second time was
+// given the published ETag, refused 412 by the write, told to read it again
+// and given the same ETag, for as long as nobody published. ?ref=draft is
+// the read that write is based on, and its ETag is what If-Match on the
+// write is compared with.
+//
+// Asked for rather than given to anybody who may write, because what GET
+// serves without it is what is published, and an integration that writes
+// with its token may read with it for somebody who should see nothing
+// else. On a server that takes writes, to a caller who may write the page
+// (get): a read-only API has no write to base on it. ref=live is what is
+// published, which is what a read without ref is unless the server was
+// started on another ref.
+func (s *Server) readRef(w http.ResponseWriter, r *http.Request) (commit string, editing, ok bool) {
+	switch r.URL.Query().Get("ref") {
+	case "":
+		return s.Store.GetRef(s.ref()), false, true
+	case site.RefLive:
+		return s.Store.GetRef(site.RefLive), false, true
+	case site.RefDraft:
+		if !s.Writable {
+			writeError(w, http.StatusForbidden, Error{
+				Error: "the draft is read here to write a page, and this API is read-only",
+				Fix:   writableFix,
+			})
+			return "", false, false
+		}
+		return s.draftHead(), true, true
+	}
+	writeError(w, http.StatusBadRequest, Error{
+		Error:  "ref is live or draft",
+		Detail: "without it a page is answered as it is published",
+	})
+	return "", false, false
+}
+
+// draftHead is the commit a write is made on: the draft, or what is live
+// where nothing has been written since.
+func (s *Server) draftHead() string {
+	if draft := s.Store.GetRef(site.RefDraft); draft != "" {
+		return draft
+	}
+	return s.Store.GetRef(site.RefLive)
+}
+
 func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
-	if err := s.may(r, auth.ActView, "/"+name); err != nil {
+	commit, editing, ok := s.readRef(w, r)
+	if !ok {
+		return
+	}
+	// The draft is read to write the page, so it takes what writing does.
+	act := auth.ActView
+	if editing {
+		act = auth.ActEditDraft
+	}
+	if err := s.may(r, act, "/"+name); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
 	}
 
-	commit := s.Store.GetRef(s.ref())
 	pages, tree, err := s.pagesAt(commit)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, Error{
@@ -700,8 +765,10 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	// Outside its publish window it is not published yet, or not any more,
-	// and answers as a page that is not there, as the public site does.
-	if !inWindow(pages[name], s.now()) {
+	// and answers as a page that is not there, as the public site does. Not
+	// for the draft read, which is the page somebody is writing, embargo and
+	// all.
+	if !editing && !inWindow(pages[name], s.now()) {
 		writeError(w, http.StatusNotFound, Error{Error: "no such page"})
 		return
 	}
@@ -776,21 +843,24 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 
-	var fields map[string]any
-	if err := json.Unmarshal(body, &fields); err != nil {
+	fields, err := objectBody(body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, Error{
 			Error: "the body is not a JSON object", Detail: err.Error()})
 		return
 	}
 
-	ifMatch := r.Header.Get("If-Match")
-	if ifMatch == "" {
+	// A precondition is required, and If-None-Match: * is one: it is how a
+	// page is created without overwriting one (precondition).
+	ifMatch, ifNone := r.Header.Get("If-Match"), r.Header.Get("If-None-Match")
+	if strings.TrimSpace(ifMatch) == "" && strings.TrimSpace(ifNone) != "*" {
 		writeError(w, http.StatusPreconditionRequired, Error{
 			Error: "If-Match is required",
 			Detail: "a write without a validator overwrites whatever is there " +
 				"now, including somebody else's edit made since you read it",
-			Fix: "GET the page, then PUT with If-Match set to its ETag. For a " +
-				"page that does not exist yet, use If-Match: *",
+			Fix: "GET the page with ?ref=draft, then PUT with If-Match set to " +
+				"its ETag. To create a page that does not exist yet, send " +
+				"If-None-Match: * instead",
 		})
 		return
 	}
@@ -812,12 +882,10 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		cid      string
 		conflict *Error
 		status   int
+		created  bool
 	)
 	lockErr := s.Store.WithRefLock(func() error {
-		draft := s.Store.GetRef(site.RefDraft)
-		if draft == "" {
-			draft = s.Store.GetRef(site.RefLive)
-		}
+		draft := s.draftHead()
 		pages := map[string]any{}
 		if draft != "" {
 			if existing, err := site.PagesAt(s.Store, draft); err == nil {
@@ -825,31 +893,24 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			}
 		}
 
-		if _, exists := pages[name]; exists {
+		_, exists := pages[name]
+		current := ""
+		if exists {
 			tree, err := s.tree(draft)
 			if err != nil {
 				status, conflict = http.StatusInternalServerError, &Error{
 					Error: "the draft could not be read"}
 				return nil
 			}
-			if !matches(ifMatch, quote(tree[name])) {
-				status, conflict = http.StatusPreconditionFailed, &Error{
-					Error:  "the page has changed since you read it",
-					Detail: fmt.Sprintf("it is now %s", tree[name]),
-					Fix:    "GET it again, re-apply your change, and PUT with the new ETag",
-				}
-				return nil
-			}
-		} else if ifMatch != "*" {
-			// If-Match on a page that does not exist. RFC 9110 says this
-			// fails, and saying so is better than creating it and leaving the
-			// client believing it updated something.
-			status, conflict = http.StatusPreconditionFailed, &Error{
-				Error: "no such page, so nothing matches that validator",
-				Fix:   "use If-Match: * to create a page",
-			}
+			current = tree[name]
+		}
+		if e := precondition(ifMatch, ifNone, exists, current, "page",
+			"GET it again with ?ref=draft, re-apply your change, and PUT with "+
+				"the ETag it answers"); e != nil {
+			status, conflict = http.StatusPreconditionFailed, e
 			return nil
 		}
+		created = !exists
 
 		pages[name] = fields
 
@@ -942,9 +1003,81 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 
 	tree, _ := s.tree(cid)
 	w.Header().Set("ETag", quote(tree[name]))
-	writeJSON(w, http.StatusOK, Page{
+	// 201 for a page the write made, which RFC 9110 §9.3.4 requires of a
+	// PUT that creates; both answered 200, so a client could not tell that
+	// its write had made a page rather than changed one.
+	code := http.StatusOK
+	if created {
+		code = http.StatusCreated
+	}
+	writeJSON(w, code, Page{
 		Name: name, Fields: fields, ETag: tree[name],
 	})
+}
+
+// objectBody reads a write's body as the JSON object it must be.
+//
+// null decodes into a map without an error, as a nil map, so it was taken:
+// a page written with the body null was stored with its fields null, and a
+// record with none, while every other body that is not an object was
+// refused. It is refused with them.
+func objectBody(body []byte) (map[string]any, error) {
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, errors.New("the body is null; send {} for no fields")
+	}
+	return fields, nil
+}
+
+// precondition evaluates a write's If-Match and If-None-Match against what
+// it would replace, in the order RFC 9110 §13.2.2 gives, and says why the
+// write may not go ahead, or nil. exists is whether there is anything there,
+// current its ETag; what names it, and reread is how to read it again.
+//
+// Both are evaluated, and * means what §13.1 says. If-Match: * is true only
+// of something that exists, so it never creates: it created a page here,
+// which is the one thing a client sending it asks not to happen, as one
+// updating a page somebody has just deleted would. If-None-Match: * is true
+// only where nothing exists, which is how a client creates without
+// overwriting, and it was refused 428 as though no precondition had been
+// sent; beside an If-Match it was not looked at, and a write it should have
+// stopped went through.
+func precondition(ifMatch, ifNone string, exists bool, current, what, reread string) *Error {
+	ifMatch, ifNone = strings.TrimSpace(ifMatch), strings.TrimSpace(ifNone)
+	switch {
+	case ifMatch == "":
+	case !exists:
+		return &Error{
+			Error:  "no such " + what + ", so nothing matches If-Match",
+			Detail: "If-Match, * among them, is a condition that there is one",
+			Fix:    "send If-None-Match: * to create it",
+		}
+	case !matches(ifMatch, quote(current)):
+		return &Error{
+			Error:  "the " + what + " has changed since you read it",
+			Detail: fmt.Sprintf("it is now %s", current),
+			Fix:    reread,
+		}
+	}
+	switch {
+	case ifNone == "" || !exists:
+	case ifNone == "*":
+		return &Error{
+			Error: "there is such a " + what + " already, and If-None-Match: * " +
+				"writes only where there is none",
+			Detail: fmt.Sprintf("it is %s", current),
+			Fix:    "to replace it, send If-Match with its ETag",
+		}
+	case matches(ifNone, quote(current)):
+		return &Error{
+			Error:  "the " + what + " is one that If-None-Match names",
+			Detail: fmt.Sprintf("it is %s", current),
+		}
+	}
+	return nil
 }
 
 // inWindow reports whether a page's publish window is open at now: its

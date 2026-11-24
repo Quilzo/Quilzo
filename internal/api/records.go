@@ -15,6 +15,8 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Records over HTTP.
@@ -29,8 +31,9 @@ import (
 type Records struct {
 	// Tree returns the tree records are read from.
 	Tree func() (string, error)
-	// Commit makes a tree the new draft and returns nothing useful — the
-	// caller already knows what it wrote.
+	// Commit makes a tree the new draft. It returns no commit id, and the
+	// one it made is read from the draft ref under the same lock, for the
+	// audit record (OnWrite, OnDelete), which named none.
 	Commit func(tree, message, author string) error
 	// Writable allows POST, PUT and DELETE. Off by default, like the pages
 	// API: a read API and a write API are different products.
@@ -284,8 +287,8 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 			Error: "the body is too large"})
 		return
 	}
-	var fields map[string]any
-	if err := json.Unmarshal(body, &fields); err != nil {
+	fields, err := objectBody(body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, Error{
 			Error: "the body is not a JSON object", Detail: err.Error()})
 		return
@@ -304,6 +307,8 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		out      collection.Record
 		conflict *Error
 		status   int
+		cid      string
+		created  = id == ""
 	)
 	lockErr := s.Store.WithRefLock(func() error {
 		tree, err := s.Records.Tree()
@@ -312,9 +317,12 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		}
 		if id != "" {
 			existing, gerr := collection.Get(s.Store, tree, name, id)
-			ifMatch := r.Header.Get("If-Match")
+			ifMatch, ifNone := r.Header.Get("If-Match"), r.Header.Get("If-None-Match")
+			current := ""
 			if gerr == nil {
-				if ifMatch == "" {
+				// If-None-Match: * is a precondition too, and refuses a
+				// record that exists (precondition) rather than this.
+				if strings.TrimSpace(ifMatch) == "" && strings.TrimSpace(ifNone) != "*" {
 					status, conflict = http.StatusPreconditionRequired, &Error{
 						Error: "If-Match is required",
 						Detail: "a write without a validator overwrites " +
@@ -324,19 +332,14 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 					}
 					return nil
 				}
-				if !matches(ifMatch, quote(recordETag(existing))) {
-					status, conflict = http.StatusPreconditionFailed, &Error{
-						Error: "the record has changed since you read it",
-					}
-					return nil
-				}
-			} else if ifMatch != "" && ifMatch != "*" {
-				status, conflict = http.StatusPreconditionFailed, &Error{
-					Error: "no such record, so nothing matches that validator",
-					Fix:   "POST to the collection to create one",
-				}
+				current = recordETag(existing)
+			}
+			if e := precondition(ifMatch, ifNone, gerr == nil, current, "record",
+				"GET it again, re-apply your change, and PUT with its new ETag"); e != nil {
+				status, conflict = http.StatusPreconditionFailed, e
 				return nil
 			}
+			created = gerr != nil
 		}
 
 		next, rec, err := collection.Put(s.Store, tree, name,
@@ -348,6 +351,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		if err := s.Records.Commit(next, "api: write "+name, who); err != nil {
 			return err
 		}
+		cid = s.Store.GetRef(site.RefDraft)
 		out = rec
 		return nil
 	})
@@ -376,12 +380,16 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 		return
 	}
 	if s.OnWrite != nil {
-		s.OnWrite(who, name+"/"+out.ID, "")
+		s.OnWrite(who, name+"/"+out.ID, cid)
 	}
 	w.Header().Set("ETag", quote(recordETag(&out)))
+	// 201 for a record the write made, by POST or by a PUT to an id with
+	// nothing there, which RFC 9110 §9.3.4 requires of a PUT that creates.
 	code := http.StatusOK
-	if id == "" {
+	if created {
 		code = http.StatusCreated
+	}
+	if id == "" {
 		w.Header().Set("Location", "/api/v1/records/"+name+"/"+out.ID)
 	}
 	writeJSON(w, code, out)
@@ -403,21 +411,59 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id s
 	if tok != nil {
 		who = tok.Principal
 	}
-	var missing bool
+	// If-Match, compared under the lock as a write's is. The API's own
+	// description says a delete needs it, and it was not asked for: with
+	// none, or one that no longer matched, the record was deleted, so a
+	// client deleting what it had read deleted whatever somebody had put
+	// there since.
+	ifMatch, ifNone := r.Header.Get("If-Match"), r.Header.Get("If-None-Match")
+	var (
+		missing  bool
+		conflict *Error
+		status   int
+		cid      string
+	)
 	lockErr := s.Store.WithRefLock(func() error {
 		tree, err := s.Records.Tree()
 		if err != nil {
 			return err
 		}
-		next, err := collection.Delete(s.Store, tree, name, id)
+		existing, err := collection.Get(s.Store, tree, name, id)
 		if err != nil {
 			missing = true
 			return nil
 		}
-		return s.Records.Commit(next, "api: delete from "+name, who)
+		if strings.TrimSpace(ifMatch) == "" {
+			status, conflict = http.StatusPreconditionRequired, &Error{
+				Error: "If-Match is required",
+				Detail: "a delete without a validator deletes whatever is " +
+					"there now, including somebody else's edit made since " +
+					"you read it",
+				Fix: "GET the record, then DELETE with If-Match set to its ETag",
+			}
+			return nil
+		}
+		if e := precondition(ifMatch, ifNone, true, recordETag(existing), "record",
+			"GET it again, and DELETE with its new ETag if it is still to go"); e != nil {
+			status, conflict = http.StatusPreconditionFailed, e
+			return nil
+		}
+		next, err := collection.Delete(s.Store, tree, name, id)
+		if err != nil {
+			return err
+		}
+		if err := s.Records.Commit(next, "api: delete from "+name, who); err != nil {
+			return err
+		}
+		cid = s.Store.GetRef(site.RefDraft)
+		return nil
 	})
 	if missing {
 		writeError(w, http.StatusNotFound, Error{Error: "no such record"})
+		return
+	}
+	if conflict != nil {
+		writeError(w, status, *conflict)
 		return
 	}
 	if lockErr != nil {
@@ -425,27 +471,41 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id s
 			Error: "the delete failed", Detail: lockErr.Error()})
 		return
 	}
-	// The same hook the write path calls, "so the audit trail does not have a
-	// hole shaped like the API" — its own words. It had one anyway, shaped
-	// like this half of it: writing a record was recorded and deleting one was
-	// not, so a token-holding integration could empty a collection and the log
-	// would show only the writes that created it.
-	if s.OnWrite != nil {
-		s.OnWrite(who, name+"/"+id, "")
+	// Recorded as a deletion, with the commit that made it. It was told to
+	// the write path's hook "so the audit trail does not have a hole shaped
+	// like the API" — its own words — and closed the hole with an entry
+	// that said api.write, named no commit, and nothing about a deletion.
+	// A host without OnDelete is still told, through OnWrite.
+	switch {
+	case s.OnDelete != nil:
+		s.OnDelete(who, name+"/"+id, cid)
+	case s.OnWrite != nil:
+		s.OnWrite(who, name+"/"+id, cid)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// recordETag is a validator derived from the record's content.
+// recordETag is the record's content hash: the object id the store keeps
+// it under, by the store's own definition (store.ObjectID over the record's
+// canonical JSON, which is what PutBlob hashes), so it is not a second
+// definition of identity.
 //
-// Its updated timestamp and id together: the store does not hand back the
-// blob's object id from Put, and hashing the fields here would be a second
-// definition of identity that could drift from the store's. Two writes in the
-// same second to the same record produce the same validator, which is a real
-// limitation and is bounded by the fact that a write in between changes the
-// timestamp for any client that read first.
+// It was the id and the second the record was last written in. Two writes
+// inside one second kept the first one's validator, so a client holding it
+// from before the second passed If-Match and overwrote that write unseen:
+// the lost update If-Match exists to prevent. Hashed over the record as
+// read, which for every record whose numbers survive being read as JSON —
+// all but an integer past 2^53 written by something other than this API —
+// is the id it is stored under; for the rest it is still a hash of what is
+// served, the same on every read.
 func recordETag(r *collection.Record) string {
-	return fmt.Sprintf("%s-%d", r.ID, r.Updated)
+	b, err := json.Marshal(r)
+	if err != nil {
+		// Unreachable for a record decoded from JSON. No validator rather
+		// than a wrong one: an empty tag matches nothing.
+		return ""
+	}
+	return store.ObjectID(store.KindBlob, b)
 }
 
 // typedValue reads a query-string value as the type it looks like, so a filter
