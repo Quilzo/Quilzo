@@ -175,7 +175,7 @@ func (r *Register) prepare(ref string, by Actor, why string, recs []Record) ([]i
 	var items []item
 	for _, rec := range recs {
 		spec := kinds[rec.Kind()]
-		if err := validate(rec); err != nil {
+		if err := validate(awaitingApproval(ref, rec)); err != nil {
 			return nil, err
 		}
 		id, err := IDOf(rec)

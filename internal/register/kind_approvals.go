@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
 )
 
 // The kinds that hold what happened to approvals after they were given: the
@@ -194,4 +196,58 @@ var approvalCheck func(*Register) func(rec Record, id ID, a *Approval) error
 // evidence.
 func CheckApprovalsWith(make func(*Register) func(rec Record, id ID, a *Approval) error) {
 	approvalCheck = make
+}
+
+// awaitingApproval is the record a write is held to: the record itself,
+// except that a decision proposed without its approval is held to every
+// rule but the approval it has not yet been given. A proposal waits for its
+// approval; refusing it for not having one left no way to ask for one. The
+// stand-in is what the kind's own rules ask of an approval, raised by
+// whoever the record says raised it and agreed by somebody else, and it is
+// never stored: the proposal is kept as it was sent, and the person who
+// accepts it gives the approval it is written with.
+func awaitingApproval(ref string, rec Record) Record {
+	if ref != ProposalsRef || approvalOf(rec) != nil || !holdsApproval(rec) {
+		return rec
+	}
+	raised := ID("00000000000000000000000000000001")
+	if r, ok := rawField(rec, "raised_by"); ok && ID(r).Valid() {
+		raised = ID(r)
+	}
+	other := ID("00000000000000000000000000000002")
+	if other == raised {
+		other = "00000000000000000000000000000003"
+	}
+	none := Digest("sha256:" + strings.Repeat("0", 64))
+	return withApproval(rec, &Approval{Atom: "awaiting", Rule: "awaiting", Needed: 1, Of: 2, Surface: none, Raised: raised,
+		Signers: []Signer{{Subject: other, At: 1, Assertion: none}}})
+}
+
+// holdsApproval reports whether a record's kind has a field for an
+// approval.
+func holdsApproval(rec Record) bool {
+	v := reflect.Indirect(reflect.ValueOf(rec))
+	if !v.IsValid() || v.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).Type() == reflect.TypeOf((*Approval)(nil)) {
+			return true
+		}
+	}
+	return false
+}
+
+// rawField is a string field of a record, by its JSON name.
+func rawField(rec Record, name string) (string, bool) {
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		return "", false
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return "", false
+	}
+	s, ok := m[name].(string)
+	return s, ok
 }
