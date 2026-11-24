@@ -449,3 +449,46 @@ func TestTheWideTrustedNetworksAreNamed(t *testing.T) {
 		t.Errorf("most of the internet: %s", got)
 	}
 }
+
+// A /8 of IPv6 is not one network.
+//
+// Trust took nothing wider than a /8 in either family, as the largest
+// network any organisation holds. That is so of IPv4. A /8 of IPv6 is
+// thirty-two times the largest block any one organisation has been given,
+// and holds whole registries: 2600::/8 holds what the registry for North
+// America gives out, every provider's customers and every cloud there,
+// and with it declared trusted no playbook and no person could block or
+// slow any of them that came over IPv6, as a dual-stack browser does
+// first. The private ranges, which are never routed on the internet, are
+// still declared whole, as 10.0.0.0/8 is.
+func TestASlabOfIPv6IsNotATrustedNetwork(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range []string{"2600::/8", "2a00::/12", "2400::/12", "2001::/15", "2000::/8", "fc00::/6"} {
+		if err := Trust(root, n, true, t0); err == nil || !strings.Contains(err.Error(), "a /16 of IPv6") {
+			t.Errorf("%s: %v, want it refused", n, err)
+		}
+	}
+	if st, _ := Load(root); len(st.Trusted) != 0 {
+		t.Fatalf("trusted %v", st.Trusted)
+	}
+	for _, n := range []string{"2001:db8::/32", "2001:db8::/29", "fd00::/8", "fc00::/7", "fe80::/10", "fd12:3456:789a::/48"} {
+		if err := Trust(root, n, true, t0); err != nil {
+			t.Errorf("%s: %v", n, err)
+		}
+	}
+	// One an older version took is the posture check's to report as more
+	// than any one network, and can be taken off.
+	st := &State{Trusted: []string{"2600::/8", "fd00::/8", "2001:db8::/32"}}
+	if broad, most := st.TrustedWidely(); strings.Join(most, " ") != "2600::/8" || strings.Join(broad, " ") != "fd00::/8 2001:db8::/32" {
+		t.Errorf("broad %v, most %v", broad, most)
+	}
+	if err := Change(root, t0, func(st *State) error {
+		st.Trusted = append(st.Trusted, "2600::/8")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Trust(root, "2600::/8", false, t0); err != nil {
+		t.Fatal(err)
+	}
+}

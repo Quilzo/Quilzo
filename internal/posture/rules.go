@@ -804,8 +804,9 @@ var rules = []Rule{
 			"the office, the VPN, a load balancer. One wider than the shield " +
 			"itself blocks as a network, a /16 or an IPv6 /48, is most of a " +
 			"provider or a country, and an attack from anywhere in it meets " +
-			"no block at all; one wider than a /8 is most of the internet, and " +
-			"the shield then blocks nobody.",
+			"no block at all; one wider than may be declared, a /8 or an IPv6 " +
+			"/16, is more than any one network, a registry's region or the " +
+			"internet, and nobody anywhere in it is blocked.",
 		Check: func(s State) []Finding {
 			if !s.Shield.Checked {
 				return nil
@@ -813,7 +814,7 @@ var rules = []Rule{
 			var out []Finding
 			for _, n := range s.Shield.Most {
 				out = append(out, Finding{Severity: High, Resource: n,
-					Detail: n + " is declared trusted, which is most of the internet: the shield blocks and slows nobody there",
+					Detail: n + " is declared trusted, which is more than any one network: the shield blocks and slows nobody there",
 					Fix:    "quilzo shield trust remove " + n + "  # then add the networks your people work from"})
 			}
 			for _, n := range s.Shield.Wide {

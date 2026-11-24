@@ -62,7 +62,7 @@ func TestAWideTrustedNetworkIsReported(t *testing.T) {
 	if len(found) != 3 {
 		t.Fatalf("%d findings, want one for each network: %+v", len(found), found)
 	}
-	if f := found["0.0.0.0/0"]; f.Severity != High || !strings.Contains(f.Detail, "most of the internet") ||
+	if f := found["0.0.0.0/0"]; f.Severity != High || !strings.Contains(f.Detail, "more than any one network") ||
 		!strings.HasPrefix(f.Fix, "quilzo shield trust remove 0.0.0.0/0") {
 		t.Errorf("most of the internet: %+v", f)
 	}

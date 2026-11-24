@@ -31,8 +31,9 @@
 //     this, so `quilzo shield lift all` there is the way out of anything.
 //     A private network is a place, not a pass: a machine on one is
 //     blocked like anybody's unless its network is declared. Nothing wider
-//     than a /8 is declared: never blocking most of the internet is not
-//     trusting a network, it is the shield switched off (Trust).
+//     than a /8, or a /16 of IPv6, is declared: never blocking most of the
+//     internet is not trusting a network, it is the shield switched off
+//     (Trust).
 //   - A source an administrator signed in from with a passkey or single
 //     sign-on in the last thirty days is not blocked from the admin by a
 //     playbook: that is the security contact's call, and they are told.
@@ -650,7 +651,7 @@ func (s *State) TrustedWidely() (broad, most []string) {
 		pfx, err := Network(t)
 		switch {
 		case err != nil:
-		case pfx.Bits() < widestTrusted:
+		case tooWideToTrust(pfx):
 			most = append(most, t)
 		case wide(pfx):
 			broad = append(broad, t)
@@ -664,10 +665,33 @@ func (s *State) TrustedWidely() (broad, most []string) {
 // "not found", where it said "no longer trusted" and exited 0.
 var ErrNotTrusted = errors.New("not a trusted network")
 
-// widestTrusted is the widest network that may be declared trusted, as a
-// prefix length in either family: a /8, which is the largest network any
-// organisation holds (10.0.0.0/8, fd00::/8).
-const widestTrusted = 8
+// tooWideToTrust reports a network wider than may be declared trusted: a
+// /8, which is the largest network any organisation holds, or a /16 of
+// IPv6, which is more than the largest providers hold.
+//
+// It was a /8 in either family. A /8 of IPv6 is thirty-two times the
+// largest block any one organisation has been given, and holds whole
+// registries: 2600::/8 holds what the registry for North America gives
+// out, and with it declared trusted nobody coming from there over IPv6,
+// as a dual-stack browser does first, was ever blocked or slowed. The
+// ranges never routed on the internet, unique-local (fc00::/7) and
+// link-local (fe80::/10), are declared whole, as 10.0.0.0/8 is: a machine
+// there is on a network of the operator's own.
+func tooWideToTrust(pfx netip.Prefix) bool {
+	if pfx.Addr().Is4() {
+		return pfx.Bits() < 8
+	}
+	for _, in := range neverRouted {
+		if pfx.Bits() >= in.Bits() && in.Contains(pfx.Addr()) {
+			return false
+		}
+	}
+	return pfx.Bits() < 16
+}
+
+// neverRouted are the IPv6 ranges no address on the internet is in, which
+// tooWideToTrust lets be declared whole.
+var neverRouted = []netip.Prefix{netip.MustParsePrefix("fc00::/7"), netip.MustParsePrefix("fe80::/10")}
 
 // Trust adds or removes a network that is never blocked or slowed.
 //
@@ -677,21 +701,22 @@ const widestTrusted = 8
 // removing one that was never there answered like removing one that was;
 // that is ErrNotTrusted now.
 //
-// Nothing wider than a /8 is added. 0.0.0.0/0 was taken like an office's
-// /24, from one administrator and at once, and from then on no playbook
-// and no person could block or slow anybody. Stopping the shield acting is
-// a hold (HoldAll): it says why, the security contact is told, and
-// letting the playbooks act again takes a second administrator. Removing
-// is never refused, so one an older version took can be taken off.
+// Nothing wider than a /8, or a /16 of IPv6, is added (tooWideToTrust).
+// 0.0.0.0/0 was taken like an office's /24, from one administrator and at
+// once, and from then on no playbook and no person could block or slow
+// anybody. Stopping the shield acting is a hold (HoldAll): it says why,
+// the security contact is told, and letting the playbooks act again takes
+// a second administrator. Removing is never refused, so one an older
+// version took can be taken off.
 func Trust(root, network string, add bool, now time.Time) error {
 	pfx, err := Network(network)
 	if err != nil {
 		return err
 	}
-	if add && pfx.Bits() < widestTrusted {
-		return fmt.Errorf("%s is wider than a /8, which is more than any one network: the shield would block and "+
-			"slow nobody there. To stop the shield acting, hold every playbook instead, which says why and "+
-			"takes a second administrator to undo", pfx)
+	if add && tooWideToTrust(pfx) {
+		return fmt.Errorf("%s is wider than a /8, or a /16 of IPv6, which is more than any one network: the "+
+			"shield would block and slow nobody there. To stop the shield acting, hold every playbook instead, "+
+			"which says why and takes a second administrator to undo", pfx)
 	}
 	if add && holdsMapped(pfx) {
 		return errMapped(pfx)
