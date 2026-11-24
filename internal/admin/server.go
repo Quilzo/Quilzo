@@ -2747,6 +2747,10 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		"Unpublished": draft != "" && draft != live,
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 		"CanPublish":  s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
+		// Whether there is anywhere they may start a page, which the address
+		// they give is then asked about (handleNewPage). Offered only to
+		// whoever could edit "/", it was hidden from an author of /blog.
+		"CanStart": s.allowsAnywhere(p, auth.ActEditDraft),
 	})
 }
 
@@ -2758,7 +2762,12 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may write anywhere, which is whether this has anything
+	// to answer them; the address they give is asked about once it is a
+	// name. This asked about "/", which an author granted /blog does not
+	// hold, so they were refused 403 for a page under /blog that the editor
+	// then let them write, and a deny on /legal was never asked at all.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	raw := strings.Trim(strings.TrimSpace(r.URL.Query().Get("name")), "/")
@@ -2788,6 +2797,9 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 	if store.CheckPath(name) != nil {
 		http.Redirect(w, r, "/?e="+urlQueryEscape("That address is too long or has a part no page "+
 			"name can hold. Give the new page a shorter one, such as about-us"), http.StatusSeeOther)
+		return
+	}
+	if !s.canPage(w, r, p, auth.ActEditDraft, name) {
 		return
 	}
 	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)

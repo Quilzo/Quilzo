@@ -11,7 +11,7 @@
 </p>
 {{end}}
 
-{{if .CanEdit}}
+{{if .CanStart}}
 <form method="get" action="/pages/new" class="newpage" aria-label="Start a new page">
   <label for="newpage-name">New page at {{template "req"}}</label>
   <span class="newpage-field"><span class="hint" aria-hidden="true">/</span><input id="newpage-name" name="name" required maxlength="200" spellcheck="false" autocomplete="off" placeholder="about-us"></span>
