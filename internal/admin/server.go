@@ -978,16 +978,39 @@ func (s *Server) contentLimit(p principal, act auth.Action, resource string) str
 			typeName = st.Bound[page]
 		}
 	}
-	fields, ok := any(nil), false
-	if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
-		fields, ok = pages[page]
-	}
+	fields, ok := s.pageFieldsAt(site.RefDraft, page)
 	if !ok {
-		if pages, err := site.PagesAt(s.Store, site.RefLive); err == nil {
-			fields = pages[page]
-		}
+		fields, _ = s.pageFieldsAt(site.RefLive, page)
 	}
 	return p.Limits.Why(act, typeName, auth.PageLocale(fields))
+}
+
+// pageFieldsAt is one page as a ref holds it, read by itself. Not through
+// site.PagesAt, which answers a copy of every page: a screen asks allows of
+// each row it lists, and for a limited credential that copied the whole
+// draft once a row.
+func (s *Server) pageFieldsAt(ref, page string) (any, bool) {
+	cid := s.Store.GetRef(ref)
+	if cid == "" {
+		return nil, false
+	}
+	c, err := s.Store.GetCommit(cid)
+	if err != nil {
+		return nil, false
+	}
+	tree, err := s.Store.GetTree(c.Tree)
+	if err != nil {
+		return nil, false
+	}
+	oid, ok := tree[page]
+	if !ok || s.Store.IsTree(oid) {
+		return nil, false
+	}
+	var fields any
+	if err := s.Store.GetBlob(oid, &fields); err != nil {
+		return nil, false
+	}
+	return fields, true
 }
 
 // Asking the authorisation question about the page, and not about the site.

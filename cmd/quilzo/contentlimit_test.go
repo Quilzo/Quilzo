@@ -102,3 +102,41 @@ func TestATokenLimitedToTypesOrLocalesIsLimitedOnTheCommandLine(t *testing.T) {
 		}
 	}
 }
+
+// A token issued with a credential limited to some content types or
+// languages carries those limits too, as one exchanged for a session does.
+//
+// `token issue` narrowed what it issued by the flags and nothing else, so an
+// administrator's token issued `--types policy` issued a publisher's token
+// with no limit at all, and the limit was one command deep.
+func TestATokenIssuedWithALimitedTokenIsLimitedToo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := typedStore(t)
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	asOnly(t, root, "boss")
+	limitedAs(t, root, "boss", auth.Scope{Types: []string{"policy"}, Locales: []string{"fr"}})
+	if _, err := humanOutput(t, func() error {
+		return cmdToken(root, []string{"issue", "ci", "--principal", "boss", "--role", "publisher"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tok := range ts.Tokens {
+		if tok.Name != "ci" {
+			continue
+		}
+		found = true
+		if strings.Join(tok.Scope.Types, ",") != "policy" || strings.Join(tok.Scope.Locales, ",") != "fr" {
+			t.Errorf("a token issued with one limited to policy in French is limited to %s", tok.Scope)
+		}
+	}
+	if !found {
+		t.Fatal("no token was issued")
+	}
+}
