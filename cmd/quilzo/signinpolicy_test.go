@@ -124,3 +124,93 @@ func TestEachSignInMailSaysWhatHappensNext(t *testing.T) {
 		t.Errorf("four sign-in alerts made %d mails", n)
 	}
 }
+
+// "This wasn't me" ends what the reported sign-in reached: every session
+// its person is signed in to the admin with, and the token that sign-in
+// was made with. Their other tokens, a program's among them, are left
+// working, for the security contact, who is told, to decide about.
+//
+// It revoked every token the person held, long-lived ones and programs'
+// included, while the page said only "this session ends now". Whoever held
+// a session stepped up for not looking like its person could press it, and
+// every integration that person had issued a token for stopped.
+func TestReportingASignInEndsWhatItReachedAndNoMore(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := connectStore(t)
+	_ = securityMailbox(t, root)
+	_, _, reported, _ := sessionHooks(root)
+
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	pasted, pastedTok, err := ts.Issue("laptop", "dana", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ci, err := ts.Issue("ci", "dana", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, own, err := ts.Issue("desktop", "dana", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The reported sign-in: the laptop token pasted into the sign-in form.
+	_, held, err := ts.Exchange(pasted, auth.RoleNone, "", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.MarkSignIn(held.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Another sign-in of hers, with a passkey.
+	_, passkey, err := ts.IssueSession("passkey:dana", "dana", auth.RoleAuthor, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, other, err := ts.Issue("ci", "sam", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []struct {
+		id, kind string
+	}{{pastedTok.ID, auth.KindPerson}, {ci.ID, auth.KindProgram}, {own.ID, auth.KindPerson}} {
+		if err := ts.RecordKind(k.id, k.kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+
+	reported("dana", held.ID)
+	finishBackground(10 * time.Second)
+
+	after, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked := map[string]bool{}
+	for _, k := range after.Snapshot() {
+		revoked[k.ID] = k.Revoked
+	}
+	for _, c := range []struct {
+		what string
+		id   string
+		ends bool
+	}{
+		{"the reported session", held.ID, true},
+		{"the token it was signed in with", pastedTok.ID, true},
+		{"her other sign-in", passkey.ID, true},
+		{"her program's token", ci.ID, false},
+		{"her own other token", own.ID, false},
+		{"somebody else's token", other.ID, false},
+	} {
+		if revoked[c.id] != c.ends {
+			t.Errorf("%s: revoked %v, want %v", c.what, revoked[c.id], c.ends)
+		}
+	}
+}
