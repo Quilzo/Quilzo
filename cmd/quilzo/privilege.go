@@ -125,9 +125,16 @@ var commandNeeds = map[string]need{
 	"menus":    {action: auth.ActView},
 	"siem":     {action: auth.ActView},
 	"a11y":     {action: auth.ActView},
-	"verify":   {action: auth.ActView},
-	"scan":     {action: auth.ActView},
-	"csp":      {action: auth.ActView},
+	// Whether every object is still what its name says, and the content
+	// policy derived from what is published, are a reader's, as
+	// verify_store says of the first and the live site's own headers say
+	// the second. They are what Integrity and Content policy show the
+	// compliance area as well (need.alsoIn), whose job and the auditor's
+	// were refused them, holding no role on "/". The code scan is the
+	// compliance area's alone (commandAreas).
+	"verify": {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
+	"scan":   {action: auth.ActView},
+	"csp":    {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
 	// Reading what this deployment may connect to is a view. Changing it is
 	// `config set`, which is already privileged.
 	"network":    {action: auth.ActView},
@@ -1596,7 +1603,20 @@ var commandAreas = map[string]string{
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,
-	"auditlog": auth.AreaLog,
+	// The posture and assurance reads, which Security shows the compliance
+	// area: the code scan, what agents have been doing, the frameworks, the
+	// assurance report, the engagements and the group's controls. Asked of
+	// the whole site, the compliance job and the auditor were refused every
+	// one, and any reader of the content read them from a terminal while
+	// the admin, guarding the area, showed them only to an administrator of
+	// the whole site. Writing stays where it was asked.
+	"scan": auth.AreaCompliance, "agents": auth.AreaCompliance,
+	"framework list": auth.AreaCompliance, "framework status": auth.AreaCompliance,
+	"framework adopt": auth.AreaCompliance, "framework relations": auth.AreaCompliance,
+	"assurance report": auth.AreaCompliance, "assurance show": auth.AreaCompliance,
+	"assurance controls": auth.AreaCompliance, "engagement list": auth.AreaCompliance,
+	"engagement check": auth.AreaCompliance, "entity tree": auth.AreaCompliance,
+	"entity report": auth.AreaCompliance, "auditlog": auth.AreaLog,
 	// A receipt is records from the log, with their proofs: read where the
 	// log is read.
 	"agent receipt": auth.AreaLog, "apps receipt": auth.AreaLog,
@@ -1610,6 +1630,13 @@ var commandAreas = map[string]string{
 
 // commandArea is the area a command works in, if it works in one.
 func commandArea(cmd string, args []string) (string, bool) {
+	// A bare command is asked about where the subcommand it runs is.
+	// Otherwise bare `quilzo assurance` was asked as the record it does not
+	// make, on the whole site, and an author read there the report that
+	// `assurance report` refused them.
+	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
+		args = []string{sub}
+	}
 	// Running one agent is asked about that agent, so a permission granted
 	// on it alone is enough.
 	if cmd == "agent" && len(args) > 1 && args[0] == "run" && reAgentArg.MatchString(args[1]) {
@@ -1658,10 +1685,16 @@ func commandArea(cmd string, args []string) (string, bool) {
 // declaring one, a publisher's: a reader and an author were refused the
 // list that `assistant list`, list_assistants and the Chatbots screen give
 // them.
+//
+// `framework`, `assurance`, `engagement` and `entity` list, report, list and
+// draw the tree when run bare, and took the rows for asserting, recording,
+// opening and relying, so a publisher read bare what their list refused
+// them once the reads were asked in the compliance area.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
 	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
-	"template": "list", "templates": "list", "assistant": "list"}
+	"template": "list", "templates": "list", "assistant": "list",
+	"framework": "list", "assurance": "report", "engagement": "list", "entity": "tree"}
 
 // layoutHint is said after a refusal to write a layout.
 const layoutHint = "a layout is the markup every page that names it renders through, " +
