@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/siem"
 )
@@ -240,5 +241,23 @@ func TestAnExportFromTheScreenIsRecordedAsTheCommandLinesAre(t *testing.T) {
 	if action != "auditlog.export" || detail["pseudonymous"] != "false" || detail["revealed"] != "true" ||
 		detail["identifiers_requested"] != "false" {
 		t.Errorf("an export of a log that names people as they are was recorded as %s %v", action, detail)
+	}
+}
+
+// The screen said everything is off "until somebody turns it on", and
+// offers nothing that does: it is read-only on purpose (Integrations.Declared
+// says why). Somebody looking at an integration marked off has to be told
+// where it is turned on, or they go looking for the button.
+func TestTheScreenSaysWhereAnIntegrationIsTurnedOn(t *testing.T) {
+	srv, token := setup(t)
+	srv.Integrations = &Integrations{Declared: func() (agent.Integrations, error) {
+		return agent.Integrations{Declared: []agent.Integration{{Name: "tracker", Kind: agent.IntegrationMCP,
+			Purpose: "file issues", Endpoint: "mcp.tracker.example", Uses: []string{"create_issue"}}}}, nil
+	}}
+	body := get(t, srv, "/integrations", token).Body.String()
+	for _, want := range []string{"declared, off", `"enabled": true`, "integrations.json"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the screen lacks %q", want)
+		}
 	}
 }

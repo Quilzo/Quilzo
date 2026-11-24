@@ -24,7 +24,8 @@ write.</p>
   <code>quilzo integrations list</code> shows the same thing on the command line.</p>
 {{else}}
 <p class="hint">{{.Reachable}} of {{len .Declared}} may actually be reached.
-  Everything is off until somebody turns it on, and a local process stays off
+  Everything is off until somebody sets <code>"enabled": true</code> on its entry
+  in <code>integrations.json</code>, and a local process stays off
   until this install allows processes at all
   ({{if .AllowProcess}}it does{{else}}it does not{{end}}).</p>
 <div class="table-wrap">

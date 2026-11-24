@@ -1286,6 +1286,15 @@ dead, and the live risk is a server redefining a tool after the day somebody
 trusted it. Credentials are named in the declaration and read from the
 environment, never stored, because an object in this store cannot be deleted.
 
+`quilzo integrations import` and `quilzo integrations template` declare one
+switched off, as does an entry written by hand that leaves the flag out, and it
+is turned on by setting `"enabled": true` on its entry in `integrations.json`
+beside the store. That is the only way, on purpose. Turning one on lets this process send
+somebody's data to a third party, which is decided in a file somebody reviews
+and deploys rather than by a button next to a list, so no command does it and
+Administration › Integrations shows what is on without changing it. The file
+is read each time it is used, so nothing needs restarting.
+
 **Federation.** The site is followable from the fediverse — WebFinger, an actor
 at `/@`, an outbox — and a published page is delivered to every follower, signed,
 with bounded retries. The inbox verifies each activity against the sending
@@ -2125,8 +2134,9 @@ with the account of the person the agent acts for, its sponsor, and nobody
 else's. Three come ready-made: `quilzo integrations template` declares
 Google Calendar, a Microsoft 365 calendar or GitHub issues (reading, and
 adding a meeting or an issue), switched off and unpinned for a person to read,
-pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
-the gateway, has no person and is refused.
+pin and turn on in `integrations.json` as an imported one is. An agent acting
+on its own name, or another vendor's agent through the gateway, has no person
+and is refused.
 
 **A social media aggregator reaches the first platforms while their app
 reviews are pending.** An aggregator holds the platforms' approved apps, and
@@ -2147,8 +2157,9 @@ quilzo integrations pin social-aggregator
 `platforms`; `--secret` names the key, `social-aggregator-key` by default, and
 `--auth header:NAME` sends it in a header of its own instead of as a bearer
 token. It is declared switched off, with one operation, `publishPost`, a JSON
-body of the text and the media, and stays off until an administrator turns it
-on; agents call it through their declared tools, as any integration. A media
+body of the text and the media, and stays off until an administrator sets
+`"enabled": true` on its entry in `integrations.json`; agents call it through
+their declared tools, as any integration. A media
 URL may only be one of this site's own `/media/ID` addresses, which the
 aggregator fetches, so an agent steered by something it read cannot have the
 client's accounts post a picture from somewhere else. The address is
