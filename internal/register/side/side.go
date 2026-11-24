@@ -49,6 +49,7 @@ import (
 	"unicode"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Sealer seals and opens a file kept beside the store, under the store's
@@ -169,12 +170,9 @@ func hexOf(digest string) (string, error) {
 	return h, nil
 }
 
-func clip(s string) string {
-	if len(s) > 80 {
-		return s[:77] + "..."
-	}
-	return s
-}
+// clip is what a refusal quotes of a value it was given: one short line,
+// cut on a character.
+func clip(s string) string { return plaintext.Clip(s, 80, "…") }
 
 // locked runs fn holding the side store's lock, which every change takes:
 // two processes adding one entry, or enrolling one person, write one.
