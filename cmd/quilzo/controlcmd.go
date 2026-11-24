@@ -521,7 +521,7 @@ func controlOps(srv *mcp.Server, root string, caller *Caller) {
 		return r, opError(err)
 	})
 	srv.Register(mcp.Operation{
-		Name: "control_test_draft", NeedsRole: "author", Area: register.Area, Writes: true,
+		Name: "control_draft", NeedsRole: "author", Area: register.Area, Writes: true,
 		Summary: "propose a control test: a typed query over the register and an assertion over a population, which waits for a person",
 		Detail: "The arguments are the draft's schema (quilzo control schema) and nothing else: a field it does not " +
 			"have is refused, as is a query field the kind does not have, a value of the wrong type, or a value " +

@@ -243,7 +243,7 @@ func soaOps(srv *mcp.Server, root string, caller *Caller) {
 		Name: "soa_show", NeedsRole: "reader", Area: register.Area,
 		Summary: "the statement of applicability for a scope: every requirement, whether it applies and why, and the controls mapped to it",
 		Detail: "A requirement nobody decided is undecided, never counted as applying. Each mapped control is evidence " +
-			"towards its requirement with its NIST IR 8477 relation; nothing here says compliant.",
+			"towards its requirement with its NIST IR 8477 relation, never the requirement met.",
 		Args:     map[string]string{"scope": "the scope's machine name, as soa_scopes names it"},
 		Keywords: []string{"programme", "statement of applicability", "soa", "requirements", "evidence"},
 	}, func(a map[string]any) (any, error) {

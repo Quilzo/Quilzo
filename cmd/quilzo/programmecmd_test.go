@@ -231,12 +231,12 @@ func TestAControlTestIsDraftedApprovedRunAndReplayed(t *testing.T) {
 	var args map[string]any
 	body, _ := os.ReadFile(draft)
 	_ = json.Unmarshal([]byte(strings.Replace(string(body), `"name":"mfa"`, `"name":"mfa-agent"`, 1)), &args)
-	text, merr := callTool(t, m, "quilzo_write", "control_test_draft", args)
+	text, merr := callTool(t, m, "quilzo_write", "control_draft", args)
 	if merr != nil || !strings.Contains(text, "test_id") {
 		t.Errorf("an agent's draft answered %q %v", firstLines(text, 3), merr)
 	}
 	args["explanation"] = "approve me"
-	if _, merr := callTool(t, m, "quilzo_write", "control_test_draft", args); merr == nil {
+	if _, merr := callTool(t, m, "quilzo_write", "control_draft", args); merr == nil {
 		t.Error("an agent's draft with an invented field was proposed")
 	}
 	if text, merr := callTool(t, m, "quilzo_read", "control_explain", map[string]any{"run": run}); merr != nil ||
