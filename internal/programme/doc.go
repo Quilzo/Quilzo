@@ -65,9 +65,35 @@
 //
 // # Who decides
 //
+// A decision (decide.go) is raised by a person and written at once when
+// they are the only person the policy lets approve it, marked as approved
+// alone with a review by somebody else due; otherwise it waits on the
+// proposals ref and somebody else approves it (Approve), with what it
+// brings in the same commit. The approval's assertion is the hash of the
+// decision's surface with what the surface proved the approver by; a
+// passkey bound to that hash is the approvals module's to add.
+//
 // Until the register's own map from pseudonym to person and its side store
 // for free text exist, this package keeps both (keeper.go): the pseudonym
 // that stands for each person who decides, and the words of a
 // justification by their digest, each in a file outside the store that can
-// be erased. A record holds only the pseudonym and the digest.
+// be erased. A record holds only the pseudonym and the digest. On a store
+// encrypted at rest no words are kept beside it, and the screens say so.
+//
+// # Surfaces
+//
+// Four modules, each registered from its own files: `quilzo requirement`,
+// `quilzo soa`, `quilzo control` and `quilzo population` with their
+// operations on the agent interface (cmd/quilzo), the screens under
+// /programme (internal/admin/programmescreen.go) and the read routes under
+// /api/v1/requirements, /api/v1/soa, /api/v1/controls and
+// /api/v1/populations (internal/api/programmeapi.go). The admin server runs
+// the tests that are due on its timer.
+//
+// # Not here yet
+//
+// A replay reads the facts as the register held them at the run's commit,
+// each named with the digest of the raw file it was read from; parsing
+// those sealed files again is the importers'. Posture rows counted against
+// populations, and the demonstration's data, are later themes'.
 package programme
