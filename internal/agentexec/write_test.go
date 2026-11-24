@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -392,3 +393,59 @@ func TestAnAgentsCommitSaysItWasMachineWritten(t *testing.T) {
 }
 
 var _ = store.Store{}
+
+// The commit names the person the run was for, as the review queue reads
+// it, and an agent's commit made before this, naming nobody, reads as it
+// did.
+//
+// It named the agent alone, so with a count of approvals set the person
+// who started the run approved what it wrote as though somebody else had
+// asked for it.
+func TestAnAgentsCommitNamesWhoTheRunWasFor(t *testing.T) {
+	s := testStore(t)
+	sess := writerSession(t, nil, agent.AutonomyDraft)
+	if _, err := write(t, Writer{Store: s, Author: "agent/" + sess.Manifest().Name, For: "dana"}, sess,
+		"news", map[string]any{"title": "N"}); err != nil {
+		t.Fatal(err)
+	}
+	commit, err := s.GetCommit(s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(commit.Message, AgentCommitPrefix) {
+		t.Errorf("the commit message %q no longer says a machine wrote it", commit.Message)
+	}
+	if writer, person := collab.WrittenFor(commit.Message, commit.Author); writer != commit.Author || person != "dana" {
+		t.Errorf("%q by %s reads as written by %q for %q", commit.Message, commit.Author, writer, person)
+	}
+}
+
+// A write says whose claim it was made over. The agent interface's
+// write_page told its caller that pat had claimed the page; a run here goes
+// through this writer instead, and its model read "wrote pricing" and
+// nothing else, so it carried on over an afternoon's rewrite as if nobody
+// were there. With nothing to say, the result is what it was.
+func TestAWriteSaysWhoHasClaimedThePage(t *testing.T) {
+	s := testStore(t)
+	sess := writerSession(t, nil, agent.AutonomyDraft)
+	wr := Writer{Store: s, Author: "agent/editor", Claimed: func(page string) string {
+		if page == "pricing" {
+			return "pat has claimed pricing (pat rewriting pricing)"
+		}
+		return ""
+	}}
+	out, err := write(t, wr, sess, "pricing", map[string]any{"title": "Pricing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "wrote pricing") || !strings.Contains(out, "pat rewriting pricing") {
+		t.Errorf("the write does not say pat holds the page: %q", out)
+	}
+	out, err = write(t, wr, sess, "about", map[string]any{"title": "About"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "claimed") || !strings.HasPrefix(out, "wrote about in ") {
+		t.Errorf("a write nobody holds reads %q", out)
+	}
+}

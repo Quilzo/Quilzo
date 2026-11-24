@@ -309,18 +309,27 @@ func CheckTreeEntries(entries map[string]string) error {
 	return nil
 }
 
-// checkTreeEntry validates one name and the id it points at.
+// ValidPath reports whether name is a path the store can hold: at most
+// MaxPathSegments segments joined by "/", each of letters, digits, dot,
+// dash and underscore, starting with a letter or digit, at most 64 bytes.
 //
-// A key may be a path of segments, each of which must still be a usable
-// segment.
+// It is the one page-name rule. An experiment, a personalisation rule, a
+// feature package and the assistant each had their own, and each refused
+// pages the store holds: `quilzo add About_Us=…` worked and `quilzo
+// experiment add x --page About_Us` said it was not a page name. A surface
+// that needs less than every path (no folders, a shorter name) asks this
+// and then its own question, so no surface can accept what the store
+// refuses or refuse what it holds for want of a character.
+func ValidPath(name string) bool { return CheckPath(name) == nil }
+
+// CheckPath is ValidPath with the reason: the sentence the store refuses a
+// path with when it is written, for a surface to say before anything is.
 //
-// Nesting is what makes a write proportional to the edit rather than to the
-// store: a record at data/users/ab/cd/id is addressable without every page
-// beside it being re-hashed to reach it. Every segment is validated
-// individually, so allowing the separator has not allowed a traversal —
-// "a/../b" fails on the ".." segment exactly as "a/.." did when it was one
-// name.
-func checkTreeEntry(name, oid string) error {
+// The rule was only met at the commit, so a surface that had not asked
+// first passed the refusal on as its own failure: the content API answered
+// 500 "the write failed" for Ürün and "a b", which a client retries, and the
+// editor's Save a bare 500 page for an address it had offered to edit.
+func CheckPath(name string) error {
 	segs := strings.Split(name, "/")
 	// Bounded, not unbounded. The old rule allowed at most one slash, which
 	// was a real limit and not an accident; nesting needs five levels
@@ -336,8 +345,26 @@ func checkTreeEntry(name, oid string) error {
 			return fmt.Errorf(
 				"%q is not a usable path: %q is not a segment of letters, "+
 					"digits, dot, dash and underscore, starting with a "+
-					"letter or digit", name, seg)
+					"letter or digit, at most 64 characters", name, seg)
 		}
+	}
+	return nil
+}
+
+// checkTreeEntry validates one name and the id it points at.
+//
+// A key may be a path of segments, each of which must still be a usable
+// segment.
+//
+// Nesting is what makes a write proportional to the edit rather than to the
+// store: a record at data/users/ab/cd/id is addressable without every page
+// beside it being re-hashed to reach it. Every segment is validated
+// individually, so allowing the separator has not allowed a traversal —
+// "a/../b" fails on the ".." segment exactly as "a/.." did when it was one
+// name.
+func checkTreeEntry(name, oid string) error {
+	if err := CheckPath(name); err != nil {
+		return err
 	}
 	if !reID.MatchString(oid) {
 		return fmt.Errorf("%q points at %q, which is not an object id", name, oid)
@@ -378,39 +405,10 @@ func (s *Store) PutCommit(c Commit) (string, error) {
 }
 
 func (s *Store) read(oid, expect string) ([]byte, error) {
-	path, err := s.pathFor(oid)
+	kind, payload, err := s.open(oid)
 	if err != nil {
 		return nil, err
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("no object %s", oid)
-	}
-
-	// A store can be half converted: turning encryption on does not rewrite
-	// what is already there, so both forms have to be readable and the reader
-	// cannot be told which to expect.
-	if vault.IsSealed(body) {
-		if s.keys == nil {
-			return nil, fmt.Errorf(
-				"object %s is encrypted and no key was supplied. The content is "+
-					"intact; without the key encryption key it cannot be read, "+
-					"which is the point", oid)
-		}
-		sealed, err := vault.Unmarshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("object %s is malformed: %w", oid, err)
-		}
-		if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
-			return nil, fmt.Errorf("object %s: %w", oid, err)
-		}
-	}
-
-	i := strings.IndexByte(string(body), 0)
-	if i < 0 {
-		return nil, fmt.Errorf("object %s is malformed", oid)
-	}
-	kind, payload := string(body[:i]), body[i+1:]
 	if kind != expect {
 		return nil, fmt.Errorf("object %s is a %s, not a %s", oid, kind, expect)
 	}
@@ -423,6 +421,51 @@ func (s *Store) read(oid, expect string) ([]byte, error) {
 				"or altered", oid)
 	}
 	return payload, nil
+}
+
+// open is an object's kind and payload as its file holds them, unsealed,
+// and not yet checked against its name: read does that, for whoever wants
+// what the object says.
+//
+// Separate from read for the walk under GetNested, which needs to know only
+// what each object is. Asking read, it checked the hash of every page and
+// record in the store to learn that each was not a tree, and a record whose
+// bytes had rotted stopped every listing of every collection, where it had
+// been one row that its own reader refused.
+func (s *Store) open(oid string) (string, []byte, error) {
+	path, err := s.pathFor(oid)
+	if err != nil {
+		return "", nil, err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("no object %s", oid)
+	}
+
+	// A store can be half converted: turning encryption on does not rewrite
+	// what is already there, so both forms have to be readable and the reader
+	// cannot be told which to expect.
+	if vault.IsSealed(body) {
+		if s.keys == nil {
+			return "", nil, fmt.Errorf(
+				"object %s is encrypted and no key was supplied. The content is "+
+					"intact; without the key encryption key it cannot be read, "+
+					"which is the point", oid)
+		}
+		sealed, err := vault.Unmarshal(body)
+		if err != nil {
+			return "", nil, fmt.Errorf("object %s is malformed: %w", oid, err)
+		}
+		if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
+			return "", nil, fmt.Errorf("object %s: %w", oid, err)
+		}
+	}
+
+	i := strings.IndexByte(string(body), 0)
+	if i < 0 {
+		return "", nil, fmt.Errorf("object %s is malformed", oid)
+	}
+	return string(body[:i]), body[i+1:], nil
 }
 
 // GetBlob reads content back into v.

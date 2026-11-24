@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Content that takes itself down.
@@ -244,4 +246,39 @@ func AlreadyExpired(pages map[string]any, now time.Time) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ExpiredOnPublish is AlreadyExpired over the pages a publish of this
+// commit would put up or change: new, or different from what the live
+// site serves.
+//
+// Every page in the draft was checked, so a page that had gone live inside
+// its window and then reached its expires date, as it was set to, refused
+// every publish after it, of a blog post or a price change, until somebody
+// edited or removed a page that was doing its job. Unchanged, the publish
+// leaves it as it is, hidden on schedule; the gate is for a page this
+// publish would put up already past its date. Compared by object id, as
+// Diff compares, so an unchanged page is provably unchanged unread.
+func ExpiredOnPublish(s *store.Store, commit string, now time.Time) ([]string, error) {
+	pages, err := PagesAt(s, commit)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := PageIDsAt(s, commit)
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]string{}
+	if s.GetRef(RefLive) != "" {
+		if live, err = PageIDsAt(s, RefLive); err != nil {
+			return nil, err
+		}
+	}
+	changed := make(map[string]any, len(pages))
+	for name, body := range pages {
+		if live[name] == "" || live[name] != ids[name] {
+			changed[name] = body
+		}
+	}
+	return AlreadyExpired(changed, now), nil
 }

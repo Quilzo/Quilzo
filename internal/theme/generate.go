@@ -261,7 +261,46 @@ func GenerateWith(seed string, opt Options) (map[string]string, error) {
 			}
 		}
 	}
+	if veil, needed := veilFor(out, opt.Contrast); needed {
+		out["scrim-strength"] = veil
+	}
 	return out, nil
+}
+
+// veilFor is the weakest veil over a backdrop at which every pair drawn on
+// one holds, in both schemes, for a generated palette, and whether that is
+// stronger than the shipped veil.
+//
+// The generator chose every colour against the page and left the veil at
+// the shipped strength, which is set for the shipped palette. Text chosen to
+// meet its ratio on the page with nothing to spare has nothing to spare over
+// a picture either, so every palette made at standard contrast failed all
+// eight pairs over a backdrop: a picture behind a hero was refused at
+// publish, while the generator said every colour passed. The veil belongs to
+// the palette the way the gradient stops do, and is chosen the same way,
+// with the arithmetic that would refuse it (WorstOver), at the level asked
+// for. At full strength the veil is the page itself, so a strength always
+// exists.
+func veilFor(out map[string]string, level string) (string, bool) {
+	th, _ := New(out, nil)
+	shipped, _ := th.scrimStrength()
+	from := int(math.Round(shipped * 100))
+	for n := from; n <= 100; n++ {
+		holds := true
+		for _, dark := range []bool{false, true} {
+			veil := th.value(lookupOrZero("scrim"), dark)
+			for _, p := range backdropPairs {
+				need, _ := contrastNeed(p.Min, level)
+				if WorstOver(th.value(lookupOrZero(p.Foreground), dark), veil, float64(n)/100) < need {
+					holds = false
+				}
+			}
+		}
+		if holds {
+			return fmt.Sprintf("%d%%", n), n > from
+		}
+	}
+	return "100%", true
 }
 
 // role carries the hue and saturation a foreground is drawn from.

@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -63,7 +62,9 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			Questions []string `json:"questions"`
 			Last      string   `json:"last"`
 		}
-		var out []row
+		// None open is an empty list, as list_assistants gives for no
+		// chatbots: a nil slice marshalled to null.
+		out := []row{}
 		for _, g := range groups {
 			if g.Open() {
 				out = append(out, row{Key: g.Key, Asked: g.Count, Questions: g.Questions, Last: g.Last.Format("2006-01-02")})
@@ -71,7 +72,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		record(root, caller.auditRecord("assistant.gaps.read", "/ask/"+name, audit.Success,
 			map[string]string{"assistant": name, "groups": fmt.Sprint(len(out)), "via": "mcp"}))
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 
@@ -87,7 +88,10 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Assistants)
+		// None is an empty list: mcpJSON makes every nil list [] (a nil
+		// slice marshalled to null, which a client expecting a list had to
+		// special-case and which told the model nothing).
+		b, err := mcpJSON(set.Assistants)
 		return string(b), err
 	})
 
@@ -96,7 +100,9 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Summary: "ask a chatbot a question and see its answer, sources and removals",
 		Detail: "Works on private chatbots too, so you can test one before a " +
 			"person makes it public. The answer is from published pages only; " +
-			"removed sentences are ones the pages did not support.",
+			"removed sentences are ones the pages did not support. offers is " +
+			"what it would offer the visitor to do, which they confirm; nothing " +
+			"is done by asking here.",
 		Args: map[string]string{
 			"name":     "the chatbot",
 			"question": "what a visitor would ask",
@@ -112,13 +118,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		// Inside an agent's run, the question it embeds and the answer it
-		// asks for are the run's spending and its person's.
+		// The question it embeds and the answer it asks for are the
+		// spending of whoever tries it, and of the run they act in, and
+		// not of the chatbot's visitors (chatbotConsumers).
 		idx, err := assistantIndexAs(root, bot, caller)
 		if err != nil {
 			return nil, err
 		}
-		m, _ := assistantModelAt(root, bot, caller.runPayers()...)
+		m, _ := assistantModelAs(root, bot, caller)
 		m = caller.chargedToRun(m)
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -132,12 +139,20 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		out := map[string]any{"answer": ans.Text, "refused": ans.Refused,
 			"mode": ans.Mode, "note": ans.Note, "removed": ans.Dropped}
+		// What it offers the visitor to do, which they would confirm. Left
+		// out, an answer that is only an offer read "This is something I
+		// can help with." and nothing to say what, and whoever was testing
+		// the chatbot here could not see that it offers anything.
+		if p := ans.Proposed; p != nil {
+			out["offers"] = map[string]any{"name": p.Action.Name, "kind": p.Action.Kind,
+				"description": p.Action.Description, "args": p.Args}
+		}
 		var srcs []src
 		for i, h := range ans.Sources {
 			srcs = append(srcs, src{i + 1, h.Page, h.Header()})
 		}
 		out["sources"] = srcs
-		b, err := json.Marshal(out)
+		b, err := mcpJSON(out)
 		return string(b), err
 	})
 
@@ -147,7 +162,8 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Never public from here. A person makes a chatbot public, " +
 			"decides whether static copies of the site carry it, and decides " +
 			"what it may offer to do, on the Chatbots screen. A chatbot that " +
-			"is already public cannot be changed from here.",
+			"is already public cannot be changed from here. Changing one, an " +
+			"argument left out keeps what it has; given empty, it is cleared.",
 		Args: map[string]string{
 			"name": "lower-case, digits and hyphens", "title": "what visitors see",
 			"greeting": "optional", "instructions": "optional tone and focus",
@@ -172,10 +188,22 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, &mcp.Refusal{Reason: name + " is public; a person " +
 				"changes a public chatbot on the Chatbots screen"}
 		}
-		bot.Name, bot.Title = name, str("title")
-		bot.Greeting, bot.Instructions = str("greeting"), str("instructions")
-		bot.Pages, bot.Exclude = splitList(str("pages")), splitList(str("exclude"))
-		bot.Refusal = str("refusal")
+		// What it is given changes, and what it is not given is kept, as
+		// on the command line and the Chatbots screen. Every argument left
+		// out was cleared: an agent renaming a chatbot wiped the pages it
+		// must never read, and its instructions, and it then answered from
+		// the pages it had been kept from. Given empty, a setting is
+		// cleared, as asked. What it may be given is what an author may
+		// build on every surface (assistant.Building). Sent as null, an
+		// argument is not given, as the schema check reads it: a client
+		// that fills every argument it leaves out with null cleared the
+		// pages the chatbot must never read all the same.
+		bot.Name = name
+		for _, k := range assistant.Building {
+			if v, ok := a[k]; ok && v != nil {
+				bot.Build(k, str(k))
+			}
+		}
 		bot.Public = false
 		if err := set.Put(bot); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
@@ -183,10 +211,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err := assistant.Save(path, set); err != nil {
 			return nil, err
 		}
+		// By the client that declared it, the app when it was one, as a
+		// page's write is (interfaceClient). Verified as the caller was, as
+		// mcp.write_page is; left out, it was false whoever called.
+		who, model := interfaceClient(caller.Name, caller.Client)
 		if err := recordE(root, audit.Record{
 			Action: "assistant.declare", Resource: "/ask/" + name,
-			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Detail: map[string]string{
+			Outcome: audit.Success, Principal: who, Kind: audit.KindAI,
+			Model: model, Verified: caller.Verified, Detail: map[string]string{
 				"assistant": name, "on_behalf_of": caller.Name},
 		}); err != nil {
 			return nil, err

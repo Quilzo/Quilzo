@@ -64,6 +64,29 @@
   {{else}}This page uses the default layout.{{end}}
 </p>
 
+{{/*
+  The hero, above the sections as it is on the page. It has no fields screen,
+  so what is offered for it here is the one thing about it that is design
+  rather than words: what it is drawn over.
+*/}}
+{{if .Hero}}
+<div class="card" id="hero">
+  <p><strong>The hero</strong>, above the sections, is drawn
+    {{if .HeroBackdrop}}over {{if .HeroBackdropName}}<strong>{{.HeroBackdropName}}</strong>{{else}}<code>{{.HeroBackdrop}}</code>{{end}},
+    under a veil that keeps its words readable.{{else}}on the page's own background.{{end}}</p>
+  <div class="actions">
+    <a class="btn btn-tonal" href="/media/pick?page={{.Page}}&amp;at=hero&amp;path=backdrop_url">{{if .HeroBackdrop}}Choose another backdrop for the hero{{else}}Put a backdrop behind the hero{{end}}</a>
+    {{if .HeroBackdrop}}
+    <form method="post" action="/sections/edit" class="inline">
+      <input type="hidden" name="page" value="{{.Page}}"><input type="hidden" name="base" value="{{.Base}}">
+      <input type="hidden" name="do" value="noherobackdrop">
+      <button type="submit">Take the backdrop away from the hero</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
 {{if .Sections}}
 <div class="table-wrap">
 <table>
@@ -121,6 +144,18 @@
         <input type="hidden" name="do" value="remove">
         <button type="submit">Remove</button>
       </form>
+      {{if ne .Kind "block"}}{{if ne .Kind "notice"}}
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{.Index}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        {{if .Backdrop}}<input type="hidden" name="do" value="nobackdrop">
+        <button type="submit">Take the backdrop away<span class="visually-hidden"> from section {{.Index}}</span></button>
+        {{else}}<input type="hidden" name="do" value="backdrop">
+        <button type="submit">Put a backdrop behind it<span class="visually-hidden">: section {{.Index}}</span></button>{{end}}
+      </form>
+      {{end}}{{end}}
     </td>
   </tr>
   {{end}}

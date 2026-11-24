@@ -248,6 +248,13 @@ func (h *HTTPModel) veo(ctx context.Context, prompt, aspect string) ([]byte, err
 	}
 }
 
+// falStatuses are the words fal's queue answers a status request with, and
+// whether each means the video is made; any other word ends the wait with
+// what the queue said. They are read in any case: matched exactly as fal
+// documents them, a queue answering "in_progress" or "Completed" was a
+// status this did not know, and a video that was made was never collected.
+var falStatuses = map[string]bool{"IN_QUEUE": false, "IN_PROGRESS": false, "COMPLETED": true}
+
 func (h *HTTPModel) fal(ctx context.Context, prompt, aspect string) ([]byte, error) {
 	b, err := h.do(ctx, http.MethodPost, h.BaseURL+"/"+strings.TrimPrefix(h.Model, "/"),
 		map[string]any{"prompt": prompt, "aspect_ratio": aspect}, true, 64<<10)
@@ -277,11 +284,12 @@ func (h *HTTPModel) fal(ctx context.Context, prompt, aspect string) ([]byte, err
 		if st.Error != "" {
 			return nil, fmt.Errorf("the provider did not make the video: %s", clip300(st.Error))
 		}
-		if st.Status == "COMPLETED" {
-			break
-		}
-		if st.Status != "IN_QUEUE" && st.Status != "IN_PROGRESS" {
+		done, known := falStatuses[strings.ToUpper(strings.TrimSpace(st.Status))]
+		if !known {
 			return nil, fmt.Errorf("the queue says %q", clip300(st.Status))
+		}
+		if done {
+			break
 		}
 		if err := h.wait(ctx); err != nil {
 			return nil, err

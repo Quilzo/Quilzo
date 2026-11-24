@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -402,5 +403,225 @@ func letApprove(t *testing.T, root, who string) {
 	}
 	if err := saveJSON(policyPath(root), pol); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An agent's program was a path and nothing else: the file at it could be
+// replaced after an administrator set it, and the next run, a triggered one
+// included, ran whatever was there with nothing recorded. It is pinned to the
+// file as it was when it was set, a run of any other file is refused with how
+// to review it again, and the run's receipt says which file decided it.
+func TestAProgramThatChangedAfterReviewIsRefused(t *testing.T) {
+	root := argsStore(t)
+	prog := filepath.Join(t.TempDir(), "tidy-run")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho reviewed\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--", prog})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, _ := agent.FileDigest(prog)
+	set, _ := loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != reviewed {
+		t.Fatalf("the program was not pinned to the file as it was set: %+v", p)
+	}
+
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho replaced\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runAgentKeptBy(context.Background(), root, "tidy", "tidy the pages", false, true, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") ||
+		!strings.Contains(err.Error(), "quilzo agent program tidy --pin") {
+		t.Fatalf("a replaced program: %v", err)
+	}
+
+	// Looked at, and pinned again, without declaring the rest over.
+	_, read = captureStdout(t)
+	err = cmdAgent(root, []string{"program", "tidy", "--pin"})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, _ := agent.FileDigest(prog)
+	set, _ = loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != now || p.Command[0] != prog {
+		t.Fatalf("pinned again: %+v", p)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	pinned := false
+	for _, e := range evs {
+		pinned = pinned || e.Action == "agent.program-set" && e.Detail["pinned"] == now
+	}
+	if !pinned {
+		t.Error("pinning again is not on the record")
+	}
+
+	// A declaration written before pins, or by hand, has none, and is not
+	// run until somebody pins it.
+	if err := updateAgents(root, func(s *agentSet) error {
+		m := s.Agents["tidy"]
+		m.Program = &agent.Program{Command: []string{prog}}
+		s.Agents["tidy"] = m
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runAgentKeptBy(context.Background(), root, "tidy", "x", false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "never pinned") {
+		t.Fatalf("an unpinned program: %v", err)
+	}
+
+	// A declaration naming a digest is held to it: a package's author
+	// pinned the file, and another one here is not the one reviewed.
+	set, _ = loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{prog}, Digest: reviewed}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "not the program that was reviewed") {
+		t.Fatalf("a declared digest the file does not have: %v", err)
+	}
+	// An edit that leaves the program alone keeps its pin, though the
+	// declaration it was made from carries none; and it does not pin one
+	// that has none, which is an administrator's to do.
+	m.Purpose, m.Program = "Tidy the pages, carefully", &agent.Program{Command: []string{prog}}
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("an edit to the purpose: %v", err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != "" {
+		t.Fatal("an edit to the purpose pinned a program nobody pinned")
+	}
+	_, read = captureStdout(t)
+	err = cmdAgent(root, []string{"program", "tidy", "--pin"})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Purpose = "Tidy the pages, quickly"
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("an edit to the purpose: %v", err)
+	}
+	set, _ = loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != now {
+		t.Fatalf("an edit to the purpose lost the pin: %+v", p)
+	}
+}
+
+// Another file at the same path is another program, whatever else an
+// amendment changes. The widening was read before the file was, so an
+// amendment that only narrowed the program, less memory, pinned whatever had
+// replaced the file since its review, and nothing it said told the person
+// declaring it that the file was not the one reviewed: it went through
+// without --widen, and the record named the new digest and no change.
+func TestAnAmendmentThatPinsAReplacedFileSaysSo(t *testing.T) {
+	root := argsStore(t)
+	prog := filepath.Join(t.TempDir(), "tidy-run")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho reviewed\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--memory-mb", "1024", "--", prog})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, _ := agent.FileDigest(prog)
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho replaced\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	replaced, _ := agent.FileDigest(prog)
+
+	// The declaration it is amended from carries no pin, as a manifest
+	// written by hand does not.
+	set, _ := loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{prog}, MemoryMB: 512}
+	err = declareAgent(root, m, false, false, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "not the one reviewed") || !strings.Contains(err.Error(), "--widen") {
+		t.Fatalf("less memory, and another file at the same path: %v", err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != reviewed {
+		t.Fatalf("the refused amendment pinned the replaced file: %+v", set.Agents["tidy"].Program)
+	}
+
+	// Meant, it is declared, and the record says which file it now is.
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != replaced {
+		t.Fatalf("pinned: %+v", set.Agents["tidy"].Program)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	said := false
+	for _, e := range evs {
+		said = said || e.Action == "agent.changed" && strings.Contains(e.Detail["widened"], "not the one reviewed")
+	}
+	if !said {
+		t.Error("the record does not say the file was not the one reviewed")
+	}
+
+	// The same file, narrowed, is no widening.
+	m.Program = &agent.Program{Command: []string{prog}, MemoryMB: 256}
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("less memory, the same file: %v", err)
+	}
+}
+
+// ranBackend is a box that records that it was asked to run something.
+type ranBackend struct{ ran *bool }
+
+func (ranBackend) Name() string                 { return "recorded" }
+func (ranBackend) Check() agentbox.Availability { return agentbox.Availability{OK: true} }
+func (b ranBackend) Run(context.Context, agentbox.Spec) (agentbox.Result, error) {
+	*b.ran = true
+	return agentbox.Result{}, errors.New("not run here")
+}
+
+// A program run by an interpreter, "/bin/sh /opt/tidy/run.sh", was pinned
+// to the interpreter: the script, which is what was reviewed, could be
+// replaced and the next run, a triggered one included, ran it. The script is
+// pinned with it, a run of a replaced one never reaches the box, and a
+// declaration naming the digest it was pinned to is held to both files.
+func TestAScriptAnInterpreterRunsIsRefusedOnceItChanges(t *testing.T) {
+	root := argsStore(t)
+	ran := false
+	testBackend = ranBackend{&ran}
+	t.Cleanup(func() { testBackend = nil })
+	script := filepath.Join(t.TempDir(), "run.sh")
+	if err := os.WriteFile(script, []byte("echo reviewed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--", "/bin/sh", script})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _ := loadAgents(root)
+	pinned := set.Agents["tidy"].Program.Digest
+	if sh, _ := agent.FileDigest("/bin/sh"); pinned == "" || pinned == sh {
+		t.Fatalf("pinned to %q, the interpreter alone", pinned)
+	}
+
+	if err := os.WriteFile(script, []byte("echo replaced\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runAgentKeptBy(context.Background(), root, "tidy", "tidy the pages", false, true, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") || ran {
+		t.Fatalf("a replaced script: %v (reached the box: %v)", err, ran)
+	}
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{"/bin/sh", script}, MemoryMB: 256, Digest: pinned}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "not the program that was reviewed") {
+		t.Fatalf("declared as the reviewed script, with another one there: %v", err)
+	}
+	if err := os.WriteFile(script, []byte("echo reviewed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatalf("declared as the reviewed script, which is there: %v", err)
 	}
 }

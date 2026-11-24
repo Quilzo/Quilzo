@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
@@ -90,7 +91,7 @@ func cmdServe(root string, args []string) error {
 		"a reverse proxy terminates TLS in front of this")
 	publicAddr := fs.String("public-addr", "",
 		"where the public site is served, for the posture scan")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -123,10 +124,10 @@ func cmdServe(root string, args []string) error {
 	if derr != nil {
 		design = &Design{}
 		fmt.Fprintf(os.Stderr, "  %s%s; preview and the accessibility check "+
-			"are unavailable%s\n", dim, derr, reset)
+			"are unavailable%s\n", noteDim, derr, noteReset)
 	}
 	for _, note := range design.Notes {
-		fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, note, reset)
+		fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, note, noteReset)
 	}
 
 	cfg, err := loadConfig(root)
@@ -134,7 +135,7 @@ func cmdServe(root string, args []string) error {
 		return err
 	}
 	for _, why := range cfg.Dropped() {
-		fmt.Fprintf(os.Stderr, "  %sconfiguration: %s%s\n", dim, why, reset)
+		fmt.Fprintf(os.Stderr, "  %sconfiguration: %s%s\n", noteDim, why, noteReset)
 	}
 	srv, err := admin.New(s, pol, toks, design.Layouts)
 	if err != nil {
@@ -214,13 +215,17 @@ func cmdServe(root string, args []string) error {
 	// a mapping had to carry the day it ends left them holding auditor with
 	// no end (scim.Handler.SyncRefused).
 	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
-		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", noteYellow, err, noteReset)
 	}
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
 	srv.Bookings = bookingHooks(root, signedIn)
 	srv.Newsletter = newsletterHooks(root, signedIn)
+	// What waits for a person, as `quilzo approvals` lists it for the
+	// session: Approvals, Today and the assistant's waiting card read this
+	// list rather than building one of their own, which drifted from it.
+	srv.Waiting = waitingHook(root, s)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -234,8 +239,7 @@ func cmdServe(root string, args []string) error {
 	// Smart lockout for the failures that belong to an account, kept in the
 	// store so every process and every restart counts the same failures.
 	srv.Lockout = lockoutStore(root)
-	srv.Dual = &admin.Dual{Store: dualStore(root),
-		Apply: func(r dual.Request, by string) error { return applyDual(root, r, by) }}
+	srv.Dual = dualHooks(root)
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.SignIns = &admin.SignInHistory{
 		Recent: (&travel.Store{Dir: signinsPath(root)}).Since,
@@ -441,6 +445,7 @@ func cmdServe(root string, args []string) error {
 		Schedule:       func() (*schedule.Schedule, error) { return loadSchedule(root) },
 		UpdateSchedule: func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) },
 		InServer:       func() bool { return mustConfig(root).Bool("schedule.in_server") },
+		CannotPublish:  func() string { return schedulerCannotPublish(root) },
 	}
 	srv.Media = &admin.Media{
 		Library: func() (*medialib.Library, error) { return openMedia(root) },
@@ -475,7 +480,7 @@ func cmdServe(root string, args []string) error {
 			var out []admin.GatewayHeld
 			for _, h := range held {
 				out = append(out, admin.GatewayHeld{ID: h.ID, Integration: h.Integration, Tool: h.Tool,
-					For: h.Principal, App: h.Client, Args: h.Args, Asked: h.Asked})
+					For: h.Principal, App: h.Client, Args: h.Args, Why: h.Why, Asked: h.Asked})
 			}
 			return out, err
 		},
@@ -528,7 +533,7 @@ func cmdServe(root string, args []string) error {
 			return saveExts(root, &extFile{Extensions: m})
 		},
 		Pin:    ext.Pin,
-		Events: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) },
+		Events: func() ([]audit.Event, error) { return auditEntries(root) },
 		Provider: func() (string, string, string, string, bool, bool) {
 			c, err := loadOIDC(root)
 			if err != nil || c == nil {
@@ -545,7 +550,7 @@ func cmdServe(root string, args []string) error {
 	// A link made before the store kept digests holds its secret in the
 	// file until something rewrites it; the admin does as it starts.
 	if err := migrateShares(root); err != nil {
-		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", noteYellow, err, noteReset)
 	}
 	srv.Research = researchScreens(root)
 	srv.Deciders = decidersCapability(root)
@@ -598,7 +603,7 @@ func cmdServe(root string, args []string) error {
 			return true, kr.Active, kr.IDs()
 		},
 		Agents: func() ([]agentwatch.Report, error) {
-			events, err := audit.Read(auditPath(root))
+			events, err := auditEntries(root)
 			if err != nil {
 				return nil, err
 			}
@@ -627,16 +632,13 @@ func cmdServe(root string, args []string) error {
 	go upkeep.Run(upkeepCtx, StreamEvery, func(upkeep.Job, int, error) {}, streamJob(root))
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", noteDim, j.Name, err, noteReset)
 			return
 		}
 		switch j.Name {
 		case "retention":
 			fmt.Printf("  %sretention: removed %s past the period their form "+
 				"declares%s\n", dim, count(n, "submission"), reset)
-		case "rooms":
-			fmt.Printf("  %sretention: took the words of %s past their "+
-				"room's period%s\n", dim, count(n, "message"), reset)
 		}
 	}, jobs...)
 
@@ -649,7 +651,7 @@ func cmdServe(root string, args []string) error {
 		runner:    func() *Caller { return resolveCaller(root, flagToken) },
 		report: func(f firing, err error) {
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  %sscheduled publishing: %v%s\n", dim, err, reset)
+				fmt.Fprintf(os.Stderr, "  %sscheduled publishing: %v%s\n", noteDim, err, noteReset)
 				return
 			}
 			sayFiring(f)
@@ -738,45 +740,15 @@ func cmdServe(root string, args []string) error {
 	// The design screen. The browser could apply a starter's content and not its
 	// markup, which meant somebody who never opened a terminal got the fields of
 	// a design they were not being served.
-	srv.DesignSet = &admin.Design{
-		Dir:     *tplDir,
-		Tokens:  func() (map[string]string, error) { return loadThemeFile(*tplDir) },
-		Save:    func(values map[string]string) error { return writeThemeFile(*tplDir, values) },
-		Layouts: func() []string { return design.Layouts.Names() },
-		Fonts:   func() []string { return design.Fonts.Names() },
-		FontFile: func(name string) ([]byte, bool) {
-			if design.Fonts == nil {
-				return nil, false
-			}
-			return design.Fonts.File(name)
-		},
-		OwnStylesheet: func() bool {
-			return fileExists(filepath.Join(*tplDir, "site.css"))
-		},
-		InstallLayout: func(name string) ([]string, error) {
-			return installStarter(*tplDir, name)
-		},
-	}
-	srv.Decentralised = decentralisedFor(root, *tplDir, s, design)
-	srv.Transfer = &admin.Transfer{
-		Pages: func() (map[string]any, error) { return draftPages(root) },
-		// Its own Save rather than the shared one, so what it marks is what it
-		// brought in. A transfer is content this program converted out of
-		// somebody else's export — a thing it knows — where an ordinary edit
-		// is a person writing, which it does not. Marking through the shared
-		// path would assert the first about the second.
-		Save: func(p map[string]any, msg, by, base string) error {
-			if err := saveDraft(root, s, p, msg, by, base); err != nil {
-				return err
-			}
-			markGeneratedQuietly(root, s, by, "brought in by transfer import")
-			return nil
-		},
-		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
-		// Read at each export, so a scheme changed while this runs is the
-		// one an export carries.
-		Banner: func() (string, error) { return deploymentBanner(root) },
-	}
+	//
+	// Each answer is from the design as it is now: it is read again when
+	// templates/ or templates/fonts/ changes and on SIGHUP (designreload.go),
+	// so a face added from this screen, or by hand, is on it at once.
+	dw := newDesignWatch(*tplDir, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
+	srv.DesignSet = adminDesignHooks(*tplDir, dw)
+	designPublishHooks(root, *tplDir, srv.DesignSet)
+	srv.Decentralised = decentralisedFor(root, *tplDir, s, dw.Current)
+	srv.Transfer = transferHooks(root, s, cfg, signedIn)
 	srv.Assist = &admin.Assist{
 		Model: func(person string) (assist.Model, error) {
 			m, err := assistModel(root, person)
@@ -901,40 +873,18 @@ func cmdServe(root string, args []string) error {
 
 	// The audit log, read-only. This process cannot write it where the writer
 	// has been separated out, so there is no edit path to withhold.
-	srv.LoadAudit = func() ([]audit.Event, error) {
-		return audit.Read(auditPath(root))
-	}
+	logPageHooks(srv, root, pol, toks)
 	srv.LogSeparated = func() bool {
 		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
 		return ok
 	}()
-	// Forward matching only. The HMAC cannot be reversed; this computes the
-	// pseudonym for each principal the store knows and compares, so somebody
-	// the policy has never heard of stays opaque — which is itself worth
-	// seeing on the page.
-	srv.ResolvePrincipal = func(pseudonym string) string {
-		l, err := openAudit(root)
-		if err != nil {
-			return ""
-		}
-		for _, name := range pol.Principals() {
-			if l.Matches(pseudonym, name) {
-				return name
-			}
-		}
-		for _, t := range toks.Snapshot() {
-			if l.Matches(pseudonym, t.Principal) {
-				return t.Principal
-			}
-		}
-		return ""
-	}
+	logHeadsHook(srv, root)
 	srv.Throttle = throttle.New(throttlePolicy(cfg))
 
 	// The content API, same-origin with the playground. Read-only here: this
 	// is the console, and a console that can rewrite production by accident
-	// is a different product. `quilzo site --api --api-writable` is where
-	// writes are turned on deliberately.
+	// is a different product. `quilzo site --api --api-writable
+	// --confine=false` is where writes are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
 		// The admin's own limiter and token reloader, not a second set and
@@ -966,11 +916,17 @@ func cmdServe(root string, args []string) error {
 		// When each token was last used, which nothing here wrote down.
 		OnTokenUsed: srv.OnTokenUsed,
 		Shield:      func() (time.Time, bool) { return sh.off("api") },
+		// A sign-in session used only here is idle as it is at the
+		// admin's screens, on the admin's clock (admin.Server.IdleEnded).
+		Idle: srv.IdleEnded,
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
 		Index:       srv.Records,
 		SessionAuth: true,
+		// The admin's origin, scheme and all (admin.behind_tls_proxy), so
+		// the two agree which pages the session cookie may come from.
+		Origin: srv.OwnOrigin,
 		Limits: api.Limits{
 			PerMinute: cfg.Int("api.rate.per_minute"),
 			Burst:     cfg.Int("api.rate.burst"),
@@ -1049,6 +1005,10 @@ func cmdServe(root string, args []string) error {
 	// The same name the site serves under, so the preview and the publish gate
 	// render the page readers get rather than one with a blank site name.
 	srv.SiteName = siteName(root)
+	// And the context the site draws a page in (renderContext), so the
+	// preview shows the form and the icon a visitor gets and the browser's
+	// gate judges them, as `quilzo render` and `quilzo publish` do.
+	srv.Sources = renderContext(root, s)
 	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
 	// Types are re-read per request rather than captured once. A type added
@@ -1151,7 +1111,7 @@ func cmdServe(root string, args []string) error {
 				},
 			})
 		}
-		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", noteDim, cfg.Issuer, noteReset)
 	}
 
 	// Evaluations. An evaluation can take minutes with a model choosing, so
@@ -1199,6 +1159,7 @@ func cmdServe(root string, args []string) error {
 		},
 		Running: func(name string) (time.Time, bool) { return evalRunning(root, name) },
 		Reports: func(name string, limit int) ([]evals.Report, error) { return evalReports(root, name, limit) },
+		Due:     func(name string) string { return evalDue(root, name, time.Now().UTC()) },
 	}
 
 	// SAML identity providers, read fresh on every use so one added from the
@@ -1264,17 +1225,35 @@ func cmdServe(root string, args []string) error {
 	//
 	// Then the shield's guard, before anything else sees the request: a
 	// blocked source is refused at the door.
+	//
+	// Inside the guard, the design is looked at before each request, so the
+	// preview and the Design screen are of the design on disk (designWatch).
 	httpSrv := &http.Server{Addr: *addr,
-		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, srv.Handler()))}
+		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, dw.Wrap(srv.Handler())))}
+	hupCtx, stopHup := context.WithCancel(context.Background())
+	defer stopHup()
+	onHangup(hupCtx, "admin", dw.Reload)
 
 	fmt.Printf("admin on http://%s\n", *addr)
 	if line := assumedProxy(root, "admin.trusted_proxy"); line != "" {
 		fmt.Printf("  %s%s%s\n", dim, line, reset)
 	}
 	// A passkey belongs to a name, and a browser refuses an address as one,
-	// so the loopback default is opened as localhost.
-	if host, port, err := net.SplitHostPort(*addr); err == nil && (host == "127.0.0.1" || host == "::1") {
-		fmt.Printf("  %sopen it as http://localhost:%s: passkeys need a name, not an address%s\n", dim, port, reset)
+	// so the loopback default is opened as localhost (adminAddress).
+	//
+	// Where admin.base_url says the admin is, it is opened there, as the
+	// links that add a passkey are (enrolURL). The compose stack's admin
+	// listens on 0.0.0.0:8080 inside its container and is reached through
+	// its proxy at its admin.base_url, https://localhost:8443, and once an
+	// admin on every interface was opened by name its log said to open
+	// http://localhost:8080, which nothing publishes.
+	browse, renamed := adminAddress(*addr)
+	if base := strings.TrimSuffix(cfg.Raw("admin.base_url"), "/"); base != "" {
+		browse, renamed = base, false
+		fmt.Printf("  %sopen it as %s, its admin.base_url%s\n", dim, browse, reset)
+	}
+	if renamed {
+		fmt.Printf("  %sopen it as %s: passkeys need a name, not an address%s\n", dim, browse, reset)
 	}
 	// People sign in with a passkey, two factors at once; somebody without
 	// one is given a link that adds it. A token alone is one factor and
@@ -1289,7 +1268,7 @@ func cmdServe(root string, args []string) error {
 		// Not an error if it fails. Refusing to serve because a desktop could
 		// not be found would break exactly the deployments that matter most —
 		// a container, a machine over SSH, CI — none of which has one.
-		if !admin.Open("http://" + *addr) {
+		if !admin.Open(browse) {
 			fmt.Printf("  %snothing here knows how to open a browser; the "+
 				"address is above%s\n", dim, reset)
 		}
@@ -1297,8 +1276,43 @@ func cmdServe(root string, args []string) error {
 	// Uploads, because this is the interface a file arrives through: a
 	// recording added from the media screen is a request that takes as long
 	// as the connection takes, and a deadline on it would refuse the
-	// operation on exactly the slow link that needs longest.
-	return listen.Uploads().Serve(httpSrv)
+	// operation on exactly the slow link that needs longest. Only the routes
+	// that take a file are given that: every other body, a sign-in's among
+	// them, has what one has on the public site.
+	//
+	// A proxy in front, and this machine, are many visitors on one address,
+	// so the share of connections one source may hold is not theirs.
+	lim := listen.Uploads()
+	lim.Files = admin.FileBody
+	lim.Shared = sharedPeers(root, "admin.trusted_proxy")
+	return lim.Serve(httpSrv)
+}
+
+// adminAddress is the address to open the admin at when it listens on addr,
+// and whether that is not addr itself.
+//
+// A passkey belongs to a name, and a browser refuses an address as one: at
+// http://127.0.0.1:8080 the admin answers every passkey ceremony with
+// "passkeys need a domain name", and people sign in to it with a passkey.
+// `serve --open` opened http://127.0.0.1:8080 all the same, on the line
+// after the one that said to open it as localhost, and the README's
+// Quickstart ended there. The same holds for ::1, and for an admin on every
+// interface, seen from this machine, where the browser --open starts is.
+//
+// Only the addresses localhost is, though, and not every loopback address:
+// a browser takes localhost to be 127.0.0.1 or ::1, so an admin on
+// 127.0.0.2 opened as localhost was opened where nothing listens. That one
+// is opened at its address, which answers, and refuses only the passkey.
+func adminAddress(addr string) (string, bool) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr, false
+	}
+	ip := net.ParseIP(host)
+	if host == "" || (ip != nil && (ip.IsUnspecified() || ip.Equal(net.IPv4(127, 0, 0, 1)) || ip.Equal(net.IPv6loopback))) {
+		return "http://localhost:" + port, true
+	}
+	return "http://" + addr, false
 }
 
 // sessionCaller is a person signed in to the admin, verified, with the
@@ -1309,6 +1323,98 @@ func cmdServe(root string, args []string) error {
 func sessionCaller(by admin.Actor) *Caller {
 	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
+}
+
+// logPageHooks gives the admin's log page the log, to read, and the means to
+// name the people in it that this store knows.
+func logPageHooks(srv *admin.Server, root string, pol *auth.Policy, toks *auth.TokenStore) {
+	srv.LoadAudit = func() ([]audit.Event, error) {
+		return audit.Read(auditPath(root))
+	}
+	// The heads saved beside the log, which the page checks it against as
+	// well as along its chain (admin.Server.SavedHeads).
+	srv.SavedHeads = func() ([]audit.Head, error) { return savedHeads(root) }
+	// Read through an index, so a view reads what was appended since the
+	// last one rather than the whole log (audit.Index). One for each place
+	// the log has been, because `auditlog dir` can move it while this runs.
+	var indexes sync.Map
+	srv.AuditIndex = func() *audit.Index {
+		path := auditPath(root)
+		if x, ok := indexes.Load(path); ok {
+			return x.(*audit.Index)
+		}
+		x, _ := indexes.LoadOrStore(path, audit.NewIndex(path))
+		return x.(*audit.Index)
+	}
+	// Forward matching only. The HMAC cannot be reversed; this computes the
+	// pseudonym for each principal the store knows and compares, so somebody
+	// the policy has never heard of stays opaque — which is itself worth
+	// seeing on the page.
+	//
+	// One table for a view. Resolving opened the log for every pseudonym it
+	// was asked about, reading the key, the host name and the end of the
+	// file, and created the key where there was none; a view of a log that
+	// visitors had written to asked about thousands of pseudonyms and took
+	// seconds. The key is read once a view, each known person's handle is
+	// computed once, and each pseudonym is then a lookup.
+	srv.Resolver = func() func(string) string {
+		names := knownHandles(root, pol, toks)
+		return func(pseudonym string) string { return names[pseudonym] }
+	}
+	srv.ResolvePrincipal = func(pseudonym string) string { return srv.Resolver()(pseudonym) }
+}
+
+// knownHandles maps the handle each person this store knows has in its log
+// to their name. Reading the key is all it does to the log; a log with no key
+// yet has no handles to match.
+func knownHandles(root string, pol *auth.Policy, toks *auth.TokenStore) map[string]string {
+	key, err := os.ReadFile(auditKeyPath(root))
+	if err != nil {
+		return nil
+	}
+	handle := func(id string) string { return audit.Pseudonym(key, id) }
+	if len(key) == 0 {
+		// A log kept without a key names people as they are (audit.New).
+		handle = func(id string) string { return id }
+	}
+	names := map[string]string{}
+	for _, t := range toks.Snapshot() {
+		if t.Principal != "" {
+			names[handle(t.Principal)] = t.Principal
+		}
+	}
+	for _, name := range pol.Principals() {
+		if name != "" {
+			names[handle(name)] = name
+		}
+	}
+	return names
+}
+
+// logHeadsHook tells the audit log screen who signs the log's heads, and
+// where the keys that check them are.
+//
+// Asked on each visit, as `logd status` asks: whether the separation is in
+// force, whether the writer signs with its key, and where the log is all
+// change while the server runs. The writer under the reference compose can
+// start after this process does, and a writer that cannot use its key goes
+// on writing the log, so a page that read them once at start said the
+// writer signed while every receipt failed, or said nothing of a writer
+// that did sign.
+func logHeadsHook(srv *admin.Server, root string) {
+	srv.LogHeads = func() (bool, string, string) {
+		byWriter, refused := headsSignedBy(root)
+		return byWriter, headKeysPath(root), refused
+	}
+}
+
+// waitingHook is the command line's list of what waits, for the admin's
+// session, read from the store the server holds rather than one opened
+// again for every page (reviewWaiting says why).
+func waitingHook(root string, s *store.Store) func(admin.Actor, time.Time) ([]waitingItem, error) {
+	return func(by admin.Actor, now time.Time) ([]waitingItem, error) {
+		return waitingIn(root, s, sessionCaller(by), now)
+	}
 }
 
 // upkeepJobs is everything the server does on its timer, around the
@@ -1329,11 +1435,7 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	// day, to prove it still reaches here.
 	jobs = append(jobs, signalsJob(root))
 	// And what agents remember, past its time.
-	jobs = append(jobs, memoryJob(root))
-	// And what was said in a room, past the room's retention. Here and not
-	// in retentionJob, which the public site runs too: rooms/ is not the
-	// site's to write.
-	return append(jobs, roomRetentionJob(root))
+	return append(jobs, memoryJob(root))
 }
 
 // retentionJob sweeps submissions past the retention their form declares.
@@ -1389,6 +1491,29 @@ func retentionJob(root string) (upkeep.Job, bool) {
 			return n + gone, err
 		},
 	}, true
+}
+
+// dualHooks gives the admin the requests that wait for a second
+// administrator, and the way to make one it has no part in.
+//
+// A function of its own, as approvalsHooks is, so a test can approve on
+// People through the wiring the server really uses.
+func dualHooks(root string) *admin.Dual {
+	return &admin.Dual{Store: dualStore(root),
+		Apply: func(r dual.Request, by string) (string, error) {
+			// Where the head keys were, for a move of the audit log: whoever
+			// approves it on People is told which keys check what was signed
+			// before it, as `quilzo pending approve` says (keysLeftBehind).
+			// The screen said only that it was approved.
+			oldKeys := headKeysPath(root)
+			if err := applyDual(root, r, by); err != nil {
+				return "", err
+			}
+			if r.Kind == dual.AuditLog {
+				return keysLeftBehind(oldKeys, auditDir(root)), nil
+			}
+			return "", nil
+		}}
 }
 
 // approvalsHooks gives the admin the approval policy and the proposals the

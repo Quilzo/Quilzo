@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -115,8 +117,9 @@ func TestASpreadsheetComesInAndGoesOutAsTheSameRecords(t *testing.T) {
 	if err := json.Unmarshal(js, &list); err != nil || len(list) != 3 || list[0]["id"] == nil {
 		t.Fatalf("%s %v", js, err)
 	}
+	// The same three, as they are: nothing to write again.
 	if b, err := bringFile(ctx, root, "events", "x.json", js, bringOptions{}, asAdmin("dana")); err != nil ||
-		b.Updated != 3 || b.New != 0 {
+		b.Unchanged != 3 || b.Updated != 0 || b.New != 0 {
 		t.Fatalf("%+v %v", b, err)
 	}
 }
@@ -178,5 +181,310 @@ func TestACalendarNeedsEventsSetUp(t *testing.T) {
 	err := eventsCmd(root, []string{"import", "x.ics"}, asAdmin("dana"))
 	if err == nil || !strings.Contains(err.Error(), "quilzo events setup") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// A record's own field named id goes out and comes back with it, in a
+// spreadsheet and in JSON. The id column is the store's id, which bringing
+// a file in matches records by, so the record's own id was left out of
+// both: `records add things id=mine` and an export and an import lost
+// "mine". It goes out in a column of its own, field:id (in JSON, under
+// fields), and an export with none is brought in as before.
+func TestARecordsOwnIdFieldGoesOutAndComesBack(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	if err := recordsAdd(root, []string{"things", "id=mine", "title=A thing"}); err != nil {
+		t.Fatal(err)
+	}
+	before := draftRecords(t, root, "things")
+	if len(before) != 1 || before[0].Fields["id"] != "mine" {
+		t.Fatalf("added as %+v", before)
+	}
+	storeID := before[0].ID
+	for _, format := range []string{"csv", "json"} {
+		out, n, err := sheetOf(root, "things", format, false)
+		if err != nil || n != 1 {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		if !strings.Contains(string(out), "mine") || !strings.Contains(string(out), storeID) {
+			t.Fatalf("%s: the export lost the record's own id or the store's:\n%s", format, out)
+		}
+		// Changed in the file and brought back: the same record, its own id
+		// as the file says.
+		changed := strings.Replace(string(out), "mine", "yours", 1)
+		b, err := bringFile(ctx, root, "things", "things."+format, []byte(changed), bringOptions{}, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 1 {
+			t.Fatalf("%s: brought as %+v: %v\n%s", format, b, err, changed)
+		}
+		after := draftRecords(t, root, "things")
+		if len(after) != 1 || after[0].ID != storeID || after[0].Fields["id"] != "yours" {
+			t.Fatalf("%s: brought back as %+v", format, after)
+		}
+		if err := recordsAdd(root, []string{"things", "--id", storeID, "id=mine", "title=A thing"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A file written before, with the store's id alone, is brought in as
+	// it was: matched by that id, and the record's own id left as it is.
+	old := "id,title\r\n" + storeID + ",Renamed\r\n"
+	if b, err := bringFile(ctx, root, "things", "old.csv", []byte(old), bringOptions{}, asAdmin("dana")); err != nil ||
+		b.Updated != 1 || b.New != 0 {
+		t.Fatalf("an older export: %+v %v", b, err)
+	}
+	if after := draftRecords(t, root, "things"); len(after) != 1 || after[0].Fields["title"] != "Renamed" {
+		t.Fatalf("an older export was brought as %+v", after)
+	}
+}
+
+// A collection whose type declares a field id goes out and comes back as
+// the same records, whichever of them have an id of their own, in a
+// spreadsheet and in JSON.
+//
+// The record's own id was written beside the store's only for a record
+// that had one. A type that declares id reads an id with nothing beside
+// it as its field, so a record with no id of its own came back in as a
+// new record, the store's id for its own: an export brought straight back
+// doubled every such record, and in JSON did so even when other records
+// in the same file had ids of their own.
+func TestARecordWithNoIdOfItsOwnComesBackAsItself(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	st, err := schema.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Registry.Add(schema.Type{Name: "part", Fields: []schema.Field{
+		{Name: "title", Kind: schema.Text, Required: true}, {Name: "id", Kind: schema.Text}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindCollection("parts", "part"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	same := func(format string, before []collection.Record) {
+		t.Helper()
+		out, n, err := sheetOf(root, "parts", format, false)
+		if err != nil || n != len(before) {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		b, err := bringFile(ctx, root, "parts", "parts."+format, out, bringOptions{}, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != len(before) {
+			t.Fatalf("%s: brought as %+v: %v\n%s", format, b, err, out)
+		}
+		after := draftRecords(t, root, "parts")
+		if len(after) != len(before) {
+			t.Fatalf("%s: %d records came back as %d", format, len(before), len(after))
+		}
+		was := map[string]collection.Record{}
+		for _, r := range before {
+			was[r.ID] = r
+		}
+		for _, r := range after {
+			w, ok := was[r.ID]
+			if !ok || r.Fields["title"] != w.Fields["title"] || r.Fields["id"] != w.Fields["id"] {
+				t.Errorf("%s: %+v came back as %+v", format, w.Fields, r.Fields)
+			}
+		}
+	}
+	// None of the records has an id of its own.
+	if err := recordsAdd(root, []string{"parts", "title=A bolt"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"csv", "json"} {
+		same(format, draftRecords(t, root, "parts"))
+	}
+	// One has, one has not.
+	if err := recordsAdd(root, []string{"parts", "title=A nut", "id=NUT-1"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"csv", "json"} {
+		same(format, draftRecords(t, root, "parts"))
+	}
+	// A file from before, with the id column alone, still fills the
+	// type's field from it, as the type says.
+	old := `[{"id": "BOLT-2", "title": "A long bolt"}]`
+	if b, err := bringFile(ctx, root, "parts", "old.json", []byte(old), bringOptions{}, asAdmin("dana")); err != nil || b.New != 1 {
+		t.Fatalf("an older file: %+v %v", b, err)
+	}
+	found := false
+	for _, r := range draftRecords(t, root, "parts") {
+		found = found || r.Fields["id"] == "BOLT-2"
+	}
+	if !found {
+		t.Error("an older file's id did not fill the type's field")
+	}
+}
+
+// A record with a field of its own called fields goes out as JSON and
+// comes back as itself, whatever that field holds and whether or not the
+// record has an id of its own.
+//
+// The record's own id is written as id inside fields, and bringing a file
+// in reads a fields that holds id alone as that. A record whose own field
+// called fields was an object holding id alone, and which had no id of its
+// own, went out with nothing to tell the two apart: an export brought
+// straight back gave it the id inside its field for its own. Such a
+// record now says its own id beside the field, null for none, as a record
+// with both always did.
+func TestARecordsOwnFieldCalledFieldsComesBackAsItself(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	add := func(fields string) {
+		t.Helper()
+		from := filepath.Join(t.TempDir(), "record.json")
+		if err := os.WriteFile(from, []byte(fields), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := recordsAdd(root, []string{"forms", "--from", from}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(`{"title": "No id of its own", "fields": {"id": "x"}}`)
+	add(`{"title": "Both", "id": "mine", "fields": {"id": "y"}}`)
+	add(`{"title": "Words", "fields": "name, email"}`)
+	said := func(recs []collection.Record) map[string]string {
+		out := map[string]string{}
+		for _, r := range recs {
+			b, err := json.Marshal(r.Fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[r.ID] = string(b)
+		}
+		return out
+	}
+	before := said(draftRecords(t, root, "forms"))
+	out, n, err := sheetOf(root, "forms", "json", false)
+	if err != nil || n != 3 {
+		t.Fatalf("%d records: %v", n, err)
+	}
+	b, err := bringFile(ctx, root, "forms", "forms.json", out, bringOptions{}, asAdmin("dana"))
+	if err != nil || b.New != 0 {
+		t.Fatalf("brought as %+v: %v\n%s", b, err, out)
+	}
+	after := said(draftRecords(t, root, "forms"))
+	if len(after) != len(before) {
+		t.Fatalf("%d records came back as %d", len(before), len(after))
+	}
+	for id, was := range before {
+		if after[id] != was {
+			t.Errorf("%s came back as %s\n%s", was, after[id], out)
+		}
+	}
+}
+
+// A spreadsheet brought back as it went out changes nothing, and says so.
+//
+// Every row that matched a record was counted as changed and written
+// again: an export brought straight back reported "0 new, 4 changed",
+// wrote a commit each time and moved every record's updated time, so the
+// count could not tell an owner which rows they had changed.
+func TestASheetBroughtBackUnchangedChangesNothing(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	for _, title := range []string{"A thing", "Another"} {
+		if err := recordsAdd(root, []string{"things", "title=" + title, "price=12.5"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := draftRecords(t, root, "things")
+	draftAt := func() string {
+		s, err := store.Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree, err := draftTree(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tree
+	}
+	was := draftAt()
+	for _, format := range []string{"csv", "json"} {
+		out, n, err := sheetOf(root, "things", format, false)
+		if err != nil || n != 2 {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		for _, dry := range []bool{true, false} {
+			b, err := bringFile(ctx, root, "things", "things."+format, out, bringOptions{dryRun: dry}, asAdmin("dana"))
+			if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+				t.Fatalf("%s (dry run %v): brought as %+v: %v", format, dry, b, err)
+			}
+		}
+		if now := draftAt(); now != was {
+			t.Fatalf("%s: bringing back an unchanged sheet changed the draft", format)
+		}
+	}
+	after := draftRecords(t, root, "things")
+	for i := range before {
+		if after[i].Updated != before[i].Updated {
+			t.Errorf("%s: its updated time moved from %d to %d", after[i].ID, before[i].Updated, after[i].Updated)
+		}
+	}
+
+	// One row changed is one record changed.
+	out, _, err := sheetOf(root, "things", "csv", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(out), "Another", "Another one", 1)
+	b, err := bringFile(ctx, root, "things", "things.csv", []byte(changed), bringOptions{}, asAdmin("dana"))
+	if err != nil || b.New != 0 || b.Updated != 1 || b.Unchanged != 1 {
+		t.Fatalf("one row changed was brought as %+v: %v", b, err)
+	}
+}
+
+// A sheet that names its pictures by where they are fetched from, as an
+// export does for a site with an address of its own, changes nothing brought
+// back as it went out either.
+//
+// A row was weighed against its record before its picture's address was
+// read back as the file in the library it names, so every record with a
+// picture was "changed", written again and its updated time moved: the
+// products of a shop with an address, each with a picture, were all changed
+// by a sheet that changed none.
+func TestASheetNamingItsPicturesByAddressChangesNothingBroughtBack(t *testing.T) {
+	root, _ := siteStore(t)
+	if err := eventsCmd(root, []string{"setup"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	setConfigs(t, root, map[string]string{"site.base_url": "https://crumb.example"})
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := testPNG("loaf")
+	pic, err := media.Accept("loaf.png", body, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic.Alt = "A loaf"
+	if err := lib.Put(pic, body); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first := "title,date,image,alt\nRye night,2099-11-14," + pic.ID + ",A loaf\nOpen day,2099-12-25,,\n"
+	if b, err := bringFile(ctx, root, "events", "events.csv", []byte(first), bringOptions{pictures: true},
+		asAdmin("dana")); err != nil || b.New != 2 {
+		t.Fatalf("%+v %v", b, err)
+	}
+	before := draftRecords(t, root, "events")
+	out, _, err := sheetOf(root, "events", "csv", false)
+	if err != nil || !strings.Contains(string(out), "https://crumb.example/media/"+pic.ID) {
+		t.Fatalf("the sheet does not say where the picture is fetched from: %v\n%s", err, out)
+	}
+	for _, opts := range []bringOptions{{pictures: true, dryRun: true}, {pictures: true}, {}} {
+		b, err := bringFile(ctx, root, "events", "events.csv", out, opts, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+			t.Fatalf("%+v: brought back as %+v: %v", opts, b, err)
+		}
+	}
+	after := draftRecords(t, root, "events")
+	for i := range before {
+		if after[i].Updated != before[i].Updated || after[i].Fields["image"] != before[i].Fields["image"] {
+			t.Errorf("%s was written again: %v, was %v", after[i].ID, after[i], before[i])
+		}
 	}
 }

@@ -57,8 +57,9 @@
 //
 // A codec nobody else implements is also a codec only this client can decode.
 // That is a real cost, it is the price of being right about text, and it is
-// why this sits behind the same frame encryption as everything else rather
-// than pretending to be an interchange format.
+// why this does not pretend to be an interchange format. It carries no
+// encryption of its own: the frame encryption it was measured with has left
+// Quilzo with calls, and what is measured here is the codec alone.
 package screen
 
 import (

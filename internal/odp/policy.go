@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 )
 
@@ -225,6 +226,11 @@ func (p *Policy) Propose(changes []Change, reason, by, source string, now time.T
 	return pr, nil
 }
 
+// ErrNoProposal is an id that names no proposal waiting, for errors.Is: the
+// command line exits 4 for it, "not found", as the help documents, where
+// `quilzo policy approve` of an id nobody has exited 1.
+var ErrNoProposal = errors.New("no proposal")
+
 // ErrSameAdministrator refuses an approval by the person who proposed it.
 var ErrSameAdministrator = errors.New("a policy change is approved by a different administrator from the one who proposed it")
 
@@ -237,7 +243,10 @@ func (p *Policy) Decide(id, by string, approve, alone bool, now time.Time) (Prop
 		if pr.ID != id {
 			continue
 		}
-		if approve && pr.By == by && !alone {
+		// Whoever proposed it under another spelling of their name is still
+		// them (auth.SamePerson): compared exactly, "dana" approved "Dana"'s
+		// proposal as a second administrator.
+		if approve && auth.SamePerson(pr.By, by) && !alone {
 			return Proposal{}, ErrSameAdministrator
 		}
 		p.Proposals = append(p.Proposals[:i], p.Proposals[i+1:]...)
@@ -250,11 +259,11 @@ func (p *Policy) Decide(id, by string, approve, alone bool, now time.Time) (Prop
 				continue
 			}
 			p.Declared = append(p.Declared, Declared{Param: c.Param, Value: c.Value, Reason: pr.Reason,
-				By: pr.By, ApprovedBy: by, Alone: alone && pr.By == by, At: now.UTC()})
+				By: pr.By, ApprovedBy: by, Alone: alone && auth.SamePerson(pr.By, by), At: now.UTC()})
 		}
 		return pr, nil
 	}
-	return Proposal{}, fmt.Errorf("no proposal %s is waiting (approved, declined, withdrawn, or older than a week)", id)
+	return Proposal{}, fmt.Errorf("%w %s is waiting (approved, declined, withdrawn, or older than a week)", ErrNoProposal, id)
 }
 
 // Withdraw takes back a proposal; only the person who made it may.
@@ -268,7 +277,7 @@ func (p *Policy) Withdraw(id, by string) (Proposal, error) {
 			return pr, nil
 		}
 	}
-	return Proposal{}, fmt.Errorf("no proposal %s is waiting", id)
+	return Proposal{}, fmt.Errorf("%w %s is waiting", ErrNoProposal, id)
 }
 
 func (p *Policy) remove(param string) {

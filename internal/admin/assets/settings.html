@@ -2,7 +2,8 @@
 <h1>Settings</h1>
 
 {{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
-{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 {{if .Weakened}}
 <div class="card bad weakened">
@@ -54,7 +55,9 @@
       <code>{{.Setting.Key}}</code>
       <div class="hint">{{.Setting.Summary}}</div>
       {{if .Weaker}}<div class="hint warn">{{.Why}}</div>{{end}}
-      {{range .Floors}}<div class="hint">{{if .Broken}}Held by the organisation's policy, which cannot be read, so it is not changed.{{else}}Held by the organisation's policy: <a href="/security/parameters">{{.Param}}</a> is {{.Declared}}. It may be stricter, never weaker.{{end}}</div>{{end}}
+      {{if eq .Setting.Key "admin.brand.colour"}}{{with $.BrandAccent}}<div class="hint">{{.}}</div>{{end}}{{end}}
+      {{with index $.Applies .Setting.Key}}<div class="hint warn">{{.}}</div>{{end}}
+      {{range .Floors}}<div class="hint">{{if .Broken}}Held by the organisation's policy, which cannot be read, so it is not changed.{{else}}Held by the organisation's policy: {{if $.ReadsAssurance}}<a href="/security/parameters">{{.Param}}</a>{{else}}{{.Param}}{{end}} is {{.Declared}}. It may be stricter, never weaker.{{end}}</div>{{end}}
     </th>
     <td>{{if .Overriden}}<strong>{{.Shown}}</strong>{{else}}{{.Shown}}{{end}}</td>
     <td class="hint">{{.Setting.DefaultShown}}</td>

@@ -171,7 +171,7 @@ func (s *Server) handleSignInsUnlock(w http.ResponseWriter, r *http.Request) {
 	case who == "":
 		back("e", "Unlock whom?")
 		return
-	case strings.EqualFold(who, p.Name):
+	case auth.SamePerson(who, p.Name):
 		back("e", "Somebody else has to unlock you: that is the point of a lockout.")
 		return
 	// The standing is this session's, as shieldSiteAdmin explains: a

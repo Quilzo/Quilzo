@@ -58,20 +58,29 @@ func cmdApps(root string, args []string) error {
 	oa := appsServer(root, by)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return appsList(root, oa)
 	case "receipt":
 		return appReceipt(root, args[1:])
 	case "could":
 		return appsCould(root, args[1:])
 	case "allow", "disallow":
-		if len(args) != 2 {
-			return fmt.Errorf("quilzo apps %s HOST", args[0])
+		// A flag is refused rather than taken for the host: `apps allow
+		// --zzflag` allowed apps published from "--zzflag", exit 0.
+		named, err := positionals(args[1:], 1)
+		if err != nil {
+			return err
 		}
-		host := strings.ToLower(strings.TrimSpace(args[1]))
+		if len(named) != 1 {
+			return errMisused{fmt.Errorf("quilzo apps %s HOST", args[0])}
+		}
+		host := strings.ToLower(strings.TrimSpace(named[0]))
 		if err := oauthas.CheckHost(host); err != nil {
 			return err
 		}
-		err := oa.Store.ChangeClients(func(_ *[]oauthas.Client, hosts *[]string) error {
+		err = oa.Store.ChangeClients(func(_ *[]oauthas.Client, hosts *[]string) error {
 			var keep []string
 			for _, h := range *hosts {
 				if h != host {
@@ -101,9 +110,9 @@ func cmdApps(root string, args []string) error {
 		var redirects stringList
 		fs.Var(&redirects, "redirect", "where sign-in may return to; repeat for more")
 		if len(args) < 2 {
-			return errors.New(`quilzo apps register NAME --redirect URI [--redirect URI]`)
+			return errMisused{errors.New(`quilzo apps register NAME --redirect URI [--redirect URI]`)}
 		}
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		c, err := oauthas.NewRegistered(args[1], redirects, by.Name, time.Now())
@@ -125,7 +134,7 @@ func cmdApps(root string, args []string) error {
 		return nil
 	case "unregister":
 		if len(args) != 2 {
-			return errors.New("quilzo apps unregister CLIENT_ID")
+			return errMisused{errors.New("quilzo apps unregister CLIENT_ID")}
 		}
 		removed := false
 		if err := oa.Store.ChangeClients(func(cs *[]oauthas.Client, _ *[]string) error {
@@ -143,7 +152,7 @@ func cmdApps(root string, args []string) error {
 			return err
 		}
 		if !removed {
-			return fmt.Errorf("no app %s is registered", args[1])
+			return errNotFound{fmt.Errorf("no app %s is registered", args[1])}
 		}
 		record(root, by.auditRecord("oauth.app-removed", "/mcp", audit.Success, map[string]string{"client": args[1]}))
 		n := oa.EndWhere(func(g oauthas.Grant) bool { return g.Client == args[1] }, by.Name, "the app was removed from the register")
@@ -151,11 +160,11 @@ func cmdApps(root string, args []string) error {
 		return nil
 	case "disconnect":
 		if len(args) != 2 {
-			return errors.New("quilzo apps disconnect GRANT_ID")
+			return errMisused{errors.New("quilzo apps disconnect GRANT_ID")}
 		}
 		return oa.End(args[1], by.Name, "disconnected from the command line")
 	default:
-		return fmt.Errorf("unknown apps command %q; try list, allow, disallow, register, unregister, disconnect, receipt or could", args[0])
+		return errMisused{fmt.Errorf("unknown apps command %q; try list, allow, disallow, register, unregister, disconnect, receipt or could", args[0])}
 	}
 }
 

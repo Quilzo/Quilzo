@@ -48,7 +48,7 @@ func appCould(root, connection, op, page string, now time.Time) (appCouldAnswer,
 		}
 	}
 	if g == nil {
-		return appCouldAnswer{}, fmt.Errorf("no app connection is %q; quilzo apps list shows them", connection)
+		return appCouldAnswer{}, errNotFound{fmt.Errorf("no app connection is %q; quilzo apps list shows them", connection)}
 	}
 	a := appCouldAnswer{Connection: g.ID, App: nonEmpty(g.ClientName, g.Client), For: g.Principal, What: op}
 	no := func(why string) (appCouldAnswer, error) { a.Why = why; return a, nil }
@@ -115,9 +115,9 @@ func appCould(root, connection, op, page string, now time.Time) (appCouldAnswer,
 
 // appsCould is `quilzo apps could CONNECTION OPERATION [PAGE]`.
 func appsCould(root string, args []string) error {
-	usage := errors.New("quilzo apps could CONNECTION OPERATION [PAGE]")
+	usage := errMisused{errors.New("quilzo apps could CONNECTION OPERATION [PAGE]")}
 	fs := flag.NewFlagSet("apps could", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	args = fs.Args()

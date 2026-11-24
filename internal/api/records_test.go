@@ -96,3 +96,57 @@ func TestARecordsGrantIsOnTheCollection(t *testing.T) {
 		t.Errorf("tech was listed %s", w.Body)
 	}
 }
+
+// A record id that can address no record is refused as the caller's to fix,
+// as a page name the store cannot hold is, and not answered 500 as a write
+// that failed.
+func TestARecordIDThatAddressesNothingIsRefusedAs400(t *testing.T) {
+	srv, _ := recordsServer(t)
+	srv.Types = func() (*schema.Store, error) { return &schema.Store{}, nil }
+	srv.Records.Writable = true
+	srv.Records.Commit = func(string, string, string) error { return nil }
+	if err := srv.Policy.Grant(auth.Binding{Principal: "writer", Role: auth.RoleAuthor,
+		Resource: auth.DataResource("samples")}); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := srv.Tokens.Issue("w2", "writer", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"not-an-id", "%C3%9Cr%C3%BCn", strings.Repeat("a", 31)} {
+		w := req(t, srv, "PUT", "/api/v1/records/samples/"+id, tok,
+			map[string]any{"name": "x"}, map[string]string{"If-Match": "*"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("PUT a record %s answered %d, not 400: %s", id, w.Code, w.Body)
+		}
+	}
+	// A record id that can address one is still written.
+	w := req(t, srv, "PUT", "/api/v1/records/samples/"+strings.Repeat("b", 32), tok,
+		map[string]any{"name": "x"}, map[string]string{"If-Match": "*"})
+	if w.Code != http.StatusOK {
+		t.Errorf("a usable record id answered %d: %s", w.Code, w.Body)
+	}
+}
+
+// An empty list is [] in the content API's answers, as on the command line
+// and the machine interface, and not null.
+//
+// encoding/json writes a nil slice as null, and a nil slice is how Go
+// spells an empty list: a collection nothing matched answered "records":
+// null, and a page of the listing past the last page "pages": null, so a
+// client iterating the answer failed where it had nothing to do.
+func TestAnEmptyListIsAListInTheContentAPI(t *testing.T) {
+	srv, tok := recordsServer(t)
+	for _, path := range []string{
+		"/api/v1/records/samples?where=name:nobody",
+		"/api/v1/pages?offset=50",
+	} {
+		w := req(t, srv, "GET", path, tok["reader"], nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), "null") {
+			t.Errorf("%s answered a null where an empty list is: %s", path, w.Body.String())
+		}
+	}
+}

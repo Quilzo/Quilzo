@@ -35,6 +35,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Provider is one search provider's profile.
@@ -280,9 +282,4 @@ func text(v any) string {
 	return ""
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return strings.ToValidUTF8(s[:n], "") + "…"
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "…") }

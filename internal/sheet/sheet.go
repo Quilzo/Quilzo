@@ -121,12 +121,11 @@ func Read(body []byte, opts Options) (*Sheet, error) {
 	if len(body) > MaxBytes {
 		return nil, fmt.Errorf("larger than %d MB", MaxBytes>>20)
 	}
-	text, enc := decode(body)
+	text, comma, enc := Decode(body)
 	sh := &Sheet{}
 	if enc != "" {
 		sh.Notes = append(sh.Notes, "read as "+enc)
 	}
-	comma, text := delimiter(text)
 	if rec, line, cells := TooWide(text, comma, MaxColumns); rec == 0 {
 		return nil, fmt.Errorf("it has %d columns, and at most %d are read", cells, MaxColumns)
 	} else if rec > 0 {
@@ -263,9 +262,20 @@ func leftOut(cols []Column) string {
 // out as Read works them out: for a reader of its own, such as the one
 // that infers a type from a sheet.
 func Text(body []byte) (string, rune) {
-	text, _ := decode(body)
-	comma, text := delimiter(text)
+	text, comma, _ := Decode(body)
 	return text, comma
+}
+
+// Decode is Text, and the encoding the bytes were read as when that was
+// not UTF-8 ("UTF-16", "Windows-1252, as older Excel saves CSV"), for a
+// reader of its own to say so as Read does. It is the one reading of a
+// CSV's bytes: the newsletter's import had its own, which took off a UTF-8
+// mark and nothing else, so a list Excel saved as Unicode Text had no
+// address column and one saved as Windows-1252 kept every é as U+FFFD.
+func Decode(body []byte) (text string, comma rune, encoding string) {
+	text, encoding = decode(body)
+	comma, text = delimiter(text)
+	return text, comma, encoding
 }
 
 // TooWide finds the first row of a CSV text with more than max cells, as
@@ -490,6 +500,12 @@ func match(header []string, opts Options) []Column {
 	for k, v := range opts.Map {
 		mapped[norm(k)] = strings.TrimSpace(v)
 	}
+	// A sheet that has a record's own id under OwnID, as Write writes one,
+	// has the store's id under id whatever the type declares.
+	ownID := false
+	for _, h := range header {
+		ownID = ownID || strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(h, "\ufeff")), OwnID)
+	}
 	idTaken := false
 	for i, h := range header {
 		if i == 0 {
@@ -506,7 +522,9 @@ func match(header []string, opts Options) []Column {
 				cols[i] = c
 				continue
 			}
-		} else if n == "id" && !declared["id"] && !idTaken {
+		} else if strings.EqualFold(h, OwnID) {
+			field, how = "id", "the record's own id"
+		} else if n == "id" && (!declared["id"] || ownID) && !idTaken {
 			c.ID, idTaken = true, true
 			c.Note = "names each record"
 			cols[i] = c

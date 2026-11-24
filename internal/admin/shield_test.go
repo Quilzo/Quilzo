@@ -279,3 +279,42 @@ func TestASessionConfinedToSecurityCannotChangeTheShield(t *testing.T) {
 		t.Fatalf("a session confined to /@security changed the shield: %+v %+v", st, bk)
 	}
 }
+
+// The only administrator changing a playbook, or letting the playbooks act
+// again, on the screen has it done at once and recorded as approved alone,
+// as `quilzo shield playbook mode` and `quilzo shield release` do; with a
+// second administrator it waits for them, as before.
+//
+// The screen always proposed, and said "Another administrator approves it
+// here" to somebody with no other administrator, while the command line
+// applied the same change at once: one change, two outcomes, by surface.
+func TestTheOnlyAdministratorChangesAPlaybookOnTheScreenAsOnTheCommandLine(t *testing.T) {
+	srv, token := setup(t)
+	root := t.TempDir()
+	var told []string
+	srv.ShieldAdmin = &ShieldAdmin{Root: root,
+		OnlyAdmin: func(name string) bool { return name == "editor" },
+		TellHold:  func(held bool, by, why string) { told = append(told, fmt.Sprintf("%v %s %s", held, by, why)) }}
+	w := postForm(t, srv, "/security/shield/act", token, "do=mode&name=chatbot-flood&mode=act&why=seen+it+work")
+	bk, _ := shield.LoadBook(root)
+	if len(bk.Pending) != 0 || len(bk.Decided) != 1 || !bk.Decided[0].Alone {
+		t.Fatalf("the only administrator's change: %d waiting, decided %+v", len(bk.Pending), bk.Decided)
+	}
+	for _, pb := range bk.InForce() {
+		if pb.Name == "chatbot-flood" && pb.Mode != "act" {
+			t.Fatalf("approved alone and not applied: %s", pb.Mode)
+		}
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "alone") {
+		t.Errorf("the screen does not say it was approved alone: %s", loc)
+	}
+
+	postForm(t, srv, "/security/shield/act", token, "do=hold&why=a+block+looked+wrong")
+	postForm(t, srv, "/security/shield/act", token, "do=release&why=fixed")
+	if st, _ := shield.Load(root); st.Watching != nil {
+		t.Fatal("the only administrator letting the playbooks act again left them held")
+	}
+	if len(told) != 2 || told[1] != "false editor fixed" {
+		t.Fatalf("told: %q", told)
+	}
+}

@@ -225,7 +225,8 @@ func (l Launcher) validate(name string, public bool) error {
 	for _, list := range [][]string{l.Pages, l.NudgePages} {
 		for _, p := range list {
 			if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "?#\\") || strings.Contains(p, "..") {
-				return fmt.Errorf("%q is not a page prefix: it starts with / and names a path", p)
+				return fmt.Errorf("%q is not a page prefix: a launcher's page prefix is a path, like /delivery, "+
+					"with no ?, # or ..", p)
 			}
 		}
 	}
@@ -566,8 +567,58 @@ func (s *Set) Launcher() (Assistant, bool) {
 	return Assistant{}, false
 }
 
+// Building is what of a chatbot that is not public an author may change,
+// on every surface: what it is called and says, and which pages it reads.
+// The rest reaches the public or spends on its behalf, and is a
+// publisher's: making it public, its model and route, the records and
+// documents it reads, what it offers to do, and where it appears. An
+// author's agent was let do this over the agent interface while the
+// command line and the Chatbots screen asked the author for publish.
+var Building = []string{"title", "greeting", "instructions", "refusal", "pages", "exclude"}
+
+// Build sets one of Building to what a person or an agent gave: page
+// prefixes comma-separated, the rest as text. It reports false for a
+// setting that is not one of Building, which it leaves as it is.
+func (a *Assistant) Build(setting, value string) bool {
+	value = strings.TrimSpace(value)
+	switch setting {
+	case "title":
+		a.Title = value
+	case "greeting":
+		a.Greeting = value
+	case "instructions":
+		a.Instructions = value
+	case "refusal":
+		a.Refusal = value
+	case "pages", "exclude":
+		var list []string
+		for _, p := range strings.Split(value, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				list = append(list, p)
+			}
+		}
+		if setting == "pages" {
+			a.Pages = list
+		} else {
+			a.Exclude = list
+		}
+	default:
+		return false
+	}
+	return true
+}
+
 // Put adds or replaces one, after validating it.
 func (s *Set) Put(a Assistant) error {
+	// The launcher's pages and the nudge's are named as the pages it reads
+	// are, with or without the slash: "delivery" is /delivery. They were
+	// refused without it, where Pages took it, and all three are page
+	// prefixes to whoever types them.
+	if a.Launcher != nil {
+		l := *a.Launcher
+		l.Pages, l.NudgePages = rooted(l.Pages), rooted(l.NudgePages)
+		a.Launcher = &l
+	}
 	if err := a.Validate(); err != nil {
 		return err
 	}
@@ -589,6 +640,22 @@ func (s *Set) Put(a Assistant) error {
 		return s.Assistants[i].Name < s.Assistants[j].Name
 	})
 	return nil
+}
+
+// rooted is page prefixes with the leading slash a page's path has, added
+// where it was left out.
+func rooted(prefixes []string) []string {
+	if prefixes == nil {
+		return nil
+	}
+	out := make([]string, len(prefixes))
+	for i, p := range prefixes {
+		if p = strings.TrimSpace(p); p != "" && !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		out[i] = p
+	}
+	return out
 }
 
 // Remove deletes one.

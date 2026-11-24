@@ -41,6 +41,9 @@ func cmdEngagement(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return engagementList(root)
 	case "open":
 		return engagementOpen(root, args[1:])
@@ -49,8 +52,8 @@ func cmdEngagement(root string, args []string) error {
 	case "check":
 		return engagementCheck(root, args[1:])
 	default:
-		return fmt.Errorf("unknown engagement command %q; try list, open, "+
-			"issue or check", args[0])
+		return errMisused{fmt.Errorf("unknown engagement command %q; try list, open, "+
+			"issue or check", args[0])}
 	}
 }
 
@@ -103,13 +106,13 @@ func engagementOpen(root string, args []string) error {
 	until := fs.String("until", "", "when the access ends, as 2026-12-31")
 	frameworks := fs.String("frameworks", "", "comma-separated")
 	because := fs.String("because", "", "what the audit is, in one line")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo engagement open ID --firm ... --auditor ... " +
-				"--scope ... --until 2026-12-31 --because \"...\"")
+				"--scope ... --until 2026-12-31 --because \"...\"")}
 	}
 	period, err := window(*from, *to)
 	if err != nil {
@@ -188,11 +191,11 @@ func engagementIssue(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("issue", flag.ContinueOnError)
 	out := fs.String("o", "", "where to write it; standard output otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo engagement issue ID [-o FILE]")
+		return errMisused{fmt.Errorf("usage: quilzo engagement issue ID [-o FILE]")}
 	}
 	all, err := loadEngagements(root)
 	if err != nil {
@@ -206,7 +209,7 @@ func engagementIssue(root string, args []string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("there is no engagement %q", pos[0])
+		return errNotFound{fmt.Errorf("there is no engagement %q", pos[0])}
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
@@ -221,7 +224,7 @@ func engagementIssue(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -254,7 +257,7 @@ func engagementIssue(root string, args []string) error {
 		By: caller.Name,
 	}.Record())
 
-	if *out == "" {
+	if toStdout(*out) {
 		fmt.Println(string(body))
 		return nil
 	}
@@ -310,11 +313,11 @@ func engagementCheck(root string, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	keys := fs.String("keys", "",
 		"the published verifying keys; this store's own otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo engagement check FILE [--keys FILE]")
+		return errMisused{fmt.Errorf("usage: quilzo engagement check FILE [--keys FILE]")}
 	}
 	body, err := os.ReadFile(pos[0])
 	if err != nil {

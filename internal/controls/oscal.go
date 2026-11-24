@@ -51,10 +51,9 @@ func ComponentDefinition(version string, params []oscal.SetParameter, at time.Ti
 	}
 	comp := oscal.DefinedComponent{
 		UUID: compID, Type: "software", Title: "Quilzo",
-		Description: "A single self-hosted binary: content platform, admin, security console, agent runtime and " +
-			"machine interface, with the Go standard library as its only dependency.",
-		Purpose: "To publish and administer sites and run agents under one access policy and one audit log.",
-		Props:   []oscal.Prop{{Name: "version", Value: version}},
+		Description: "Quilzo is " + quilzoIs + ", with the Go standard library as its only dependency.",
+		Purpose:     "To publish and administer sites and run agents under one access policy and one audit log.",
+		Props:       []oscal.Prop{{Name: "version", Value: version}},
 		ControlImplementations: []oscal.ControlImplementation{{
 			UUID: ciID, Source: oscal.CatalogHref,
 			Description: "How Quilzo implements NIST SP 800-53 Rev 5 controls. A statement says what the " +

@@ -55,6 +55,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
@@ -131,6 +132,15 @@ var skipField = map[string]bool{
 	"state": true, "pct": true, "legend": true, "eyebrow": true, "chip": true,
 	"brand_mark": true, "breadcrumbs": true, "filters": true, "form": true,
 	"starts": true, "expires": true, "poster": true, "showcase": true,
+	"chip_tone": true, "variant": true,
+	// The name of the icon a card is drawn with. Every card the site
+	// builder writes names one, and a short value keeps its field's name,
+	// so an answer ended "…at their level Icon: groups."
+	"icon": true,
+	// The page's own heading, drawn above its standfirst. The passage's
+	// header already carries the page's title, and read as a field it was
+	// quoted as an answer: "Head title: Tournaments."
+	"head_title": true,
 	// The colophon a layout repeats under every page. The same sentences
 	// on every page rank every page alike, and padded the answer from
 	// whichever page won with a copyright line.
@@ -178,6 +188,19 @@ func wiring(k string) bool {
 		}
 	}
 	return false
+}
+
+// storedFile reports whether a value is a reference to a file in the media
+// library, in any spelling this program writes, whatever field holds it. A
+// layout may read a picture from any field it likes, so the field's name
+// cannot say so: a custom "backdrop" was answered as "Backdrop: /media/…".
+func storedFile(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	_, ok = media.IDIn(s)
+	return ok
 }
 
 // Chunk splits pages into passages.
@@ -243,6 +266,9 @@ func collect(v any, heading string, out *[]block, depth int) string {
 	}
 	switch t := v.(type) {
 	case string:
+		if storedFile(t) {
+			return heading
+		}
 		for _, para := range splitParagraphs(t) {
 			if h, ok := headingOf(para); ok {
 				heading = h
@@ -276,7 +302,7 @@ func collect(v any, heading string, out *[]block, depth int) string {
 		}
 		keys := make([]string, 0, len(t))
 		for k := range t {
-			if k == own || wiring(k) || strings.HasPrefix(k, "_") || k == "title" && depth == 0 {
+			if k == own || wiring(k) || storedFile(t[k]) || strings.HasPrefix(k, "_") || k == "title" && depth == 0 {
 				continue
 			}
 			keys = append(keys, k)

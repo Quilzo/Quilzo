@@ -49,6 +49,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
 )
 
 // Result is a conversion and everything that happened during it.
@@ -345,31 +347,77 @@ func (r *Result) noteExternal(src string) string {
 }
 
 // hrefIn pulls the URL out of one tag, for the message.
+//
+// The attribute is found in the tag itself, not in strings.ToLower of it: a
+// title with İ in it lowered a byte shorter for each one, the address came
+// back as `="https://…`, naming no host, and the stylesheet was kept.
+//
+// And it is the tag's own href, read attribute by attribute, not the first
+// "href=" anywhere in the tag. There is none in href = "…", and one written
+// earlier was a data-href's local path or the rest of a title that said
+// href=. None of those named a host, so a stylesheet from elsewhere was kept
+// and nothing said so; and a title or a data-href that named another host
+// took a local stylesheet out.
 func hrefIn(tag string) string {
 	for _, attr := range []string{"href", "src"} {
-		i := indexFold(tag, attr+"=")
-		if i < 0 {
-			continue
+		if v, ok := attrIn(tag, attr); ok && v != "" {
+			return v
 		}
-		rest := strings.TrimSpace(tag[i+len(attr)+1:])
-		if rest == "" {
-			continue
-		}
-		if rest[0] == '"' || rest[0] == '\'' {
-			quote := rest[0]
-			if end := strings.IndexByte(rest[1:], quote); end >= 0 {
-				return rest[1 : 1+end]
-			}
-			continue
-		}
-		value, _, _ := strings.Cut(rest, " ")
-		return strings.TrimSuffix(value, ">")
 	}
 	return ""
 }
 
-func indexFold(s, sub string) int {
-	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
+// attrIn is the value of the attribute named name in one start tag, and
+// whether the tag has it. The name is compared in ASCII case only, as HTML
+// compares it, and a quoted value is read whole, so what it says is never
+// taken for another attribute.
+func attrIn(tag, name string) (string, bool) {
+	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
+	i := 1 // past the "<"
+	for i < len(tag) && !space(tag[i]) && tag[i] != '>' && tag[i] != '/' {
+		i++
+	}
+	for i < len(tag) {
+		for i < len(tag) && (space(tag[i]) || tag[i] == '/') {
+			i++
+		}
+		if i >= len(tag) || tag[i] == '>' {
+			break
+		}
+		start := i
+		for i < len(tag) && !space(tag[i]) && tag[i] != '=' && tag[i] != '>' && tag[i] != '/' {
+			i++
+		}
+		attr := tag[start:i]
+		for i < len(tag) && space(tag[i]) {
+			i++
+		}
+		value := ""
+		if i < len(tag) && tag[i] == '=' {
+			i++
+			for i < len(tag) && space(tag[i]) {
+				i++
+			}
+			if i < len(tag) && (tag[i] == '"' || tag[i] == '\'') {
+				quote := tag[i]
+				end := strings.IndexByte(tag[i+1:], quote)
+				if end < 0 {
+					return "", false
+				}
+				value, i = tag[i+1:i+1+end], i+1+end+1
+			} else {
+				vs := i
+				for i < len(tag) && !space(tag[i]) && tag[i] != '>' {
+					i++
+				}
+				value = tag[vs:i]
+			}
+		}
+		if len(attr) == len(name) && asciifold.HasPrefix(attr, name) {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // noteFrames removes embedded documents.

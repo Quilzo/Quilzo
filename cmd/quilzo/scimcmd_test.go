@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -463,6 +464,135 @@ func TestDeactivatingEveryAdministratorLeavesOneWhoCanGrant(t *testing.T) {
 	}
 	if sent := mails(); len(sent) != 2 {
 		t.Errorf("the deletion mailed %d times in all", len(sent))
+	}
+}
+
+// lastAdminByGroup is a store whose only administrator is dana, made one
+// by the identity provider's group Admins, with the security contact's
+// mail caught.
+func lastAdminByGroup(t *testing.T) (root string, c scimClient, group string, mails func() []mail.Message) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root = demoStore(t)
+	if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	mails = scimSecurityMail(t, root)
+	token, _, err := newSCIMToken(root, scimTokenDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = scimClient{t: t, h: scimHandler(root), token: token}
+	_, u := c.do(http.MethodPost, "/Users", `{"userName":"dana@example.com","active":true}`)
+	_, g := c.do(http.MethodPost, "/Groups", `{"displayName":"Admins","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	p, _ := loadPolicy(root)
+	if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatalf("dana was not made an administrator: %+v", p.Bindings)
+	}
+	return root, c, g["id"].(string), mails
+}
+
+// The identity provider never takes the last administrator's role away by
+// changing their groups: emptying or deleting the group that made them
+// one leaves them what provisioning gave them, the refusal is recorded as
+// a failure and the security contact is told, as when the provider
+// deactivates them. Once somebody else administers the store, their access
+// follows the groups again.
+//
+// Only a suspension left the last who could grant as they were. A group
+// that stopped making them an administrator took the role back, and nobody
+// could administer the store; where that was the policy's only binding it
+// was left empty, which switches access control off for everybody at the
+// machine.
+func TestProvisioningNeverTakesTheLastAdministratorsRole(t *testing.T) {
+	for name, take := range map[string]func(t *testing.T, c scimClient, group string){
+		"the group emptied": func(t *testing.T, c scimClient, group string) {
+			if code, _ := c.do(http.MethodPut, "/Groups/"+group, `{"displayName":"Admins","members":[]}`); code != http.StatusOK {
+				t.Fatalf("emptying the group answered %d", code)
+			}
+		},
+		"the group deleted": func(t *testing.T, c scimClient, group string) {
+			if code, _ := c.do(http.MethodDelete, "/Groups/"+group, ""); code != http.StatusNoContent {
+				t.Fatalf("deleting the group answered %d", code)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root, c, group, mails := lastAdminByGroup(t)
+			take(t, c, group)
+			p, _ := loadPolicy(root)
+			if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Fatalf("nobody can administer the store: %+v", p.Bindings)
+			}
+			sent := mails()
+			if len(sent) != 1 || !strings.Contains(sent[0].Body, "only person who can grant access") ||
+				!strings.Contains(sent[0].Body, "dana@example.com") {
+				t.Errorf("mailed %+v", sent)
+			}
+			var refused []audit.Event
+			for _, e := range auditFor(t, root, "scim.revoked") {
+				if e.Outcome == audit.Failure {
+					refused = append(refused, e)
+				}
+			}
+			if len(refused) != 1 || refused[0].Detail["role"] != "admin" {
+				t.Errorf("recorded %+v", refused)
+			}
+
+			// With somebody else to administer it, the groups decide again.
+			seedPolicy(t, root, [2]string{"lee", "admin"})
+			scimHandler(root).SyncAll()
+			p, _ = loadPolicy(root)
+			if p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Errorf("with another administrator there, dana kept what the group no longer gives: %+v", p.Bindings)
+			}
+			if !p.Evaluate("lee", auth.ActGrant, "/").Allowed {
+				t.Errorf("the other administrator lost theirs: %+v", p.Bindings)
+			}
+		})
+	}
+}
+
+// Unmapping the group that made the last administrator one, or mapping it
+// to less, is refused from the command line as `quilzo auth revoke` of
+// them is, and as an access review that revokes the mapping is. It said
+// "Admins no longer grants anything here" and left nobody able to
+// administer the store.
+func TestTheGroupThatMakesTheLastAdministratorIsNotUnmapped(t *testing.T) {
+	for name, args := range map[string][]string{
+		"unmapped":       {"unmap", "Admins"},
+		"mapped to less": {"map", "Admins", "reader"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root, _, _, _ := lastAdminByGroup(t)
+			asOnly(t, root, "dana@example.com")
+			if err := cmdSCIM(root, args); !errors.Is(err, errLastAdministrator) {
+				t.Errorf("quilzo scim %s answered %v", strings.Join(args, " "), err)
+			}
+			p, _ := loadPolicy(root)
+			if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Fatalf("nobody can administer the store: %+v", p.Bindings)
+			}
+			if means, _, _ := groupNow(root, "Admins"); means != "admin" {
+				t.Errorf("the group refused was left meaning %q", means)
+			}
+			// Mapped again to what it is, it is not refused.
+			if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+				t.Errorf("mapping the group to what it already means: %v", err)
+			}
+
+			// With somebody else to administer the store, it is theirs to change.
+			seedPolicy(t, root, [2]string{"lee", "admin"})
+			asOnly(t, root, "lee")
+			if err := cmdSCIM(root, args); err != nil {
+				t.Fatal(err)
+			}
+			p, _ = loadPolicy(root)
+			if p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Errorf("dana kept what the group no longer gives: %+v", p.Bindings)
+			}
+		})
 	}
 }
 

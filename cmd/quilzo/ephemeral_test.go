@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +64,9 @@ func TestInitSaysWhenTheStoreWouldGoWithTheContainer(t *testing.T) {
 // command makes the store when there is none: `docker run --rm IMAGE demo`
 // with no volume said "Marginalia is installed", exited 0, and --rm deleted
 // what it had installed. Whichever command makes the store says so, once,
-// and a command on a store that is already there says nothing.
+// and a command on a store that is already there says nothing. Since a
+// command other than init refuses a --root that holds no store, that is init
+// alone, and demo there makes nothing to lose.
 func TestEveryCommandThatMakesTheStoreSaysWhenItWouldBeLost(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	saved, savedW := readMountInfo, w
@@ -75,12 +78,27 @@ func TestEveryCommandThatMakesTheStoreSaysWhenItWouldBeLost(t *testing.T) {
 
 	base := t.TempDir()
 	root := filepath.Join(base, "store")
+	// Only init makes a store now: demo where there is none is refused, and
+	// nothing is made to be lost.
+	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates")}); !errors.Is(err, errNoStore) {
+		t.Fatalf("demo where there is no store: %v", err)
+	}
+	if isStore(root) {
+		t.Fatal("demo where there is no store made one")
+	}
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(stderr.String(), said); n != 1 {
+		t.Errorf("init made the store in the container's own layer and said so %d times:\n%s", n, stderr.String())
+	}
+	stderr.Reset()
 	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates"),
 		"--examples", filepath.Join(base, "examples")}); err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(stderr.String(), said); n != 1 {
-		t.Errorf("demo made the store in the container's own layer and said so %d times:\n%s", n, stderr.String())
+	if stderr.Len() > 0 {
+		t.Errorf("demo on a store that is already there was told it again:\n%s", stderr.String())
 	}
 	stderr.Reset()
 	if _, err := open(root); err != nil {

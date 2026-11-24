@@ -398,14 +398,7 @@ func ideaLine(s string, n int) string {
 	if i := strings.IndexByte(line, '\n'); i >= 0 {
 		line = line[:i]
 	}
-	if len(line) > n {
-		cut := n
-		for cut > 0 && line[cut]&0xC0 == 0x80 {
-			cut--
-		}
-		line = line[:cut] + "…"
-	}
-	return line
+	return plaintext.Clip(line, n, "…")
 }
 
 func orNone(s string) string {

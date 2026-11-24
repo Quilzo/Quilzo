@@ -71,9 +71,23 @@ func cmdMemory(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	admin := authorise(root, caller, auth.ActGrant, "/") == nil
 	store := memoryStore(root)
+	// A read-only credential changes nothing here, as it changes nothing on
+	// the Memory screen. The table asks these commands only to view,
+	// because each memory is checked against whom it is about, and that
+	// check asked only whose it was: a token issued --read-only confirmed,
+	// deleted, rewrote and forgot what agents remember about its holder.
+	writable := func() error {
+		if caller.Limits.ReadOnly {
+			return errors.New("this credential is read-only, and changing what agents remember is a write")
+		}
+		return nil
+	}
 	// Whose memory a caller may see and change: their own, or anybody's
 	// for an administrator.
 	mayTouch := func(e memory.Entry) error {
+		if err := writable(); err != nil {
+			return err
+		}
 		if admin || (e.About != "" && e.About == caller.Name && caller.Verified) {
 			return nil
 		}
@@ -85,7 +99,7 @@ func cmdMemory(root string, args []string) error {
 		agentName := fs.String("agent", "", "one agent's")
 		about := fs.String("about", "", "about one person (yourself, unless you administer)")
 		held := fs.Bool("held", false, "only what waits for a person to confirm it")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if !admin {
@@ -143,7 +157,7 @@ func cmdMemory(root string, args []string) error {
 		return nil
 	case "confirm", "delete":
 		if len(args) != 2 {
-			return fmt.Errorf("quilzo memory %s ID", args[0])
+			return errMisused{fmt.Errorf("quilzo memory %s ID", args[0])}
 		}
 		e, err := store.Get(args[1])
 		if err != nil {
@@ -164,7 +178,12 @@ func cmdMemory(root string, args []string) error {
 		} else if _, err := store.Delete(e.ID); err != nil {
 			return err
 		}
-		if err := recordE(root, caller.auditRecord("memory."+args[0]+"ed", "/memory", audit.Success,
+		// Named, not made by adding "ed": "delete" became memory.deleteed,
+		// which the receipt and the evidence did not count, so a memory
+		// deleted here went missing from the person's proof of what was
+		// deleted about them. The names are the Memory screen's.
+		action := map[string]string{"confirm": "memory.confirmed", "delete": "memory.deleted"}[args[0]]
+		if err := recordE(root, caller.auditRecord(action, "/memory", audit.Success,
 			memoryDetail(e))); err != nil {
 			return err
 		}
@@ -174,11 +193,11 @@ func cmdMemory(root string, args []string) error {
 		fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
 		about := fs.String("about", "", "about one person (yourself, unless you administer)")
 		pos, flags := leadingArgs(args[1:], 2)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
-			return errors.New("usage: quilzo memory history AGENT KEY [--about P]")
+			return errMisused{errors.New("usage: quilzo memory history AGENT KEY [--about P]")}
 		}
 		if *about == "" || !admin {
 			if *about != "" && *about != caller.Name {
@@ -211,7 +230,10 @@ func cmdMemory(root string, args []string) error {
 		return nil
 	case "edit":
 		if len(args) < 3 {
-			return errors.New("quilzo memory edit ID TEXT")
+			return errMisused{errors.New("quilzo memory edit ID TEXT")}
+		}
+		if err := writable(); err != nil {
+			return err
 		}
 		e, err := store.Get(args[1])
 		if err != nil {
@@ -235,7 +257,7 @@ func cmdMemory(root string, args []string) error {
 		fs := flag.NewFlagSet("memory receipt", flag.ContinueOnError)
 		about := fs.String("about", "", "the person; yourself unless you administer")
 		out := fs.String("o", "", "write it here instead of printing it")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if *about == "" {
@@ -255,7 +277,7 @@ func cmdMemory(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *out == "" {
+		if toStdout(*out) {
 			_, err = os.Stdout.Write(append(body, '\n'))
 			return err
 		}
@@ -269,23 +291,34 @@ func cmdMemory(root string, args []string) error {
 	case "forget":
 		fs := flag.NewFlagSet("memory forget", flag.ContinueOnError)
 		about := fs.String("about", "", "the person; yourself unless you administer")
-		if err := fs.Parse(args[1:]); err != nil {
+		yes := fs.Bool("yes", false, "forget; at a terminal, without this, only say what would go")
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if *about == "" {
 			*about = caller.Name
 		}
+		if err := writable(); err != nil {
+			return err
+		}
 		if *about != caller.Name && !admin {
 			return errors.New("you can have agents forget you; forgetting somebody else is an administrator's")
+		}
+		if erasureHeld(*yes, fmt.Sprintf("every agent would forget everything it remembers about %s", onOneLine(*about))) {
+			return nil
 		}
 		n, err := forgetPerson(root, *about, caller.Name)
 		if err != nil {
 			return err
 		}
+		// How many under --json; it answered nothing, exit 0.
+		if w.JSON(map[string]any{"about": *about, "removed": n}) {
+			return nil
+		}
 		w.Human("every agent has forgotten %s: %s removed\n", *about, count(n, "memory"))
 		return nil
 	}
-	return fmt.Errorf("unknown memory command %q; try list, confirm, delete, edit, forget or receipt", args[0])
+	return errMisused{fmt.Errorf("unknown memory command %q; try list, confirm, delete, edit, forget or receipt", args[0])}
 }
 
 // forgetPerson removes everything any agent remembers about somebody, and
@@ -396,8 +429,10 @@ func buildMemoryReceipt(root, about string, now time.Time) (*agentReceiptFile, e
 		handle = audit.Pseudonym(log.Key(), about)
 	}
 	rf := &agentReceiptFile{Format: memoryReceiptFormat, Subject: handle, Person: about, Made: now.UTC()}
+	// By the act's name now, so a deletion recorded as memory.deleteed
+	// before the name was corrected is in the receipt as well.
 	err = proveRecords(root, rf, now, func(e audit.Event) bool {
-		return memoryReceiptAction[e.Action] && e.Detail["subject"] == handle
+		return memoryReceiptAction[audit.Canonical(e.Action)] && e.Detail["subject"] == handle
 	})
 	if err != nil || len(rf.Entries) == 0 {
 		return nil, err

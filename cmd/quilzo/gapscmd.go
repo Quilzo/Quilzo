@@ -114,8 +114,16 @@ type gapCheck struct {
 }
 
 // checkGaps asks a chatbot each open group's questions again, and closes a
-// group it now answers every one of, naming the page it answered from.
+// group it now answers every one of, naming the page it answered from. It
+// is by's asking, charged to them (chatbotConsumers) and not to the
+// chatbot's visitors' budget.
 func checkGaps(ctx context.Context, root, name, by string, now time.Time) (gapCheck, error) {
+	return askGapsAgain(ctx, root, name, by, &Caller{Name: by}, now)
+}
+
+// askGapsAgain is checkGaps charged as tried says: nil for the chatbot's
+// own upkeep after a publish (checkAllGaps), which is the chatbot's.
+func askGapsAgain(ctx context.Context, root, name, by string, tried *Caller, now time.Time) (gapCheck, error) {
 	var res gapCheck
 	a, err := loadAssistant(root, name)
 	if err != nil {
@@ -135,11 +143,16 @@ func checkGaps(ctx context.Context, root, name, by string, now time.Time) (gapCh
 	if len(open) == 0 {
 		return res, nil
 	}
-	idx, err := assistantIndex(root, a)
+	idx, err := assistantIndexAs(root, a, tried)
 	if err != nil {
 		return res, err
 	}
-	m, _ := assistantModelAt(root, a)
+	m, _ := assistantModelAs(root, a, tried)
+	// Asked without its actions: a group is closed by a page that answers
+	// it. With them, a question no page covers would be put to the model to
+	// see whether it offers something to do (assistant.RespondTo), and an
+	// offer would close the group as answered with no page to name.
+	a.Actions = nil
 	for _, g := range open {
 		if res.Asked >= MaxGapChecks {
 			break
@@ -192,7 +205,7 @@ func checkAllGaps(ctx context.Context, root string) string {
 	}
 	var said []string
 	for _, a := range set.Assistants {
-		r, err := checkGaps(ctx, root, a.Name, "quilzo", time.Now())
+		r, err := askGapsAgain(ctx, root, a.Name, "quilzo", nil, time.Now())
 		if err != nil || r.Closed == 0 {
 			continue
 		}
@@ -205,13 +218,13 @@ func checkAllGaps(ctx context.Context, root string) string {
 func assistantGaps(root string, args []string) error {
 	pos, rest := leadingArgs(args, 1)
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo assistant gaps NAME [--check] [--close KEY]")
+		return errMisused{fmt.Errorf("usage: quilzo assistant gaps NAME [--check] [--close KEY]")}
 	}
 	name := pos[0]
 	fs := flag.NewFlagSet("assistant gaps", flag.ContinueOnError)
 	check := fs.Bool("check", false, "ask the chatbot each open group's questions again, and close those it answers")
 	closeKey := fs.String("close", "", "close a group by its key: it needs no page")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseFlags(fs, rest, &pos, 1); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

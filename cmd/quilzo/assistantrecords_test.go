@@ -7,8 +7,10 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -59,5 +61,28 @@ func TestAChatbotAnswersFromRecords(t *testing.T) {
 		if s.Record != "" {
 			t.Fatal("a chatbot that reads no collection read a record")
 		}
+	}
+}
+
+// A chatbot that reads products tells a visitor the price the Buy button
+// charges. It read every field of the record, the written price among them,
+// and that was a copy kept by hand: after a price change from 1200 to 1300
+// it answered £12.00 beside the price of 1300 the button charged.
+func TestAChatbotSaysThePriceThatIsCharged(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, _, err := collection.PutMany(s, "", "products", []collection.Record{{Fields: map[string]any{
+		"name": "Indigo ink", "price": 1300.0, "currency": "GBP", "price_display": "£12.00"}}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps, err := recordPassages(s, tree, []string{"products"})
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("%d passage(s): %v", len(ps), err)
+	}
+	if text := ps[0].Text; !strings.Contains(text, "price display: £13.00") || strings.Contains(text, "£12.00") {
+		t.Errorf("the chatbot reads the price as:\n%s", text)
 	}
 }

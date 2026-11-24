@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/render"
 )
 
@@ -304,13 +305,13 @@ func carryCSP(body []byte, policy, ctype string) []byte {
 // In each case the position is before any body content, which is what makes a
 // meta element land in the head the parser opens for it.
 func afterOpeningHTML(body []byte) int {
-	lower := bytes.ToLower(body)
-	if i := bytes.Index(lower, []byte("<html")); i >= 0 {
+	page := string(body)
+	if i := asciifold.Index(page, "<html"); i >= 0 {
 		if j := bytes.IndexByte(body[i:], '>'); j >= 0 {
 			return i + j + 1
 		}
 	}
-	if i := bytes.Index(lower, []byte("<!doctype")); i >= 0 {
+	if i := asciifold.Index(page, "<!doctype"); i >= 0 {
 		if j := bytes.IndexByte(body[i:], '>'); j >= 0 {
 			return i + j + 1
 		}

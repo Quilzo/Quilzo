@@ -60,7 +60,7 @@ func TestPublishingTheDraftPutsLiveWhatWasChecked(t *testing.T) {
 	}
 	checked := s.GetRef(site.RefDraft)
 	saveInTheGap(t, root)
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a checked draft was refused: %v", err)
 	}
 	if live := s.GetRef(site.RefLive); live != checked {

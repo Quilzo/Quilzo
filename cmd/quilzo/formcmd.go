@@ -25,14 +25,20 @@ func cmdForms(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return formsList(root)
 	case "expire":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return formsExpire(root)
 	case "erase":
 		return formsErase(root, args[1:])
 	default:
-		return fmt.Errorf("unknown form command %q; try list, expire or erase",
-			args[0])
+		return errMisused{fmt.Errorf("unknown form command %q; try list, expire or erase",
+			args[0])}
 	}
 }
 
@@ -114,13 +120,14 @@ func formsErase(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("erase", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "report what would go and remove nothing")
-	if err := fs.Parse(flags); err != nil {
+	yes := fs.Bool("yes", false, "erase them; at a terminal, without this, only say what would go")
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo form erase <value> [--dry-run]\n" +
-				"  the value is what the person gave you — usually an address")
+				"  the value is what the person gave you — usually an address")}
 	}
 
 	set, err := loadForms(root)
@@ -162,6 +169,9 @@ func formsErase(root string, args []string) error {
 			return nil
 		}
 		w.Human("\n%d submission(s) would be erased\n", len(found))
+		return nil
+	}
+	if erasureHeld(*yes, fmt.Sprintf("\n%s would be erased", count(len(found), "submission"))) {
 		return nil
 	}
 	removed := 0

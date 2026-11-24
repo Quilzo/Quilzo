@@ -1,14 +1,15 @@
 {{template "head" .}}
 <h1>People</h1>
 
-{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
-{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 {{if .Pending}}<h2>Waiting for a second administrator</h2>
 <p class="hint">Making somebody an administrator, an administrator's token or passkey enrolment link, the provisioning token while a group makes administrators, a weaker setting, fewer approvers and moving the audit log each take two administrators: one asks, another approves.</p>
 <ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
   <div class="auto-head"><span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.What}}</strong></div>
   <p>Asked by {{.By}} at {{.At.UTC.Format "15:04 2 Jan"}}{{if .Why}}: “{{.Why}}”{{end}}. {{.Words}}.</p>
+  {{with .Approvers}}<p>Approving this counts approvals only from {{.}}.</p>{{end}}
   {{if .Mapping}}{{if .TokensUnread}}<p class="notice bad">Approving this lets the provisioning token make administrators, and which tokens work could not be read: {{.TokensUnread}}</p>
   {{else if .Tokens}}<p>Approving this lets the provisioning token make administrators:</p>
   <ul>{{range .Tokens}}<li>{{.Words}}.</li>{{end}}</ul>
@@ -152,7 +153,7 @@
   nothing, which usually means a binding was removed and the token was not.</p>
   {{end}}
 
-  {{if .Sessions}}
+  {{if or .Sessions .Passkeys}}
   <div class="table-wrap">
   <table>
     <caption>Credentials they hold</caption>
@@ -172,13 +173,26 @@
       <td>{{.Role}}</td>
       <td>{{if .Never}}<span class="hint">never used</span>
           {{else}}{{.LastUsed.Format "2 Jan, 15:04"}}{{end}}</td>
-      <td>{{.Expires.Format "2 Jan 2006"}}</td>
+      <td>{{.Ends}}</td>
       <td class="right">
         <form method="post" action="/sessions/revoke" class="inline">
           <input type="hidden" name="id" value="{{.ID}}">
           <button type="submit" class="danger">Revoke</button>
         </form>
       </td>
+    </tr>
+    {{end}}
+    {{range .Passkeys}}
+    <tr>
+      <th scope="row">
+        {{.Label}} <span class="tag">passkey</span>
+        <div class="hint">added {{.Added.Format "2 Jan 2006"}}</div>
+      </th>
+      <td><span class="hint">what their grants give</span></td>
+      <td>{{if .Never}}<span class="hint">never used</span>
+          {{else}}{{.LastUsed.Format "2 Jan, 15:04"}}{{end}}</td>
+      <td><span class="hint">does not expire</span></td>
+      <td class="right"><span class="hint">removed by its holder, on their Passkeys page</span></td>
     </tr>
     {{end}}
     </tbody>

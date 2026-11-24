@@ -67,20 +67,37 @@ type person struct {
 	Roles []string
 	// Sessions are their usable credentials.
 	Sessions []session
-	// LastSeen is the most recent use of any of their tokens. Zero means
-	// never, which is different from long ago and worth showing as such.
+	// Passkeys are the passkeys they sign in with: credentials they hold
+	// as much as a token is.
+	Passkeys []passkeyView
+	// LastSeen is the most recent use of any of their credentials: a
+	// token, a session or a passkey. Zero means never, which is different
+	// from long ago and worth showing as such.
 	LastSeen time.Time
 	IsSelf   bool
 }
 
+// passkeyView is one passkey somebody signs in with, as People lists it.
+type passkeyView struct {
+	Label    string
+	Added    time.Time
+	LastUsed time.Time
+	Never    bool
+}
+
 // session is one usable credential.
 type session struct {
-	ID        string
-	Name      string
-	Role      auth.Role
-	Scope     string
-	Created   time.Time
-	Expires   time.Time
+	ID      string
+	Name    string
+	Role    auth.Role
+	Scope   string
+	Created time.Time
+	Expires time.Time
+	// Ends is Expires as the screen shows it: the day, and for a token
+	// issued for less than a day the hour and the zone too. An hour's
+	// token read "12 Nov 2026", the same as a month's
+	// (auth.Token.LastsUnderADay).
+	Ends      string
 	LastUsed  time.Time
 	Never     bool
 	IsSession bool // exchanged from another token
@@ -137,11 +154,15 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			byName[t.Principal] = who
 		}
 		sess := session{
-			ID: t.ID, Name: t.Name, Role: t.Role,
+			ID: t.ID, Name: t.Name, Role: s.carries(t),
 			Scope:     t.Scope.String(),
 			Created:   time.Unix(t.CreatedAt, 0),
 			Expires:   time.Unix(t.ExpiresAt, 0),
 			IsSession: t.IsSession(),
+		}
+		sess.Ends = sess.Expires.Format("2 Jan 2006")
+		if t.LastsUnderADay() {
+			sess.Ends = sess.Expires.Format("2 Jan 2006, 15:04 MST")
 		}
 		if t.LastUsed > 0 {
 			sess.LastUsed = time.Unix(t.LastUsed, 0)
@@ -153,6 +174,39 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			sess.Never = true
 		}
 		who.Sessions = append(who.Sessions, sess)
+	}
+
+	// Their passkeys, and when they last signed in with one, from the
+	// passkey store. People listed tokens alone: under somebody who had
+	// added a passkey and signed in with it, it said "has never used a
+	// credential", and before their first sign-in "Holds no usable
+	// credential, so they cannot act right now", of a person holding a
+	// passkey that signed them in. Somebody holding one appears whatever
+	// else they hold, as a token's holder does.
+	if s.Passkeys != nil {
+		for _, c := range s.Passkeys.list() {
+			who := byName[c.Principal]
+			if who == nil {
+				who = &person{Name: c.Principal, IsSelf: c.Principal == p.Name}
+				byName[c.Principal] = who
+			}
+			v := passkeyView{Label: c.Label, Added: time.Unix(c.CreatedAt, 0), Never: c.LastUsed == 0}
+			if !v.Never {
+				v.LastUsed = time.Unix(c.LastUsed, 0)
+				if v.LastUsed.After(who.LastSeen) {
+					who.LastSeen = v.LastUsed
+				}
+			}
+			who.Passkeys = append(who.Passkeys, v)
+		}
+	}
+	// Last seen is when they last used anything, a session that has ended
+	// or a token since revoked among it: "has never used a credential"
+	// was said of somebody whose session from the morning had expired.
+	for _, t := range s.Tokens.Snapshot() {
+		if who := byName[t.Principal]; who != nil && t.LastUsed > 0 && time.Unix(t.LastUsed, 0).After(who.LastSeen) {
+			who.LastSeen = time.Unix(t.LastUsed, 0)
+		}
 	}
 
 	people := make([]*person, 0, len(byName))
@@ -263,7 +317,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if u := strings.TrimSpace(r.FormValue("until")); u != "" {
 		t, err := time.Parse("2006-01-02", u)
 		if err != nil || !t.After(time.Now()) {
-			s.peopleBack(w, r, "Until has to be a day in the future.")
+			s.peopleProblem(w, r, "Until has to be a day in the future.")
 			return
 		}
 		expires = t.Unix()
@@ -284,7 +338,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if name, isPerm := strings.CutPrefix(string(role), "permission:"); isPerm {
 		perm, ok := auth.PermissionNamed(name)
 		if !ok {
-			s.peopleBack(w, r, "That is not a permission.")
+			s.peopleProblem(w, r, "That is not a permission.")
 			return
 		}
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
@@ -295,14 +349,14 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if name, isApp := strings.CutPrefix(string(role), "app:"); isApp {
 		ar, ok := s.appRoleNamed(name)
 		if !ok || base.Deny {
-			s.peopleBack(w, r, "That role cannot be granted like that: a role an app declares is never a deny.")
+			s.peopleProblem(w, r, "That role cannot be granted like that: a role an app declares is never a deny.")
 			return
 		}
 		if err := s.changePolicy(func(p *auth.Policy) error { return p.Assign(who, ar, base) }); err != nil {
-			s.peopleBack(w, r, err.Error())
+			s.peopleProblem(w, r, err.Error())
 			return
 		}
-		s.audit("access.grant", "/", map[string]string{"subject": who, "role": ar.Name, "resource": "its feature", "by": p.Name})
+		s.audit("auth.granted", "/", map[string]string{"subject": who, "role": ar.Name, "resource": "its feature", "by": p.Name})
 		s.peopleBack(w, r, fmt.Sprintf("%s is now %s: %s", who, ar.Name, strings.Join(ar.Grants, "; ")))
 		return
 	}
@@ -310,11 +364,11 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	if name, isJob := strings.CutPrefix(string(role), "job:"); isJob {
 		job, ok := auth.JobNamed(name)
 		if !ok || base.Deny {
-			s.peopleBack(w, r, "That job cannot be granted like that: a job is never a deny.")
+			s.peopleProblem(w, r, "That job cannot be granted like that: a job is never a deny.")
 			return
 		}
 		if job.Ends && expires == 0 {
-			s.peopleBack(w, r, "An "+job.Name+"'s access has to end by itself: choose the day in Until.")
+			s.peopleProblem(w, r, "An "+job.Name+"'s access has to end by itself: choose the day in Until.")
 			return
 		}
 		bindings = nil
@@ -331,7 +385,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		apply, msg, err := s.proposeSecond(p, dual.Grant, fmt.Sprintf("make %s %s on %s", who, role, on),
 			dual.GrantChange{Bindings: bindings}, base.Note)
 		if err != nil {
-			s.peopleBack(w, r, err.Error())
+			s.peopleProblem(w, r, err.Error())
 			return
 		}
 		if !apply {
@@ -347,13 +401,23 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}); err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	// Who was granted it is the subject, which the log pseudonymises; as
 	// the record's resource, "/lee", they were written in clear.
-	s.audit("access.grant", "/", map[string]string{
+	//
+	// Under the names `quilzo auth grant` writes, auth.granted or
+	// auth.denied. This wrote access.grant for both, so a rule or a filter
+	// on the command line's names missed every grant made here, and a deny
+	// could not be told from a grant without reading the policy.
+	action := "auth.granted"
+	if base.Deny {
+		action = "auth.denied"
+	}
+	s.audit(action, "/", map[string]string{
 		"subject": who, "role": string(role), "resource": on, "by": p.Name,
+		"deny": fmt.Sprint(base.Deny),
 	})
 	s.peopleBack(w, r, fmt.Sprintf("%s is now %s on %s", who, role, on))
 }
@@ -371,13 +435,13 @@ func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Enrol == nil {
-		s.peopleBack(w, r, "this server was started without enrolment links")
+		s.peopleProblem(w, r, "this server was started without enrolment links")
 		return
 	}
 	who := strings.TrimSpace(r.FormValue("principal"))
 	held := s.heldBy(who)
 	if who == "" || len(held) == 0 {
-		s.peopleBack(w, r, "a passkey would sign "+who+" in to nothing: grant them something first")
+		s.peopleProblem(w, r, "a passkey would sign "+who+" in to nothing: grant them something first")
 		return
 	}
 	// A link is a credential for the person it names: whoever opens it
@@ -389,10 +453,10 @@ func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
 	// themselves a link for the other administrator, opened it with their
 	// own authenticator and approved their request as her.
 	if dual.Privileged(held) {
-		apply, msg, err := s.proposeSecond(p, dual.Enrol, "a passkey enrolment link for "+who,
+		apply, msg, err := s.proposeSecondFor(p, who, dual.Enrol, "a passkey enrolment link for "+who,
 			dual.EnrolChange{Principal: who}, "")
 		if err != nil {
-			s.peopleBack(w, r, err.Error())
+			s.peopleProblem(w, r, err.Error())
 			return
 		}
 		if !apply {
@@ -421,7 +485,7 @@ func (s *Server) giveEnrolLink(w http.ResponseWriter, r *http.Request, p princip
 	}
 	secret, l, err := s.Enrol.Issue(who, p.Name, life, time.Now())
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	s.audit("enrol.issued", "/", map[string]string{"by": p.Name, "for": who,
@@ -446,13 +510,13 @@ func (s *Server) handlePeopleEnrolRevoke(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if s.Enrol == nil {
-		s.peopleBack(w, r, "this server was started without enrolment links")
+		s.peopleProblem(w, r, "this server was started without enrolment links")
 		return
 	}
 	who := strings.TrimSpace(r.FormValue("principal"))
 	gone, err := s.Enrol.Revoke(who, time.Now())
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	if gone {
@@ -482,7 +546,7 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 	// on a list.
 	if who == p.Name && role == auth.RoleAdmin {
 		if s.lastAdmin(who) {
-			s.peopleBack(w, r, "that is the last administrator binding, and "+
+			s.peopleProblem(w, r, "that is the last administrator binding, and "+
 				"removing it would leave nobody able to administer this store")
 			return
 		}
@@ -504,10 +568,11 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}); err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
-	s.audit("access.revoke", "/", map[string]string{
+	// auth.revoke, as `quilzo auth revoke` and the access review write it.
+	s.audit("auth.revoke", "/", map[string]string{
 		"subject": who, "role": string(role), "resource": on, "by": p.Name,
 		"removed": fmt.Sprintf("%d", n),
 	})
@@ -525,11 +590,11 @@ func (s *Server) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.FormValue("id"))
 	n, err := s.Tokens.Revoke(id)
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	if err := s.save(); err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	// "credential" and not "token".
@@ -578,6 +643,24 @@ func (s *Server) postFrom(w http.ResponseWriter, r *http.Request, act auth.Actio
 
 func (s *Server) peopleBack(w http.ResponseWriter, r *http.Request, msg string) {
 	http.Redirect(w, r, "/people?m="+urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+// peopleProblem goes back to People with a refusal, which the screen says
+// as one. Every outcome went back as a message, so "Until has to be a day in
+// the future." sat in the same notice as "dana is now author on /", and a
+// screen reader heard neither as an alert.
+func (s *Server) peopleProblem(w http.ResponseWriter, r *http.Request, msg string) {
+	http.Redirect(w, r, "/people?e="+urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+// carries is the role a token is shown with: as it can be used, which is no
+// more than its holder's role (auth.Policy.Carries), as `quilzo token list`
+// shows it.
+func (s *Server) carries(t auth.Token) auth.Role {
+	if s.Policy == nil {
+		return t.Role
+	}
+	return s.Policy.Carries(t.Principal, t.Role, t.Resource)
 }
 
 // lastAdmin reports whether this principal is the only one who can grant.
@@ -642,10 +725,19 @@ func (s *Server) save() error {
 // takes the result as this server's policy.
 func (s *Server) changePolicy(change func(*auth.Policy) error) error {
 	if s.UpdatePolicy == nil {
+		// Made on a copy, so a change that would leave nobody able to
+		// administer the store is refused before anybody is shut out
+		// (dual.ErrLastAdministrator), as UpdatePolicy refuses it on disk.
 		before := dual.Administrators(s.Policy)
-		if err := change(s.Policy); err != nil {
+		was := dual.Administered(s.Policy)
+		trial := &auth.Policy{Bindings: s.Policy.Snapshot()}
+		if err := change(trial); err != nil {
 			return err
 		}
+		if err := dual.KeepsAnAdministrator(was, trial); err != nil {
+			return err
+		}
+		s.Policy.Replace(trial.Bindings)
 		return s.noteAdministrators(before)
 	}
 	pol, err := s.UpdatePolicy(change)

@@ -61,6 +61,10 @@ type heldCall struct {
 	By          string    `json:"by,omitempty"`
 	Approved    bool      `json:"approved,omitempty"`
 	Used        bool      `json:"used,omitempty"`
+	// Why is what the person deciding reads beside the arguments when it
+	// was held for what it says, and not because its tool is one they
+	// approve call by call: what the brand rules found (outwardClaims).
+	Why string `json:"why,omitempty"`
 }
 
 // gatewayState is the held calls and each day's counts.
@@ -118,7 +122,7 @@ func saveGatewayState(root string, st *gatewayState, now time.Time) error {
 		kept = kept[len(kept)-maxHeld:]
 	}
 	st.Held = kept
-	b, err := json.Marshal(st)
+	b, err := mcpJSON(st)
 	if err != nil {
 		return err
 	}
@@ -168,7 +172,7 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 			schema = map[string]any{"type": "object"}
 		}
 		tools = append(tools, mcp.Tool{Name: t.Name, Description: plaintext.Clean(t.Description), InputSchema: schema,
-			Annotations: map[string]any{"readOnlyHint": !in.Writes, "openWorldHint": true}})
+			Annotations: gatewayHints(in, t)})
 	}
 	caller := remoteCaller(tok)
 	srv := mcp.NewServer("quilzo-gateway-"+name, version)
@@ -183,6 +187,29 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 		},
 	}
 	return srv, nil
+}
+
+// gatewayHints is what the gateway tells other systems' agents a tool does.
+//
+// Read-only only when everything that could say otherwise does not: the
+// integration is not declared as writing, a person does not approve each
+// call of it, and the server does not say it changes or destroys anything.
+// Every tool was offered by the integration's mark alone, so on one declared
+// with a list of tools and no "writes" mark a tool the server published as
+// destructive was offered as read-only, and a client that runs read-only
+// tools without asking would have run it. The server's hints only ever make
+// a tool sound more dangerous here: they are outside what a person pinned,
+// and a server that changed them to sound safer would otherwise be believed.
+func gatewayHints(in agent.Integration, t mcpclient.Tool) map[string]any {
+	readOnly := !in.Writes && !t.Annotations.MayChange()
+	if in.Gateway != nil && in.Gateway.Asks(t.Name) {
+		readOnly = false
+	}
+	hints := map[string]any{"readOnlyHint": readOnly, "openWorldHint": true}
+	if !readOnly && t.Annotations.SaysDestructive() {
+		hints["destructiveHint"] = true
+	}
+	return hints
 }
 
 // offeredTools are the tools a person agreed to and pinned, and which are
@@ -215,6 +242,7 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		if tok.Grant != "" {
 			d["grant"] = tok.Grant
 		}
+		noteCredential(d, tok)
 		if held != "" {
 			d["held"] = held
 		}
@@ -231,12 +259,11 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		if reported {
 			outcome, d["error"] = audit.Failure, "the tool reported that it failed"
 		}
-		who, kind := tok.Principal, audit.KindHuman
-		if tok.Client != "" {
-			who, kind = "app:"+tok.Client, audit.KindAI
-		}
+		// The client, for the person, as a call at the interface is: a
+		// person's own token here is held by another vendor's agent.
+		who, model := interfaceClient(tok.Principal, tok.Client)
 		record(root, audit.Record{Action: "mcp.gateway", Resource: "/integrations/" + in.Name, Outcome: outcome,
-			Principal: who, Kind: kind, Model: tok.Client, Verified: true, Detail: d})
+			Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
 	}()
 	refuse := func(why string) (string, error) { return "", &mcp.Refusal{Reason: why} }
 
@@ -260,6 +287,14 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 			return refuse(err.Error())
 		}
 	}
+	// What it would say on the far side answers to the brand rules, as an
+	// agent's write from a run here does. The rules read only runs, so a
+	// claim the site refuses to publish went out through the gateway from
+	// another vendor's agent unread. Read before the lock: it reads a file.
+	claims := ""
+	if (agent.Integrations{Declared: []agent.Integration{in}}).ToolWrites(agent.Manifest{}, tool) {
+		claims = outwardClaims(root, tool, args)
+	}
 	who := gatewayCallerKey(tok)
 	gatewayMu.Lock()
 	st, err := loadGatewayState(root)
@@ -276,16 +311,28 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		gatewayMu.Unlock()
 		return refuse(fmt.Sprintf("this caller has made %d calls to %s today, which is as many as a caller may", st.Days[day][key], in.Name))
 	}
-	if g.Asks(tool) {
+	if g.Asks(tool) || claims != "" {
 		id, ok, why, by := decideHeld(st, in.Name, tool, digest, tok, args, now)
 		held, decidedBy = id, by
+		if why == heldNew && claims != "" {
+			for i := range st.Held {
+				if st.Held[i].ID == id {
+					st.Held[i].Why = claims
+				}
+			}
+		}
 		if !ok {
 			err := saveGatewayState(root, st, now)
 			gatewayMu.Unlock()
 			if err != nil {
 				return "", err
 			}
-			if why == heldNew {
+			switch {
+			case why == heldNew && claims != "":
+				tellHeld(root, in.Name, tool, id, tok)
+				return refuse(claims + ". This call is held as " + id + " for a person, who is shown that: " +
+					"call again with the same arguments once they have decided")
+			case why == heldNew:
 				tellHeld(root, in.Name, tool, id, tok)
 				return refuse("a person approves each call of " + tool + " on " + in.Name + ". This one is held as " + id +
 					": call again with the same arguments once they have decided")
@@ -302,10 +349,11 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	out, err = mc.CallStrict(ctx, in, tool, args)
 	var failed *mcpclient.ToolError
 	if errors.As(err, &failed) {
-		// Answered as the server answered, so the caller reads what the
-		// tool said; recorded as the failure it was, not as a success.
+		// Answered as the server answered, what the tool said marked as
+		// its failure, so the caller does not read it as the tool's work;
+		// recorded as the failure it was, not as a success.
 		reported = true
-		return out, nil
+		return out, &mcp.ToolFailed{Text: out}
 	}
 	return out, err
 }
@@ -387,7 +435,10 @@ func gatewayDecide(root, id string, approve bool, by *Caller, now time.Time) err
 			return fmt.Errorf("%s was already decided by %s", id, h.By)
 		case now.Sub(h.Asked) >= heldWaits:
 			return fmt.Errorf("%s waited more than a day and has lapsed; the caller asks again", id)
-		case h.Principal == by.Name:
+		// Under any spelling of their name (auth.SamePerson), as every
+		// second-person check asks it: compared exactly, "dana" approved
+		// the call held for "Dana".
+		case auth.SamePerson(h.Principal, by.Name):
 			return errors.New("a call made for you is decided by somebody else")
 		}
 		h.Decided, h.By, h.Approved = now.UTC(), by.Name, approve
@@ -397,7 +448,7 @@ func gatewayDecide(root, id string, approve bool, by *Caller, now time.Time) err
 		return recordE(root, by.auditRecord("mcp.gateway.decided", "/integrations/"+h.Integration, audit.Success,
 			map[string]string{"held": id, "tool": h.Tool, "approved": strconv.FormatBool(approve), "on_behalf_of": h.Principal}))
 	}
-	return fmt.Errorf("no held call is %q", id)
+	return errNotFound{fmt.Errorf("no held call is %q", id)}
 }
 
 // heldCalls are the calls waiting for a person, oldest first.

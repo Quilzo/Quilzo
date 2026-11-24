@@ -200,3 +200,113 @@ func TestAnUpgradeInAReadOnlyStoreStillStartsTheSite(t *testing.T) {
 		t.Fatal("--prepare said it made what it could not")
 	}
 }
+
+// A writable content API writes the draft: the object store, the refs and
+// their lock at the store's root, and types.json. The confined site can reach
+// none of them, and it started anyway, said "api: /api/v1, writable" and
+// answered every PUT "cannot open the ref lock: permission denied". It
+// refuses to start now and says how to have one; unconfined, the flag still
+// writes.
+func TestAWritableAPIIsNotStartedWhereTheSiteCannotWrite(t *testing.T) {
+	if sandbox.ABI() == 0 {
+		t.Skip("this kernel has no Landlock")
+	}
+	if w == nil {
+		w = out.New(false)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("QUILZO_TOKEN", "")
+	root, tpl := t.TempDir()+"/st", t.TempDir()+"/tpl"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDemo(root, []string{"-templates", tpl, "-examples", t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	token, _, err := ts.Issue("site", "boss", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+
+	// site starts the site with flags and returns its address once it
+	// listens, or "" and what it said when it exits first.
+	site := func(flags ...string) (string, string) {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := l.Addr().String()
+		_ = l.Close()
+		args := append([]string{"quilzo-main", "--root", root, "site", "--addr", addr, "--templates", tpl}, flags...)
+		cmd := exec.Command(os.Args[0], args...)
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=")
+		stdout, _ := cmd.StdoutPipe()
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+		lines := bufio.NewScanner(stdout)
+		var said strings.Builder
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) && lines.Scan() {
+			said.WriteString(lines.Text() + "\n")
+			if strings.HasPrefix(lines.Text(), "site on http://") {
+				go func() {
+					for lines.Scan() {
+					}
+				}()
+				return "http://" + addr, ""
+			}
+		}
+		_ = cmd.Wait()
+		return "", said.String() + stderr.String()
+	}
+	put := func(base string) (int, string) {
+		var res *http.Response
+		var err error
+		for try := 0; try < 50; try++ {
+			req, _ := http.NewRequest(http.MethodPut, base+"/api/v1/pages/about",
+				strings.NewReader(`{"title":"About us, written over the API"}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("If-Match", "*")
+			if res, err = http.DefaultClient.Do(req); err == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(res.Body)
+		return res.StatusCode, b.String()
+	}
+
+	if base, said := site("--api", "--api-writable"); base != "" {
+		code, body := put(base)
+		t.Fatalf("the confined site started with a writable API, and a write answered %d: %s", code, body)
+	} else if !strings.Contains(said, "--confine=false") {
+		t.Fatalf("the refusal does not say how to have a writable API:\n%s", said)
+	}
+
+	base, said := site("--api", "--api-writable", "--confine=false")
+	if base == "" {
+		t.Fatalf("the unconfined site would not start with a writable API:\n%s", said)
+	}
+	if code, body := put(base); code >= 300 {
+		t.Fatalf("the unconfined site's writable API did not write: %d %s", code, body)
+	}
+}
