@@ -113,8 +113,8 @@ func proposePublication(root string, c *Caller, reason string) (sent bool, err e
 		return false, errBlocked{errors.New("there is nowhere to publish to: quilzo public target " +
 			"https://PUBLIC-HOST says where the public instance is")}
 	}
-	what := fmt.Sprintf("publish %s's attestations (%d reports and certificates, %d policies) to the public "+
-		"instance at %s", draft.Organisation, len(draft.Attestations), len(draft.Policies), to)
+	what := fmt.Sprintf("publish %s's attestations (%s, %s) to the public instance at %s", draft.Organisation,
+		count(len(draft.Attestations), "attestation"), count(len(draft.Policies), "policy"), to)
 	now, err := proposeSecond(root, c, dualPublishExternal, what, publishChange{Digest: draft.Digest(), Target: to}, reason)
 	if err != nil || !now {
 		return false, err
@@ -177,8 +177,8 @@ func cmdAttest(root string, args []string) error {
 		if w.JSON(map[string]string{"digest": f.Digest()}) {
 			return nil
 		}
-		w.Human("%sthe draft is %s%s: %d reports and certificates, %d policies\n", bold, f.Digest(), reset,
-			len(f.Attestations), len(f.Policies))
+		w.Human("%sthe draft is %s%s: %s, %s\n", bold, f.Digest(), reset,
+			count(len(f.Attestations), "attestation"), count(len(f.Policies), "policy"))
 		w.Human("  %stwo administrators publish it: quilzo attest publish --reason WHY%s\n", dim, reset)
 		return nil
 	case "publish":

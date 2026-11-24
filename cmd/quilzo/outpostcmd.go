@@ -61,7 +61,7 @@ func initPublicInstance(root, pin string) error {
 	}
 	// An empty store, so the commands that look for one find it; nothing is
 	// ever written to it.
-	if err := cmdInit(root); err != nil {
+	if _, err := makeStore(root); err != nil {
 		return err
 	}
 	if err := outpost.Init(publicDir(root), body, time.Now()); err != nil {
@@ -73,7 +73,7 @@ func initPublicInstance(root, pin string) error {
 	}
 	w.Human("a public instance, pinned to key %s\n", in.KeyID())
 	w.Human("  %sit takes transfers signed by that key and nothing else, and holds no admin, no register and no secret%s\n", dim, reset)
-	w.Human("  %sserve it on its own host:%s quilzo --root %s serve --profile public --addr 0.0.0.0:8443\n", dim, reset, root)
+	w.Human("  %sserve it on its own host:%s quilzo --root %s serve --profile public --addr 0.0.0.0:8090\n", dim, reset, root)
 	w.Human("  %sand on the internal instance:%s quilzo public target https://THIS-HOST\n", dim, reset)
 	return nil
 }
@@ -96,8 +96,7 @@ func hasRefs(root string) bool {
 func publicSecrets(root string) []string {
 	var found []string
 	for _, p := range []string{tokensPath(root), passkeysPath(root), keyringPath(root), agentSecretsPath(root),
-		headKeyPath(root), connectionsPath(root), scimTokenPath(root), oidcPath(root), policyPath(root),
-		filepath.Join(root, "audit.key")} {
+		headKeyPath(root), connectionsPath(root), scimTokenPath(root), oidcPath(root), policyPath(root)} {
 		if fileExists(p) {
 			found = append(found, filepath.Base(p))
 		}
