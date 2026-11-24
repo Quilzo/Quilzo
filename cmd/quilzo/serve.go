@@ -960,6 +960,19 @@ func cmdServe(root string, args []string) error {
 				},
 			})
 		},
+		// A record deleted here is recorded as a deletion. It went through
+		// OnWrite, and the log said api.write for the record, with no
+		// commit, exactly as it said for the write that made it.
+		OnDelete: func(principal, rec, commit string) {
+			record(root, audit.Record{
+				Action: "api.delete", Resource: "/" + rec,
+				Outcome: audit.Success, Principal: principal,
+				Kind: audit.KindService, Verified: true,
+				Detail: map[string]string{
+					"commit": commit, "surface": "admin-api",
+				},
+			})
+		},
 		Records: &api.Records{
 			// Writable from the admin, because the admin is where somebody
 			// edits things and a console that can only read is a console
