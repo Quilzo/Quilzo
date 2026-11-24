@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -169,11 +170,11 @@ func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) 
 		}
 		return by.May(act, res)
 	}
-	rc, err := r.Put(accepter, "accepted: "+p.Why, rec)
+	rc, err := r.Put(accepter, acceptedWhy(p.Why), rec)
 	if err != nil {
 		return rc, err
 	}
-	if err := r.drop(id, p.Kind, "accepted"); err != nil {
+	if err := r.drop(p, "accepted"); err != nil {
 		return rc, err
 	}
 	return rc, r.audit2(by, audit.Success, map[string]string{"decision": "accepted", "id": string(id),
@@ -190,22 +191,42 @@ func (r *Register) Reject(by Actor, id ID) error {
 	if err := r.decider(by, p); err != nil {
 		return err
 	}
-	if err := r.drop(id, p.Kind, "rejected"); err != nil {
+	if err := r.drop(p, "rejected"); err != nil {
 		return err
 	}
 	return r.audit2(by, audit.Success, map[string]string{"decision": "rejected", "id": string(id),
 		"kind": kinds[p.Kind].Collection})
 }
 
-// drop removes one record from the proposals ref, as a commit.
-func (r *Register) drop(id ID, kind Kind, why string) error {
+// acceptedWhy is the line the commit that accepts a proposal says: the
+// proposal's own, after "accepted: ", cut to fit a line. A proposal's line
+// may be as long as a line is, and refusing the acceptance because the
+// prefix made it longer left a proposal nobody could accept.
+func acceptedWhy(why string) string {
+	const prefix = "accepted: "
+	if len(prefix)+len(why) <= MaxLabel {
+		return prefix + why
+	}
+	const mark = "…"
+	return prefix + strings.TrimSpace(plaintext.Clip(why, MaxLabel-len(prefix)-len(mark), "")) + mark
+}
+
+// drop takes the proposal that was decided off the proposals ref, as a
+// commit. It takes that proposal and no other: a newer proposal of the same
+// record, put there while the person decided, is what they have not seen,
+// and it stays waiting for a decision of its own.
+func (r *Register) drop(p Proposal, why string) error {
+	id := p.ID
+	path := collection.Path(kinds[p.Kind].Collection, string(id))
 	return r.Store.WithRefLock(func() error {
 		tree, head, err := r.treeAt(ProposalsRef)
 		if err != nil || tree == "" {
 			return err
 		}
-		next, err := r.Store.PutNested(tree, []store.Change{{
-			Path: collection.Path(kinds[kind].Collection, string(id)), Delete: true}})
+		if oid, ok, err := newReader(r.Store).lookup(tree, path); err != nil || !ok || oid != p.Object {
+			return err
+		}
+		next, err := r.Store.PutNested(tree, []store.Change{{Path: path, Delete: true}})
 		if err != nil {
 			return err
 		}

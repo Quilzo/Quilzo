@@ -101,10 +101,20 @@ func (rc *Receipt) seal() {
 // batch of nothing but those makes no commit, no audit entry and a receipt
 // that says so. That is what lets an import run every hour: the record
 // changes when a fact does.
+//
+// Only a person or a service writes. A model is refused, and so is an actor
+// that does not say what it is: the rule that a model only proposes cannot
+// rest on the model, or a surface that forgot to ask, saying it is one.
 func (r *Register) Put(by Actor, why string, recs ...Record) (Receipt, error) {
-	if by.Kind == audit.KindAI {
+	switch by.Kind {
+	case audit.KindHuman, audit.KindService:
+	case audit.KindAI:
 		r.audited(by, Ref, audit.Denied, map[string]string{"reason": "a model may only propose"})
 		return Receipt{}, fmt.Errorf("%w (register.Propose)", ErrModel)
+	default:
+		r.audited(by, Ref, audit.Denied, map[string]string{"reason": "neither a person nor a service"})
+		return Receipt{}, fmt.Errorf("%w: who is writing is neither a person nor a service, and is taken for a model "+
+			"(register.Propose)", ErrModel)
 	}
 	return r.write(Ref, by, why, recs, nil)
 }
@@ -325,12 +335,17 @@ func (r *Register) audited(by Actor, ref string, outcome audit.Outcome, detail m
 	if ref == ProposalsRef {
 		action = ProposeAction
 	}
-	kind := by.Kind
+	kind, verified := by.Kind, by.Verified
 	if !kind.Valid() {
 		kind = audit.KindUnknown
 	}
+	// The log takes an actor of unknown kind as nobody proved, which is
+	// what an actor that would not say what it is amounts to.
+	if kind == audit.KindUnknown {
+		verified = false
+	}
 	return r.Audit(audit.Record{Action: action, Resource: Area, Outcome: outcome, Principal: by.Name,
-		Kind: kind, Model: by.Model, Verified: by.Verified, Detail: detail})
+		Kind: kind, Model: by.Model, Verified: verified, Detail: detail})
 }
 
 // kindsOf is the collections a write touched, in order, for the audit entry.

@@ -275,6 +275,12 @@ func (a *Approval) check() error {
 		if len(a.Signers) != 1 || a.Needed != 1 {
 			return fmt.Errorf("a decision made alone has one approver")
 		}
+		// Alone is a team of one. With anybody else eligible, the person
+		// who asked could approve their own decision by calling it alone,
+		// which is the one thing an approval exists to stop.
+		if a.Of != 1 {
+			return fmt.Errorf("a decision is made alone only by the only person eligible, and %d were", a.Of)
+		}
 		if a.ReviewDue == 0 {
 			return fmt.Errorf("a decision made alone needs the date its compensating review is due")
 		}
