@@ -135,9 +135,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/replica/object/", s.replicaObject)
 	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
 	mux.HandleFunc("/api/v1/", s.notFound)
+	// Everything else this handler is given is not found here either, and
+	// says so in JSON. Left to the mux, /api/v1 was redirected to /api/v1/
+	// with an HTML body, and /api/ and /api/v2/pages were a plain-text
+	// "404 page not found", so a client parsing every answer as JSON failed
+	// on exactly the ones meant to tell it it had the address wrong.
+	mux.HandleFunc("/api/v1", s.notFound)
+	mux.HandleFunc("/", s.notFound)
 	inner := s.middleware(mux)
-	// The description is the same for every installation and says nothing
-	// about this one, so it needs no token; everything it describes does.
+	// The description is the same for every server of a kind and says
+	// nothing about the content behind it, so it needs no token; everything
+	// it describes does.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/openapi.json" {
 			s.openAPI(w, r)
@@ -196,7 +204,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 
 		if r.Method == http.MethodOptions {
-			writeError(w, http.StatusMethodNotAllowed, Error{
+			s.notAllowed(w, r, Error{
 				Error: "cross-origin requests are not accepted",
 				Detail: "this API has no CORS configuration, so a browser on " +
 					"another origin cannot call it",
@@ -372,15 +380,16 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		// Limited per token rather than per address. Addresses are shared by
 		// everybody behind one office, and limiting them together means one
 		// busy client throttles their colleagues.
-		ok, remaining, reset := s.limiter.take(tok.ID, s.now())
+		now := s.now()
+		ok, remaining, reset := s.limiter.take(tok.ID, now)
 		w.Header().Set("RateLimit-Limit",
 			fmt.Sprintf("%d", s.Limits.withDefaults().PerMinute))
 		w.Header().Set("RateLimit-Remaining", fmt.Sprintf("%d", remaining))
-		w.Header().Set("RateLimit-Reset",
-			fmt.Sprintf("%d", int(time.Until(reset).Seconds())))
+		w.Header().Set("RateLimit-Reset", strconv.Itoa(secondsUntil(reset, now)))
 		if !ok {
-			w.Header().Set("Retry-After",
-				fmt.Sprintf("%d", int(time.Until(reset).Seconds())+1))
+			// The same instant as RateLimit-Reset, which a refusal has to
+			// wait for, and never less than a second.
+			w.Header().Set("Retry-After", strconv.Itoa(max(1, secondsUntil(reset, now))))
 			writeError(w, http.StatusTooManyRequests, Error{
 				Error: "too many requests",
 				Detail: "conditional requests that answer 304 are not counted, " +
@@ -390,9 +399,39 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(withToken(r, tok)))
+		next.ServeHTTP(&uncounted304{ResponseWriter: w, give: func() {
+			left, full := s.limiter.give(tok.ID, now)
+			w.Header().Set("RateLimit-Remaining", strconv.Itoa(left))
+			w.Header().Set("RateLimit-Reset", strconv.Itoa(secondsUntil(full, now)))
+		}}, r.WithContext(withToken(r, tok)))
 	})
 }
+
+// uncounted304 gives back the rate limit's token for an answer that is a 304,
+// which the limiter does not count (limiter), and sets that answer's headers
+// to say so. Asked at WriteHeader, which is the first moment the status is
+// known and the last at which a header can still change.
+type uncounted304 struct {
+	http.ResponseWriter
+	give    func()
+	written bool
+}
+
+func (u *uncounted304) WriteHeader(code int) {
+	if !u.written && code == http.StatusNotModified {
+		u.give()
+	}
+	u.written = true
+	u.ResponseWriter.WriteHeader(code)
+}
+
+func (u *uncounted304) Write(b []byte) (int, error) {
+	u.written = true
+	return u.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the connection's own writer.
+func (u *uncounted304) Unwrap() http.ResponseWriter { return u.ResponseWriter }
 
 type ctxKey struct{}
 
@@ -511,10 +550,68 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// allow is the methods a path answers on this server, for the Allow header
+// RFC 9110 requires of every 405. Empty for a path that is not a route.
+//
+// One answer for every route, worked out from the path and this server's
+// configuration, so a read-only server does not offer the write it refuses.
+// Only a page's address set Allow, and it named PUT whether writes were on or
+// not; every other 405, the read-only PUT's among them, had none.
+func (s *Server) allow(p string) string {
+	const reads = "GET, HEAD"
+	records := s.Records != nil && s.Records.Tree != nil
+	vectors := s.Vectors != nil && s.Tokenise != nil
+	switch {
+	case p == "/api/v1/openapi.json", p == "/api/v1/pages",
+		strings.HasPrefix(p, "/api/v1/replica/ref/"), strings.HasPrefix(p, "/api/v1/replica/object/"):
+		return reads
+	case p == "/api/v1/collections":
+		if records {
+			return reads
+		}
+	case p == "/api/v1/search/vector", strings.HasPrefix(p, "/api/v1/similar/"):
+		if vectors {
+			return reads
+		}
+	case strings.HasPrefix(p, "/api/v1/pages/"):
+		if s.Writable {
+			return reads + ", PUT"
+		}
+		return reads
+	case strings.HasPrefix(p, "/api/v1/records/") && records:
+		_, id, _ := strings.Cut(strings.TrimPrefix(p, "/api/v1/records/"), "/")
+		switch {
+		case !s.Records.Writable:
+			return reads
+		case id == "":
+			return reads + ", POST"
+		}
+		return reads + ", PUT, DELETE"
+	}
+	// Not a route, or one this server was started without, which answers
+	// 404 to every method.
+	return ""
+}
+
+// notAllowed refuses a method with 405 and the Allow header that goes with it.
+func (s *Server) notAllowed(w http.ResponseWriter, r *http.Request, e Error) {
+	if a := s.allow(r.URL.Path); a != "" {
+		w.Header().Set("Allow", a)
+	}
+	writeError(w, http.StatusMethodNotAllowed, e)
+}
+
+// readMethod reports whether a request reads: GET, or HEAD, which RFC 9110
+// asks a server to answer wherever it answers GET. Seven reads took GET alone
+// and answered the HEAD a monitor or a cache sends with 405.
+func readMethod(r *http.Request) bool {
+	return r.Method == http.MethodGet || r.Method == http.MethodHead
+}
+
 // list returns a page of pages.
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
 	if err := s.may(r, auth.ActView, "/"); err != nil {
@@ -559,41 +656,41 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	// full count to a scoped token both leaks how much is being hidden and
 	// makes paging incoherent: a client asked to fetch 400 items that it will
 	// only ever be shown 12 of.
-	visible := 0
+	//
+	// And offset, limit and next walk the same pages the total counts. They
+	// walked every page in the store, so a token limited to some types was
+	// handed pages with nothing on them where the hidden pages fell and a
+	// next link past the end of what it could see.
+	var visible []string
 	for _, n := range names {
 		if err := s.may(r, auth.ActView, "/"+n); err != nil {
-			continue
-		}
-		if ok, _ := s.visibleTo(tokenFrom(r), n, pages[n]); ok {
-			visible++
-		}
-	}
-	// Pages is [] when there are none on this page of the listing, as an
-	// empty list is on the command line and the machine interface: a nil
-	// slice was written "pages": null, and a client iterating it failed
-	// where it had nothing to do.
-	out := Listing{Pages: []Page{}, Total: visible, Offset: offset, Limit: limit,
-		Commit: commit}
-	for i := offset; i < len(names) && i < offset+limit; i++ {
-		name := names[i]
-		if err := s.may(r, auth.ActView, "/"+name); err != nil {
 			// A page the caller cannot see is omitted rather than refused. A
 			// listing that fails because one item is restricted tells the
 			// caller that item exists.
 			continue
 		}
-		fields, _ := pages[name].(map[string]any)
-		if ok, _ := s.visibleTo(tokenFrom(r), name, pages[name]); !ok {
+		if ok, _ := s.visibleTo(tokenFrom(r), n, pages[n]); !ok {
 			// Out of the token's scope, and omitted for the same reason as
 			// above: a listing that refuses because one item is out of scope
 			// tells the caller that item exists.
 			continue
 		}
+		visible = append(visible, n)
+	}
+	// Pages is [] when there are none on this page of the listing, as an
+	// empty list is on the command line and the machine interface: a nil
+	// slice was written "pages": null, and a client iterating it failed
+	// where it had nothing to do.
+	out := Listing{Pages: []Page{}, Total: len(visible), Offset: offset, Limit: limit,
+		Commit: commit}
+	for i := offset; i < len(visible) && i < offset+limit; i++ {
+		name := visible[i]
+		fields, _ := pages[name].(map[string]any)
 		out.Pages = append(out.Pages, Page{
 			Name: name, Fields: fields, ETag: tree[name],
 		})
 	}
-	if offset+limit < len(names) {
+	if offset+limit < len(visible) {
 		out.Next = fmt.Sprintf("/api/v1/pages?offset=%d&limit=%d",
 			offset+limit, limit)
 	}
@@ -617,9 +714,7 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		s.put(w, r, name)
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT")
-		writeError(w, http.StatusMethodNotAllowed, Error{
-			Error: "method not allowed"})
+		s.notAllowed(w, r, Error{Error: "method not allowed"})
 	}
 }
 
@@ -723,7 +818,7 @@ const writableFix = "quilzo site --api --api-writable --confine=false"
 
 func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 	if !s.Writable {
-		writeError(w, http.StatusMethodNotAllowed, Error{
+		s.notAllowed(w, r, Error{
 			Error: "this API is read-only",
 			Detail: "a read API and a write API are different products with " +
 				"different blast radii, so writes are off unless turned on",
@@ -853,6 +948,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 					status, conflict = http.StatusUnprocessableEntity, &Error{
 						Error:  "the content does not satisfy its type",
 						Detail: strings.Join(detail, "; "),
+						Fix:    typeFix(types.Bound[name]),
 					}
 					return nil
 				}
@@ -913,7 +1009,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			writeError(w, http.StatusUnprocessableEntity, Error{
 				Error:  "this content does not satisfy its type",
 				Detail: lockErr.Error(),
-				Fix:    "GET /api/v1/types to see what the type requires",
+				Fix:    s.typeFixFor(func(st *schema.Store) string { return st.Bound[name] }),
 			})
 			return
 		}
@@ -967,8 +1063,8 @@ func (s *Server) Sweep(before time.Time) {
 
 // similar returns the pages nearest to a given one.
 func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/api/v1/similar/")
@@ -1000,8 +1096,8 @@ func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
 
 // vectorSearch returns the pages nearest to a query.
 func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
 	if err := s.may(r, auth.ActView, "/"); err != nil {
@@ -1055,12 +1151,15 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 	idx *vector.Index, q vector.Vector, exclude string) {
 
-	limit := 10
+	// Bounded by api.page.max, as every listing is. Similar pages and a
+	// search by meaning answered up to the compiled-in hundred whatever it
+	// was set to.
+	limit := min(10, s.pageMax())
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > MaxPageSize {
+		if err != nil || n < 1 || n > s.pageMax() {
 			writeError(w, http.StatusBadRequest, Error{
-				Error: fmt.Sprintf("limit must be 1 to %d", MaxPageSize)})
+				Error: fmt.Sprintf("limit must be 1 to %d", s.pageMax())})
 			return
 		}
 		limit = n

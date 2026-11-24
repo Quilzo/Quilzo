@@ -138,6 +138,14 @@ func (l Limits) withDefaults() Limits {
 // GitHub's API has and the reason is worth stating: charging a client for
 // asking "has this changed" teaches them to poll without a validator, which
 // costs everybody more. The cheap path has to be the cheap path.
+//
+// Not counted by giving the token back (give) once the answer is known to be
+// a 304, rather than by letting a conditional request past the bucket. The
+// token is taken before the handler runs, so an empty bucket still refuses
+// everything and the limit still bounds the work a caller can ask for; a
+// header naming a validator is not a way round it. Nothing gave it back at
+// first, so a client polling with If-None-Match ran out as fast as one
+// polling without, and the 429 then told it to use If-None-Match.
 type limiter struct {
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -174,17 +182,6 @@ func (l *limiter) take(key string, now time.Time) (bool, int, time.Time) {
 	}
 	b.last = now
 
-	// Time until the bucket is full again, which is what RateLimit-Reset means
-	// and is always in the future. Computing it as "time until one token" gave
-	// a negative value whenever tokens remained — a client reading that as a
-	// duration waits for a moment that has already passed, or subtracts and
-	// gets nonsense.
-	full := (float64(l.limits.Burst) - b.tokens) / rate
-	if full < 0 {
-		full = 0
-	}
-	reset := now.Add(time.Duration(full * float64(time.Second)))
-
 	if b.tokens < 1 {
 		// When there is nothing left, the useful answer is when one token
 		// arrives rather than when the bucket is full — that is what a client
@@ -192,7 +189,59 @@ func (l *limiter) take(key string, now time.Time) (bool, int, time.Time) {
 		return false, 0, now.Add(time.Duration((1 - b.tokens) / rate * float64(time.Second)))
 	}
 	b.tokens--
-	return true, int(b.tokens), reset
+	// Full again counting the token just spent. Counted before it was, an
+	// answer that spent the last of a burst of one said the bucket was full
+	// already.
+	return true, int(b.tokens), l.full(b, now)
+}
+
+// full is when a bucket is full again, which is what RateLimit-Reset means
+// and is never in the past. Computing it as "time until one token" gave a
+// negative value whenever tokens remained — a client reading that as a
+// duration waits for a moment that has already passed, or subtracts and gets
+// nonsense.
+func (l *limiter) full(b *bucket, now time.Time) time.Time {
+	rate := float64(l.limits.PerMinute) / 60
+	full := (float64(l.limits.Burst) - b.tokens) / rate
+	if full < 0 {
+		full = 0
+	}
+	return now.Add(time.Duration(full * float64(time.Second)))
+}
+
+// give returns the token a request took, for an answer that is not counted
+// (a 304), and reports what then remains and when the bucket is full, for
+// that answer's headers.
+func (l *limiter) give(key string, now time.Time) (int, time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.buckets[key]
+	if b == nil {
+		// Forgotten in between by a sweep, which leaves the caller a full
+		// bucket on its next request: there is nothing to give back to.
+		return l.limits.Burst, now
+	}
+	b.tokens++
+	if b.tokens > float64(l.limits.Burst) {
+		b.tokens = float64(l.limits.Burst)
+	}
+	return int(b.tokens), l.full(b, now)
+}
+
+// secondsUntil is how long from now until t, in whole seconds rounded up, for
+// RateLimit-Reset and Retry-After.
+//
+// Rounded up, and from the one clock the limiter was asked with. Both headers
+// were rounded down, from the real clock rather than the server's, and one of
+// them had a second added: at two requests a second a refusal said
+// "RateLimit-Reset: 0", the limit resets now, beside "Retry-After: 1", and an
+// answer that had spent the last of the allowance said it was back already.
+func secondsUntil(t, now time.Time) int {
+	d := t.Sub(now)
+	if d <= 0 {
+		return 0
+	}
+	return int((d + time.Second - 1) / time.Second)
 }
 
 // forget drops buckets nobody has used, so the map does not grow with every

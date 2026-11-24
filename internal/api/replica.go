@@ -64,8 +64,8 @@ import (
 //
 //	GET /api/v1/replica/ref/{name}
 func (s *Server) replicaRef(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, Error{
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{
 			Error:  "only GET",
 			Detail: "a replica reads; it does not push"})
 		return
@@ -112,8 +112,8 @@ func (s *Server) replicaRef(w http.ResponseWriter, r *http.Request) {
 // travels with it in one response that cannot be half-read. An object is at
 // most a page; this is not the place to optimise.
 func (s *Server) replicaObject(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, Error{
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{
 			Error:  "only GET",
 			Detail: "a replica reads; it does not push"})
 		return

@@ -409,10 +409,9 @@ func TestConditionalRequestsThatAnswer304AreCheap(t *testing.T) {
 	etag := req(t, s, "GET", "/api/v1/pages/index", tok, nil, nil).
 		Header().Get("ETag")
 
-	// The limiter counts requests, so this documents the current behaviour
-	// honestly: 304s are cheap for the *server*, and the header tells a client
-	// what its budget is. If the exemption is ever implemented, this test says
-	// what it should look like.
+	// A 304 is not counted against the budget, which
+	// TestA304IsNotCountedAgainstTheRateLimit holds it to, and still carries
+	// the headers that tell a client what its budget is.
 	w := req(t, s, "GET", "/api/v1/pages/index", tok, nil,
 		map[string]string{"If-None-Match": etag})
 	if w.Header().Get("RateLimit-Limit") == "" {

@@ -43,6 +43,30 @@ type Records struct {
 // this named answered "this server does not serve records".
 const recordsWritableFix = "quilzo serve"
 
+// typeFix is where a write refused by its content type can read what the
+// type requires, for the 422 to name: the type's own definition, by name.
+//
+// Both write paths named GET /api/v1/types, and this API has no such route:
+// it answered 404 "no such endpoint", the one fix offered for the refusal
+// leading nowhere.
+func typeFix(typeName string) string {
+	if typeName == "" {
+		return "quilzo type list names the types, and quilzo type show NAME what one requires"
+	}
+	return "quilzo type show " + typeName + " says what it requires; the detail says what this lacks"
+}
+
+// typeFixFor is typeFix for the type a binding names, read from this
+// server's types.
+func (s *Server) typeFixFor(bound func(*schema.Store) string) string {
+	if s.Types != nil {
+		if st, err := s.Types(); err == nil && st != nil {
+			return typeFix(bound(st))
+		}
+	}
+	return typeFix("")
+}
+
 func (s *Server) recordsEnabled(w http.ResponseWriter) bool {
 	if s.Records == nil || s.Records.Tree == nil {
 		writeError(w, http.StatusNotFound, Error{
@@ -59,8 +83,8 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	if !s.recordsEnabled(w) {
 		return
 	}
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET only"})
+	if !readMethod(r) {
+		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
 	if tokenFrom(r) == nil {
@@ -127,18 +151,18 @@ func (s *Server) records(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case id == "" && r.Method == http.MethodGet:
+	case id == "" && readMethod(r):
 		s.listRecords(w, r, name)
 	case id == "" && r.Method == http.MethodPost:
 		s.writeRecord(w, r, name, "")
-	case id != "" && r.Method == http.MethodGet:
+	case id != "" && readMethod(r):
 		s.getRecord(w, r, name, id)
 	case id != "" && r.Method == http.MethodPut:
 		s.writeRecord(w, r, name, id)
 	case id != "" && r.Method == http.MethodDelete:
 		s.deleteRecord(w, r, name, id)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, Error{
+		s.notAllowed(w, r, Error{
 			Error: "GET and POST on a collection; GET, PUT and DELETE on a record"})
 	}
 }
@@ -149,41 +173,62 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request, name string
 			Detail: err.Error()})
 		return
 	}
+	// What the query asks is read as the pages listing reads it, and what
+	// cannot be read is refused rather than answered as if it had not been
+	// sent: offset=-5 and offset=abc were taken as 0, order=sideways sorted
+	// ascending, and a where with no colon filtered nothing, so a client with
+	// a typo in its query was answered everything and believed it had asked
+	// for that.
+	query := r.URL.Query()
+	order := query.Get("order")
+	if order != "" && order != "asc" && order != "desc" {
+		writeError(w, http.StatusBadRequest, Error{
+			Error: "order must be asc or desc", Detail: fmt.Sprintf("it is %q", order)})
+		return
+	}
 	q := collection.Query{
 		Equals:     map[string]any{},
 		Contains:   map[string]string{},
-		Sort:       r.URL.Query().Get("sort"),
-		Descending: r.URL.Query().Get("order") == "desc",
+		Sort:       query.Get("sort"),
+		Descending: order == "desc",
 	}
 	// where=field:value, repeatable. A separate parameter per filter rather
 	// than one expression, because an expression needs an evaluator and an
 	// evaluator over a query string is the shape of every injection.
-	for _, pair := range r.URL.Query()["where"] {
-		if k, v, ok := strings.Cut(pair, ":"); ok {
-			q.Equals[k] = typedValue(v)
+	for _, param := range []string{"where", "contains"} {
+		for _, pair := range query[param] {
+			k, v, ok := strings.Cut(pair, ":")
+			if !ok || k == "" {
+				writeError(w, http.StatusBadRequest, Error{
+					Error:  param + " takes field:value",
+					Detail: fmt.Sprintf("%s=%s names no field", param, pair),
+					Fix:    "GET /api/v1/records/" + name + "?" + param + "=name:value"})
+				return
+			}
+			if param == "where" {
+				q.Equals[k] = typedValue(v)
+			} else {
+				q.Contains[k] = v
+			}
 		}
 	}
-	for _, pair := range r.URL.Query()["contains"] {
-		if k, v, ok := strings.Cut(pair, ":"); ok {
-			q.Contains[k] = v
-		}
+	// Bounded by api.page.max, as the pages listing is, and by the most the
+	// collection will answer, a limit above either refused rather than
+	// clamped. Only the pages were bounded by the setting: set to 10, this
+	// still answered a limit of a thousand, and fifty with none given.
+	most := min(s.pageMax(), collection.MaxLimit)
+	offset, limit, err := parsePaging(query, most)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, Error{
+			Error: "bad paging", Detail: err.Error()})
+		return
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > collection.MaxLimit {
-			writeError(w, http.StatusBadRequest, Error{
-				Error: fmt.Sprintf("limit must be 1 to %d", collection.MaxLimit),
-				Detail: "refused rather than clamped: a client asking for more " +
-					"and receiving fewer believes it has everything"})
-			return
-		}
-		q.Limit = n
+	if query.Get("limit") == "" {
+		// The collection's own page size when none is asked for, as before,
+		// within the bound.
+		limit = min(collection.DefaultLimit, most)
 	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			q.Offset = n
-		}
-	}
+	q.Limit, q.Offset = limit, offset
 
 	tree, err := s.Records.Tree()
 	if err != nil {
@@ -255,7 +300,7 @@ func (s *Server) getRecord(w http.ResponseWriter, r *http.Request, name, id stri
 
 func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id string) {
 	if !s.Records.Writable {
-		writeError(w, http.StatusMethodNotAllowed, Error{
+		s.notAllowed(w, r, Error{
 			Error: "this API is read-only",
 			Fix:   recordsWritableFix,
 		})
@@ -367,7 +412,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 			writeError(w, http.StatusUnprocessableEntity, Error{
 				Error:  "this content does not satisfy its type",
 				Detail: lockErr.Error(),
-				Fix:    "GET /api/v1/types to see what the type requires",
+				Fix:    s.typeFixFor(func(st *schema.Store) string { return st.Collections[name] }),
 			})
 			return
 		}
@@ -389,7 +434,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 
 func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id string) {
 	if !s.Records.Writable {
-		writeError(w, http.StatusMethodNotAllowed, Error{
+		s.notAllowed(w, r, Error{
 			Error: "this API is read-only", Fix: recordsWritableFix})
 		return
 	}
