@@ -473,6 +473,11 @@ func (s *Server) finishOIDC(w http.ResponseWriter, r *http.Request, principal st
 	// screen had read, so somebody suspended on the command line since was
 	// given a session here until somebody opened a screen.
 	s.refresh()
+	// An address is found in the policy whatever its case (policyName); a
+	// subject is an identifier the provider chose, compared exactly.
+	if s.OIDC.Claim != "sub" {
+		principal = s.policyName(principal)
+	}
 	if s.suspended(principal) {
 		s.refuseOIDC(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "", principal)
 		return
@@ -597,6 +602,38 @@ func (s *Server) knownPrincipal(name string) bool {
 		}
 	}
 	return false
+}
+
+// policyName is the access policy's own spelling of somebody a provider
+// signed in by name: the name itself when the policy has it, or else the
+// one name the policy has that differs from it only in case.
+//
+// A provider keeps an address in whatever case it was typed, and the
+// policy compares names exactly. OIDC took the email claim as it came, so
+// somebody provisioned as ann@acme.com whose provider said Ann@Acme.com
+// signed in there and was refused here as not in the access policy; SAML
+// lowercases what it is sent, so somebody provisioned under a capital was
+// refused there. Two names in the policy that differ only in case are two
+// principals to it, and choosing between them is guessing, so neither is
+// chosen, as an event about an address chooses neither (subjectPrincipal
+// in cmd/quilzo).
+func (s *Server) policyName(name string) string {
+	if name == "" || s.knownPrincipal(name) {
+		return name
+	}
+	one := ""
+	for _, p := range s.Policy.Principals() {
+		if strings.EqualFold(p, name) {
+			if one != "" {
+				return name
+			}
+			one = p
+		}
+	}
+	if one == "" {
+		return name
+	}
+	return one
 }
 
 // roleFor returns the role the session token carries.

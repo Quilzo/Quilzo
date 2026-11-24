@@ -335,6 +335,8 @@ func label(c *saml.Config) string { return c.Called() }
 // not in the access policy, otherwise a session of this program's own.
 func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, how string,
 	ttl time.Duration, proof ssoProof, detail map[string]string, asked string, before func()) {
+	// Found in the policy whatever the case of the name (policyName).
+	principal = s.policyName(principal)
 	// Recorded as the refusals before it are (samlACS), naming who the
 	// provider said it was. These wrote nothing, so somebody suspended, or
 	// not in the access policy, was turned away and the log never said so.

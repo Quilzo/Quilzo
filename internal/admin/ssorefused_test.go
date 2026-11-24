@@ -171,3 +171,57 @@ func TestARefusedSAMLSignInOfSomebodyIsRecorded(t *testing.T) {
 		t.Errorf("the refusal was recorded as %v", refused)
 	}
 }
+
+// A sign-in by address finds its person in the access policy whatever the
+// case of the address, as SAML always has.
+//
+// OIDC took the email claim as the provider sent it and the policy
+// compares names exactly, so somebody provisioned as ann@acme.com whose
+// provider's email claim said Ann@Acme.com signed in successfully and was
+// refused as not in the access policy. SAML lowercases what it is sent,
+// so somebody provisioned under a capital was refused there. Two names in
+// the policy that differ only in case are two principals to it, and
+// neither is chosen; a subject (claim sub) is an opaque identifier,
+// compared exactly.
+func TestAnAddressSignsInWhateverItsCase(t *testing.T) {
+	srv, _ := oidcServer(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "ann@acme.com", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	signIn := func(who string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		srv.finishOIDC(w, httptest.NewRequest(http.MethodGet, "/auth/callback", nil), who, ssoProof{MFA: true}, "")
+		return w
+	}
+	if tok := sessionToken(t, srv, signIn("Ann@Acme.com")); tok.Principal != "ann@acme.com" {
+		t.Errorf("Ann@Acme.com signed in as %q", tok.Principal)
+	}
+
+	if err := srv.Policy.Grant(auth.Binding{Principal: "ANN@acme.com", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := signIn("Ann@Acme.com"); sessionOf(w) != nil {
+		t.Error("an address two principals differ only by case from signed in as one of them")
+	}
+	if tok := sessionToken(t, srv, signIn("ANN@acme.com")); tok.Principal != "ANN@acme.com" {
+		t.Errorf("the name exactly as the policy has it signed in as %q", tok.Principal)
+	}
+
+	srv.OIDC.Claim = "sub"
+	if err := srv.Policy.Grant(auth.Binding{Principal: "Subject-7", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := signIn("subject-7"); sessionOf(w) != nil {
+		t.Error("a subject in another case signed in")
+	}
+
+	saml, _ := samlServer(t, nil)
+	if err := saml.Policy.Grant(auth.Binding{Principal: "Bo.Lee@northwind.example", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	id, relay, c := start(t, saml)
+	w := postACS(t, saml, relay, response(t, resp{who: "Bo.Lee@northwind.example", inResponseTo: id}), c)
+	if tok := sessionToken(t, saml, w); tok.Principal != "Bo.Lee@northwind.example" {
+		t.Errorf("a SAML sign-in signed in as %q", tok.Principal)
+	}
+}
