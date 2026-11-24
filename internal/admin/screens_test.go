@@ -202,6 +202,8 @@ var notAScreen = map[string]string{
 		"interface as a desktop application; there is no page to render",
 	"/security/profile/manifest.json": "is a download of the signed feature manifest, a file for an " +
 		"auditor, and answers 404 until a profile is applied",
+	"/security/public/key.json": "is a download of the published head keys, the file a public " +
+		"instance pins, and answers 503 when this build publishes none",
 	"/decentralised/bundle": "sends a tar.gz of the rendered site, not a page; " +
 		"it redirects with an explanation when there is nothing published",
 	"/a2a": "takes tasks from other agents: JSON-RPC posted by programs with a " +

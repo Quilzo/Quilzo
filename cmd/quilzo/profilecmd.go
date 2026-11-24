@@ -494,9 +494,11 @@ func securityProfileHooks(root string, signedIn func(admin.Actor) *Caller) *admi
 }
 
 // wireProfile gives the admin the Security profile screen, the menu that
-// leaves out what is switched off, and the manifest on CM-7.
+// leaves out what is switched off, the manifest on CM-7, and the Public
+// instance screen the profile's public faces are published from.
 func wireProfile(srv *admin.Server, root string, signedIn func(admin.Actor) *Caller) {
 	srv.SecurityProfile = securityProfileHooks(root, signedIn)
+	srv.PublicInstance = publicInstanceHooks(root, signedIn)
 	srv.SwitchedOff = func(path string) bool {
 		_, off := profileState(root).Refuses(profile.AdminSurface, path)
 		return off

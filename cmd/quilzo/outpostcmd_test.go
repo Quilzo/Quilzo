@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/api"
 	"github.com/quilzo/quilzo/internal/attest"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -438,4 +440,85 @@ func TestTransferIsOutboundOnly(t *testing.T) {
 // tokens.
 func securityAPIFor(root string, pol *auth.Policy, toks *auth.TokenStore) http.Handler {
 	return securityAPI(root, &api.Server{Policy: pol, Tokens: toks})
+}
+
+// The public instance is on every surface: the admin's screen shows the
+// draft and the key, names a wrong field beside itself and proposes a
+// publication; the HTTP API reads it, keeps a draft and proposes; the agent
+// interface reads it.
+func TestThePublicInstanceIsOnEverySurface(t *testing.T) {
+	root, tokens := internalStore(t)
+	_, pubSrv, posts := publicHost(t, root)
+	srv, tok := screenFor(t, root, func(srv *admin.Server) { wireProfile(srv, root, sessionCaller) })
+
+	body := adminGet(t, srv, "/security/public", tok)
+	for _, want := range []string{"<h1>Public instance</h1>", "SOC 2 Type II report", "Information security policy",
+		`action="/security/public/act"`, "/security/public/key.json", "<caption>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the screen does not show %q", want)
+		}
+	}
+	accessible(t, "/security/public", body)
+
+	rec := adminPost(t, srv.Handler(), "/security/public/act", tok, url.Values{"op": {"target"}, "to": {"relative/dir"}})
+	loc, _, _ := strings.Cut(rec.Header().Get("Location"), "#")
+	page := adminGet(t, srv, loc, tok)
+	if !strings.Contains(page, `id="to-error"`) || !strings.Contains(page, `href="#to"`) {
+		t.Error("a target that is neither an address nor a directory is not named beside its field")
+	}
+	accessible(t, "/security/public (with an error)", page)
+	if rec = adminPost(t, srv.Handler(), "/security/public/act", tok, url.Values{"op": {"target"}, "to": {pubSrv.URL}}); !strings.Contains(rec.Header().Get("Location"), "m=") {
+		t.Fatalf("saving the target answered %s", rec.Header().Get("Location"))
+	}
+	rec = adminPost(t, srv.Handler(), "/security/public/act", tok, url.Values{"op": {"publish"}, "reason": {"the 2025 report"}})
+	if !strings.Contains(rec.Header().Get("Location"), "m=") || posts.Load() != 0 {
+		t.Fatalf("proposing from the screen answered %s, with %d transfers sent", rec.Header().Get("Location"), posts.Load())
+	}
+	if !strings.Contains(adminGet(t, srv, "/security/public", tok), "waits for a second administrator") {
+		t.Error("the screen does not say the publication waits for a second administrator")
+	}
+	var keys map[string]string
+	if err := json.Unmarshal([]byte(adminGet(t, srv, "/security/public/key.json", tok)), &keys); err != nil || keys["key_id"] == "" {
+		t.Errorf("the screen does not hand out the key to pin: %v", err)
+	}
+
+	// The HTTP API.
+	pol, _ := loadPolicy(root)
+	toks, _ := loadTokens(root)
+	h := securityAPIFor(root, pol, toks)
+	call := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec = call(http.MethodGet, "/api/v1/attestations", tokens["sam"], ""); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"waiting"`) {
+		t.Errorf("GET /api/v1/attestations answered %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = call(http.MethodPut, "/api/v1/attestations", tokens["sam"], `{"format": 1, "organisation": "Fernhollow Ltd", "attestations": [], "policies": [], "score": 97}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("a draft with a score was kept through the API: %d", rec.Code)
+	}
+	changed, _ := held().Encode()
+	if rec = call(http.MethodPut, "/api/v1/attestations", tokens["sam"], string(changed)); rec.Code != http.StatusOK {
+		t.Errorf("a draft could not be kept through the API: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = call(http.MethodPost, "/api/v1/attestations/publish", tokens["sam"], `{"reason": "from the pipeline"}`); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), "waiting for a second administrator") {
+		t.Errorf("a publication proposed through the API answered %d %s", rec.Code, rec.Body.String())
+	}
+	if posts.Load() != 0 {
+		t.Error("a proposal through the API sent something")
+	}
+
+	// The agent interface.
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, mErr := callTool(t, buildMCP(root, s, human("dana"), "templates"), "quilzo_read", "public_status", nil)
+	if mErr != nil || !strings.Contains(text, pubSrv.URL) || !strings.Contains(text, "SOC 2") {
+		t.Errorf("public_status answered %v %s", mErr, text)
+	}
 }

@@ -175,6 +175,9 @@ type Server struct {
 	// SecurityProfile is which features this installation runs, and the
 	// signed manifest that records it (secprofile.go).
 	SecurityProfile *SecurityProfile
+	// PublicInstance is where the public instance is and what it is sent
+	// (publicinstance.go).
+	PublicInstance *PublicInstance
 	// SwitchedOff reports whether a screen belongs to a feature the
 	// security profile switches off, so the menu does not offer a door
 	// that answers "switched off". Nil switches nothing off.
@@ -1557,6 +1560,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/profile", s.handleSecurityProfile)
 	mux.HandleFunc("/security/profile/act", s.handleSecurityProfileAct)
 	mux.HandleFunc("/security/profile/manifest.json", s.handleSecurityProfileManifest)
+	mux.HandleFunc("/security/public", s.handlePublicInstance)
+	mux.HandleFunc("/security/public/act", s.handlePublicInstanceAct)
+	mux.HandleFunc("/security/public/key.json", s.handlePublicInstanceKeys)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -642,4 +643,48 @@ func publicStatus(root string) error {
 		w.Human("  %sa publication waits for a second administrator: request %s%s\n", yellow, v.Waiting, reset)
 	}
 	return nil
+}
+
+// publicInstanceHooks is the Public instance screen's wiring: the same
+// view, draft, target and publication as the command line.
+func publicInstanceHooks(root string, signedIn func(admin.Actor) *Caller) *admin.PublicInstance {
+	return &admin.PublicInstance{
+		View: func() (admin.PublicView, error) {
+			v, err := viewPublic(root)
+			if err != nil {
+				return admin.PublicView{}, err
+			}
+			out := admin.PublicView{Target: v.Target, KeyID: v.KeyID, Draft: v.Draft, Digest: v.Digest,
+				Problem: v.Problem, Waiting: v.Waiting}
+			if body, err := os.ReadFile(attestationsPath(root)); err == nil {
+				out.DraftText = string(body)
+			}
+			if s := v.Sent; s != nil {
+				out.Sent = &admin.PublicSent{Digest: s.Digest, To: s.To, ApprovedBy: s.ApprovedBy, At: s.At,
+					Alone: s.Alone, Head: s.Head}
+			}
+			return out, nil
+		},
+		SetTarget: func(to string, by admin.Actor) error { return setTarget(root, signedIn(by), to) },
+		SetDraft: func(body []byte, by admin.Actor) error {
+			_, err := setDraft(root, signedIn(by), body, "admin")
+			return err
+		},
+		Propose: func(reason string, by admin.Actor) (bool, error) {
+			return proposePublication(root, signedIn(by), reason)
+		},
+		Resend: func(reason string, by admin.Actor) error {
+			if reason == "" {
+				reason = "a fresh head of the record"
+			}
+			_, err := resendPublished(root, signedIn(by), reason)
+			return err
+		},
+		Keys: func() ([]byte, error) {
+			if _, err := headSigner(root); err != nil {
+				return nil, err
+			}
+			return os.ReadFile(headKeysPath(root))
+		},
+	}
 }
