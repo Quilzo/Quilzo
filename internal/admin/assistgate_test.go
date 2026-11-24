@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -94,7 +95,7 @@ func TestAProposalIsGatedBeforeItIsAccepted(t *testing.T) {
 		"This would not publish yet",
 		"one claim has nothing behind it",
 		"says &#34;the fastest CMS&#34; and cites nothing",
-		"Ask fake to fix this",
+		"Ask the assistant to fix this",
 		"a licence expires in six weeks",
 	} {
 		if !strings.Contains(html, want) {
@@ -235,3 +236,57 @@ func htmlUnescape(s string) string {
 }
 
 func queryEscape(s string) string { return url.QueryEscape(s) }
+
+// routedModel is the assistant as the gateway hands it over, under the name
+// of the binding it was asked through.
+type routedModel struct {
+	*fakeModel
+	name string
+}
+
+func (m routedModel) Name() string { return m.name }
+
+// The Assistant screen's buttons say what they do, not what answers.
+//
+// They once read "Ask gateway:assist", and with a model configured directly
+// they read "Ask" and the model's name: a person was shown an internal route,
+// or a vendor's product, where the action belonged. The name is still on the
+// screen, in a line of its own, because which model or route a site's
+// content is sent to is worth knowing; it is never the label.
+func TestTheAssistantsButtonsDoNotNameTheModel(t *testing.T) {
+	m := &fakeModel{reply: oneProposal}
+	var seen map[string]any
+	srv, token := assistServer(t, m, refusingGate(&seen))
+	srv.Assist.Model = func(string) (assist.Model, error) {
+		return routedModel{fakeModel: m, name: "gateway:assist"}, nil
+	}
+
+	for _, page := range []string{
+		get(t, srv, "/assist", token).Body.String(),
+		postForm(t, srv, "/assist", token, "instruction=write a prices page").Body.String(),
+	} {
+		buttons := regexp.MustCompile(`(?s)<button[^>]*>(.*?)</button>`).FindAllStringSubmatch(page, -1)
+		if len(buttons) == 0 {
+			t.Fatal("the assistant screen has no buttons")
+		}
+		for _, b := range buttons {
+			if strings.Contains(b[1], "gateway") || strings.Contains(b[1], "assist:") {
+				t.Errorf("a button is labelled with the route: %q", strings.TrimSpace(b[1]))
+			}
+		}
+		if !strings.Contains(page, ">Ask the assistant</button>") {
+			t.Error("the ask button does not read \"Ask the assistant\"")
+		}
+		if !strings.Contains(page, "<code>gateway:assist</code>") {
+			t.Error("the screen does not say which route the request goes through")
+		}
+	}
+	html := postForm(t, srv, "/assist", token, "instruction=write a prices page").Body.String()
+	if !strings.Contains(html, ">Ask the assistant to fix this</button>") {
+		t.Error("the fix button does not read \"Ask the assistant to fix this\"")
+	}
+	// The model's name is still what the accepted pages are recorded under.
+	if hiddenValue(t, html, "model") != "gateway:assist" {
+		t.Error("the accept form no longer carries the model that wrote the proposal")
+	}
+}

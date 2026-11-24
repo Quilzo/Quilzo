@@ -88,6 +88,27 @@ type Token struct {
 	Group string
 }
 
+// follows names the token another takes its value from when nobody set it.
+//
+// The scrim is the page background unless somebody chose a veil of another
+// colour, and a default written as a second hex would stop following the
+// moment the background changed. A table beside the list rather than a
+// field on Token, because every token is written positionally and a sixth
+// field would be fifty lines changed to say nothing about forty-nine of them.
+var follows = map[string]string{"scrim": "surface"}
+
+// optIn are the tokens added after sites already existed.
+//
+// Each is written into the stylesheet only when the site or its style sets
+// it, so a site that never asked for a glow or a backdrop is served the
+// token block it was served before, byte for byte. The rules that read one
+// carry the same default as a fallback — var(--scrim-strength, 82%) — and a
+// test holds the two equal.
+var optIn = map[string]bool{"glow": true, "scrim": true, "scrim-strength": true}
+
+// OptIn reports whether a token is written out only when it is set.
+func OptIn(name string) bool { return optIn[name] }
+
 // Pair is a foreground token that has to stay legible against a background one.
 //
 // Written out rather than inferred from the naming convention. The convention
@@ -207,9 +228,26 @@ var tokens = []Token{
 	{"border", Length, "1px", "", "hairline thickness; 0 removes every card and table border", "shape"},
 
 	// -- style ----------------------------------------------------------------
-	{"style", Choice, "expressive", "", "the overall look: expressive (Material 3 Expressive, the default), classic, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
+	{"style", Choice, "expressive", "", "the overall look: expressive (Material 3 Expressive, the default), classic, glass, editorial, bold, soft, business or neon; it sets corners, density and type, and never colour", "style"},
 	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive (springy) or none; reduced motion is honoured whatever is chosen", "style"},
 	{"icons", Choice, "rounded", "", "how every icon is drawn: rounded, outlined or sharp, each plain or filled", "style"},
+	// The three below came later than the rest, and each is a choice
+	// rather than a value: the stylesheet does not read them, they decide
+	// which rules are in it (see Preset), so none of them is a property.
+	{Name: "corner", Kind: Choice, Light: "round", Summary: "how corners are made: round (the radius above, the default) or chamfer (cut off at an angle, as the neon style has them); a focused control shows its whole ring either way", Group: "style"},
+	{Name: "scheme", Kind: Choice, Light: "both", Summary: "which colour schemes the site is drawn in: both (it follows the reader's setting, the default), dark or light; a site drawn in one scheme is served and checked in that one, whatever the reader's setting", Group: "style"},
+
+	// -- glow and backdrops ---------------------------------------------------
+	//
+	// Opt-in, all three: a site that never asked for a glow or a backdrop
+	// is served the stylesheet it had before they existed.
+	{Name: "glow", Kind: Length, Light: "0px", Summary: "how far the neon style's glow spreads round headings and filled buttons; 0 turns it off, and no other style draws one", Group: "effects"},
+	// The veil between a backdrop picture or video and the words on it. Its
+	// own colour rather than an opacity on the page, so the contrast check
+	// can compute the worst case: the veil over the darkest and the
+	// lightest picture it could ever cover.
+	{Name: "scrim", Kind: Colour, Light: "#f8f9fa", Dark: "#121414", Summary: "the veil laid over a backdrop picture or video so the words on it stay readable; it is the page background unless set", Group: "effects"},
+	{Name: "scrim-strength", Kind: Length, Light: "82%", Summary: "how opaque that veil is, as a percentage: 100% hides the backdrop, and text on it is checked against the worst picture it could cover", Group: "effects"},
 }
 
 // stacks are the built-in font stacks.
@@ -303,7 +341,8 @@ type Theme struct {
 type Family struct {
 	// Name is the family as CSS refers to it, taken from the filename.
 	Name string
-	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2.
+	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2. A name
+	// ending .woff is a WOFF 1.0 face and is announced as one.
 	Href string
 	// Weight is the weight or variable range, e.g. "400" or "100 900".
 	Weight string
@@ -426,6 +465,9 @@ func (t *Theme) validate(tok Token, value string) error {
 			return fmt.Errorf("%q is not a length. A number with rem, em, px, "+
 				"ch or %% — no calc(), no var()", value)
 		}
+		if err := lengthBounds(tok.Name, value); err != nil {
+			return err
+		}
 	case Ratio:
 		n, err := strconv.ParseFloat(value, 64)
 		if err != nil || !reRatio.MatchString(value) {
@@ -433,6 +475,10 @@ func (t *Theme) validate(tok Token, value string) error {
 		}
 		if n <= 0 {
 			return fmt.Errorf("%s has to be greater than zero", tok.Name)
+		}
+		if b, bounded := ratioBounds[tok.Name]; bounded && (n < b.min || n > b.max) {
+			return fmt.Errorf("%q %s. %s takes %s to %s",
+				value, b.why, tok.Name, trimFloat(b.min), trimFloat(b.max))
 		}
 	case Choice:
 		if !choiceOK(tok.Name, value) {
@@ -452,11 +498,128 @@ func (t *Theme) validate(tok Token, value string) error {
 			}
 		}
 		return fmt.Errorf("%q is not a built-in stack and this site does not "+
-			"serve a font by that name. Put the .woff2 in templates/fonts/ "+
+			"serve a font by that name. Put the .woff2 or .woff in templates/fonts/ "+
+			"(quilzo theme font add FILE makes one from a .ttf or .otf) "+
 			"and it becomes available under its filename. Built in: %s",
 			value, strings.Join(StackNames(), ", "))
 	}
 	return nil
+}
+
+// ratioBounds are the ranges of the unitless numbers that size or space
+// text, inside which it stays readable.
+//
+// Only "greater than zero" was asked, so a line height of 0.5 put every
+// line on top of the one before, a heading scale of 0.1 drew the headings a
+// tenth of a pixel tall and the small print as large as a heading, and a
+// density of 0.1 took the space out of every card and button. The ranges
+// hold what any style or starter here sets and what a designer would choose:
+// the scale reaches the golden ratio, 1.618, the largest of the modular
+// scales a type-scale tool offers, which a range that stopped at 1.6 refused.
+var ratioBounds = map[string]struct {
+	why      string
+	min, max float64
+}{
+	"line":    {"would set the lines of body text on top of each other, or drift them apart", 1.3, 3},
+	"scale":   {"would draw the headings smaller than the text under them, or the small print too small to read", 1, 1.618},
+	"density": {"would take the space from round every block of text, or spread it past reading", 0.5, 2},
+}
+
+// sizeBounds are the ranges of the lengths that size or space text, by
+// unit, inside which it stays readable. A unit a token does not list is
+// refused for it, so text-base cannot be given in ch or as a bare number.
+//
+// Only glow and scrim-strength had a range. `theme set text-base 4px`,
+// `measure 5ch` and `border 40px` were saved and passed theme check, the
+// accessibility gate and the publish, and the page they made had body text
+// two pixels tall and paragraphs thirteen pixels wide: as unreadable as a
+// colour pair the contrast check refuses, with nothing to refuse it.
+var sizeBounds = map[string]struct {
+	why   string
+	units map[string][2]float64
+}{
+	"text-base": {"would set body text too small or too large to read", map[string][2]float64{
+		"px": {14, 32}, "rem": {0.875, 2}, "em": {0.875, 2}, "%": {87.5, 200}}},
+	"measure": {"would make a line of body text too narrow or too wide to read", map[string][2]float64{
+		"ch": {30, 100}, "rem": {15, 50}, "em": {15, 50}, "px": {240, 1600}, "%": {50, 100}}},
+	"page-width": {"would make the column the content is set in too narrow or too wide to read", map[string][2]float64{
+		"rem": {20, 160}, "em": {20, 160}, "px": {320, 2560}, "ch": {40, 320}, "%": {50, 100}}},
+	"border": {"would draw the edges of cards and tables so thick they crowd the words in them", map[string][2]float64{
+		"px": {0, 4}, "rem": {0, 0.25}, "em": {0, 0.25}, "": {0, 0}}},
+	"tracking-display": {"would run the letters of a heading together, or spread them apart", map[string][2]float64{
+		"em": {-0.1, 0.5}, "rem": {-0.1, 0.5}, "px": {-2, 8}, "": {0, 0}}},
+}
+
+// sizeRanges says what a bounded length takes, as a person would read it.
+func sizeRanges(units map[string][2]float64) string {
+	order := []string{"px", "rem", "em", "ch", "%", ""}
+	var parts []string
+	for _, u := range order {
+		r, ok := units[u]
+		if !ok {
+			continue
+		}
+		if r[0] == r[1] {
+			parts = append(parts, trimFloat(r[0])+u)
+			continue
+		}
+		parts = append(parts, trimFloat(r[0])+u+" to "+trimFloat(r[1])+u)
+	}
+	if len(parts) > 1 {
+		return strings.Join(parts[:len(parts)-1], ", ") + " or " + parts[len(parts)-1]
+	}
+	return strings.Join(parts, "")
+}
+
+// trimFloat writes a bound as short as it reads: 14, 0.875, 87.5.
+func trimFloat(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+// lengthBounds holds the lengths whose sensible range is narrower than the
+// pattern's.
+//
+// A glow is a blur radius, so a percentage or a measure in characters means
+// nothing and a negative one is not a glow; past four rem it is a fog over
+// the words it was meant to light. The veil is a proportion of opacity, so
+// only a percentage says it, and a hundred is the most there is. The lengths
+// that size or space text are held to sizeBounds.
+func lengthBounds(name, value string) error {
+	n, unit := splitNumber(value)
+	if b, bounded := sizeBounds[name]; bounded {
+		r, ok := b.units[unit]
+		if !ok || n < r[0] || n > r[1] {
+			return fmt.Errorf("%q %s. %s takes %s",
+				value, b.why, name, sizeRanges(b.units))
+		}
+		return nil
+	}
+	switch name {
+	case "glow":
+		if unit == "%" || unit == "ch" || n < 0 {
+			return fmt.Errorf("%q is not a glow. A blur in px, rem or em, at "+
+				"least 0 (which turns it off)", value)
+		}
+		if (unit == "px" || unit == "") && n > 64 || (unit == "rem" || unit == "em") && n > 4 {
+			return fmt.Errorf("%q is more glow than there are words under it. "+
+				"At most 64px or 4rem", value)
+		}
+	case "scrim-strength":
+		if unit != "%" || n < 0 || n > 100 {
+			return fmt.Errorf("%q is not a strength. A percentage from 0%% to "+
+				"100%%; the veil is checked against the worst picture it covers, "+
+				"so a weak one is refused where it is used", value)
+		}
+	}
+	return nil
+}
+
+// splitNumber cuts a length into its number and its unit.
+func splitNumber(value string) (float64, string) {
+	i := 0
+	for i < len(value) && (value[i] == '-' || value[i] == '.' || (value[i] >= '0' && value[i] <= '9')) {
+		i++
+	}
+	n, _ := strconv.ParseFloat(value[:i], 64)
+	return n, value[i:]
 }
 
 // value resolves a token in one scheme, falling back to the shipped default.
@@ -470,10 +633,26 @@ func (t *Theme) value(tok Token, dark bool) string {
 			return v
 		}
 	}
+	if name := follows[tok.Name]; name != "" {
+		if from, ok := Lookup(name); ok {
+			return t.value(from, dark)
+		}
+	}
 	if dark && tok.Dark != "" {
 		return tok.Dark
 	}
 	return tok.Light
+}
+
+// isSet reports whether the site or its style set a token in either scheme,
+// which is what decides whether an opt-in token is written out at all.
+func (t *Theme) isSet(name string) bool {
+	if t == nil {
+		return false
+	}
+	_, light := t.light[name]
+	_, dark := t.dark[name]
+	return light || dark
 }
 
 // Value resolves one token by name, for use by a screen showing what is in
@@ -507,15 +686,16 @@ func (t *Theme) Overrides() map[string]string {
 
 // Check reports contrast failures in both schemes.
 //
-// Both, always. A site checked in light and served in dark to half its readers
-// is checked for half its readers, and the dark palette is the one people get
-// wrong — it is the one that gets less looking at.
+// Both, always — unless the site is drawn in one. A site checked in light and
+// served in dark to half its readers is checked for half its readers, and the
+// dark palette is the one people get wrong, because it is the one that gets
+// less looking at. A site whose scheme is dark is served its dark palette
+// whatever the reader's setting (see CSS), so the dark scheme is every scheme
+// it has and checking a light one nobody is served would refuse a site over
+// colours no reader sees.
 func (t *Theme) Check() []Finding {
 	var out []Finding
-	for _, scheme := range []struct {
-		name string
-		dark bool
-	}{{"light", false}, {"dark", true}} {
+	for _, scheme := range t.checkedSchemes() {
 		for _, p := range pairs {
 			fg, okF := Lookup(p.Foreground)
 			bg, okB := Lookup(p.Background)
@@ -536,8 +716,14 @@ func (t *Theme) Check() []Finding {
 			})
 		}
 	}
+	out = append(out, t.checkNeon()...)
 	// A colour changed in one scheme and not the other is legal and is almost
-	// always an oversight, so it is said out loud without blocking.
+	// always an oversight, so it is said out loud without blocking. Not for a
+	// site drawn in one scheme: there it is the whole point, and saying so
+	// twenty-three times buried anything else worth reading.
+	if t.Scheme() != "both" {
+		return out
+	}
 	for name := range t.light {
 		tok, ok := Lookup(name)
 		if !ok || tok.Kind != Colour {

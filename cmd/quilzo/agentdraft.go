@@ -306,7 +306,7 @@ func readDraft(answer, name string, known map[string]bool) (agent.Manifest, []st
 
 // agentDraft is `quilzo agent draft "DESCRIPTION" [--name NAME] [-o FILE]`.
 func agentDraft(root string, args []string) error {
-	usage := errors.New(`quilzo agent draft "what it is for" [--name NAME] [-o FILE]`)
+	usage := errMisused{errors.New(`quilzo agent draft "what it is for" [--name NAME] [-o FILE]`)}
 	fs := flag.NewFlagSet("agent draft", flag.ContinueOnError)
 	name := fs.String("name", "", "what it is called")
 	outPath := fs.String("o", "", "write the declaration here, to save it with quilzo agent declare")
@@ -378,7 +378,7 @@ func agentDeclareFile(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("quilzo agent declare FILE [--widen]")
+		return errMisused{errors.New("quilzo agent declare FILE [--widen]")}
 	}
 	body, err := os.ReadFile(pos[0])
 	if err != nil {

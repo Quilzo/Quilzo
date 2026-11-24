@@ -205,6 +205,45 @@ func TestALineFieldCannotBeMultiline(t *testing.T) {
 	}
 }
 
+// A browser sends a textarea's line breaks as CR LF, as HTML form
+// submission says it must. The control-character check refused the CR, so
+// every multi-line message typed into a paragraph field in a browser came
+// back "contains a control character" and was lost. The break is kept as
+// the one line break the rest of the program writes, and a CR anywhere a
+// line break is not allowed is still refused.
+func TestAParagraphFromABrowserKeepsItsLineBreaks(t *testing.T) {
+	for _, sent := range []string{
+		"We would like 40 boxes.\r\nAlso a price list, please.",
+		"We would like 40 boxes.\rAlso a price list, please.",
+	} {
+		got, err := Accept(contact(), filled(map[string]string{"message": sent}),
+			"", time.Now())
+		if err != nil {
+			t.Fatalf("refused %q, a two-line message as a browser sends it: %v", sent, err)
+		}
+		if want := "We would like 40 boxes.\nAlso a price list, please."; got.Values["message"] != want {
+			t.Errorf("kept %q for %q, want %q", got.Values["message"], sent, want)
+		}
+	}
+	// The limit counts the message as it is kept, one character a break.
+	long := strings.Repeat("a\r\n", MaxValue/2)
+	if _, err := Accept(contact(), filled(map[string]string{"message": long}),
+		"", time.Now()); err != nil {
+		t.Errorf("refused %d characters of lines as over the limit of %d: %v",
+			len(strings.ReplaceAll(long, "\r\n", "\n")), MaxValue, err)
+	}
+	for _, bad := range []string{"line one\r\nline two\x00", "line one\r\n\x1b[31m"} {
+		if _, err := Accept(contact(), filled(map[string]string{"message": bad}),
+			"", time.Now()); err == nil {
+			t.Errorf("accepted %q; only the line break is let through", bad)
+		}
+	}
+	if _, err := Accept(contact(), filled(map[string]string{"name": "Dana\r\nBcc: x"}),
+		"", time.Now()); err == nil {
+		t.Error("accepted a CR LF in a single-line field")
+	}
+}
+
 // A form without a privacy notice cannot be published.
 func TestAFormWithoutAPrivacyNoticeIsRefused(t *testing.T) {
 	f := contact()

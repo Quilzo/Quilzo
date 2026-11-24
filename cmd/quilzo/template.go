@@ -13,17 +13,23 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/starter"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 func cmdTemplate(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		// The entry the privilege gate reads for a bare `quilzo template`.
+		args = []string{bareRuns["template"]}
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return templateList()
 	case "show":
 		return templateShow(args[1:])
@@ -34,8 +40,8 @@ func cmdTemplate(root string, args []string) error {
 	case "adopt":
 		return templateAdopt(root, args[1:])
 	default:
-		return fmt.Errorf("unknown template command %q; try list, show, use, "+
-			"layouts or adopt", args[0])
+		return errMisused{fmt.Errorf("unknown template command %q; try list, show, use, "+
+			"layouts or adopt", args[0])}
 	}
 }
 
@@ -62,12 +68,12 @@ func templateList() error {
 
 func templateShow(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo template show <name>")
+		return errMisused{fmt.Errorf("usage: quilzo template show <name>")}
 	}
 	t, ok := starter.Get(args[0])
 	if !ok {
-		return fmt.Errorf("no starter template %q; try: %s",
-			args[0], strings.Join(starter.Names(), ", "))
+		return errNotFound{fmt.Errorf("no starter template %q; try: %s",
+			args[0], strings.Join(starter.Names(), ", "))}
 	}
 	if w.JSON(t) {
 		return nil
@@ -110,29 +116,129 @@ func templateShow(args []string) error {
 	return nil
 }
 
-// templateLayouts lists the layouts that ship, which is what a page's "layout"
-// field may name once they are written out.
+// templateLayouts lists the layouts a page's "layout" field may name: the ones
+// that ship, which are named once they are written out, and the ones in this
+// site's own template directory.
+//
+// It listed only the shipped ones, so a layout written for the site — the
+// arena.html a page was rendering through — was missing from the answer to
+// "which layouts may a page name", which is the one place somebody would look
+// for it.
 func templateLayouts(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: quilzo template layouts")
+	fs := flag.NewFlagSet("layouts", flag.ContinueOnError)
+	dir := fs.String("dir", "templates", "the site's template directory, for its own layouts")
+	if err := parseOnce(fs, args); err != nil {
+		return err
 	}
-	names := starter.LayoutNames()
-	if w.JSON(names) {
+	if fs.NArg() != 0 {
+		return errMisused{fmt.Errorf("usage: quilzo template layouts [--dir templates]")}
+	}
+	shipped := starter.LayoutNames()
+	own := siteLayoutNames(*dir)
+	// One list of every name a page may use, as before: the shipped ones and
+	// the site's, once each.
+	if w.JSON(unionSorted(shipped, own)) {
 		return nil
 	}
 	w.Human("%slayouts that ship%s\n\n", bold, reset)
-	for _, n := range names {
+	for _, n := range shipped {
 		note := ""
 		if n == render.DefaultLayout {
 			note = " — the default: what a page renders through when it names none"
 		}
 		w.Human("  %s%-11s%s%s%s%s\n", bold, n, reset, dim, note, reset)
 	}
+	w.Human("\n%sthis site's own%s %s(%s)%s\n\n", bold, reset, dim, *dir, reset)
+	if len(own) == 0 {
+		w.Human("  %snone yet; quilzo template use NAME writes one%s\n", dim, reset)
+	}
+	isShipped := map[string]bool{}
+	for _, n := range shipped {
+		isShipped[n] = true
+	}
+	broken := brokenLayouts(*dir, own)
+	for _, n := range own {
+		note := " — written for this site"
+		if isShipped[n] {
+			note = " — a copy of the shipped one, to edit"
+		}
+		if why, bad := broken[n]; bad {
+			w.Human("  %s%-11s%s%s — does not parse: %v%s\n", bold, n, reset, yellow, why, reset)
+			continue
+		}
+		w.Human("  %s%-11s%s%s%s%s\n", bold, n, reset, dim, note, reset)
+	}
+	// What stops the set being used at all — no page layout — as the site
+	// would say it.
+	if len(own) > 0 {
+		if _, err := loadLayouts(*dir); err != nil {
+			w.Human("\n  %s%v%s\n", yellow, err, reset)
+		}
+	}
 	w.Human("\n  %sa page chooses one with a \"layout\" field:%s\n", dim, reset)
 	w.Human("    %s{ \"layout\": \"catalogue\", \"title\": \"Shop\" }%s\n", dim, reset)
 	w.Human("\n  %squilzo template use NAME --all-layouts  writes all of them%s\n",
 		dim, reset)
 	return nil
+}
+
+// siteLayoutNames are the layouts in a template directory: every .html whose
+// name a page could use, as loadLayouts reads them. None for a directory that
+// is not there, which is a site that has not written any yet.
+func siteLayoutNames(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		name, isHTML := strings.CutSuffix(e.Name(), ".html")
+		if e.IsDir() || !isHTML || !render.ValidLayoutName(name) {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// brokenLayouts are the layouts among names in dir whose markup does not
+// parse, each with what the parser said.
+//
+// loadLayouts reads the files and parses none of them: a layout is parsed
+// when a page is rendered through it. So the listing that said it named a
+// layout that does not parse named none, and the first anybody heard of an
+// unclosed {% if %} was a page that would not render, at the publish gate or
+// in front of a reader.
+func brokenLayouts(dir string, names []string) map[string]error {
+	out := map[string]error{}
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(dir, n+".html"))
+		if err != nil {
+			out[n] = err
+			continue
+		}
+		if _, err := tmpl.Parse(string(b)); err != nil {
+			out[n] = err
+		}
+	}
+	return out
+}
+
+// unionSorted is every name in either list, once, in order.
+func unionSorted(a, b []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, list := range [][]string{a, b} {
+		for _, n := range list {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func templateUse(root string, args []string) error {
@@ -146,16 +252,16 @@ func templateUse(root string, args []string) error {
 		"skip the theme, so the site keeps the palette it has")
 	allLayouts := fs.Bool("all-layouts", false,
 		"write every layout that ships, so any page can name any of them")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo template use <name> [--dir templates]")
+		return errMisused{fmt.Errorf("usage: quilzo template use <name> [--dir templates]")}
 	}
 	t, ok := starter.Get(pos[0])
 	if !ok {
-		return fmt.Errorf("no starter template %q; try: %s",
-			pos[0], strings.Join(starter.Names(), ", "))
+		return errNotFound{fmt.Errorf("no starter template %q; try: %s",
+			pos[0], strings.Join(starter.Names(), ", "))}
 	}
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
@@ -218,7 +324,8 @@ func templateUse(root string, args []string) error {
 	}
 
 	// A template is what renders every page, so writing one is a change to
-	// what the public sees the moment the server restarts.
+	// what the public sees with the next publish, or when the site is told
+	// to reload (designreload.go).
 	record(root, resolveCaller(root, "").auditRecord("template.use", "/",
 		audit.Success, map[string]string{"starter": t.Name, "dir": *dir}))
 	for _, path := range paths {
@@ -273,11 +380,27 @@ func templateUse(root string, args []string) error {
 		w.Human("wrote %s%s%s\n", bold, sample, reset)
 	}
 
+	// What to do next, each line a command that runs as printed. It said
+	// add, publish and `site --open`, and the publish refused the page,
+	// because nothing had said who or what wrote it (the provenance gate in
+	// cmdPublish), and the site has no --open. The sample is the template's,
+	// written by people, so a person's is what is said of it.
+	//
+	// The publish and the site look for the layouts in templates unless told
+	// otherwise, so a template written anywhere else with --dir says where:
+	// without it both were refused, "no template directory at templates".
+	where := ""
+	if filepath.Clean(*dir) != "templates" {
+		where = " --templates " + *dir
+	}
 	w.Human("\n  %snext:%s\n", dim, reset)
 	w.Human("    quilzo add %s=%s\n", *page, sample)
-	w.Human("    quilzo publish\n")
-	w.Human("    quilzo site --open\n")
-	w.Human("\n  %sthe stylesheet is generated from the theme and served at "+
+	w.Human("    quilzo provenance set %s --source humanEdits\n", *page)
+	w.Human("    quilzo publish%s\n", where)
+	w.Human("    quilzo site%s\n", where)
+	w.Human("\n  %sprovenance says who or what wrote the page; publishing refuses a "+
+		"page nobody has said that of%s\n", dim, reset)
+	w.Human("  %sthe stylesheet is generated from the theme and served at "+
 		"/site.css%s\n", dim, reset)
 	return nil
 }
@@ -303,12 +426,12 @@ func templateAdopt(root string, args []string) error {
 	force := fs.Bool("force", false, "overwrite a layout that already exists")
 	accept := fs.Bool("accept-unsupported", false,
 		"write the layout even where constructs could not be converted")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
-			"usage: quilzo template adopt <file.html> [--as name] [--dry-run]")
+		return errMisused{fmt.Errorf(
+			"usage: quilzo template adopt <file.html> [--as name] [--dry-run]")}
 	}
 
 	src, err := os.ReadFile(pos[0])
@@ -359,8 +482,21 @@ func templateAdopt(root string, args []string) error {
 		return err
 	}
 	path := filepath.Join(*dir, layoutName+".html")
-	if _, serr := os.Stat(path); serr == nil && !*force {
+	_, serr := os.Stat(path)
+	if serr == nil && !*force {
 		return fmt.Errorf("%s already exists; pass --force to replace it", path)
+	}
+	// Replacing a layout the site has is replacing the markup its pages may
+	// already render through, and page.html is every page that names none:
+	// what `template use` and the Design screen's install ask a publisher
+	// for. Asked here rather than in the privilege table, because a layout
+	// of the site's own that nothing renders through yet is an author's to
+	// write, and only the directory says which this is.
+	if serr == nil {
+		if err := authorise(root, resolveCaller(root, flagToken), auth.ActPublish, "/"); err != nil {
+			return fmt.Errorf("%s is a layout the site already has, and replacing it "+
+				"changes every page that renders through it, which needs whoever may publish: %w", path, err)
+		}
 	}
 	if err := os.WriteFile(path, []byte(result.Template), 0o600); err != nil {
 		return err
@@ -391,6 +527,11 @@ func report(lines []string, label, emphasis string) {
 }
 
 // wrapIndent wraps text to a width, indenting continuation lines.
+//
+// The width is the text's, on every line. The indent was counted against
+// it on the lines after the first, so a summary printed at column 38 and
+// wrapped to 44 had six columns left after its first line, and `quilzo
+// theme tokens` put "else", "answers" and "to" on a line each.
 func wrapIndent(s string, width, indent int) string {
 	words := strings.Fields(s)
 	var b strings.Builder
@@ -398,7 +539,7 @@ func wrapIndent(s string, width, indent int) string {
 	for i, word := range words {
 		if col+len(word) > width && i > 0 {
 			b.WriteString("\n" + strings.Repeat(" ", indent))
-			col = indent
+			col = 0
 		} else if i > 0 {
 			b.WriteString(" ")
 			col++

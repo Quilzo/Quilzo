@@ -26,7 +26,7 @@ import (
 // component rules here take every colour from a token — including the
 // translucent ones, mixed from tokens with color-mix().
 //
-// # The six, and where each comes from
+// # The seven, and where each comes from
 //
 //	expressive  Material 3 Expressive (Google, 2025): large and varied
 //	            corners, tonal containers, springs, shape that answers touch;
@@ -43,13 +43,17 @@ import (
 //	business    compact and quiet: small corners, a fine border, a slight
 //	            shadow, a gentle type scale
 //
+//	neon        glow on large type and filled buttons, section titles that
+//	            run from the text colour into the accent, chamfered corners
+//	            and capital display type; see neon.go
+//
 // expressive is the default: a site starts in the look its admin is drawn
 // in. classic is what sites had before styles existed, kept as the calmer
 // choice: the same tones with smaller shapes and a quieter type scale.
 
 // Styles lists the styles, in the order a screen offers them: the default
 // first.
-var Styles = []string{"expressive", "classic", "glass", "editorial", "bold", "soft", "business"}
+var Styles = []string{"expressive", "classic", "glass", "editorial", "bold", "soft", "business", "neon"}
 
 // DefaultStyle is the style of a site that has chosen none.
 const DefaultStyle = "expressive"
@@ -63,6 +67,7 @@ var StyleWords = map[string]string{
 	"bold":       "Heavy type, square corners, thick borders and hard shadows.",
 	"soft":       "Large corners, generous space and cards lifted by soft shadows.",
 	"business":   "Compact and quiet: small corners, fine borders, a gentle type scale.",
+	"neon":       "Glow on headings and buttons, gradient section titles, chamfered corners, capital display type.",
 }
 
 // Motions are how much moves.
@@ -91,6 +96,10 @@ var presetTokens = map[string]map[string]string{
 	},
 	"business": {
 		"radius": "6px", "scale": "1.2", "density": "0.9", "tracking-display": "-0.015em",
+	},
+	"neon": {
+		"radius": "14px", "radius-pill": "8px", "scale": "1.333", "tracking-display": "0.02em",
+		"density": "1.05", "font-display": "industrial", "corner": "chamfer", "glow": "16px",
 	},
 }
 
@@ -159,6 +168,7 @@ h1, h2 { font-weight: 900; }
 .site-header { border-bottom: var(--border) solid var(--on-surface); }
 @media (prefers-reduced-motion: reduce) { .card:hover, .btn:active { transform: none; } }
 `,
+	"neon": neonCSS,
 	"soft": `
 /* style: soft */
 .card { border-color: transparent;
@@ -184,6 +194,12 @@ h1, h2 { font-weight: 900; }
 // motionCSS is each motion setting's override of the motion tokens. Reduced
 // motion, which the component sheet honours whatever is chosen here, still
 // wins: this decides how much moves for visitors who have not asked.
+//
+// None stops page transitions too. Setting every duration to nothing left
+// the browser cross-fading between pages, since the cross-fade is animated
+// by pseudo-elements the universal selector does not reach; navigation:
+// none is the only thing that says there is no transition at all, and it
+// comes after the components' navigation: auto, so it is the one used.
 var motionCSS = map[string]string{
 	"subtle": "",
 	"expressive": `
@@ -196,6 +212,7 @@ var motionCSS = map[string]string{
 /* motion: none */
 :root { --dur: 0ms; --spring: linear; }
 *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; animation-iteration-count: 1 !important; }
+@view-transition { navigation: none; }
 `,
 }
 
@@ -223,10 +240,13 @@ func (t *Theme) Motion() string {
 	return "subtle"
 }
 
-// Preset is the style's component layer and the motion setting, appended
-// after the shared components so they win, and before the arrangement rules.
+// Preset is the style's component layer, the corner and motion settings and
+// the one scheme a site may be drawn in, appended after the shared components
+// so they win, and before the arrangement rules. A site that chose a round
+// corner and both schemes, which is every site that chose neither, gets
+// nothing from the last two.
 func (t *Theme) Preset() string {
-	return presetCSS[t.Style()] + motionCSS[t.Motion()]
+	return presetCSS[t.Style()] + cornerCSS[t.Corner()] + motionCSS[t.Motion()] + t.schemeCSS()
 }
 
 // applyStyle fills in what the chosen style sets, wherever the operator has
@@ -275,6 +295,10 @@ func choiceOK(name, v string) bool {
 		return ok
 	case "icons":
 		return icons.Valid(v)
+	case "corner":
+		return contains(Corners, v)
+	case "scheme":
+		return contains(SchemeChoices, v)
 	}
 	return false
 }
@@ -287,6 +311,10 @@ func choiceList(name string) string {
 		return strings.Join(Motions, ", ")
 	case "icons":
 		return strings.Join(icons.Styles, ", ")
+	case "corner":
+		return strings.Join(Corners, ", ")
+	case "scheme":
+		return strings.Join(SchemeChoices, ", ")
 	}
 	return ""
 }

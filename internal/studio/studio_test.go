@@ -4,18 +4,25 @@
 package studio
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
+	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -457,5 +464,278 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 	signedIn(t, srv, "qz_not-a-token", "/", nil, "")
 	if len(told) != 2 {
 		t.Fatalf("a token that did not authenticate was told: %v", told)
+	}
+}
+
+// A sign-in session is not taken here, pasted or in the cookie, and the
+// refusal says what to paste instead; a token is taken as before.
+//
+// The admin signs a session out once nobody has used it for session.idle,
+// and keeps that clock in its own process. The studio is another process
+// with no such clock, so a sign-in session pasted here put a recording in
+// the library for the whole of session.max after the admin would have
+// signed it out.
+func TestASignInSessionIsNotTakenHere(t *testing.T) {
+	srv, token := wired(t)
+	session, _, err := srv.Tokens.IssueSession("passkey:ada", "ada", auth.RoleAuthor, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(secret string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+secret))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post(session); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "quilzo token") {
+		t.Errorf("a sign-in session was let in: %d %s", rec.Code, rec.Body)
+	}
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	if rec := signedIn(t, srv, session, "/upload", body, ct); rec.Code != http.StatusUnauthorized {
+		t.Errorf("a sign-in session in the cookie uploaded a recording, answering %d", rec.Code)
+	}
+	if rec := post(token); rec.Code != http.StatusSeeOther {
+		t.Errorf("a token was refused: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A refused upload is refused from its first bytes, not after it has been
+// read whole into memory.
+//
+// The form spills a recording to a temporary file so that a quarter of a
+// gigabyte is not held in the heap to find out whether it parses, and the
+// handler then read the spilled file whole with io.ReadAll anyway: one
+// 200 MB upload that was not a recording took the studio from 45 MB to
+// 461 MB, and three at once to 1.28 GB.
+func TestARefusedUploadIsNotReadIntoMemory(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 96 << 20
+	payload := append([]byte("not any format at all"), make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// The multipart parse keeps up to eight megabytes in memory before it
+	// spills, and growing that buffer allocates a few times over (more under
+	// the race detector); that is bounded whatever the file's size. Reading
+	// the file whole allocates more than the file, so three quarters of it
+	// is the line between the two.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*3/4 {
+		t.Errorf("refusing a %d MB upload allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// Only so many recordings are held in memory at once. A recording that
+// parses is read whole to be filed, so without a bound a handful of
+// concurrent uploads could take the host's memory between them; a request
+// that cannot get a turn before it gives up is told so, and nothing is stored.
+func TestOnlySoManyRecordingsAreReadAtOnce(t *testing.T) {
+	srv, secret := wired(t)
+	for i := 0; i < cap(recordingsInMemory); i++ {
+		recordingsInMemory <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(recordingsInMemory); i++ {
+			<-recordingsInMemory
+		}
+	}()
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/upload", body).WithContext(ctx)
+	req.Header.Set("Content-Type", ct)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: secret})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("an upload with no turn answered %d: %s", rec.Code, rec.Body.String())
+	}
+	lib, _ := srv.Library()
+	if files, _ := lib.List(); len(files) != 0 {
+		t.Errorf("%d file(s) were stored without a turn", len(files))
+	}
+}
+
+// A recording that is taken is read into memory once, into a buffer of its
+// own size.
+//
+// Two recordings may be in memory at once (recordingsInMemory), so what one
+// costs is what that bound is worth. Read with io.ReadAll, which grows its
+// buffer as it goes and copies into each next one, a 64 MB recording
+// allocated 190 MB on its way in and for a moment held its buffer and the
+// next together: the bound of two held well over twice two recordings. A
+// file named .mp4 or opening with a recording's first bytes gets this far
+// whatever else it holds, so the cost is one anybody signed in can ask for.
+func TestARecordingIsReadIntoMemoryOnce(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 64 << 20
+	payload := append(webmBytes()[:8], make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// Once for the recording, and what the multipart parse allocates
+	// growing the eight megabytes it keeps before it spills: half the
+	// recording here, and as much as the recording under the race detector
+	// (see TestARefusedUploadIsNotReadIntoMemory). Read with io.ReadAll it
+	// was three times the recording, so two and a half is the line between.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*5/2 {
+		t.Errorf("taking a %d MB recording allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// An upload leaves nothing behind in the temporary directory, taken or
+// refused.
+//
+// The form spills a recording to a temporary file, and the handler left
+// removing it to whatever served the request. net/http's server does, once
+// the request is finished; anything else that calls the handler did not,
+// these tests among them, and each run of the test above that posts a 96 MB
+// file left 96 MB in the temporary directory until a shared disk was full.
+// The handler removes what its own parse wrote.
+func TestAnUploadLeavesNoTemporaryFile(t *testing.T) {
+	spill := t.TempDir()
+	t.Setenv("TMPDIR", spill)
+	srv, secret := wired(t)
+	// Over the eight megabytes the parse keeps in memory, so it spills.
+	const size = 9 << 20
+	for _, upload := range []struct {
+		name  string
+		head  []byte
+		taken bool
+	}{
+		{"clip.webm", webmBytes()[:8], true},
+		{"notes.webm", []byte("not any format at all"), false},
+	} {
+		body, ct := oneRecording(t, upload.name, append(upload.head, make([]byte, size)...))
+		rec := signedIn(t, srv, secret, "/upload", body, ct)
+		if upload.taken != (rec.Code == http.StatusOK) {
+			t.Fatalf("%s answered %d: %s", upload.name, rec.Code, rec.Body.String())
+		}
+		left, err := filepath.Glob(filepath.Join(spill, "multipart-*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(left) != 0 {
+			t.Errorf("uploading %s left %d file(s) in the temporary directory", upload.name, len(left))
+		}
+	}
+}
+
+// The recording is named to the listener as the one body that carries a
+// file, with the limit the upload applies; the sign-in form is not, so it
+// has what a form has on the public site rather than the hours a
+// recording may take.
+func TestTheRecordingIsTheOneBodyNamedAsAFile(t *testing.T) {
+	if got := FileBody(httptest.NewRequest(http.MethodPost, "/upload", nil)); got != MaxRecording {
+		t.Errorf("POST /upload: %d, and the upload reads %d", got, MaxRecording)
+	}
+	for _, r := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/signin", nil),
+		httptest.NewRequest(http.MethodGet, "/upload", nil),
+		httptest.NewRequest(http.MethodPost, "/", nil),
+	} {
+		if got := FileBody(r); got != 0 {
+			t.Errorf("%s %s was given %d as a file", r.Method, r.URL.Path, got)
+		}
+	}
+}
+
+// studioBehindTheListener is the studio served as cmd/quilzo serves it,
+// under listen.Uploads with the recording named, and a body's deadline
+// short enough for a test to wait out.
+func studioBehindTheListener(t *testing.T, srv *Server, body time.Duration) string {
+	t.Helper()
+	l := listen.Uploads()
+	l.Body = body
+	l.Files = FileBody
+	hs := &http.Server{Handler: srv.Handler()}
+	l.Apply(hs)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = hs.Serve(ln) }()
+	t.Cleanup(func() { _ = hs.Close() })
+	return ln.Addr().String()
+}
+
+// Somebody signed out who posts a recording is waited on for a form's
+// time, not a recording's. The listener gave every body on /upload the time
+// a quarter of a gigabyte takes, eighteen hours, before anybody knew who was
+// sending; the upload refuses somebody signed out without reading, and
+// net/http then read what was left under that deadline.
+func TestSomebodySignedOutIsNotWaitedOnForARecordingsTime(t *testing.T) {
+	srv, _ := wired(t)
+	addr := studioBehindTheListener(t, srv, 300*time.Millisecond)
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := io.WriteString(c, "POST /upload HTTP/1.1\r\nHost: x\r\n"+
+		"Content-Type: multipart/form-data; boundary=x\r\nTransfer-Encoding: chunked\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_ = c.SetReadDeadline(start.Add(5 * time.Second))
+	_, err = io.Copy(io.Discard, c)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		t.Fatal("a recording posted signed out, sending nothing, was still held after " +
+			"five seconds against a form's 300ms")
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("a recording posted signed out was held %v against a form's 300ms", took)
+	}
+}
+
+// Somebody signed in still has the time their recording takes.
+func TestARecordingIsGivenTheTimeItTakes(t *testing.T) {
+	srv, secret := wired(t)
+	addr := studioBehindTheListener(t, srv, 300*time.Millisecond)
+	body, ct := oneRecording(t, "screen.webm", webmBytes())
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(20 * time.Second))
+	_, _ = fmt.Fprintf(c, "POST /upload HTTP/1.1\r\nHost: x\r\nCookie: %s=%s\r\n"+
+		"Content-Type: %s\r\nContent-Length: %d\r\n\r\n", CookieName, secret, ct, body.Len())
+	// Six pieces with 200ms between them: four times a form's deadline.
+	b := body.Bytes()
+	step := len(b)/6 + 1
+	for len(b) > 0 {
+		n := min(step, len(b))
+		if _, err := c.Write(b[:n]); err != nil {
+			t.Fatalf("the recording was cut off: %v", err)
+		}
+		b = b[n:]
+		time.Sleep(200 * time.Millisecond)
+	}
+	res, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	said, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("a recording sent slowly answered %d: %s", res.StatusCode, said)
 	}
 }

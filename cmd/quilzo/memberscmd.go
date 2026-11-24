@@ -21,8 +21,8 @@ import (
 // nothing stored that would let anybody do either.
 
 func memberUsage() error {
-	return fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
-		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")
+	return errMisused{fmt.Errorf("usage: quilzo member list | show ID | disable ID | enable ID | " +
+		"remove ID | invite [--note TEXT] | invites | revoke-invite HASH")}
 }
 
 func cmdMember(root string, args []string) error {
@@ -40,6 +40,9 @@ func cmdMember(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := store.List()
 		if err != nil {
 			return err
@@ -103,8 +106,19 @@ func cmdMember(root string, args []string) error {
 			"enable":  "it can sign in again"}[args[0]])
 		return done("member."+args[0]+"d", args[1])
 	case "remove":
-		if len(args) != 2 {
+		fs := flag.NewFlagSet("member remove", flag.ContinueOnError)
+		yes := fs.Bool("yes", false, "erase it; at a terminal, without this, only say what would go")
+		var pos []string
+		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
 			return memberUsage()
+		}
+		args = []string{args[0], pos[0]}
+		if erasureHeld(*yes, fmt.Sprintf("this would erase %s, with its passkeys, recovery codes, sessions and posts",
+			onOneLine(args[1]))) {
+			return nil
 		}
 		if posts, perr := openPosts(root); perr == nil {
 			posts.RemoveAuthor(args[1])
@@ -117,7 +131,7 @@ func cmdMember(root string, args []string) error {
 	case "invite":
 		fs := flag.NewFlagSet("member invite", flag.ContinueOnError)
 		note := fs.String("note", "", "who it is for, to recognise it in the list")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		code, inv, err := store.NewInvite(caller.Name, *note)
@@ -125,12 +139,17 @@ func cmdMember(root string, args []string) error {
 			return err
 		}
 		if !w.JSON(map[string]any{"code": code, "hash": inv.Hash, "expires": inv.Expires}) {
+			// The code alone on stdout, shown once, and its note on stderr.
 			w.Human("%s\n", code)
-			w.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
-				dim, inv.Expires.Format("2 Jan 2006"), reset)
+			n := w.Notes()
+			n.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
+				n.Dim(), inv.Expires.Format("2 Jan 2006"), n.Reset())
 		}
 		return done("member.invited", inv.Hash[:12])
 	case "invites":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all := store.Invites()
 		if w.JSON(map[string]any{"invites": all}) {
 			return nil
@@ -145,7 +164,7 @@ func cmdMember(root string, args []string) error {
 		return nil
 	case "revoke-invite":
 		if len(args) != 2 || len(strings.TrimSpace(args[1])) < 6 {
-			return fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")
+			return errMisused{fmt.Errorf("usage: quilzo member revoke-invite HASH (at least six characters of it)")}
 		}
 		if err := store.RevokeInvite(args[1]); err != nil {
 			return err

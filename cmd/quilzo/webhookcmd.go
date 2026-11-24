@@ -61,6 +61,9 @@ func cmdWebhook(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return hookList(root)
 	case "add":
 		return hookAdd(root, args[1:])
@@ -69,8 +72,8 @@ func cmdWebhook(root string, args []string) error {
 	case "test":
 		return hookTest(root, args[1:])
 	default:
-		return fmt.Errorf("unknown webhook command %q; try list, add, remove "+
-			"or test", args[0])
+		return errMisused{fmt.Errorf("unknown webhook command %q; try list, add, remove "+
+			"or test", args[0])}
 	}
 }
 
@@ -79,36 +82,30 @@ func hookAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	types := fs.String("types", "",
 		"comma-separated event types; empty means all. "+
-			strings.Join(webhook.EventTypes, ", "))
+			strings.Join(webhook.EventTypes, ", ")+", or each one's event name (page.published)")
 	note := fs.String("note", "", "what this endpoint is")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
+		return errMisused{fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")}
 	}
-	if _, err := fetch.For("webhook").ValidateURL(pos[0]); err != nil {
-		return fmt.Errorf("that endpoint is not usable: %w", err)
+	e := webhook.Endpoint{URL: pos[0], Note: *note}
+	for _, t := range strings.Split(*types, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			e.Types = append(e.Types, t)
+		}
 	}
-
+	// The rule the Integrations screen and a feature's webhooks are held
+	// to as well (webhook.Check).
+	if err := webhook.Check(e.URL, e.Types); err != nil {
+		return err
+	}
 	secret, err := webhook.NewSecret()
 	if err != nil {
 		return err
 	}
-	e := webhook.Endpoint{URL: pos[0], Secret: secret, Note: *note}
-	for _, t := range strings.Split(*types, ",") {
-		if t = strings.TrimSpace(t); t == "" {
-			continue
-		}
-		if !webhook.KnownType(t) {
-			return fmt.Errorf(
-				"%q is not an event this sends. The types are %s — an "+
-					"endpoint subscribed to something that never happens is "+
-					"configured, reported as configured, and silent",
-				t, strings.Join(webhook.EventTypes, ", "))
-		}
-		e.Types = append(e.Types, t)
-	}
+	e.Secret = secret
 
 	if err := updateHooks(root, func(f *hookFile) error {
 		for _, existing := range f.Endpoints {
@@ -126,39 +123,54 @@ func hookAdd(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "webhook.add", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		// The URL, never the shared value. The audit package refuses any Detail
-		// key containing "secret", which is what stops this being added later
-		// by somebody being helpful.
-		Detail: map[string]string{"endpoint": e.URL},
+		// The host and a reference, never the shared value and never the
+		// whole address (webhook.LogForm): the path or query of an address
+		// can be a credential of its own. The audit package refuses any
+		// Detail key containing "secret", which is what stops the shared
+		// value being added later by somebody being helpful.
+		Detail: map[string]string{"endpoint": webhook.LogForm(e.URL), "endpoint_ref": webhook.Ref(e)},
 	})
 
+	// The endpoint and its key under --json. This wrote the key only for a
+	// person, so under --json the endpoint was kept signing with a key its
+	// receiver could not be given.
+	if w.JSON(map[string]any{"url": e.URL, "secret": secret}) {
+		return nil
+	}
+	// The key alone on stdout, and what is said of it on stderr, so it
+	// can be handed straight to the receiver.
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
+	n := w.Notes()
+	n.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
 		"  same bytes to verify a delivery, so it is a shared value rather\n"+
-		"  than something that can be hashed%s\n", yellow, reset)
-	w.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
+		"  than something that can be hashed%s\n", n.Yellow(), n.Reset())
+	n.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
 		"  together. The timestamp is what stops a captured request being\n"+
 		"  replayed a year later with a signature that still verifies%s\n",
-		dim, reset)
+		n.Dim(), n.Reset())
 	return nil
 }
 
 func hookRemove(root string, args []string) error {
+	// Named by the address it was added with: an endpoint has no id, and
+	// the help that said `remove ID` sent somebody looking for one in a
+	// list that shows none.
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo webhook remove <url>")
+		return errMisused{fmt.Errorf("usage: quilzo webhook remove URL, the address `quilzo webhook list` shows")}
 	}
+	var removed webhook.Endpoint
 	if err := updateHooks(root, func(f *hookFile) error {
 		kept := f.Endpoints[:0]
 		found := false
 		for _, e := range f.Endpoints {
 			if e.URL == args[0] {
-				found = true
+				found, removed = true, e
 				continue
 			}
 			kept = append(kept, e)
 		}
 		if !found {
-			return fmt.Errorf("no endpoint at %s", args[0])
+			return errNotFound{fmt.Errorf("no endpoint at %s", args[0])}
 		}
 		f.Endpoints = kept
 		return nil
@@ -169,7 +181,8 @@ func hookRemove(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "webhook.remove", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{"endpoint": args[0]},
+		// As webhook.add records it, so the two line up by endpoint_ref.
+		Detail: map[string]string{"endpoint": webhook.LogForm(removed.URL), "endpoint_ref": webhook.Ref(removed)},
 	})
 	w.Human("removed\n")
 	return nil
@@ -216,6 +229,11 @@ func hookList(root string) error {
 // hookTest sends a delivery now, so a misconfigured receiver is found
 // deliberately rather than by a publication going unnoticed.
 func hookTest(root string, args []string) error {
+	// It takes nothing: the test goes to every endpoint. `webhook test ID`
+	// read as a test of that one, and sent to them all.
+	if err := noArguments(args); err != nil {
+		return err
+	}
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil {
 		return err
@@ -375,7 +393,7 @@ func sendWebhookEvent(root string, ev webhook.Event) {
 		sent = append(sent, last)
 		if !last.Succeeded {
 			fmt.Fprintf(os.Stderr, "%swebhook to %s failed after %d attempt(s)%s\n",
-				yellow, e.URL, len(deliveries), reset)
+				noteYellow, e.URL, len(deliveries), noteReset)
 		}
 	}
 	recordDeliveries(root, sent)

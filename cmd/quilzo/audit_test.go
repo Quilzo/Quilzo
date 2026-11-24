@@ -188,14 +188,18 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 	// records carry the specific action strings a SIEM rule will match on.
 	// Renaming "token.issue" would still break somebody's alerting.
 	required := map[string]string{
-		"authGrant":     "auth.",
+		"authGrantAs":   "auth.",
 		"authRevoke":    "auth.revoke",
 		"tokenIssueAs":  "token.issue",
 		"tokenExchange": "token.exchange",
 		"tokenRevoke":   "token.revoke",
 		"cmdImport":     "import",
-		"cmdExport":     "export",
-		"cmdSiem":       "auditlog.export",
+		// The record every export writes, `quilzo export`'s, export_site's
+		// and the Transfer screen's alike (exportsite.go).
+		"recordExport": "export",
+		// `quilzo siem` and `quilzo auditlog export` record through it
+		// (TestEveryAuditLogExportIsRecordedWithTheSameDetail runs both).
+		"recordAuditLogExport": "auditlog.export",
 	}
 
 	found := map[string]string{}

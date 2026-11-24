@@ -54,6 +54,10 @@ const (
 	// error that callers would then have to retry, and a retry loop around a
 	// lock is a lock nobody is holding correctly.
 	lockfileExclusiveLock = 0x00000002
+	// Return at once when another process holds it, for tryLock.
+	lockfileFailImmediately = 0x00000001
+	// What LockFileEx says when it would have had to wait.
+	errorLockViolation syscall.Errno = 33
 )
 
 // overlapped is the OVERLAPPED structure LockFileEx takes. Declared here
@@ -74,6 +78,26 @@ func lockExclusive(f *os.File) error {
 		return err
 	}
 	return nil
+}
+
+// tryLock takes the lock if nobody holds it, and reports whether it did.
+func tryLock(f *os.File) (bool, error) {
+	var ol syscall.Overlapped
+	r, _, err := procLockFile.Call(
+		f.Fd(),
+		uintptr(lockfileExclusiveLock|lockfileFailImmediately),
+		0, // reserved, must be zero
+		1, // bytes to lock, low word
+		0, // bytes to lock, high word
+		uintptr(unsafe.Pointer(&ol)),
+	)
+	if r != 0 {
+		return true, nil
+	}
+	if err == errorLockViolation {
+		return false, nil
+	}
+	return false, err
 }
 
 func unlockFile(f *os.File) {

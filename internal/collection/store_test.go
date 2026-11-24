@@ -5,6 +5,8 @@ package collection
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -402,5 +404,62 @@ func TestARestoreWithNoDatesFallsBackToNow(t *testing.T) {
 	if got.Created != now.Unix() || got.Updated != now.Unix() {
 		t.Errorf("created/updated are %d/%d, want %d for both",
 			got.Created, got.Updated, now.Unix())
+	}
+}
+
+// One damaged record leaves the rest of its collection readable, and the
+// others with it: a listing that fails entirely tells somebody their data
+// is gone when one row is damaged, and `verify` is the tool that reports
+// the row.
+//
+// The walk under every listing came to read each object in full to learn
+// whether it is a subtree, its hash checked, so that a subtree that could
+// not be read stopped the walk rather than reading as no collection at all.
+// A record whose bytes had rotted then stopped it too, and with it every
+// listing, count and read of every collection in the store. What a record
+// is can be told from its header while its bytes are wrong, and its reader
+// is the one that refuses it.
+func TestADamagedRecordLeavesTheRestReadable(t *testing.T) {
+	s := newStore(t)
+	tree, kept := put(t, s, "", "devices", map[string]any{"hostname": "laptop-14"})
+	tree, lost := put(t, s, tree, "devices", map[string]any{"hostname": "laptop-15"})
+	tree, _ = put(t, s, tree, "people", map[string]any{"name": "dana"})
+
+	entries, err := s.GetNested(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := entries[Path("devices", lost.ID)]
+	path := filepath.Join(s.Root(), "objects", oid[:2], oid[2:])
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The last byte of what it says, not its header: rot, not a different
+	// kind of object.
+	body[len(body)-2] ^= 0x20
+	_ = os.Chmod(path, 0o600)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Get(s, tree, "devices", lost.ID); err == nil {
+		t.Fatal("the damaged record read without an error; this test damaged nothing")
+	}
+
+	got, total, err := List(s, tree, "devices", Query{Limit: 10})
+	if err != nil {
+		t.Fatalf("one damaged record made its collection unreadable: %v", err)
+	}
+	if total != 1 || len(got) != 1 || got[0].ID != kept.ID {
+		t.Errorf("listed %d of %d, expected the one undamaged record", len(got), total)
+	}
+	if _, err := Get(s, tree, "devices", kept.ID); err != nil {
+		t.Errorf("the undamaged record beside it could not be read: %v", err)
+	}
+	if names, err := Names(s, tree); err != nil || len(names) != 2 {
+		t.Errorf("collections after one record was damaged: %v, %v", names, err)
+	}
+	if n, err := Count(s, tree, "people"); err != nil || n != 1 {
+		t.Errorf("another collection counted %d, %v", n, err)
 	}
 }

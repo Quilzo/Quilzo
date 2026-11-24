@@ -51,14 +51,18 @@ func mediaGenerate(root string, args []string) error {
 	size := fs.String("size", "1024x1024", "how big to ask for")
 	author := fs.String("author", "",
 		"the person accountable for publishing this")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only,
+	// `quilzo media generate --alt "…" --author WHO "prompt"` was answered
+	// with the usage line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo media generate \"what to draw\" --alt \"what it " +
-				"shows\" --author WHO")
+				"shows\" --author WHO")}
 	}
 	prompt := strings.TrimSpace(rest[0])
 

@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -157,11 +158,19 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 				Principal: principal, Kind: kind, Verified: verified, Detail: d})
 		},
 	}
+	limit := interfaceRate(cc.get())
 	srv.Interface = &admin.AgentInterface{
 		Enabled: func() bool { return cc.get().Bool("mcp.remote") },
 		Config:  cfgOf,
 		OAuth:   oa,
 		Docs:    admin.DocURL("agent-interface"),
+		Limit: func(c *mcp.Caller) (bool, time.Duration) {
+			key := "principal:" + c.Principal
+			if tok, ok := c.Data.(auth.Token); ok && tok.ID != "" {
+				key = tok.ID
+			}
+			return limit.Allow(key, time.Now())
+		},
 		Receipt: func(connection string) ([]byte, error) {
 			rf, err := buildAppReceipt(root, connection, time.Now())
 			if err != nil {
@@ -215,41 +224,148 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 	srv.Federation = federation(root)
 }
 
+// interfaceRate is how fast one token may call the agent interface: the
+// content API's budget, api.rate.per_minute after a burst of api.rate.burst,
+// read when the server starts as /api/v1 reads it.
+//
+// A count of its own rather than the API's, so an integration busy on one
+// is not stopped on the other, and the same numbers, because the settings
+// say they are what one token may ask of this server and the interface had
+// no limit at all: the reader token /api/v1 cut off after twenty requests
+// was given two hundred concurrent exports of the whole site here.
+func interfaceRate(cfg *config.Config) *rate.Limiter {
+	per, burst := cfg.Int("api.rate.per_minute"), cfg.Int("api.rate.burst")
+	if per < 1 {
+		per = 120
+	}
+	if burst < 1 {
+		burst = 20
+	}
+	return &rate.Limiter{Every: time.Minute / time.Duration(per), Burst: burst, MaxKeys: 65536}
+}
+
 // appCallRecord is the record of one call at the agent interface. It is
-// recorded as the app, acting for the person: the person is who it acts
-// for, and the app is what acted. Which model the app runs is its own
-// business and not something it reports, so the app stands in for it.
+// recorded as the client, acting for the person: the person is who it acts
+// for, and the client is what acted (interfaceClient). Which model an app
+// runs is its own business and not something it reports, so the app
+// stands in for it.
 func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record {
-	outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
-	if op != "" {
-		d["operation"] = op
-	}
+	d := map[string]string{}
 	// Which connection: what an administrator suspends or ends when one
-	// app misbehaves for one person, and what a receipt is of.
-	if tok, ok := c.Data.(auth.Token); ok && tok.Grant != "" {
-		d["grant"] = tok.Grant
+	// app misbehaves for one person, and what a receipt is of; or which of
+	// a person's own tokens, which is what they revoke.
+	if tok, ok := c.Data.(auth.Token); ok {
+		if tok.Grant != "" {
+			d["grant"] = tok.Grant
+		}
+		noteCredential(d, tok)
 	}
-	who, model := "mcp-client", "mcp-client"
-	if c.Client != "" {
-		who, model = "app:"+c.Client, c.Client
+	who, model := interfaceClient(c.Principal, c.Client)
+	return interfaceCallRecord(who, model, c.Principal, true, d, tool, op, rerr)
+}
+
+// stdioCallRecord is the record of one call to `quilzo mcp` on standard
+// input: the record a call over HTTP gets, for the person whose token the
+// client was started with, and saying so when no token vouched for them.
+func stdioCallRecord(c *Caller, tool, op string, rerr *mcp.Error) audit.Record {
+	d := map[string]string{}
+	if !c.Verified {
+		d["identity"] = "unverified: " + c.Why
+	}
+	who, model := interfaceClient(c.Name, "")
+	return interfaceCallRecord(who, model, c.Name, c.Verified, d, tool, op, rerr)
+}
+
+// interfaceCallRecord is the record of one tools/call at the agent
+// interface, over HTTP or on standard input: the same record on both, so
+// what a client read and what it was refused is in the log whichever way
+// it connected.
+//
+// Bounded, whatever the call carried. The tool and operation are names the
+// request gave, and a refusal quotes what it was asked about: this stored
+// both whole, so a reader's read_page naming a page just under the 2 MiB
+// body limit added 2 MB to the log with each request, 39 MB in a second and
+// a half, in the log that verify, /logs and every export read whole. Clipped
+// as an agent's own records are (actionRecord).
+func interfaceCallRecord(who, model, person string, verified bool, d map[string]string,
+	tool, op string, rerr *mcp.Error) audit.Record {
+
+	outcome := audit.Success
+	d["tool"], d["on_behalf_of"] = clip(tool, 100), person
+	if op != "" {
+		d["operation"] = clip(op, 100)
 	}
 	if rerr != nil {
-		outcome, d["error"] = audit.Denied, rerr.Message
+		outcome, d["error"] = audit.Denied, clip(rerr.Message, 300)
 		if rerr.Code != mcp.CodeRefused {
 			outcome = audit.Failure
 		}
 	}
 	return audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: outcome,
-		Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d}
+		Principal: who, Kind: audit.KindAI, Model: model, Verified: verified, Detail: d}
+}
+
+// interfaceClient is who an act at the agent interface is recorded as
+// done by, and the model recorded as deciding it: the app, for a token an
+// app was given through OAuth, and otherwise the person whose own token
+// the client holds, with mcp-client for the model, since which model a
+// person's own client runs is not something it says.
+//
+// Every call made with a person's own token was recorded as one principal,
+// mcp-client, so the agent watch saw thirteen people's clients finding out
+// what they might do as one agent with five hundred refusals, the shield
+// case it opened named nobody, and a client that really would not stop
+// could not be told from the rest. The gateway, the governed browser and
+// A2A recorded the same calls as the person acting by hand, so the agent
+// watch, which reads what models do, never saw them at all. Recorded under
+// the person, as kind ai, as the operations' own records already were
+// (Caller.auditRecord), each person's client is its own agent wherever it
+// called, and a case says whose it was.
+func interfaceClient(person, client string) (principal, model string) {
+	if client != "" {
+		return "app:" + client, client
+	}
+	return person, "mcp-client"
+}
+
+// appOf is the app a record's model names: nothing for a client holding a
+// person's own token, which interfaceClient records with mcp-client for the
+// model, and the model door with model-client. Read as an app's name, every
+// person's client was one app, drawn calling every tool anybody called.
+func appOf(model string) string {
+	if model == "mcp-client" || model == "model-client" {
+		return ""
+	}
+	return model
+}
+
+// noteCredential names, in a record's detail, the person's own token a
+// call was made with, when no app was given it: what they revoke when
+// their client misbehaves, and what tells two of one person's clients
+// apart. A session exchanged from a token is named by that token, whose
+// revocation ends it.
+func noteCredential(d map[string]string, tok auth.Token) {
+	if tok.Grant != "" || tok.Client != "" {
+		return
+	}
+	id := tok.Parent
+	if id == "" {
+		id = tok.ID
+	}
+	if id != "" {
+		d["credential"] = id
+	}
 }
 
 // remoteCaller is the caller a token at the agent interface stands for:
 // the person it acts for, with the token's own limits, recorded as a model
-// acting, because that is what calls an interface built for agents.
+// acting, because that is what calls an interface built for agents. The
+// model is the app, when the token was given to one (interfaceClient).
 func remoteCaller(tok auth.Token) *Caller {
 	life, bound := tok.Assurance()
+	_, model := interfaceClient(tok.Principal, tok.Client)
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
-		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant,
+		Kind: audit.KindAI, Model: model, Client: tok.Client, Verified: true, Remote: true, Grant: tok.Grant,
 		Bound: bound, Life: life}
 }
 

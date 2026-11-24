@@ -32,7 +32,7 @@ func wireInbox(t *testing.T, srv *Server) (*handoff.Store, string, *[]string) {
 			return err
 		},
 		Close: func(a, id, by string) error { return store.Close(a, id, by, time.Now()) },
-		Suggest: func(a, q string) (string, []string, error) {
+		Suggest: func(a, q, _ string) (string, []string, error) {
 			*asked = append(*asked, a+"|"+q)
 			return "Unopened items can be returned within 30 days.",
 				[]string{"Returns"}, nil

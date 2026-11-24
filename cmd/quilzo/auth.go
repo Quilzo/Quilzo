@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -129,6 +128,15 @@ func cmdAuth(root string, args []string) error {
 	if len(args) == 0 {
 		return authUsage()
 	}
+	// Access is a store's. `auth list` of a mistyped --root listed nobody,
+	// and `auth grant` there wrote a policy into a directory nothing serves.
+	// The roles are the same for every store, and help is answered wherever
+	// it is asked.
+	if args[0] != "roles" && !helpAsked(args[1:]) {
+		if err := needStore(root); err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "grant":
 		return authGrant(root, args[1:])
@@ -139,18 +147,21 @@ func cmdAuth(root string, args []string) error {
 	// the whole time — so the one surface that spelled it out was the one
 	// somebody acting on a finding was not looking at.
 	//
-	// The same function, with the flag already set. `grant --deny` still
-	// works: it is in scripts, and both spellings producing the same binding
-	// is the point.
+	// The same function, denying. `grant --deny` still works: it is in
+	// scripts, and both spellings producing the same binding is the point.
 	case "deny":
-		// At the end, not the front. authGrant reads its positional arguments
-		// with leadingArgs, which stops at the first thing beginning with a
-		// dash — so a flag in front of the principal makes the principal
-		// invisible and the command answers with its own usage line.
-		return authGrant(root, append(append([]string{}, args[1:]...), "--deny"))
+		// A parameter, not a word on the line. It was "--deny" appended to
+		// the end, and the flag parser stopped at the first word that was not
+		// a flag, so `auth deny dana publisher --note contract ended` never
+		// reached it and made dana a publisher; `auth deny erin admin
+		// everywhere` made erin an administrator.
+		return authGrantAs(root, args[1:], true)
 	case "revoke":
 		return authRevoke(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return authList(root)
 	case "recover":
 		return cmdRecover(root, args[1:])
@@ -161,10 +172,16 @@ func cmdAuth(root string, args []string) error {
 	case "explain":
 		return authExplain(root, args[1:])
 	case "roles":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return authRoles(root)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown auth command %q\n\n", args[0])
-		return authUsage()
+		// Refused, with the commands there are. It printed them and exited
+		// 0, so a script that wrote `auth dny dana publisher` was told its
+		// deny had been made.
+		_ = authUsage()
+		return errMisused{fmt.Errorf("unknown auth command %q", args[0])}
 	}
 }
 
@@ -260,7 +277,30 @@ func authRoles(root string) error {
 	return nil
 }
 
-func authGrant(root string, args []string) error {
+func authGrant(root string, args []string) error { return authGrantAs(root, args, false) }
+
+// authGrantAs is `auth grant`, and `auth deny` when denying is set: then the
+// binding denies whatever the line says, --deny=false included.
+//
+// The first binding a store nobody has entered is given, a grant or a deny,
+// makes it a store with people, and one with two factors from then
+// (twoFactorsFromNow), as `quilzo init` makes it. Only init asked. A store
+// that `quilzo demo` or `quilzo log` made, as they did before only init made
+// one (needStore), and whose first administrator came from `quilzo auth
+// grant owner admin` and a token, never ran init: the first `quilzo serve`
+// took it for an upgraded installation and wrote the grace, and for two
+// weeks a token alone opened the admin of a store a day old. Such a store,
+// or one from before two factors were the rule, can still come to its first
+// grant with nobody in it and no date, or with a grace nobody needs. A store
+// that already has people keeps whatever it was given.
+func authGrantAs(root string, args []string, denying bool) (err error) {
+	if nobodyHasBeenHere(root) {
+		defer func() {
+			if err == nil && !nobodyHasBeenHere(root) {
+				err = twoFactorsFromNow(root)
+			}
+		}()
+	}
 	fs := flag.NewFlagSet("grant", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covers")
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
@@ -272,7 +312,7 @@ func authGrant(root string, args []string) error {
 	// GrantedBy exists to answer "who gave this principal admin?", and "cli"
 	// is not an answer; it is the same non-answer for every operator who has
 	// ever run the command.
-	by := fs.String("by", "", "who granted it; the signed-in principal by default")
+	by := fs.String("by", "", "who to credit for the decision; the grant is recorded as the signed-in principal's")
 	// Withdrawn rather than quietly dropped, so a script that passes it stops
 	// with a reason instead of silently granting something wider than it asked
 	// for — which is what it had been doing all along.
@@ -281,9 +321,10 @@ func authGrant(root string, args []string) error {
 	until := fs.String("until", "", "the grant ends at the start of this day (YYYY-MM-DD)")
 	forDur := fs.String("for", "", "the grant ends after this long: 30d, 72h")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
+	*deny = *deny || denying
 	if *ownOnly {
 		// Offered on both surfaces, confirmed in writing by both, enforced by
 		// neither: EvaluateOwned — the function that resolves an own-only
@@ -312,8 +353,8 @@ func authGrant(root string, args []string) error {
 				"  not a flag to restore")
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo auth grant <principal> <role> " +
-			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth grant <principal> <role> " +
+			"[--on /path]\n   or: quilzo auth deny <principal> <role> [--on /path]")}
 	}
 
 	expires, err := grantExpiry(*until, *forDur, time.Now())
@@ -330,9 +371,15 @@ func authGrant(root string, args []string) error {
 	if perm, ok := auth.PermissionNamed(rest[1]); ok {
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
 	}
+	// Granted by the verified caller, with a name typed after --by kept in
+	// the note as a credit (Caller.namedBy).
+	by2 := grantedBy(root, *by)
+	if _, credited := resolveCaller(root, "").namedBy(*by); credited != "" {
+		*note = withCredit(*note, credited)
+	}
 	if auth.IsAppRoleName(rest[1]) {
 		return grantAppRole(root, rest[0], rest[1], *on, *deny, auth.Binding{
-			GrantedBy: grantedBy(root, *by), Note: *note, Expires: expires})
+			GrantedBy: by2, Note: *note, Expires: expires})
 	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
 		if *on != "/" || *deny {
@@ -347,7 +394,6 @@ func authGrant(root string, args []string) error {
 			bindings = append(bindings, jb)
 		}
 	}
-	by2 := grantedBy(root, *by)
 	// Making somebody an administrator of anything waits for a second
 	// administrator, who applies it on approving.
 	if !*deny && dual.Privileged(bindings) {
@@ -399,33 +445,41 @@ func authGrant(root string, args []string) error {
 		},
 	})
 
-	if job, ok := auth.JobNamed(rest[1]); ok {
-		fmt.Printf("%s %s to %s: %s\n", verb, job.Name, rest[0], job.Summary)
-		for _, b := range bindings {
-			fmt.Printf("  %s%s on %s%s\n", dim, b.Role, b.Resource, reset)
-		}
-		if expires != 0 {
-			fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
-		}
-		return nil
-	}
-	fmt.Printf("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
-	if expires != 0 {
-		fmt.Printf("  %suntil %s%s\n", dim, expiryText(expires), reset)
-	}
-	// Show the consequence immediately. A grant whose effect you have to work
-	// out later is one nobody checks.
-	fmt.Printf("  %s%s can now: ", dim, rest[0])
+	// One document under --json, the same for a role, a permission and a
+	// job: the binding made and what it lets the principal do. This was a
+	// document for a job and prose for a role, which a script parsing the
+	// answer met as a different format for the same command.
 	var can []string
 	for _, a := range auth.Actions() {
 		if p.Evaluate(rest[0], a, *on).Allowed {
 			can = append(can, string(a))
 		}
 	}
+	if w.JSON(map[string]any{"principal": rest[0], "role": rest[1], "on": *on, "deny": *deny,
+		"expires": expiryText(expires), "bindings": bindings, "can": can}) {
+		return nil
+	}
+	if job, ok := auth.JobNamed(rest[1]); ok {
+		w.Human("%s %s to %s: %s\n", verb, job.Name, rest[0], job.Summary)
+		for _, b := range bindings {
+			w.Human("  %s%s on %s%s\n", dim, b.Role, b.Resource, reset)
+		}
+		if expires != 0 {
+			w.Human("  %suntil %s%s\n", dim, expiryText(expires), reset)
+		}
+		return nil
+	}
+	w.Human("%s %s to %s on %s\n", verb, rest[1], rest[0], *on)
+	if expires != 0 {
+		w.Human("  %suntil %s%s\n", dim, expiryText(expires), reset)
+	}
+	// Show the consequence immediately. A grant whose effect you have to work
+	// out later is one nobody checks.
+	w.Human("  %s%s can now: ", dim, rest[0])
 	if len(can) == 0 {
-		fmt.Printf("nothing on %s%s\n", *on, reset)
+		w.Human("nothing on %s%s\n", *on, reset)
 	} else {
-		fmt.Printf("%s on %s%s\n", strings.Join(can, ", "), *on, reset)
+		w.Human("%s on %s%s\n", strings.Join(can, ", "), *on, reset)
 	}
 	return nil
 }
@@ -446,19 +500,12 @@ func grantExpiry(until, forDur string, now time.Time) (int64, error) {
 		}
 		return t.Unix(), nil
 	case forDur != "":
-		var d time.Duration
-		if n, ok := strings.CutSuffix(forDur, "d"); ok {
-			days, err := strconv.Atoi(n)
-			if err != nil || days <= 0 {
-				return 0, fmt.Errorf("--for %s is not a number of days", forDur)
-			}
-			d = time.Duration(days) * 24 * time.Hour
-		} else {
-			parsed, err := time.ParseDuration(forDur)
-			if err != nil || parsed <= 0 {
-				return 0, fmt.Errorf("--for is a length of time, like 30d or 72h")
-			}
-			d = parsed
+		// The parser every other length of time on the command line uses
+		// (durationFlag). This one had its own, which took 30d and refused
+		// 2w, while the rest took neither.
+		d, err := config.ParseDuration(forDur)
+		if err != nil || d <= 0 {
+			return 0, fmt.Errorf("--for is a length of time, like 30d, 2w or 72h")
 		}
 		return now.Add(d).Unix(), nil
 	}
@@ -476,11 +523,11 @@ func authRevoke(root string, args []string) error {
 	fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covered")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth revoke <principal> <role> [--on /path]")}
 	}
 
 	var n int
@@ -495,7 +542,7 @@ func authRevoke(root string, args []string) error {
 			n = p.RevokeNamed(rest[0], rest[1], *on)
 		}
 		if n == 0 {
-			return fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)
+			return errNotFound{fmt.Errorf("no binding matched %s %s on %s", rest[0], rest[1], *on)}
 		}
 		return nil
 	})
@@ -511,12 +558,30 @@ func authRevoke(root string, args []string) error {
 		},
 	})
 
-	fmt.Printf("removed %d binding(s)\n", n)
 	// Inherited access survives revoking a narrow binding, and someone who does
 	// not notice will think they removed access they did not.
-	if d := p.Evaluate(rest[0], auth.ActView, *on); d.Allowed {
-		fmt.Printf("  %s%s still has %s on %s — %s%s\n",
-			yellow, rest[0], d.Role, *on, d.Reason, reset)
+	//
+	// Where it comes from only when that is somewhere else: from a binding
+	// on the same place the reason restated the line ("theo still has admin
+	// on / — theo is admin on /, granted at /").
+	d := p.Evaluate(rest[0], auth.ActView, *on)
+	// Under --json, what was removed and what is left, as a document; it was
+	// this prose.
+	still := ""
+	if d.Allowed {
+		still = string(d.Role)
+	}
+	if w.JSON(map[string]any{"principal": rest[0], "role": rest[1], "on": *on, "removed": n, "still": still}) {
+		return nil
+	}
+	w.Human("removed %d binding(s)\n", n)
+	if d.Allowed {
+		why := ""
+		if d.Binding == nil || strings.Trim(d.Binding.Resource, "/") != strings.Trim(*on, "/") {
+			why = " — " + d.Reason
+		}
+		w.Human("  %s%s still has %s on %s%s%s\n",
+			yellow, rest[0], d.Role, *on, why, reset)
 	}
 	return nil
 }
@@ -668,12 +733,17 @@ func grantAppRole(root, who, name, on string, deny bool, base auth.Binding) erro
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
 		Detail: map[string]string{"subject": who, "role": name, "deny": "false", "expires": expiryText(base.Expires)},
 	})
-	fmt.Printf("granted %s to %s: %s\n", name, who, r.Title)
+	// The document `auth grant` answers for any other role.
+	if w.JSON(map[string]any{"principal": who, "role": name, "on": "/", "deny": false,
+		"expires": expiryText(base.Expires), "grants": r.Grants}) {
+		return nil
+	}
+	w.Human("granted %s to %s: %s\n", name, who, r.Title)
 	for _, g := range r.Grants {
-		fmt.Printf("  %s%s%s\n", dim, g, reset)
+		w.Human("  %s%s%s\n", dim, g, reset)
 	}
 	if base.Expires != 0 {
-		fmt.Printf("  %suntil %s%s\n", dim, expiryText(base.Expires), reset)
+		w.Human("  %suntil %s%s\n", dim, expiryText(base.Expires), reset)
 	}
 	return nil
 }
@@ -687,11 +757,11 @@ func authExplain(root string, args []string) error {
 	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) < 1 {
-		return fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")
+		return errMisused{fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")}
 	}
 	principal := rest[0]
 	// One's own, as `auth list` is: what somebody else may do is listed to
@@ -706,20 +776,50 @@ func authExplain(root string, args []string) error {
 		return err
 	}
 
+	// --json gives the same answer as one document. This printed its prose
+	// whatever was asked for, so a script checking what somebody may do got
+	// "no  view  no binding gives ada any role on /" to parse.
 	if len(rest) == 1 {
-		fmt.Printf("%s%s on %s%s\n\n", bold, principal, *on, reset)
+		type row struct {
+			Action  auth.Action `json:"action"`
+			Allowed bool        `json:"allowed"`
+			Role    auth.Role   `json:"role,omitempty"`
+			Reason  string      `json:"reason"`
+		}
+		rows := []row{}
 		for _, a := range auth.Actions() {
 			d := p.Evaluate(principal, a, *on)
+			rows = append(rows, row{a, d.Allowed, d.Role, d.Reason})
+		}
+		if w.JSON(map[string]any{"principal": principal, "on": *on, "actions": rows}) {
+			return nil
+		}
+		fmt.Printf("%s%s on %s%s\n\n", bold, principal, *on, reset)
+		for _, r := range rows {
 			mark := red + "no " + reset
-			if d.Allowed {
+			if r.Allowed {
 				mark = green + "yes" + reset
 			}
-			fmt.Printf("  %s  %-14s %s%s%s\n", mark, a, dim, d.Reason, reset)
+			fmt.Printf("  %s  %-14s %s%s%s\n", mark, r.Action, dim, r.Reason, reset)
 		}
 		return nil
 	}
 
 	d := p.Evaluate(principal, auth.Action(rest[1]), *on)
+	trail := d.Trail
+	if trail == nil {
+		trail = []string{}
+	}
+	if w.JSON(map[string]any{
+		"principal": principal, "action": rest[1], "on": *on,
+		"allowed": d.Allowed, "role": d.Role, "reason": d.Reason,
+		"binding": d.Binding, "trail": trail,
+	}) {
+		if !d.Allowed {
+			return fmt.Errorf("not permitted")
+		}
+		return nil
+	}
 	verdict := red + "DENIED" + reset
 	if d.Allowed {
 		verdict = green + "ALLOWED" + reset
@@ -748,7 +848,7 @@ func cmdToken(root string, args []string) error {
 	if len(args) == 0 {
 		fmt.Print(`quilzo token — credentials for API access
 
-  issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h]
+  issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h] [--person]
   exchange [--role R] [--on /path] [--ttl 15m]   short-lived session from a token
   list
   revoke <id>                                    cascades to its sessions
@@ -764,6 +864,9 @@ recovered from this machine.
 	case "issue":
 		return tokenIssue(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return tokenList(root)
 	case "revoke":
 		return tokenRevoke(root, args[1:])
@@ -776,7 +879,7 @@ recovered from this machine.
 	case "proof":
 		return tokenProof(args[1:])
 	default:
-		return fmt.Errorf("unknown token command %q", args[0])
+		return errMisused{fmt.Errorf("unknown token command %q", args[0])}
 	}
 }
 
@@ -784,20 +887,7 @@ recovered from this machine.
 // denials — which Evaluate applies at decision time and which do not change
 // what the credential should be able to attempt.
 func strongestRole(pol *auth.Policy, principal, resource string) auth.Role {
-	best := auth.RoleNone
-	for _, b := range pol.Snapshot() {
-		if b.Principal != principal || b.Deny {
-			continue
-		}
-		if b.Resource != "/" && b.Resource != resource &&
-			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
-			continue
-		}
-		if b.Role.AtLeast(best) {
-			best = b.Role
-		}
-	}
-	return best
+	return pol.StrongestRole(principal, resource)
 }
 
 func tokenIssue(root string, args []string) error { return tokenIssueAs(root, args, false) }
@@ -810,7 +900,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	principal := fs.String("principal", "", "who the token acts as")
 	role := fs.String("role", string(auth.RoleReader), "role the token carries")
 	on := fs.String("on", "/", "resource path the token is scoped to")
-	ttl := fs.Duration("ttl", 0, "how long it lasts (default from config)")
+	ttl := flagDuration(fs, "ttl", 0, "how long it lasts (default from config)")
 	as := fs.String("as", string(auth.RoleAdmin), "role of whoever is issuing")
 	types := fs.String("types", "",
 		"comma-separated content types this token may touch; all if unset")
@@ -822,12 +912,14 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		"short-lived and read-only: the shape an integration should hold")
 	keyFile := fs.String("key", "", "bind it to this public key (a JWK file, from quilzo token keygen): "+
 		"accepted only with a DPoP proof made by the key")
+	person := fs.Bool("person", false, "the token is its holder's own, to use themselves; "+
+		"without it, it is a program's (the store's first token, for its only administrator, is theirs)")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")
+		return errMisused{fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")}
 	}
 	if strings.TrimSpace(*principal) == "" {
 		return fmt.Errorf("--principal is required: a token acts as somebody")
@@ -845,12 +937,46 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// "who the token acts as" is the flag's own description, so acting as that
 	// principal is the answer that matches it. Narrowing is still explicit:
 	// --role reader, --read-only and --api all still do what they say.
-	explicitRole := false
+	explicitRole, explicitPerson := false, false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "role" {
+		switch f.Name {
+		case "role":
 			explicitRole = true
+		case "person":
+			explicitPerson = true
 		}
 	})
+	// Whose hands the token is for is said here, and recorded, rather than
+	// guessed later from its name (auth.Token's Kind). The store's first
+	// token, for the one administrator its policy names, is that person's
+	// own: it is what the install guide has them issue for the commands
+	// they run next, and a program's could not start the access review
+	// those commands include. --person=false says otherwise.
+	first := bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal)
+	kind := auth.KindProgram
+	if *person || (first && !explicitPerson) {
+		kind = auth.KindPerson
+	}
+	// A role named wider than the principal holds is refused, as a token
+	// carries at most its holder's: one for jun the author, issued and
+	// listed as publisher, was refused at everything it was for ("jun is
+	// author on /; publish needs publisher"). Somebody who holds no role yet
+	// is told so below, where the grant they need is named.
+	//
+	// What they hold on the token's path or anywhere inside it
+	// (auth.Policy.StrongestWithin): a token over the whole site for
+	// somebody who is an author there and a publisher on /blog is how they
+	// publish /blog with it, and one for an analyst is how they administer
+	// /@security.
+	if explicitRole {
+		if pol, perr := loadPolicy(root); perr == nil {
+			if held := pol.StrongestWithin(*principal, *on); held != auth.RoleNone && !held.AtLeast(auth.Role(*role)) {
+				return fmt.Errorf("%s holds %s at most on %s and what is inside it, and a token carries no more "+
+					"than its holder: issue it with --role %s, or grant %s %s first",
+					*principal, held, *on, held, *principal, *role)
+			}
+		}
+	}
 	fromPolicy := false
 	if !explicitRole {
 		if pol, perr := loadPolicy(root); perr == nil {
@@ -915,7 +1041,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// exist. It is the only administrator's change, made alone, and the
 	// record says how it came about.
 	if auth.Role(*role) == auth.RoleAdmin && !approved {
-		if bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal) {
+		if first {
 			c := resolveCaller(root, "")
 			if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, map[string]string{
 				"kind": string(dual.Token), "alone": "true", "bootstrap": "true", "for": *principal,
@@ -923,7 +1049,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 				return err
 			}
 		} else {
-			apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
+			apply, err := proposeSecondFor(root, resolveCaller(root, ""), *principal, dual.Token,
 				fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
 				dual.TokenChange{Args: args}, "")
 			if err != nil || !apply {
@@ -946,6 +1072,10 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		}
 		tok.Key = thumb
 	}
+	if err := ts.RecordKind(tok.ID, kind); err != nil {
+		return err
+	}
+	tok.Kind = kind
 	if err := saveTokens(root, ts); err != nil {
 		return err
 	}
@@ -958,7 +1088,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 			// The id, never the secret. The audit package refuses Detail keys
 			// containing "token" or "secret" for exactly this reason, and the
 			// keys here are named so that check keeps working.
-			"issued_id": tok.ID, "for": tok.Principal, "role": string(tok.Role),
+			"issued_id": tok.ID, "for": tok.Principal, "role": string(tok.Role), "kind": tok.Kind,
 			"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
 		},
 	})
@@ -968,21 +1098,35 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	if w.JSON(map[string]any{"token": secret, "id": tok.ID, "principal": tok.Principal,
 		"role": tok.Role, "resource": tok.Resource,
 		"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
-		"key":     tok.Key, "scope": tok.Scope.String()}) {
+		"key":     tok.Key, "scope": tok.Scope.String(), "kind": tok.Kind}) {
 		return nil
 	}
+	// The token alone on stdout, and what is said of it on stderr, so
+	// `> ci.tok` and `$(quilzo token issue ...)` capture a token that
+	// works. They captured a notice, the token and three lines of prose,
+	// and the token is not shown again.
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
-	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
-		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	n := w.Notes()
+	dim, yellow, reset := n.Dim(), n.Yellow(), n.Reset()
+	n.Human("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
+		tok.Resource, tokenExpiry(tok), reset)
+	// Whose it is goes with the rest of what is said of the token, on
+	// stderr, so stdout still holds the token alone.
+	if tok.Kind == auth.KindPerson {
+		n.Human("  %s%s's own, for them to use themselves%s\n", dim, tok.Principal, reset)
+	} else {
+		n.Human("  %sa program's; issue it with --person if it is %s's own, to use themselves%s\n",
+			dim, tok.Principal, reset)
+	}
 	if tok.Key != "" {
-		fmt.Printf("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
+		n.Human("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
 			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)
 	} else if tok.Role.AtLeast(auth.RolePublisher) && !tok.Scope.ReadOnly && life > shortLived {
-		fmt.Printf("  %sfrom another machine, publishing and administering with it need it bound to a key "+
+		n.Human("  %sfrom another machine, publishing and administering with it need it bound to a key "+
 			"(--key), and a session exchanged from it counts as it does; reading and drafting work as it is%s\n", dim, reset)
 	}
 	if fromPolicy {
-		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
+		n.Human("  %sthe role is what %s holds in the policy; --role narrows "+
 			"it%s\n", dim, tok.Principal, reset)
 	}
 	// A token names a role; a binding is what grants one. Somebody who has
@@ -996,28 +1140,28 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// answer is to name the missing step rather than to take it.
 	pol, perr := loadPolicy(root)
 	if perr == nil && strongestRole(pol, tok.Principal, tok.Resource) == auth.RoleNone {
-		fmt.Printf("\n  %s%s holds no role yet, so this token can sign in "+
+		n.Human("\n  %s%s holds no role yet, so this token can sign in "+
 			"and do nothing%s\n", yellow, tok.Principal, reset)
-		fmt.Printf("  %sgrant one:%s\n", dim, reset)
-		fmt.Printf("    quilzo auth grant %s %s\n", tok.Principal, tok.Role)
+		n.Human("  %sgrant one:%s\n", dim, reset)
+		n.Human("    quilzo auth grant %s %s\n", tok.Principal, tok.Role)
 	}
 
 	// The bootstrap closes the moment a token exists, so a first token that
 	// cannot manage tokens is the last one anybody can issue from here. Said
 	// out loud, because the recovery is editing JSON by hand.
 	if len(ts.Tokens) == 1 && !tok.Role.AtLeast(auth.RoleAdmin) {
-		fmt.Printf("\n  %sthis is the only token, and %s cannot issue "+
+		n.Human("\n  %sthis is the only token, and %s cannot issue "+
 			"another%s\n", yellow, tok.Role, reset)
-		fmt.Printf("  %sissue one with --role admin first if you still need "+
+		n.Human("  %sissue one with --role admin first if you still need "+
 			"to administer this store%s\n", dim, reset)
 	}
 	if !tok.Scope.Empty() {
 		// Shown at issue time because this is the only moment anybody looks.
 		// A scope nobody can see is a scope nobody trusts, and an operator who
 		// cannot confirm the token is narrow will issue a wide one.
-		fmt.Printf("  %sscope: %s%s\n", dim, tok.Scope, reset)
+		n.Human("  %sscope: %s%s\n", dim, tok.Scope, reset)
 	}
-	fmt.Printf("  %sthis is the only time it is shown; only a hash is stored%s\n",
+	n.Human("  %sthis is the only time it is shown; only a hash is stored%s\n",
 		yellow, reset)
 	return nil
 }
@@ -1031,8 +1175,8 @@ func tokenExchange(root string, args []string) error {
 	fs := flag.NewFlagSet("exchange", flag.ContinueOnError)
 	role := fs.String("role", "", "narrow to this role (default: the parent's)")
 	on := fs.String("on", "", "narrow to this path (default: the parent's)")
-	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
-	if err := fs.Parse(args); err != nil {
+	ttl := flagDuration(fs, "ttl", auth.DefaultSessionTTL, "how long the session lasts")
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -1077,11 +1221,13 @@ func tokenExchange(root string, args []string) error {
 		return nil
 	}
 
+	// The session alone on stdout, as a token issued is (tokenIssueAs).
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
-	fmt.Printf("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", dim,
+	n := w.Notes()
+	n.Human("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", n.Dim(),
 		t.Role, t.Resource, time.Until(time.Unix(t.ExpiresAt, 0)).Round(time.Second),
-		t.Parent, from, reset)
-	fmt.Printf("  %srevoking the parent revokes this too%s\n", dim, reset)
+		t.Parent, from, n.Reset())
+	n.Human("  %srevoking the parent revokes this too%s\n", n.Dim(), n.Reset())
 	return nil
 }
 
@@ -1096,7 +1242,16 @@ func tokenList(root string) error {
 	if !everybody {
 		tokens = slices.DeleteFunc(tokens, func(t auth.Token) bool { return !mine(t.Principal, who) })
 	}
-	// What each token is, and never the hash it is checked against.
+	// What each token is, and never the hash it is checked against. Its
+	// role as it can be used, which is no more than its holder's
+	// (auth.Policy.Carries).
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
+	for i := range tokens {
+		tokens[i].Role = pol.Carries(tokens[i].Principal, tokens[i].Role, tokens[i].Resource)
+	}
 	rows := make([]map[string]any, 0, len(tokens))
 	for _, t := range tokens {
 		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,
@@ -1121,11 +1276,12 @@ func tokenList(root string) error {
 	// As wide as the longest name, as `auth list` is as wide as its longest
 	// principal: a name is the operator's own words, "ci-deploy-production"
 	// is twenty characters, and a fixed sixteen pushed its row out of line.
-	nw := 16
+	nw, ew := 16, 12
 	for _, t := range tokens {
 		nw = max(nw, utf8.RuneCountInString(t.Name))
+		ew = max(ew, len(tokenExpiry(t))+2)
 	}
-	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
+	fmt.Printf("  %-14s %-*s %-10s %-*s %s\n", "id", nw, "name", "role", ew, "expires", "last used")
 	for _, t := range tokens {
 		state := ""
 		switch {
@@ -1138,15 +1294,27 @@ func tokenList(root string) error {
 		if t.LastUsed > 0 {
 			last = time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %-14s %-*s %-10s %-12s %-10s %s\n", t.ID, nw, t.Name, t.Role,
-			time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02"), last, state)
+		fmt.Printf("  %-14s %-*s %-10s %-*s %-10s %s\n", t.ID, nw, t.Name, t.Role,
+			ew, tokenExpiry(t), last, state)
 	}
 	return nil
 }
 
+// tokenExpiry is when a token ends, as a person reads it: the day, and for
+// a token issued for less than a day the hour and the zone as well
+// (auth.Token.LastsUnderADay). An hour's token said "expires 2026-11-12",
+// the same as a month's.
+func tokenExpiry(t auth.Token) string {
+	at := time.Unix(t.ExpiresAt, 0).UTC()
+	if t.LastsUnderADay() {
+		return at.Format("2006-01-02 15:04 UTC")
+	}
+	return at.Format("2006-01-02")
+}
+
 func tokenRevoke(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo token revoke <id>")
+		return errMisused{fmt.Errorf("usage: quilzo token revoke <id>")}
 	}
 	ts, err := loadTokens(root)
 	if err != nil {
@@ -1169,21 +1337,25 @@ func tokenRevoke(root string, args []string) error {
 		},
 	})
 
-	fmt.Printf("revoked %s\n", args[0])
+	// A document under --json; it was this prose.
+	if w.JSON(map[string]any{"id": args[0], "revoked": true, "sessions": sessions}) {
+		return nil
+	}
+	w.Human("revoked %s\n", args[0])
 	if sessions > 0 {
 		// Said out loud, because a cascade that happens quietly is one nobody
 		// relies on.
-		fmt.Printf("  %sand %d live session(s) minted from it%s\n", yellow, sessions, reset)
+		w.Human("  %sand %d live session(s) minted from it%s\n", yellow, sessions, reset)
 	}
-	fmt.Printf("  %sthe record is kept, so what it was and when it last worked "+
+	w.Human("  %sthe record is kept, so what it was and when it last worked "+
 		"survives the revocation%s\n", dim, reset)
 	return nil
 }
 
 func tokenStale(root string, args []string) error {
 	fs := flag.NewFlagSet("stale", flag.ContinueOnError)
-	idle := fs.Duration("idle", 720*time.Hour, "unused for at least this long")
-	if err := fs.Parse(args); err != nil {
+	idle := flagDuration(fs, "idle", 720*time.Hour, "unused for at least this long")
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	ts, err := loadTokens(root)
@@ -1191,6 +1363,22 @@ func tokenStale(root string, args []string) error {
 		return err
 	}
 	stale := ts.Stale(time.Now(), *idle)
+	// The tokens under --json, as the prose names them: by id and name, and
+	// when each last worked. This printed "no stale tokens" whatever was
+	// asked for, so a script sweeping for credentials nobody uses was given
+	// a sentence to parse.
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(stale))
+		for _, t := range stale {
+			row := map[string]any{"id": t.ID, "name": t.Name, "last_used": nil}
+			if t.LastUsed > 0 {
+				row["last_used"] = time.Unix(t.LastUsed, 0).UTC().Format(time.RFC3339)
+			}
+			rows = append(rows, row)
+		}
+		w.JSON(map[string]any{"idle": idle.String(), "tokens": rows})
+		return nil
+	}
 	if len(stale) == 0 {
 		fmt.Println("no stale tokens")
 		return nil
@@ -1229,21 +1417,25 @@ func splitList(s string) []string {
 
 // grantedBy is who to record as having made a grant.
 //
-// The flag wins, because an operator scripting a migration may legitimately
-// be recording somebody else's decision. Otherwise the caller, if this store
-// knows who they are.
+// The caller, if this store knows who they are: a name typed after --by is
+// credited in the note (Caller.namedBy), and no longer recorded as the
+// granter in their place, because "who gave this person access?" is the
+// question the field exists to answer. Where nobody is verified, on a
+// store with no access control, the flag is the only name there is, kept
+// for an operator scripting a migration who records somebody else's
+// decision.
 //
 // The last resort is "cli", which is what the flag used to default to for
 // everybody. It is kept only for a store with no access control at all, where
 // there is genuinely no identity to record — and it is the honest answer
 // there, rather than a made-up name.
 func grantedBy(root, flag string) string {
-	if strings.TrimSpace(flag) != "" {
-		return flag
-	}
 	if c := resolveCaller(root, ""); c != nil && c.Verified &&
 		strings.TrimSpace(c.Name) != "" {
 		return c.Name
+	}
+	if strings.TrimSpace(flag) != "" {
+		return flag
 	}
 	return "cli"
 }

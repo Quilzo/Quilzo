@@ -56,7 +56,9 @@ func recordHandoff(root, action, name, id, who string, kind audit.Kind) {
 
 // suggestReply asks an assistant the visitor's last message, from the same
 // knowledge it answers visitors with, and returns its answer as a draft.
-func suggestReply(root, name, question string) (string, []string, error) {
+// It is by's asking, charged to them and not to the chatbot's visitors'
+// budget (chatbotConsumers).
+func suggestReply(root, name, question, by string) (string, []string, error) {
 	if strings.TrimSpace(question) == "" {
 		return "", nil, fmt.Errorf("the visitor has not asked anything yet")
 	}
@@ -68,16 +70,22 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("the chatbot %s no longer exists", name)
 	}
-	idx, _, err := assistantKnowledge(root, a, nil)
+	idx, _, err := assistantKnowledge(root, a, &Caller{Name: by})
 	if err != nil {
 		return "", nil, err
 	}
 	var m assistant.Model
 	if a.UseModel {
-		m, _ = assistantModelAt(root, a)
+		m, _ = assistantModelAs(root, a, &Caller{Name: by})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Asked without its actions: a draft is words for a person to send, and
+	// an offer has no place in one. With them, a message no page covers
+	// would come back as an offer and no words (assistant.RespondTo), and
+	// the draft would be empty where it used to say the site does not
+	// answer that.
+	a.Actions = nil
 	ans, err := assistant.RespondTo(ctx, a, idx, m, question, "")
 	if err != nil {
 		return "", nil, err
@@ -120,14 +128,17 @@ func inboxHooks(root string) *admin.Inbox {
 		List: st.List,
 		Get:  st.Get,
 		Reply: func(name, id, by, text string) error {
+			if err := visitorCanRead(root, name); err != nil {
+				return err
+			}
 			_, err := st.Say(name, id, handoff.Person, by, text, time.Now())
 			return err
 		},
 		Close: func(name, id, by string) error {
 			return st.Close(name, id, by, time.Now())
 		},
-		Suggest: func(name, question string) (string, []string, error) {
-			return suggestReply(root, name, question)
+		Suggest: func(name, question, by string) (string, []string, error) {
+			return suggestReply(root, name, question, by)
 		},
 		Titles: func() map[string]string {
 			out := map[string]string{}
@@ -142,12 +153,12 @@ func inboxHooks(root string) *admin.Inbox {
 }
 
 func inboxUsage() error {
-	return fmt.Errorf(`usage: quilzo inbox <command>
+	return errMisused{fmt.Errorf(`usage: quilzo inbox <command>
 
   list                        conversations, the ones waiting for a reply first
   show ASSISTANT/ID           one conversation
   reply ASSISTANT/ID "text"   answer it, as yourself
-  close ASSISTANT/ID          end it`)
+  close ASSISTANT/ID          end it`)}
 }
 
 func splitConversation(arg string) (string, string, error) {
@@ -166,6 +177,9 @@ func cmdInbox(root string, args []string) error {
 	st := handoffStore(root)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := st.List()
 		if err != nil {
 			return err
@@ -218,6 +232,12 @@ func cmdInbox(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The conversation itself under --json. This printed its prose
+		// whatever was asked for, so a script reading a handoff got the
+		// terminal's rendering of it to parse.
+		if w.JSON(c) {
+			return nil
+		}
 		fmt.Printf("%s%s/%s%s  opened %s\n", bold, name, id, reset,
 			c.Opened.Format("2 Jan 2006 15:04 UTC"))
 		if c.Question != "" {
@@ -228,8 +248,12 @@ func cmdInbox(root string, args []string) error {
 			if m.From == handoff.Person {
 				who = m.By
 			}
+			// Every line of the message at the message's depth. Its later
+			// lines were printed flush, so a visitor who copied this
+			// layout into a handoff printed a line reading as a member of
+			// staff's reply, approving whatever the visitor liked.
 			fmt.Printf("  %s%s, %s%s\n    %s\n", dim, onOneLine(who),
-				m.At.Format("2 Jan 15:04"), reset, forTerminal(m.Text))
+				m.At.Format("2 Jan 15:04"), reset, indentedForTerminal(m.Text, "    "))
 		}
 		if c.Closed {
 			fmt.Printf("  %sended%s\n", dim, reset)
@@ -237,7 +261,7 @@ func cmdInbox(root string, args []string) error {
 		return nil
 	case "reply", "close":
 		fs := flag.NewFlagSet("inbox "+args[0], flag.ContinueOnError)
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseOnce(fs, args[1:]); err != nil {
 			return err
 		}
 		rest := fs.Args()
@@ -262,6 +286,30 @@ func cmdInbox(root string, args []string) error {
 	return inboxUsage()
 }
 
+// visitorCanRead refuses a reply the visitor has no way to read. A
+// conversation is read at its chatbot's public address, which answers 404
+// once the chatbot is no longer public or no longer declared; a reply was
+// still reported sent, and staff went on answering into a conversation
+// nobody could read. Ending it is still allowed.
+func visitorCanRead(root, name string) error {
+	set, err := assistant.Load(assistantsPath(root))
+	if err != nil {
+		return err
+	}
+	a, ok := set.Get(name)
+	if !ok {
+		return fmt.Errorf("the visitor cannot read a reply: chatbot %s is no longer declared, "+
+			"so its conversations' addresses answer nothing. Declare it again, public, "+
+			"for them to see one, or end the conversation", name)
+	}
+	if !a.Public {
+		return fmt.Errorf("the visitor cannot read a reply: chatbot %s is not public, "+
+			"so its conversations' addresses answer nothing. Make it public again "+
+			"for them to see one, or end the conversation", name)
+	}
+	return nil
+}
+
 // inboxAnswer replies to or ends a conversation, as caller, and records it.
 func inboxAnswer(root, act, ref, text string, caller *Caller) error {
 	name, id, err := splitConversation(ref)
@@ -276,6 +324,9 @@ func inboxAnswer(root, act, ref, text string, caller *Caller) error {
 	st := handoffStore(root)
 	switch act {
 	case "reply":
+		if err := visitorCanRead(root, name); err != nil {
+			return err
+		}
 		_, err = st.Say(name, id, handoff.Person, caller.Name, text, time.Now())
 	case "close":
 		err = st.Close(name, id, caller.Name, time.Now())

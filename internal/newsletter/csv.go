@@ -63,33 +63,42 @@ var (
 )
 
 // ReadCSV reads addresses from a list exported by another platform.
+func ReadCSV(r io.Reader) ([]Row, error) {
+	rows, _, err := ReadCSVAs(r)
+	return rows, err
+}
+
+// ReadCSVAs is ReadCSV, and the encoding the list was read as when that was
+// not UTF-8, for the import to say so as records import does.
 //
 // The list is read whole first, so that no row is wider than a sheet may
 // be before encoding/csv builds it, which it does whole however wide: a
 // row of 32 million commas, in a 32 MB list, cost gigabytes before the
 // row was looked at.
-func ReadCSV(r io.Reader) ([]Row, error) {
+//
+// Its bytes are read as records import reads a sheet's (sheet.Decode):
+// UTF-8 with or without its mark, UTF-16 as Excel saves "Unicode Text",
+// Windows-1252 as older Excel saves CSV, and the separator Excel's "sep="
+// line names or the first line's headings use, quotes minded. This had a
+// reader of its own that took off a UTF-8 mark and counted separators
+// across quotes, so a list Excel saved as Unicode Text had no address
+// column, and one saved as Windows-1252 came in with every é as U+FFFD.
+func ReadCSVAs(r io.Reader) ([]Row, string, error) {
 	body, err := io.ReadAll(r)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	// A byte-order mark, which spreadsheet programs put first.
-	text := strings.TrimPrefix(string(body), "\xef\xbb\xbf")
-	line := text[:min(len(text), 4096)]
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = line[:i]
-	}
+	text, comma, readAs := sheet.Decode(body)
+	rows, err := readCSV(text, comma)
+	return rows, readAs, err
+}
+
+// readCSV reads the list from its text, split by comma.
+func readCSV(text string, comma rune) ([]Row, error) {
 	cr := csv.NewReader(strings.NewReader(text))
 	cr.FieldsPerRecord = -1
 	cr.LazyQuotes = true
-	// Separated by what the first line is separated by: a semicolon where
-	// a spreadsheet's locale writes decimals with a comma, or a tab.
-	switch {
-	case strings.Count(line, "\t") > strings.Count(line, ","):
-		cr.Comma = '\t'
-	case strings.Count(line, ";") > strings.Count(line, ","):
-		cr.Comma = ';'
-	}
+	cr.Comma = comma
 	if row, at, cells := sheet.TooWide(text, cr.Comma, sheet.MaxColumns); row == 0 {
 		return nil, fmt.Errorf("the file has %d columns; at most %d are read", cells, sheet.MaxColumns)
 	} else if row > 0 {
@@ -236,6 +245,9 @@ func csvSafe(s string) string { return sheet.GuardCell(s) }
 // Imported is what an import did.
 type Imported struct {
 	Added, Already, Left, Skipped, Bad int
+	// ReadAs is the encoding the file was read as when that was not UTF-8
+	// (ReadCSVAs), for the import to say.
+	ReadAs string `json:",omitempty"`
 }
 
 // Import puts rows on the list as confirmed, with consent saying where

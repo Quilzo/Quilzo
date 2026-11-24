@@ -25,8 +25,11 @@ import (
 type Dual struct {
 	Store *dual.Store
 	// Apply makes an approved change of a kind the admin has no part in
-	// (the audit log's directory), as by.
-	Apply func(r dual.Request, by string) error
+	// (the audit log's directory), as by, and says what whoever approved
+	// it is to know of it beside its being made, or nothing: a move of the
+	// audit log says which public keys check what was signed before it, as
+	// `quilzo pending approve` does.
+	Apply func(r dual.Request, by string) (string, error)
 }
 
 // onlyAdministrator reports whether name is the only person who could
@@ -96,11 +99,21 @@ func (s *Server) noteAdministrators(before map[string]bool) error {
 // whether to make it now, because the proposer is the only administrator,
 // and otherwise what to tell them.
 func (s *Server) proposeSecond(p principal, kind, what string, payload any, why string) (bool, string, error) {
+	return s.proposeSecondFor(p, "", kind, what, payload, why)
+}
+
+// proposeSecondFor is proposeSecond for a way in for subject, approved
+// alone also when subject is an administrator with no way in yet and the
+// proposer the only other one (dual.FirstWayIn), as `quilzo auth enrol`
+// approves it.
+func (s *Server) proposeSecondFor(p principal, subject, kind, what string, payload any, why string) (bool, string, error) {
 	if s.Dual == nil || s.Dual.Store == nil {
 		return false, "", errors.New("this server keeps no requests for a second administrator, so this change cannot be made here")
 	}
 	now := time.Now()
 	alone := s.onlyAdministrator(p.Name)
+	first := !alone && subject != "" && s.firstWayIn(p.Name, subject, now)
+	alone = alone || first
 	r, err := s.Dual.Store.Propose(kind, what, payload, why, p.Name, alone, now)
 	if err != nil {
 		return false, "", err
@@ -109,6 +122,9 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
+		if first {
+			detail["first_way_in"] = "true"
+		}
 		s.audit("dual.approved", "/", detail)
 		return true, "", nil
 	}
@@ -122,15 +138,57 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	return false, msg, nil
 }
 
-// applyDual makes an approved change, as by.
-func (s *Server) applyDual(r dual.Request, by string) error {
+// firstWayIn is dual.FirstWayIn for this server at now: subject has never
+// been an administrator who could sign in, by a token or session
+// (dual.WayIn), a passkey or single sign-on, and no administrator stopped
+// being one in the last day.
+func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
+	if rm, err := s.Dual.Store.Settling(now); err != nil || rm != nil {
+		return false
+	}
+	held := s.Tokens != nil && dual.WayIn(s.Policy, s.Tokens.Snapshot(), subject, now)
+	if s.Passkeys != nil {
+		for _, c := range s.Passkeys.list() {
+			if strings.EqualFold(c.Principal, subject) {
+				held = true
+			}
+		}
+	}
+	if !dual.FirstWayIn(s.Policy, asker, subject, held || s.signsInBySSO(subject)) {
+		return false
+	}
+	open, err := s.Dual.Store.OpenBy(asker, subject, now)
+	return err == nil && len(open) == 0
+}
+
+// signsInBySSO reports whether an identity provider this server signs
+// people in through could sign who in (dual.SingleSignOn). Providers that
+// cannot be read are taken to.
+func (s *Server) signsInBySSO(who string) bool {
+	if s.SAML != nil && s.SAML.Providers != nil {
+		all, err := s.SAML.Providers()
+		if err != nil {
+			return true
+		}
+		for _, c := range all {
+			if dual.SAML(c.Domains).Covers(who) {
+				return true
+			}
+		}
+	}
+	return s.OIDC != nil && dual.OpenIDConnect(s.OIDC.Claim, s.OIDC.Domains).Covers(who)
+}
+
+// applyDual makes an approved change, as by, and says what Dual.Apply
+// says of one the admin has no part in.
+func (s *Server) applyDual(r dual.Request, by string) (string, error) {
 	switch r.Kind {
 	case dual.Grant:
 		var ch dual.GrantChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
-		return s.changePolicy(func(p *auth.Policy) error {
+		return "", s.changePolicy(func(p *auth.Policy) error {
 			for _, b := range ch.Bindings {
 				if err := p.Grant(b); err != nil {
 					return err
@@ -141,36 +199,36 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 	case dual.Setting:
 		var ch dual.SettingChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
 		if s.Settings == nil {
-			return errors.New("no configuration")
+			return "", errors.New("no configuration")
 		}
 		cfg, err := s.Settings.Load()
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := cfg.Set(ch.Key, ch.Value, ch.Reason, r.By); err != nil {
-			return err
+			return "", err
 		}
-		return s.Settings.Save(cfg)
+		return "", s.Settings.Save(cfg)
 	case dual.Mapping:
 		var ch dual.MappingChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
 		if s.SCIM == nil || s.SCIM.Map == nil {
-			return errors.New("this server has no provisioning")
+			return "", errors.New("this server has no provisioning")
 		}
-		return s.SCIM.Map(ch.Group, ch.To, by)
+		return "", s.SCIM.Map(ch.Group, ch.To, by)
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		// Issued to whoever asked: a token on the command line (quilzo
 		// pending redeem), a link or a provisioning token there or on
 		// People.
-		return nil
+		return "", nil
 	}
 	if s.Dual.Apply == nil {
-		return fmt.Errorf("request %s is a %s, which this server cannot make", r.ID, r.Kind)
+		return "", fmt.Errorf("request %s is a %s, which this server cannot make", r.ID, r.Kind)
 	}
 	return s.Dual.Apply(r, by)
 }
@@ -211,9 +269,12 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	var unread error
 	read := false
 	for _, r := range pend {
+		// Whose it is to take back or receive is whose dual.Store says;
+		// whether a second administrator is needed asks the one rule for
+		// who is the same person (auth.SamePerson).
 		mine := strings.EqualFold(r.By, p.Name)
 		row := pendingRow{Request: r, Words: dual.StateWords(r, now),
-			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
+			CanDecide: r.Open(now) && (!auth.SamePerson(r.By, p.Name) || alone), CanTakeBack: mine,
 			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
 			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]}
 		if r.Kind == dual.Mapping {
@@ -276,19 +337,21 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	var req dual.Request
 	var err error
+	said := ""
 	switch do {
 	case "approve", "decline":
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && strings.EqualFold(mine.By, p.Name) {
+		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && auth.SamePerson(mine.By, p.Name) {
 			if rm := s.aloneRefusal(p.Name, now); rm != nil {
-				s.peopleBack(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
+				s.peopleProblem(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
 				return
 			}
 		}
 		req, err = s.Dual.Store.Decide(id, p.Name, do == "approve", s.onlyAdministrator(p.Name), now)
 		if err == nil && do == "approve" {
-			if aerr := s.applyDual(req, p.Name); aerr != nil {
+			var aerr error
+			if said, aerr = s.applyDual(req, p.Name); aerr != nil {
 				err = fmt.Errorf("approved, and making the change failed: %w", aerr)
 			}
 		}
@@ -301,7 +364,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("approve, decline or withdraw?")
 	}
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "what": req.What, "proposed_by": req.By}
@@ -311,6 +374,9 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(map[string]string{"approve": "dual.approved", "decline": "dual.declined", "withdraw": "dual.withdrawn"}[do], "/", detail)
 	msg := req.What + ": " + dual.StateWords(req, now) + "."
+	if said != "" {
+		msg += " " + said
+	}
 	if do == "approve" && req.Kind == dual.Token {
 		msg += " " + req.By + " receives it with quilzo pending redeem " + req.ID + ", within a day."
 	}
@@ -365,7 +431,7 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 		req, err = s.Dual.Store.Redeem(id, p.Name, now)
 	}
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "approved_by": req.DecidedBy}
@@ -381,7 +447,7 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 	}
 	token, err := s.SCIM.NewToken(made)
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	// Shown in this response and never again, as on Provisioning.

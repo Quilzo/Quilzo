@@ -29,6 +29,13 @@ func RunServer(b *Bridge, m agent.Manifest, catalog []mcp.Operation, version str
 	// The run is the authority: every call is one of its steps, and the
 	// session refuses what the manifest does not hold.
 	s.Authorise = func(mcp.Operation) error { return nil }
+	// And the run reads each call's arguments, by the executor's rules: a
+	// page from "page" or "name", a search from "query", "q" or "text".
+	// The store's operations are listed here with the arguments the store's
+	// own handlers take, and held to those a program's call was refused
+	// before it was a step, so the manifest, the budget and the record,
+	// which are all about steps, never saw it.
+	s.ArgumentsAsGiven = true
 	byName := map[string]mcp.Operation{}
 	for _, op := range catalog {
 		byName[op.Name] = op

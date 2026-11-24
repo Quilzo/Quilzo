@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gaps"
 )
 
 type fakeAssistants struct {
@@ -19,6 +20,8 @@ type fakeAssistants struct {
 	set      *assistant.Set
 	changes  []string
 	model    assistant.Model
+	// triedBy is who each model the test console asked for was for.
+	triedBy []string
 }
 
 func (f *fakeAssistants) wire() *Assistants {
@@ -33,7 +36,7 @@ func (f *fakeAssistants) wire() *Assistants {
 			f.changes = append(f.changes, by+" "+change+" "+name)
 			return nil
 		},
-		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
+		Index: func(a assistant.Assistant, _ string) (*assistant.Index, []string, error) {
 			return assistant.NewIndex(assistant.Chunk(map[string]any{
 				"returns": map[string]any{"title": "Returns",
 					"body": "Opened ink bottles cannot be returned. <b>bold</b>"},
@@ -42,7 +45,10 @@ func (f *fakeAssistants) wire() *Assistants {
 		Documents: func() ([]DocumentChoice, error) {
 			return []DocumentChoice{{ID: strings.Repeat("a", 64), Name: "care.pdf", Format: "pdf"}}, nil
 		},
-		Model: func(assistant.Assistant) (assistant.Model, string) { return f.model, "" },
+		Model: func(a assistant.Assistant, by string) (assistant.Model, string) {
+			f.triedBy = append(f.triedBy, by)
+			return f.model, ""
+		},
 		Forms: func() ([]string, error) { return []string{"returns_form"}, nil },
 	}
 }
@@ -143,10 +149,17 @@ func TestOnlyAPublisherChangesAChatbot(t *testing.T) {
 	if a, _ := fa.set.Get("help"); a.Public {
 		t.Fatal("an author made a chatbot public")
 	}
+	// A reader lists and tries them, as on the command line, and changes
+	// nothing.
 	reader, rtoken := asRole(t, auth.RoleReader)
 	reader.Assistants = fa.wire()
-	if w := get(t, reader, "/assistants", rtoken); w.Code == http.StatusOK {
-		t.Fatal("a reader opened the chatbots screen")
+	if w := get(t, reader, "/assistants", rtoken); w.Code != http.StatusOK {
+		t.Fatalf("a reader could not list the chatbots: %d", w.Code)
+	}
+	decideForm(t, reader, "/assistants/save", rtoken, url.Values{"name": {"help"}, "full": {"1"},
+		"title": {"Mine now"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Help" {
+		t.Fatal("a reader changed a chatbot")
 	}
 }
 
@@ -225,5 +238,66 @@ func TestAChatbotsModelIsChosenOnItsPage(t *testing.T) {
 		"route_only": {"1"}})
 	if !strings.Contains(w.Header().Get("Location"), "e=") {
 		t.Error("a chatbot kept to no route was saved")
+	}
+}
+
+// The page offered to answer a gap is named for what the question is
+// about, not for everything the visitor wrote: it had been the whole
+// question, so accepting it would have put a visitor's name and street in
+// a public address.
+func TestAGapsPageIsNamedForItsTopicNotTheVisitor(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set = &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help"}}}
+	srv.Assistants.Gaps = func(string) ([]gaps.Group, bool, error) {
+		return []gaps.Group{{Key: "zqbarra", Count: 2, Questions: []string{
+			"Do you ship to Zqbarra island? I am Janet Zqwood, 14 Rose Lane, Leeds"}}}, true, nil
+	}
+	body := get(t, srv, "/assistants/help", token).Body.String()
+	if !strings.Contains(body, "/pages/new?name=do-you-ship-to-zqbarra-island") {
+		t.Fatalf("no page is offered for the gap:\n%s", body)
+	}
+	for _, leak := range []string{"janet", "zqwood", "rose-lane", "leeds"} {
+		if strings.Contains(body, "name=do-you-ship-to-zqbarra-island-"+leak) || strings.Contains(body, "island-i-am") {
+			t.Fatalf("the page offered is named with the visitor's %s", leak)
+		}
+	}
+}
+
+// The console numbers what it retrieved as the answer cites it.
+//
+// The answer says [1] for the first passage, and the table numbered that
+// row 0, so with more than one passage every citation pointed at the row
+// below the one it meant: the console exists to show which passage a
+// sentence came from, and it showed the wrong one.
+func TestTheConsoleNumbersPassagesAsTheAnswerCitesThem(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help", UseModel: true})
+	fa.model = unfaithful{}
+	body := get(t, srv, "/assistants/help?q="+url.QueryEscape("can I return opened ink"), token).Body.String()
+	if !strings.Contains(body, "<td>1</td>") || strings.Contains(body, "<td>0</td>") {
+		t.Fatal("the first passage retrieved is not numbered 1, as the answer cites it")
+	}
+}
+
+// Creating a chatbot under a name in use says so and changes nothing.
+//
+// The New chatbot form posts to the same save as an edit, so entering the
+// name of an existing chatbot, a public one perhaps, retitled it and said
+// "Saved." instead of saying the name was taken.
+func TestANewChatbotUnderANameInUseIsRefused(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Ask the shop", Public: true})
+	w := decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "title": {"Something else"}})
+	loc := w.Header().Get("Location")
+	if a, _ := fa.set.Get("help"); a.Title != "Ask the shop" || !a.Public {
+		t.Fatalf("a chatbot in use was changed by creating one under its name: %+v", a)
+	}
+	if !strings.Contains(loc, "e=") || !strings.Contains(loc, "/assistants/help") {
+		t.Fatalf("the refusal does not say so or lead to the chatbot: %q", loc)
+	}
+	// Its own settings form still saves it.
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Ask us"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Ask us" {
+		t.Fatalf("the settings form no longer saves: %+v", a)
 	}
 }

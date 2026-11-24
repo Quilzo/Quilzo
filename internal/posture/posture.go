@@ -115,6 +115,20 @@ type Finding struct {
 	Refs []frameworks.Ref `json:"refs,omitempty"`
 }
 
+// FixFor is a fix as the person acting on it reads it: with the holder of
+// the token it is about in place of HOLDER, which a fix says so that the
+// finding, exported and streamed, does not carry their name. Shown with no
+// holder, it is the fix as it is.
+//
+// "fix: quilzo token issue ... --principal HOLDER" was printed a line below
+// "held by ada", and left whoever read both to put one into the other.
+func FixFor(fix, holder string) string {
+	if holder == "" {
+		return fix
+	}
+	return strings.ReplaceAll(fix, "HOLDER", holder)
+}
+
 // ID is the stable identity of a finding: the same problem in the same place
 // keeps the same id across scans, so "first seen" means something.
 func (f Finding) ID() string {
@@ -222,6 +236,15 @@ type UpkeepFacts struct {
 	OverdueEntries int `json:"overdue_entries"`
 	// OldestOverdue is how long the oldest of them has been waiting.
 	OldestOverdue time.Duration `json:"oldest_overdue,omitempty"`
+	// LeftRooms is how many rooms a store still holds under rooms/ from
+	// before rooms left Quilzo, and LeftRoomFiles how many files that
+	// directory holds in all. Nothing reads it now, so a room's retention
+	// period is no longer applied and its messages can no longer be erased;
+	// a store that kept them said nothing, and whoever set the period went
+	// on believing it ran. Counted whether or not Checked is set: the
+	// directory is there or it is not.
+	LeftRooms     int `json:"left_rooms,omitempty"`
+	LeftRoomFiles int `json:"left_room_files,omitempty"`
 	// Checked distinguishes "nothing waiting" from "nobody looked", the same
 	// distinction ExtFacts.Checked draws and for the same reason.
 	Checked bool `json:"checked"`
@@ -271,6 +294,12 @@ type ChatbotFact struct {
 	Disclosed bool `json:"disclosed"`
 	// LastEval is when it was last measured, zero for never.
 	LastEval time.Time `json:"last_eval,omitempty"`
+	// EvalModel is the model its last evaluation measured and Model the
+	// one answering now, each as a person reads it; EvalModel is empty for
+	// an evaluation recorded before it was named. What a measurement found
+	// holds only for the model it measured.
+	EvalModel string `json:"eval_model,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 // SSOFacts is single sign-on as set up: each SAML identity provider's
@@ -481,8 +510,11 @@ type AgentIdentityFact struct {
 type State struct {
 	Policy *auth.Policy     `json:"-"`
 	Tokens *auth.TokenStore `json:"-"`
-	Types  *schema.Store    `json:"-"`
-	Audit  []audit.Event    `json:"-"`
+	// Passkeys are the principals who hold a passkey here: people, who
+	// sign in as themselves, whatever tokens are also issued in their name.
+	Passkeys []string      `json:"-"`
+	Types    *schema.Store `json:"-"`
+	Audit    []audit.Event `json:"-"`
 	// AuditRead says the log was read, which a nil Audit cannot.
 	//
 	// audit.Read answers (nil, nil) for a log that is not there and a nil
@@ -491,9 +523,17 @@ type State struct {
 	// publish guarded on `s.Audit == nil` and could therefore never fire.
 	// A deployment whose log path is unwritable, which is exactly the
 	// deployment that rule exists for, scored clean on it.
-	AuditRead bool              `json:"-"`
-	Files     []FileFact        `json:"files"`
-	Weakened  []WeakenedSetting `json:"weakened,omitempty"`
+	AuditRead bool `json:"-"`
+	// AuditBreaks are what is wrong with the log besides its chain, which
+	// Verify over Audit cannot see: its lines that are not entries, other
+	// than a write a crash cut short, and a head saved beside it that it no
+	// longer extends. A line like that stopped the log being read at all, so
+	// the scan checked nothing about the log, and called it unchecked,
+	// however it had come to be there; entries removed from the end leave a
+	// chain that verifies, and the scan called the log sound.
+	AuditBreaks []audit.Problem   `json:"-"`
+	Files       []FileFact        `json:"files"`
+	Weakened    []WeakenedSetting `json:"weakened,omitempty"`
 	// Parameters is the organisation's policy and how it is met.
 	Parameters ParameterFacts    `json:"parameters"`
 	Server     ServerFacts       `json:"server"`
@@ -513,22 +553,28 @@ type State struct {
 }
 
 // Rule is one check.
+//
+// It is written as JSON by `quilzo posture rules --json`, under the names
+// `posture explain --json` gives the same fields.
 type Rule struct {
-	ID       string
-	Title    string
-	Severity Severity
-	Controls []string
-	OWASP    string
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Severity Severity `json:"severity"`
+	Controls []string `json:"controls"`
+	OWASP    string   `json:"owasp"`
 	// Why explains the consequence, not the rule. It is shown when someone asks
 	// why a finding matters, and it is the difference between a scanner people
 	// act on and one they argue with.
-	Why   string
-	Check func(State) []Finding
+	Why string `json:"why"`
+	// Check is left out of JSON, which has no form for a function:
+	// encoding/json refuses the whole value for one, so `posture rules
+	// --json` wrote nothing and exited 0.
+	Check func(State) []Finding `json:"-"`
 	// Remind says the security contact is told when this starts failing,
 	// whatever its severity. A reminder that something is due is Medium by
 	// what an attacker gains from it, and a reminder nobody receives
 	// reminds nobody: the drift check mailed only high and critical.
-	Remind bool
+	Remind bool `json:"remind"`
 }
 
 // Reminds reports whether a rule is a reminder (Rule.Remind).

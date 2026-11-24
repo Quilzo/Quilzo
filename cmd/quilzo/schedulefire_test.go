@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -403,5 +406,111 @@ func TestTheServerWakesForTheNextEntry(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("never fired")
+	}
+}
+
+// The Publishing screen is told why the server's scheduler may not publish,
+// from the identity the server was started with: none, on a store with
+// access control, is a reason; an administrator's token is none.
+func TestTheServerSaysWhenItsSchedulerCannotPublish(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root, dana, _ := twoAdmins(t)
+	old := flagToken
+	t.Cleanup(func() { flagToken = old })
+	flagToken = ""
+	if why := schedulerCannotPublish(root); !strings.Contains(why, "verified identity") {
+		t.Errorf("a server with no token says its scheduler can publish: %q", why)
+	}
+	flagToken = dana
+	if why := schedulerCannotPublish(root); why != "" {
+		t.Errorf("a server with an administrator's token says it cannot publish: %q", why)
+	}
+}
+
+// A publish of pages with no provenance can be scheduled as it can be made
+// by hand: on a reason given when it is scheduled, applied as the waiver
+// when it fires and recorded with it. And scheduling one without a reason
+// says it will be refused, rather than failing at nine with nobody told.
+// Every page saved in the browser or on the command line has no record, so
+// a scheduled launch of ordinary hand-written edits was always refused at
+// its time, with advice (--force-unmarked) no schedule could carry.
+func TestAScheduledPublishOfUnmarkedPagesTakesTheWaiverItWasGiven(t *testing.T) {
+	root, tpl, _ := installedDemo(t)
+	addOurPage(t, root, "launch", map[string]any{"title": "The autumn range"})
+	old := w
+	t.Cleanup(func() { w = old })
+	var said bytes.Buffer
+	w = out.New(false)
+	w.Out = &said
+
+	if err := cmdSchedule(root, []string{"add", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said.String(), "launch") || !strings.Contains(said.String(), "no provenance") {
+		t.Errorf("scheduling pages with no provenance does not say it will be refused:\n%s", said.String())
+	}
+	fired, err := fireDue(root, asAdmin("dana"), inAnHour, fireOptions{templates: tpl})
+	if err != nil || len(fired) != 1 || fired[0].Outcome != "refused" || !strings.Contains(fired[0].Reason, "no provenance") {
+		t.Fatalf("%+v %v", fired, err)
+	}
+
+	if err := cmdSchedule(root, []string{"add", "1h", "--force-unmarked"}); err == nil {
+		t.Error("a waiver was scheduled with no reason")
+	}
+	if err := cmdSchedule(root, []string{"add", "1h", "--force-unmarked",
+		"--reason", "written by hand, marking pending"}); err != nil {
+		t.Fatal(err)
+	}
+	fired, err = fireDue(root, asAdmin("dana"), inAnHour, fireOptions{templates: tpl})
+	if err != nil || len(fired) != 1 || fired[0].Outcome != "published" {
+		t.Fatalf("the scheduled publish with its reason did not go out: %+v %v", fired, err)
+	}
+	recs := publishRecords(t, root)
+	last := recs[len(recs)-1]
+	if !strings.Contains(last.Detail["waived"], "unmarked-ai") || last.Detail["reason"] != "written by hand, marking pending" {
+		t.Errorf("the publish does not record the waiver it went out on: %v", last.Detail)
+	}
+}
+
+// Scheduling under --json says what the provenance gate will make of the
+// entry at its time, as the prose does: the pages with no provenance, and
+// the reason they go out on when one was given. The answer named the commit
+// and the time and nothing of either, so a script scheduling a launch of
+// hand-written pages read a clean answer, exit 0, and learnt of the refusal
+// at its time, which is what saying it when the entry is added is for.
+func TestScheduleAddUnderJSONSaysWhatTheProvenanceGateWillMakeOfIt(t *testing.T) {
+	old := w
+	t.Cleanup(func() { w = old })
+	answer := func(args ...string) map[string]any {
+		t.Helper()
+		root, _, _ := installedDemo(t)
+		addOurPage(t, root, "launch", map[string]any{"title": "The autumn range"})
+		var said bytes.Buffer
+		w = out.New(true)
+		w.Out = &said
+		if err := cmdSchedule(root, append([]string{"add", "1h"}, args...)); err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		dec := json.NewDecoder(bytes.NewReader(said.Bytes()))
+		if err := dec.Decode(&doc); err != nil || dec.More() {
+			t.Fatalf("`schedule add` under --json did not answer one document (%v):\n%s", err, said.String())
+		}
+		return doc
+	}
+
+	doc := answer()
+	if unmarked, _ := doc["unmarked"].([]any); len(unmarked) != 1 || unmarked[0] != "launch" ||
+		doc["unmarked_reason"] != "" {
+		t.Errorf("scheduling a page with no provenance answered %v", doc)
+	}
+	doc = answer("--force-unmarked", "--reason", "written by hand, marking pending")
+	if unmarked, _ := doc["unmarked"].([]any); len(unmarked) != 1 || unmarked[0] != "launch" ||
+		doc["unmarked_reason"] != "written by hand, marking pending" {
+		t.Errorf("scheduling a page with no provenance on a reason answered %v", doc)
+	}
+	if doc["commit"] == nil || doc["at"] == nil {
+		t.Errorf("the answer lost what it named: %v", doc)
 	}
 }

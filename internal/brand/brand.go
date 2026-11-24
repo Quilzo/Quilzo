@@ -35,6 +35,11 @@
 // It runs over pages and over records, because in a shop the product copy is a
 // record and gating only pages would gate the part nobody sells anything with.
 //
+// And on what an agent writes to another system, a post or a message, which
+// reaches readers as surely as a page does, from a run here or through the
+// MCP gateway: there a finding holds the call for a person, who reads what
+// was found, rather than refusing it (cmd/quilzo brandcmd.go).
+//
 // # What this does not claim to be
 //
 // Not a compliance certification, not legal advice, and not adversarial. An

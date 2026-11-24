@@ -39,7 +39,8 @@ serves; it is not a template somebody filled in.</p>
   prose looking for URLs — so they have to be named in
   <code>site.csp.extra_img</code> and <code>site.csp.extra_frame</code>.
   Whether the policy is enforced or only reported is
-  <code>site.csp.mode</code>, on the <a href="/settings">settings</a> screen.
+  <code>site.csp.mode</code>, on the {{if .OpensSettings}}<a href="/settings">settings</a>
+  screen{{else}}settings screen, which somebody who edits the site reads{{end}}.
 </p>
 {{end}}
 {{template "foot" .}}

@@ -116,6 +116,51 @@ func TestAPrivilegedChangeWaitsForASecondAdministrator(t *testing.T) {
 	}
 }
 
+// A setting that was raised or switched with nobody asked now waits like
+// any other weaker one: refused with no reason, and with one it waits for
+// a second administrator, who makes it on approving. Putting it back is
+// one administrator's.
+//
+// Each of these was taken at once from one administrator, with no reason
+// and nothing for the posture scan to report.
+func TestALimitOrSwitchThatGivesSomethingUpWaitsForASecondAdministrator(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, boss, lee := twoAdmins(t)
+	for _, tc := range [][2]string{
+		{"api.rate.burst", "500"},
+		{"telemetry.allow_remote", "true"},
+		{"ext.enabled", "true"},
+		{"browser.path", "/opt/chromium/chrome"},
+	} {
+		key, value := tc[0], tc[1]
+		t.Setenv("QUILZO_TOKEN", boss)
+		before := mustConfig(root).Raw(key)
+		if err := cmdConfig(root, []string{"set", key, value}); err == nil {
+			t.Errorf("%s = %s was set with no reason", key, value)
+		}
+		if err := cmdConfig(root, []string{"set", key, value, "--accept-risk", "a test"}); err != nil {
+			t.Fatalf("%s = %s: %v", key, value, err)
+		}
+		if got := mustConfig(root).Raw(key); got != before {
+			t.Fatalf("%s = %s took effect on one administrator's word", key, got)
+		}
+		t.Setenv("QUILZO_TOKEN", lee)
+		if err := cmdPending(root, []string{"approve", waiting(t, root).ID}); err != nil {
+			t.Fatal(err)
+		}
+		if got := mustConfig(root).Raw(key); got != value {
+			t.Fatalf("approved, and %s is %s", key, got)
+		}
+		t.Setenv("QUILZO_TOKEN", boss)
+		if err := cmdConfig(root, []string{"unset", key}); err != nil {
+			t.Fatal(err)
+		}
+		if !mustConfig(root).IsDefault(key) {
+			t.Errorf("putting %s back waited for a second administrator", key)
+		}
+	}
+}
+
 // An administrator's token is issued to whoever asked, once another
 // administrator agrees, and to nobody else.
 func TestAnAdministratorsTokenWaitsAndGoesToWhoeverAsked(t *testing.T) {

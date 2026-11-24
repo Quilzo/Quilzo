@@ -1,0 +1,42 @@
+name: nightly
+
+# The whole suite under the race detector, in a shuffled order, every night.
+#
+# ci.yml races the packages that start goroutines on each pull request; this
+# is the rest of the answer to the same finding, that CI ran no race
+# detector and no shuffled order at all. Raced over everything, because a
+# package that starts no goroutine can still be called from one. Shuffled,
+# because a test that passes only after another has run passes by accident:
+# its fixture is somebody else's leftovers, and the day the order changes it
+# fails for a reason nobody can find. A failing package's output starts with
+# the seed it was shuffled with ("-test.shuffle N"), and go test -shuffle=N
+# runs that order again.
+#
+# A workflow of its own, not a schedule on ci.yml: a schedule there would
+# start every job in that file each night too, the image build among them,
+# and those are for changes.
+#
+# The actions are pinned to commits and the permissions are read-only, for
+# the reasons ci.yml gives. The timeout is the race detector's: cmd/quilzo
+# runs several times slower under it than go test's default of ten minutes a
+# package allows.
+
+on:
+  schedule:
+    - cron: "43 2 * * *"
+  # Runnable by hand, so a fix for what it found can be checked the same day.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  race-shuffled:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: The whole suite, raced and shuffled
+        run: go test -race -shuffle=on -count=1 -timeout=90m ./...

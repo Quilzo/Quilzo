@@ -5,6 +5,7 @@ package admin
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -221,7 +222,11 @@ func TestAToolStepItsIntegrationSaysWritesIsNotBatchedAsARead(t *testing.T) {
 	file := agent.Action{Tool: "create_issue", Input: map[string]any{"title": "x"}}
 	waitingRun(st, "run-20261103-000000c1", "filer", file, "it asks first", time.Now())
 	waitingRun(st, "run-20261103-000000c2", "filer", file, "it asks first", time.Now())
-	for _, it := range srv.runApprovals(time.Now()) {
+	items := srv.runApprovalsFor(principal{Name: "editor", Role: auth.RoleAdmin, Scope: "/"}, time.Now())
+	if len(items) != 2 {
+		t.Fatalf("%d runs are listed, not the 2 waiting: %+v", len(items), items)
+	}
+	for _, it := range items {
 		if it.Commits != "writes" || it.Batch != "" {
 			t.Errorf("%s commits to %q and is offered in the batch %q", it.RunID, it.Commits, it.Batch)
 		}
@@ -257,4 +262,67 @@ func TestAWaitingHandOffShowsWhoAndWhatIsHandedOn(t *testing.T) {
 	if !strings.Contains(list, "delegate/writer, which the reviewer refused") {
 		t.Error("the approvals do not say which agent the waiting hand-off goes to")
 	}
+}
+
+// Somebody granted approve and nothing else is offered Approvals, the
+// screen where they decide what agents wait for, and the front door sends
+// them to it, wherever the permission was granted.
+//
+// Approvals was in the menu for whoever could read the site, and approve
+// is granted on its own: the reference stack's approver signed in to a
+// menu holding only Today, while the screen their work is on answered 200
+// at an address nothing in front of them led to.
+func TestApprovingAloneOffersApprovals(t *testing.T) {
+	for _, on := range []string{"/", auth.AreaAgents, auth.AgentResource("newsletter")} {
+		t.Run(on, func(t *testing.T) {
+			srv, _ := setup(t)
+			wireStudio(srv)
+			if err := srv.Policy.Grant(auth.Binding{Principal: "aria", Permission: auth.ActApprove, Resource: on}); err != nil {
+				t.Fatal(err)
+			}
+			tok, _, err := srv.Tokens.IssueSession("passkey:aria", "aria", srv.roleFor("aria"), "/", time.Hour,
+				auth.RoleAdmin, auth.MethodPasskey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(menuOf(t, get(t, srv, "/today", tok).Body.String()), `href="/approvals"`) {
+				t.Error("an approver's menu does not offer Approvals")
+			}
+			if w := get(t, srv, "/", tok); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/approvals" {
+				t.Errorf("the front door sent an approver to %d %q, not to Approvals", w.Code, w.Header().Get("Location"))
+			}
+			if w := get(t, srv, "/approvals", tok); w.Code != http.StatusOK {
+				t.Errorf("the screen the menu offers an approver answered %d", w.Code)
+			}
+		})
+	}
+
+	// And it is offered for the permission, not for being signed in:
+	// somebody who may only start runs decides nothing there.
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "rex", Permission: auth.ActRunAgents, Resource: auth.AreaAgents}); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := srv.Tokens.IssueSession("passkey:rex", "rex", srv.roleFor("rex"), "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(menuOf(t, get(t, srv, "/today", tok).Body.String()), `href="/approvals"`) {
+		t.Error("somebody who may only start runs is offered Approvals")
+	}
+}
+
+// menuOf is the navigation in a rendered page, and nothing else on it.
+func menuOf(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `<nav class="navgroups"`)
+	if start < 0 {
+		t.Fatalf("the page has no menu:\n%s", firstLines(body, 12))
+	}
+	end := strings.Index(body[start:], "</nav>")
+	if end < 0 {
+		t.Fatal("the menu does not end")
+	}
+	return body[start : start+end]
 }

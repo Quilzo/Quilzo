@@ -25,7 +25,6 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Events (internal/public/events.go): records whose listing site.events
@@ -104,9 +103,12 @@ func eventsPackage() *feature.Package {
 				Sort:  "date", Descending: true, Rows: 50},
 		},
 		Pages: []feature.Page{
-			{Name: "events", Body: map[string]any{"title": "What's on",
+			// Headed by the page's own h1, as head_title, with the list under
+			// it. The list's h2 was the only heading, so every publish of a
+			// site with events said the page had headings and no h1.
+			{Name: "events", Body: map[string]any{"title": "What's on", "head_title": "What's on",
 				"description": "Events still to come, and a calendar to subscribe to.",
-				"sections": []any{map[string]any{"events": map[string]any{"title": "What's on", "rows": float64(20),
+				"sections": []any{map[string]any{"events": map[string]any{"title": "Coming up", "rows": float64(20),
 					"intro": ""}}}}},
 			// No title of its own: it stands for whichever event is being
 			// looked at, and the heading comes from the record.
@@ -127,17 +129,31 @@ func eventsCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return eventsList(root, caller)
 	case "setup":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return eventsSetup(root, caller)
 	case "import":
 		return eventsImport(root, args[1:], caller)
 	case "example":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+		// The package itself under --json, as `blog example` gives its own:
+		// it went only to a person, so a script was answered with nothing.
+		if w.JSON(eventsPackage()) {
+			return nil
+		}
 		body, _ := json.MarshalIndent(eventsPackage(), "", "  ")
 		w.Human("%s\n", body)
 		return nil
 	default:
-		return fmt.Errorf("unknown events command %q; try list, setup, import or example", args[0])
+		return errMisused{fmt.Errorf("unknown events command %q; try list, setup, import or example", args[0])}
 	}
 }
 
@@ -195,7 +211,7 @@ func upcomingEvents(root string) ([]listing.Row, string, error) {
 	if !ok {
 		return nil, name, fmt.Errorf("site.events names %q and no listing has that name", name)
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, name, err
 	}
@@ -296,11 +312,11 @@ func eventsImport(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("events import", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
 	flags, rest := splitFlags(args, nil)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo events import <file.ics | https://… | webcal://…> [--dry-run]")
+		return errMisused{errors.New("usage: quilzo events import <file.ics | https://… | webcal://…> [--dry-run]")}
 	}
 	coll, err := eventsCollection(root)
 	if err != nil {

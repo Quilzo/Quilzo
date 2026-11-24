@@ -79,3 +79,29 @@ func TestASiteHasOneLauncher(t *testing.T) {
 		t.Errorf("the launcher is %+v", a)
 	}
 }
+
+// The launcher's pages and the nudge's take a page's name as the pages a
+// chatbot reads do, with or without the slash. "delivery" was refused
+// with a sentence that read as if it did start with one, where --pages
+// took it, and all three are described as page prefixes.
+func TestALaunchersPagesAreNamedAsAChatbotsPagesAre(t *testing.T) {
+	s := &Set{}
+	if err := s.Put(withLauncher(Launcher{Pages: []string{"bread", "/delivery"}, Nudge: "Delivery?",
+		NudgePages: []string{"delivery"}})); err != nil {
+		t.Fatalf("pages named as --pages names them: %v", err)
+	}
+	a, _ := s.Get("help")
+	if got := strings.Join(a.Launcher.Pages, ","); got != "/bread,/delivery" {
+		t.Errorf("the launcher's pages were kept as %s", got)
+	}
+	if got := strings.Join(a.Launcher.NudgePages, ","); got != "/delivery" {
+		t.Errorf("the nudge's pages were kept as %s", got)
+	}
+	if !a.Launcher.NudgeOn("/delivery") {
+		t.Error("the nudge does not show on the page it was put on")
+	}
+	err := s.Put(withLauncher(Launcher{Pages: []string{"docs?x"}}))
+	if err == nil || !strings.Contains(err.Error(), "like /delivery") {
+		t.Errorf("a prefix that is not a path is refused without saying what one is: %v", err)
+	}
+}

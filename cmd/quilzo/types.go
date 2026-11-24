@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func cmdTypes(root string, args []string) error {
@@ -26,6 +27,9 @@ func cmdTypes(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesList(root)
 	case "add":
 		return typesAdd(root, rest)
@@ -33,6 +37,8 @@ func cmdTypes(root string, args []string) error {
 		return typesShow(root, rest)
 	case "bind":
 		return typesBind(root, rest)
+	case "unbind":
+		return typesUnbind(root, rest)
 	case "bind-collection":
 		return typesBindCollection(root, rest)
 	case "example":
@@ -40,10 +46,13 @@ func cmdTypes(root string, args []string) error {
 	case "stub":
 		return cmdTypeStub(root, args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesCheck(root)
 	default:
-		return fmt.Errorf("unknown type command %q; try list, add, show, bind, bind-collection or check",
-			args[0])
+		return errMisused{fmt.Errorf("unknown type command %q; try list, add, show, bind, unbind, bind-collection or check",
+			args[0])}
 	}
 }
 
@@ -115,8 +124,8 @@ func typesList(root string) error {
 
 func typesAdd(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo type add <definition.json>\n" +
-			"  quilzo type example > article.json   writes one you can edit")
+		return errMisused{fmt.Errorf("usage: quilzo type add <definition.json>\n" +
+			"  quilzo type example > article.json   writes one you can edit")}
 	}
 	raw, err := os.ReadFile(args[0])
 	if err != nil {
@@ -159,7 +168,7 @@ func typesAdd(root string, args []string) error {
 
 func typesShow(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo type show <name>")
+		return errMisused{fmt.Errorf("usage: quilzo type show <name>")}
 	}
 	st, err := schema.Load(root)
 	if err != nil {
@@ -167,7 +176,7 @@ func typesShow(root string, args []string) error {
 	}
 	t, ok := st.Registry.Get(args[0])
 	if !ok {
-		return fmt.Errorf("there is no type %q", args[0])
+		return errNotFound{fmt.Errorf("there is no type %q", args[0])}
 	}
 	if w.JSON(t) {
 		return nil
@@ -218,11 +227,11 @@ func num(v *float64) string {
 func typesBindCollection(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind-collection", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo type bind-collection <collection> <type>")
+		return errMisused{fmt.Errorf("usage: quilzo type bind-collection <collection> <type>")}
 	}
 	coll, typeName := pos[0], pos[1]
 
@@ -250,11 +259,11 @@ func typesBindCollection(root string, args []string) error {
 func typesBind(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo type bind <page> <type>")
+		return errMisused{fmt.Errorf("usage: quilzo type bind <page> <type>")}
 	}
 	page, typeName := pos[0], pos[1]
 
@@ -290,6 +299,37 @@ func typesBind(root string, args []string) error {
 	return nil
 }
 
+// typesUnbind is the browser's Unbind on Types, from the command line. A page
+// bound to a type is refused removal until the binding is cleared (so a later
+// page of the same name is not silently bound to something nobody chose), and
+// without this the terminal had no way to clear it.
+func typesUnbind(root string, args []string) error {
+	pos, flags := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("unbind", flag.ContinueOnError)
+	if err := parseOnce(fs, flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errMisused{fmt.Errorf("usage: quilzo type unbind <page>")}
+	}
+	page := pos[0]
+	st, err := schema.Load(root)
+	if err != nil {
+		return err
+	}
+	if _, bound := st.Bound[page]; !bound {
+		return errNotFound{fmt.Errorf("%s was not bound to anything", page)}
+	}
+	delete(st.Bound, page)
+	if err := st.Save(); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, flagToken)
+	record(root, caller.auditRecord("type.unbind", page, audit.Success, nil))
+	w.Human("%s no longer has to satisfy a type\n", page)
+	return nil
+}
+
 func typesCheck(root string) error {
 	st, err := schema.Load(root)
 	if err != nil {
@@ -300,11 +340,24 @@ func typesCheck(root string) error {
 		return err
 	}
 	failures := st.Gate(pages)
+	// Bindings to a page the draft does not have. Nothing fails against
+	// them, so they used to be listed as ok, which is how a page removed from
+	// the terminal left its binding behind with nothing to say so. Not a
+	// failure: a binding on its own breaks nothing, but a later page of the
+	// same name is bound to something nobody chose.
+	missing := []string{}
+	for page := range st.Bound {
+		if _, there := pages[page]; !there {
+			missing = append(missing, page)
+		}
+	}
+	sort.Strings(missing)
 
 	if w.Mode == out.JSON {
 		w.JSON(map[string]any{
 			"bound":    len(st.Bound),
 			"failures": failures,
+			"missing":  missing,
 			"valid":    len(failures) == 0,
 		})
 		if len(failures) > 0 {
@@ -330,6 +383,11 @@ func typesCheck(root string) error {
 		failed[f.Page] = f
 	}
 	for _, page := range names {
+		if _, there := pages[page]; !there {
+			w.Human("  %smissing%s %-18s %s%s, and there is no such page (quilzo type unbind %s)%s\n",
+				yellow, reset, page, dim, st.Bound[page], page, reset)
+			continue
+		}
 		f, bad := failed[page]
 		if !bad {
 			w.Human("  %sok%s     %-18s %s%s%s\n",
@@ -354,14 +412,46 @@ func draftPages(root string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	_, pages, err := draftOrLive(s)
+	return pages, err
+}
+
+// draftOrLive is draftPages with the commit the pages were read from, the
+// empty string for a store with neither a draft nor anything live, for a
+// writer that changes some of them and writes the set back
+// (site.SaveDraftOver).
+func draftOrLive(s *store.Store) (string, map[string]any, error) {
 	ref := s.GetRef(site.RefDraft)
 	if ref == "" {
 		ref = s.GetRef(site.RefLive)
 	}
 	if ref == "" {
-		return map[string]any{}, nil
+		return "", map[string]any{}, nil
 	}
-	return site.PagesAt(s, ref)
+	pages, err := site.PagesAt(s, ref)
+	return ref, pages, err
+}
+
+// draftRead is the draft's pages and the commit they were read from, for a
+// command that changes some of them and writes the set back
+// (site.SaveDraftOver).
+//
+// One read of the ref for both. The section and move commands read the
+// pages and then took the draft as it was when they wrote as their base,
+// which checks nothing: a save that landed in between was simply dropped by
+// the write, and the command said it had done what it was asked.
+//
+// No draft is the error reading one gives (site.PagesAt), which says how to
+// start one; these commands change a draft, so what is live does not stand
+// in for it.
+func draftRead(s *store.Store) (string, map[string]any, error) {
+	base := s.GetRef(site.RefDraft)
+	if base == "" {
+		_, err := site.PagesAt(s, site.RefDraft)
+		return "", nil, err
+	}
+	pages, err := site.PagesAt(s, base)
+	return base, pages, err
 }
 
 // recordGate is gateWrite's counterpart for records.
@@ -446,9 +536,13 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 //	quilzo type stub product > new.json
 //	quilzo records add products --from new.json
 func cmdTypeStub(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo type stub <type>\n" +
-			"  quilzo type list  names them")
+		return errMisused{fmt.Errorf("usage: quilzo type stub <type>\n" +
+			"  quilzo type list  names them")}
 	}
 	st, err := schema.Load(root)
 	if err != nil {
@@ -459,8 +553,8 @@ func cmdTypeStub(root string, args []string) error {
 	}
 	t, ok := st.Registry.Get(args[0])
 	if !ok {
-		return fmt.Errorf("there is no type called %q; `quilzo type list` "+
-			"names them", args[0])
+		return errNotFound{fmt.Errorf("there is no type called %q; `quilzo type list` "+
+			"names them", args[0])}
 	}
 	body, err := json.MarshalIndent(t.Blank(), "", "  ")
 	if err != nil {
@@ -478,16 +572,21 @@ func cmdTypeStub(root string, args []string) error {
 	}
 	if len(required) > 0 {
 		fmt.Fprintf(os.Stderr, "\n%smust be filled in: %s%s\n",
-			dim, strings.Join(required, ", "), reset)
+			noteDim, strings.Join(required, ", "), noteReset)
 	}
 	fmt.Fprintf(os.Stderr, "%squilzo type stub %s > new.json && quilzo "+
-		"records add COLLECTION --from new.json%s\n", dim, args[0], reset)
+		"records add COLLECTION --from new.json%s\n", noteDim, args[0], noteReset)
 	return nil
 }
 
 func cmdTypeExample(args []string) error {
+	// One name for the type, and a word after it is not dropped.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	name := "article"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 {
 		name = args[0]
 	}
 	t := schema.Type{
@@ -502,8 +601,11 @@ func cmdTypeExample(args []string) error {
 			{Name: "section", Kind: schema.Choice,
 				Choices: []string{"news", "opinion", "review"}},
 			{Name: "tags", Kind: schema.List, MaxLen: 8},
-			{Name: "hero", Kind: schema.URL},
-			{Name: "hero_alt", Kind: schema.Text, AltFor: "hero",
+			// image, not hero: hero is reserved for the arrangement every
+			// page may carry, and an example declaring it stopped compiling
+			// the day it became reserved.
+			{Name: "image", Kind: schema.URL},
+			{Name: "image_alt", Kind: schema.Text, AltFor: "image",
 				Help: "What the image conveys, for a reader who cannot see it."},
 			{Name: "featured", Kind: schema.Boolean},
 			{Name: "reading_minutes", Kind: schema.Number},
@@ -522,11 +624,11 @@ func cmdTypeExample(args []string) error {
 	// article.json` produces a file that `quilzo type add` accepts. The
 	// guidance goes to stderr for the same reason.
 	fmt.Println(string(body))
-	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", dim,
-		strings.Join(schema.Kinds(), ", "), reset)
+	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", noteDim,
+		strings.Join(schema.Kinds(), ", "), noteReset)
 	fmt.Fprintf(os.Stderr, "%sno pattern, $ref, oneOf or nesting, deliberately%s\n",
-		dim, reset)
+		noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "%squilzo type example > %s.json && quilzo type "+
-		"add %s.json%s\n", dim, name, name, reset)
+		"add %s.json%s\n", noteDim, name, name, noteReset)
 	return nil
 }

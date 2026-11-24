@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/cdp"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // What an agent reads of a page: its outline.
@@ -163,10 +164,7 @@ var fakeRef = regexp.MustCompile(`\[(e\d+)\]`)
 func clean(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	s = fakeRef.ReplaceAllString(s, "($1)")
-	if len(s) > 200 {
-		s = s[:200] + "…"
-	}
-	return s
+	return plaintext.Clip(s, 200, "…")
 }
 
 // consequentialWords are what a control is called when pressing it does

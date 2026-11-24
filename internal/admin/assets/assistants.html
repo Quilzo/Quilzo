@@ -13,7 +13,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Chatbot</th><th scope="col">Where</th>
-    <th scope="col">Answers with</th><th scope="col">Can offer</th></tr></thead>
+    <th scope="col">Answers with</th><th scope="col">Can offer</th><th scope="col">Evaluated</th></tr></thead>
   <tbody>
   {{range .List}}
   <tr>
@@ -21,18 +21,19 @@
     <td>{{if .Public}}<span class="tag tag-ok">public</span> <code>/ask/{{.Name}}</code>{{if .Static}} <span class="tag">static copies too</span>{{end}}{{else}}<span class="tag">testing only</span>{{end}}</td>
     <td>{{if .UseModel}}the configured model, verified{{else}}quotes from your pages{{end}}</td>
     <td>{{plural (len .Actions) "action" "actions"}}</td>
+    <td>{{with index $.Measured .Name}}{{.}}{{else}}<span class="hint">never</span>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
 </div>
 {{else}}
-<p class="notice">No chatbots yet. Create one below; it starts private, so you
-  can try it here before anybody else can.</p>
+<p class="notice">No chatbots yet.{{if or .CanSave .CanBuild}} Create one below; it starts private, so you
+  can try it here before anybody else can.{{end}}</p>
 {{end}}
 
-{{if .CanSave}}
-<h2>New chatbot</h2>
+{{if or .CanSave .CanBuild}}
+<h2 id="new-chatbot">New chatbot</h2>
 <form method="post" action="/assistants/save" class="card">
   <div class="field">
     <label for="name">Name {{template "req"}}</label>

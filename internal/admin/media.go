@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 )
@@ -85,6 +86,51 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// A picture's narrower copies are listed with it rather than as cards of
+	// their own, unless asked for, as `quilzo media list` hides them unless
+	// --all. Every copy was a card with its own "rights: undeclared", so
+	// three uploads read as twelve files. A recording's still says whose it
+	// is, because its name could be the name of a poster somebody uploaded.
+	//
+	// Only under a picture that is there. Removing a picture leaves the
+	// copies made from it, and folded under a picture that was gone they
+	// were on no card at all: the screen counted no files while it held
+	// some, and nothing showed them to remove.
+	all := r.URL.Query().Get("all") == "1"
+	names := make(map[string]string, len(files))
+	for _, f := range files {
+		names[f.ID] = f.Name
+		if strings.TrimSpace(f.Name) == "" {
+			names[f.ID] = shortHash(f.ID)
+		}
+	}
+	folded := func(f media.File) bool {
+		_, there := names[f.RenditionOf]
+		return f.RenditionOf != "" && there
+	}
+	copies := map[string]int{}
+	hidden := 0
+	for _, f := range files {
+		if folded(f) {
+			copies[f.RenditionOf]++
+			hidden++
+		}
+	}
+	stillOf := map[string]string{}
+	for _, f := range files {
+		if f.PosterOf != "" {
+			stillOf[f.ID] = names[f.PosterOf]
+		}
+	}
+	shown := files
+	if !all {
+		shown = make([]media.File, 0, len(files)-hidden)
+		for _, f := range files {
+			if !folded(f) {
+				shown = append(shown, f)
+			}
+		}
+	}
 	var total int64
 	now := time.Now().UTC()
 	rights := make(map[string]rightsRow, len(files))
@@ -96,7 +142,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		row := rightsOf(f, now)
 		rights[f.ID] = row
-		if row.State == "undeclared" {
+		if row.State == "undeclared" && !folded(f) {
 			undeclared++
 		}
 	}
@@ -118,7 +164,8 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		"Replacements": replacementsFor(files),
 		"ReplacedBy":   supersededBy(files),
 		"Nav":          "media", "Title": "Media", "Principal": p,
-		"Files": files, "Total": total, "Accepted": media.Accepted(),
+		"Files": shown, "Total": total, "Accepted": media.Accepted(),
+		"All": all, "Copies": copies, "Hidden": hidden, "StillOf": stillOf, "Names": names,
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
 		"FFmpeg": ffmpeg, "HaveFFmpeg": haveFFmpeg,
@@ -149,6 +196,11 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The time a file this size takes to arrive, now that the sender is
+	// known to be somebody who may add one. Not before: until here the body
+	// has a form's thirty seconds, so somebody signed out is not waited on
+	// for the hours a large file is given (internal/listen).
+	listen.Receive(r)
 	// The body limit applied by the middleware is for forms. A file upload
 	// needs its own, larger, and it is still a limit: without one a single
 	// request makes the process allocate until it dies, which needs no
@@ -211,22 +263,30 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	// library full of undescribed images is a library somebody has to go back
 	// through, and nobody ever does.
 	alt := strings.TrimSpace(r.FormValue("alt"))
-	if f.Kind == media.Image && alt == "" && r.FormValue("decorative") == "" {
+	lib, err := s.Media.Library()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// A file already here keeps its description unless the uploader asks
+	// for theirs to replace it (medialib.Arriving), so a description is only
+	// needed of a new one, or of one whose description is being replaced.
+	replaceAlt := r.FormValue("replace_alt") != ""
+	_, _, here := lib.Arriving(f, false)
+	if f.Kind == media.Image && alt == "" && r.FormValue("decorative") == "" && (!here || replaceAlt) {
 		s.mediaRedirect(w, r, "", "this image needs a description. Say what it "+
 			"conveys, not that it is an image — or mark it decorative, which "+
 			"is a claim somebody is making rather than a box being skipped.")
 		return
 	}
 	f.Alt, f.UploadedBy = alt, p.Name
-
-	lib, err := s.Media.Library()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := lib.Put(f, body); err != nil {
-		s.mediaRedirect(w, r, "", err.Error())
-		return
+	upload := f
+	f, was, here := lib.Arriving(upload, replaceAlt)
+	if !here || f.Alt != was.Alt {
+		if err := lib.Put(f, body); err != nil {
+			s.mediaRedirect(w, r, "", err.Error())
+			return
+		}
 	}
 
 	detail := map[string]string{"file": f.Name, "id": shortHash(f.ID),
@@ -237,11 +297,36 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if stripped {
 		detail["metadata"] = "stripped"
 	}
+	// Whether a recording has sound, as the probe found it at upload: the
+	// accessibility gate holds a silent one to a description and a loud one
+	// to captions, so what was recorded is part of what was added.
+	sound := ""
+	if f.Kind == media.Video {
+		if stored, serr := lib.Stat(f.ID); serr == nil {
+			sound = stored.SoundWord()
+			detail["sound"] = sound
+		}
+	}
 	s.auditPub(p, "media.add", "/", detail)
 
 	msg := "stored " + f.Name
+	if here {
+		msg = medialib.AlreadyHere(upload.Name, was, f)
+		if f.Alt == was.Alt && upload.Alt != was.Alt {
+			msg += ". To give it your description instead, upload it again with " +
+				"\"Replace the description it has\" ticked"
+		}
+	}
 	if len(did) > 0 {
 		msg += " — " + strings.Join(did, ", ")
+	}
+	switch sound {
+	case "no":
+		msg += ". It has no sound, so a page showing it needs its description rather than captions, and it may be a backdrop."
+	case "yes":
+		msg += ". It has sound, so a page showing it needs captions."
+	case "unknown":
+		msg += ". Whether it has sound could not be read here, so a page showing it needs captions."
 	}
 	if stripped {
 		msg += ". The original carried metadata; a photograph from a phone " +

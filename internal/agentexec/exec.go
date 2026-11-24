@@ -37,6 +37,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -261,8 +262,5 @@ func render(page any) string {
 }
 
 func truncate(s string) string {
-	if len(s) <= MaxBody {
-		return s
-	}
-	return s[:MaxBody] + "\n…truncated at " + fmt.Sprint(MaxBody) + " bytes"
+	return plaintext.Clip(s, MaxBody, "\n…truncated at "+fmt.Sprint(MaxBody)+" bytes")
 }

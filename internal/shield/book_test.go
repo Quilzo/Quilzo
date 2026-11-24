@@ -4,6 +4,7 @@
 package shield
 
 import (
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -43,8 +44,10 @@ func TestAChangeTakesASecondPerson(t *testing.T) {
 	if got, _ := inForce(t, root, "chatbot-flood"); got.Mode != "watch" {
 		t.Fatal("a proposal took effect")
 	}
-	if _, err := Decide(root, p.ID, "dana", true, false, t0); err == nil {
-		t.Fatal("the proposer approved their own change")
+	// Named, so the command line can say it was the rule of two people
+	// refusing (3) and not a decision that could not be written (1).
+	if _, err := Decide(root, p.ID, "dana", true, false, t0); !errors.Is(err, ErrSameProposer) {
+		t.Fatalf("the proposer approved their own change: %v", err)
 	}
 	if _, err := Withdraw(root, p.ID, "sam", t0); err == nil {
 		t.Fatal("somebody else withdrew it")
@@ -56,8 +59,8 @@ func TestAChangeTakesASecondPerson(t *testing.T) {
 	if got, _ := inForce(t, root, "chatbot-flood"); got.Mode != "act" || !got.Builtin {
 		t.Fatalf("not in force: %+v", got)
 	}
-	if _, err := Decide(root, p.ID, "sam", true, false, t0); err == nil {
-		t.Fatal("approved twice")
+	if _, err := Decide(root, p.ID, "sam", true, false, t0); !errors.Is(err, ErrNoChange) {
+		t.Fatalf("approved twice: %v", err)
 	}
 	bk, _ := LoadBook(root)
 	if len(bk.Pending) != 0 || len(bk.Decided) != 1 {
@@ -208,5 +211,31 @@ func TestTheLibraryFollowsTheFile(t *testing.T) {
 		if pb.Mode == "act" {
 			t.Fatalf("%s acts from a broken file", pb.Name)
 		}
+	}
+}
+
+// The person who proposed a change is not its second person under another
+// spelling of their name, and approving alone is recorded as alone whatever
+// the case it was approved in.
+//
+// Decide compared the names exactly, so "dana" approved "Dana"'s change as
+// a second administrator, where a privileged request (internal/dual)
+// refused the same two names as one person.
+func TestTheProposerIsNotTheirOwnSecondPersonInAnotherCase(t *testing.T) {
+	root := t.TempDir()
+	pb, _ := inForce(t, root, "chatbot-flood")
+	pb.Mode = "act"
+	p, err := Propose(root, pb, false, "a test", "Dana", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{"dana", " DANA", "mailto:dana"} {
+		if got, err := Decide(root, p.ID, by, true, false, t0); err == nil {
+			t.Fatalf("%q approved Dana's change as somebody else: %+v", by, got)
+		}
+	}
+	d, err := Decide(root, p.ID, "dana", true, true, t0)
+	if err != nil || !d.Alone {
+		t.Fatalf("the only administrator approving their own change: %+v %v", d, err)
 	}
 }

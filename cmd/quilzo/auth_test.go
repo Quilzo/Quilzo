@@ -123,6 +123,8 @@ func TestAnAuditorReadsFromTheCommandLineAndChangesNothing(t *testing.T) {
 func TestAGrantSaysWhatItLetsThemDo(t *testing.T) {
 	root := connectStore(t)
 	_, read := captureStdout(t)
+	// What a person reads: under --json the grant answers a document.
+	w = out.New(false)
 	err := cmdAuth(root, []string{"grant", "dana", "author", "--on", "/blog"})
 	out := read()
 	if err != nil {

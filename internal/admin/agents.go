@@ -163,7 +163,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title": "Agents", "Principal": p, "Nav": "agents",
+		"Title": "Agents", "Principal": p, "Nav": "agents", "ReadsAssurance": s.readsAssurance(p),
 		"Templates": agent.Catalogue(),
 		"Message":   r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 	}

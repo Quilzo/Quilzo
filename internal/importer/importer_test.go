@@ -4,9 +4,14 @@
 package importer
 
 import (
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/webimport"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -362,6 +367,112 @@ func TestJSONArraysAndMapsBothImport(t *testing.T) {
 	}
 }
 
+// Two pages that come to the same name both arrive, numbered from it.
+//
+// The JSON reader numbered nothing. An array of two pages titled "Same" read
+// as two pages both named "same", and `quilzo import` and the browser's
+// import both write pages by name, so the second replaced the first and a
+// page was lost without a word. Every other format numbers the names it
+// shares (same, same-2, same-3), and now this one does too.
+func TestTwoSameNamedPagesInAJSONImportBothArrive(t *testing.T) {
+	arr := `[{"title":"Same","body":"first"},{"title":"Same","body":"second"},
+		{"slug":"same","body":"third"}]`
+	rep, err := Import(JSON, strings.NewReader(arr), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range rep.Pages {
+		got = append(got, p.Name+"="+str(p.Fields["body"]))
+	}
+	if g := strings.Join(got, ","); g != "same=first,same-2=second,same-3=third" {
+		t.Fatalf("the pages arrived as %s, not same, same-2 and same-3 in order", g)
+	}
+	// A page's own link agrees with the name it was given, or the page
+	// numbered so as not to replace another would still claim its address.
+	if s := rep.Pages[2].Fields["slug"]; s != "same-3" {
+		t.Errorf("the third page is named same-3 but its slug says %v", s)
+	}
+
+	// A map's keys are names already, but two of them can come to the same
+	// one. The key that is already its name keeps it; the other is numbered.
+	obj := `{"About Us":{"title":"Numbered"},"about-us":{"title":"Kept"}}`
+	rep, err = Import(JSON, strings.NewReader(obj), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	for _, p := range rep.Pages {
+		got = append(got, p.Name+"="+str(p.Fields["title"]))
+	}
+	if g := strings.Join(got, ","); g != "about-us=Kept,about-us-2=Numbered" {
+		t.Fatalf("the pages arrived as %s, not about-us and about-us-2", g)
+	}
+}
+
+// A Ghost export is not read as Quilzo's pages, and the refusal says where it
+// can be brought. It is JSON, so it was read as pages and refused with "no
+// importable pages found", while `quilzo site import` reads the same file
+// into a site with its posts: two readers of one file, and the one that could
+// not read it said there was nothing in it.
+func TestAGhostExportIsNotReadAsQuilzoPages(t *testing.T) {
+	ghost := `{"db":[{"meta":{"exported_on":1761700000000,"version":"5.98.0"},` +
+		`"data":{"posts":[{"id":"1","title":"Hello","slug":"hello","type":"post",` +
+		`"status":"published","html":"<p>Hi.</p>"}]}}]}`
+	src, _ := Detect([]byte(ghost))
+	rep, err := Import(src, strings.NewReader(ghost), now)
+	if err == nil {
+		t.Fatalf("a Ghost export was read as %d Quilzo pages", len(rep.Pages))
+	}
+	if !strings.Contains(err.Error(), "Ghost export") || !strings.Contains(err.Error(), "quilzo site import") {
+		t.Errorf("refused without saying what it is or where it goes: %v", err)
+	}
+
+	// A page called "posts" with a field called "data" is still a page: the
+	// hint is only for a file the page reader found nothing in.
+	rep, err = Import(JSON, strings.NewReader(`{"posts":{"title":"Posts","data":"x","meta":"y"}}`), now)
+	if err != nil || len(rep.Pages) != 1 {
+		t.Fatalf("a page called posts was refused: %v", err)
+	}
+}
+
+// A Ghost export with no "db" around it is not read as Quilzo's pages either.
+//
+// Ghost writes its export both ways, and the site import reads both. The
+// refusal above came only once the page reader found nothing, and this shape
+// gives it something: its "meta" and its "data" are objects, so it was read
+// as two pages called "data" and "meta", the posts a list in a field, and
+// `quilzo import` and the browser's import wrote them into the draft without
+// a word while `quilzo site import` read the same file as a post.
+func TestAGhostExportWithNoDBAroundItIsNotReadAsQuilzoPages(t *testing.T) {
+	ghost := `{"meta":{"exported_on":1761700000000,"version":"5.98.0"},` +
+		`"data":{"posts":[{"id":"1","title":"Hello","slug":"hello","type":"post",` +
+		`"status":"published","html":"<p>Hi.</p>"}]}}`
+	for _, src := range []Source{"", JSON} {
+		if src == "" {
+			src, _ = Detect([]byte(ghost))
+		}
+		rep, err := Import(src, strings.NewReader(ghost), now)
+		if err == nil {
+			var names []string
+			for _, p := range rep.Pages {
+				names = append(names, p.Name)
+			}
+			t.Fatalf("a Ghost export was read as the Quilzo pages %v", names)
+		}
+		if !strings.Contains(err.Error(), "Ghost export") || !strings.Contains(err.Error(), "quilzo site import") {
+			t.Errorf("refused without saying what it is or where it goes: %v", err)
+		}
+	}
+
+	// Pages that are called data and meta, with nothing of Ghost's in them,
+	// are still pages.
+	rep, err := Import(JSON, strings.NewReader(`{"data":{"title":"Our data"},"meta":{"title":"About this site"}}`), now)
+	if err != nil || len(rep.Pages) != 2 {
+		t.Fatalf("pages called data and meta were refused: %v", err)
+	}
+}
+
 // Content types are flat, which is what keeps validation bounded. A nested
 // object has nowhere to go, so it is reported rather than flattened into keys
 // nobody declared.
@@ -562,5 +673,376 @@ func TestAnUnusableRedirectMapIsReportedNotShipped(t *testing.T) {
 	if len(rep.Pages) != 2 {
 		t.Errorf("imported %d pages; the content should survive a redirect "+
 			"problem", len(rep.Pages))
+	}
+}
+
+// One WordPress export gives one set of pages with one set of names,
+// whichever command reads it. `quilzo import` named a page from its slug or
+// its title, and `quilzo site import` from its link's path: on plain
+// permalinks (?page_id=) site import named every page alike and refused the
+// export, and on pretty links without a slug the two named the same pages
+// qa-night and qa, nave-caf and naive.
+func TestQuilzoImportAndSiteImportReadTheSameWordPressExportAlike(t *testing.T) {
+	item := func(title, link, slug string) string {
+		s := `<item><title>` + title + `</title><link>` + link + `</link>`
+		if slug != "" {
+			s += `<wp:post_name>` + slug + `</wp:post_name>`
+		}
+		return s + `<wp:post_type>page</wp:post_type><wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words.</p>]]></content:encoded></item>`
+	}
+	for name, items := range map[string]string{
+		"plain links, as a fresh install has them": item("Q&amp;A night", "https://old.example.org/?page_id=11", "qa-night") +
+			item("Naïve café", "https://old.example.org/?page_id=12", "naive-cafe") +
+			item("Tom &amp; Jerry_v1.2", "https://old.example.org/?page_id=13", "tom-jerry"),
+		"pretty links, with no slugs": item("Q&amp;A night", "https://old.example.org/qa/", "") +
+			item("Naïve café", "https://old.example.org/naive/", "") +
+			item("Tom &amp; Jerry_v1.2", "https://old.example.org/tj/", ""),
+		"pretty links that are not the slugs": item("Q&amp;A night", "https://old.example.org/events/qa/", "qa-night") +
+			item("Naïve café", "https://old.example.org/naive/", "naive-cafe"),
+	} {
+		doc := strings.Replace(wxrDoc(items), "<channel><title>A site</title>",
+			"<channel><title>A site</title><link>https://old.example.org</link>", 1)
+		rep, err := Import(WordPress, strings.NewReader(doc), now)
+		if err != nil {
+			t.Fatalf("%s: quilzo import: %v", name, err)
+		}
+		var imported []string
+		for _, p := range rep.Pages {
+			imported = append(imported, p.Name)
+		}
+		s, err := webimport.FromWordPress([]byte(doc), "")
+		if err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		b, err := webimport.Package(s, "", "dana", nil, now)
+		if err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		if err := b.Package.Validate(feature.Checks{}); err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		var packaged []string
+		for _, p := range b.Package.Pages {
+			if p.Name != "index" {
+				packaged = append(packaged, p.Name)
+			}
+		}
+		sort.Strings(imported)
+		sort.Strings(packaged)
+		if strings.Join(imported, " ") != strings.Join(packaged, " ") {
+			t.Errorf("%s: quilzo import names the pages %v and site import %v", name, imported, packaged)
+		}
+	}
+}
+
+// held is an export of one published page and one item of each kind
+// WordPress keeps from the public, each with words of its own.
+func heldDoc() (doc string, markers map[string]string) {
+	item := func(title, slug, status, link, marker, extra string) string {
+		return `<item><title>` + title + `</title><link>` + link + `</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>` + status + `</wp:status>` + extra +
+			`<content:encoded><![CDATA[<p>` + marker + `</p>]]></content:encoded></item>`
+	}
+	markers = map[string]string{
+		"private":    "PRIVATE-MARKER",
+		"draft":      "DRAFT-MARKER",
+		"pending":    "PENDING-MARKER",
+		"future":     "FUTURE-MARKER",
+		"auto-draft": "UNSAVED-MARKER",
+	}
+	items := item("About", "about", "publish", "https://kafe.example.com/about/", "PUBLIC-WORDS", "")
+	n := 5
+	for _, status := range []string{"private", "draft", "pending", "future", "auto-draft"} {
+		// WordPress links an item it has not published by its number.
+		items += item("Held "+status, "held-"+status, status,
+			"https://kafe.example.com/?p="+string(rune('0'+n)), markers[status], "")
+		n++
+	}
+	return wxrDoc(items), markers
+}
+
+// What WordPress kept from the public is not imported.
+//
+// A private post, a draft, one waiting for review and one scheduled were each
+// imported as an ordinary page with a field, status: draft, that nothing
+// reads. The owner published, as the import told them to, and a private
+// post's words ("Ayşe earns 40,000") were served to anybody and listed in
+// the sitemap. `quilzo site import` left the same items out of the same
+// file.
+func TestWhatWordPressKeptFromThePublicIsNotImported(t *testing.T) {
+	doc, markers := heldDoc()
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		var names []string
+		for _, p := range rep.Pages {
+			names = append(names, p.Name)
+		}
+		t.Errorf("the import brought %v, not only the published page", names)
+	}
+	for status, marker := range markers {
+		for _, p := range rep.Pages {
+			for k, v := range p.Fields {
+				if s, ok := v.(string); ok && strings.Contains(s, marker) {
+					t.Errorf("page %s holds the words of a %s post, in its %s", p.Name, status, k)
+				}
+			}
+		}
+		// And said, by its title and why: a loss nobody was told of is found
+		// months later.
+		said := false
+		for _, s := range rep.Skipped {
+			if strings.Contains(s, "Held "+status) {
+				said = true
+			}
+		}
+		if !said {
+			t.Errorf("nothing says the %s post was left out: %v", status, rep.Skipped)
+		}
+	}
+}
+
+// An item's link with a query is not an address the home page moved from.
+//
+// WordPress links what it has not published, and everything on a site with
+// plain links, as /?p=5. Only the path was read, so the import wrote a
+// permanent redirect from / to the post: served as the import says to,
+// the home page of the new site answered 308 to a private post. Two such
+// links contradicted each other and the import dropped every redirect.
+func TestAnItemLinkedByAQueryDoesNotRedirectTheHomePage(t *testing.T) {
+	item := func(title, slug, link string) string {
+		return `<item><title>` + title + `</title><link>` + link + `</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>publish</wp:status><content:encoded>Words.</content:encoded></item>`
+	}
+	for name, doc := range map[string]string{
+		"one plain link": wxrDoc(item("Hello", "hello", "https://kafe.example.com/?p=5") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"two plain links": wxrDoc(item("Hello", "hello", "https://kafe.example.com/?p=5") +
+			item("Again", "again", "https://kafe.example.com/?p=6") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"the front page itself": wxrDoc(item("Home", "home", "https://kafe.example.com/") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"a fragment": wxrDoc(item("Hello", "hello", "https://kafe.example.com/#hello") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+	} {
+		rep, err := Import(WordPress, strings.NewReader(doc), now)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, r := range rep.Redirects {
+			if r.From == "/" {
+				t.Errorf("%s: the home page is redirected to %s", name, r.To)
+			}
+		}
+		// The address that did move still does: one link that is no path
+		// must not cost the import every redirect.
+		moved := false
+		for _, r := range rep.Redirects {
+			if r.From == "/2019/03/moved" && r.To == "/moved" {
+				moved = true
+			}
+		}
+		if !moved {
+			t.Errorf("%s: the page that moved has no redirect: %v (%v)", name, rep.Redirects, rep.Notes)
+		}
+	}
+}
+
+// A Markdown file its front matter marks a draft, private or unpublished is
+// not imported.
+//
+// `quilzo import launch.md` of a file with draft: true made a page with a
+// field draft, which nothing reads, and `quilzo publish` put "not for the
+// public yet" live. `quilzo site import` of a folder holding the same file
+// left it out.
+func TestAMarkdownFileMarkedADraftIsNotImported(t *testing.T) {
+	for _, mark := range []string{
+		"draft: true", `draft: "true"`, "draft: yes", "private: true",
+		"published: false", "status: draft", "status: private", "status: pending",
+		"visibility: private", "password: s3cret",
+	} {
+		doc := "---\ntitle: \"Secret launch plan\"\n" + mark + "\n---\n# Secret launch plan\n\nDRAFT-MD-MARKER not for the public yet.\n"
+		rep, err := Import(Markdown, strings.NewReader(doc), now)
+		if err == nil {
+			t.Errorf("%s: imported as %d page(s)", mark, len(rep.Pages))
+			continue
+		}
+		// The refusal says which line, so the owner who does want it public
+		// knows what to take out.
+		key, _, _ := strings.Cut(mark, ":")
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: the refusal does not name the line that held it back: %v", mark, err)
+		}
+	}
+	// What is not such a mark is still imported.
+	for _, mark := range []string{"draft: false", "published: true", "status: publish", "status: published",
+		"visibility: public", "published: 2026-08-15", "private: false"} {
+		doc := "---\ntitle: A post\n" + mark + "\n---\nWords.\n"
+		if _, err := Import(Markdown, strings.NewReader(doc), now); err != nil {
+			t.Errorf("%s: refused: %v", mark, err)
+		}
+	}
+}
+
+// A post WordPress showed only to somebody with its password is not
+// imported.
+//
+// Its status is publish, and the status was all that was read: a
+// members-only recipe behind a post password was imported as an ordinary
+// page, and published with the rest.
+func TestAPasswordProtectedWordPressPostIsNotImported(t *testing.T) {
+	doc := wxrDoc(`<item><title>About</title><wp:post_name>about</wp:post_name>
+	  <wp:post_type>page</wp:post_type><wp:status>publish</wp:status>
+	  <wp:post_password></wp:post_password>
+	  <content:encoded>We bake.</content:encoded></item>
+	<item><title>Members only recipe</title><link>https://kafe.example.com/members-only-recipe/</link>
+	  <wp:post_name>members-only-recipe</wp:post_name>
+	  <wp:post_type>post</wp:post_type><wp:status>publish</wp:status>
+	  <wp:post_password><![CDATA[s3cret]]></wp:post_password>
+	  <content:encoded>PROTECTED-MARKER The secret recipe.</content:encoded></item>`)
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		t.Errorf("imported %d pages, not only the one anybody could read", len(rep.Pages))
+	}
+	for _, p := range rep.Pages {
+		if strings.Contains(str(p.Fields["body"]), "PROTECTED-MARKER") {
+			t.Errorf("page %s holds the words that were behind a password", p.Name)
+		}
+	}
+	said := strings.Join(rep.Skipped, " | ")
+	if !strings.Contains(said, "Members only recipe") || !strings.Contains(said, "password") {
+		t.Errorf("nothing says the post behind a password was left out: %v", rep.Skipped)
+	}
+	if strings.Contains(said+strings.Join(rep.Notes, " "), "s3cret") {
+		t.Error("the report carries the password")
+	}
+}
+
+// A WordPress slug longer than a page name may be is brought under a name
+// the store holds.
+//
+// WordPress keeps a slug of up to 200 characters and the store a name of 64.
+// The slug was cut at 80, so one long post gave a name the store refused,
+// and that refusal failed the whole import (after the report had listed
+// every page as brought): no site with one long headline could be moved. Two
+// that differ only past where they are cut are still two pages.
+func TestALongWordPressSlugIsANameTheStoreHolds(t *testing.T) {
+	long := "ten-things-you-should-know-before-you-visit-istanbul-in-the-winter-of-2024-or-later"
+	item := func(slug string) string {
+		return `<item><title>Ten things</title><link>https://kafe.example.com/` + slug + `/</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words.</p>]]></content:encoded></item>`
+	}
+	rep, err := Import(WordPress, strings.NewReader(wxrDoc(item(long)+item(long+"-part-two"))), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 2 || rep.Pages[0].Name == rep.Pages[1].Name {
+		t.Fatalf("two posts were brought as %d page(s): %+v", len(rep.Pages), rep.Pages)
+	}
+	for _, p := range rep.Pages {
+		if !store.ValidPath(p.Name) {
+			t.Errorf("a page was named %q (%d characters), which the store does not hold", p.Name, len(p.Name))
+		}
+		if !strings.HasPrefix(p.Name, "ten-things-you-should-know") {
+			t.Errorf("the page's name, %q, is not its slug's words", p.Name)
+		}
+	}
+	// Each old address still goes to its own page.
+	if len(rep.Redirects) != 2 || rep.Redirects[0].To == rep.Redirects[1].To {
+		t.Errorf("the redirects from the two old addresses: %+v", rep.Redirects)
+	}
+}
+
+// A Markdown file is held back however its mark is spelled, as a folder's
+// files are.
+//
+// One file is read a line at a time, so a comment after a value was part of
+// the value: draft: true # not yet was "true # not yet", which is not true,
+// and the file was imported. So was Draft: true, which Hugo reads as a
+// draft, and published: off, which Jekyll reads as unpublished.
+func TestAMarkdownFileHeldBackInAnotherSpellingIsNotImported(t *testing.T) {
+	for _, mark := range []string{
+		"Draft: true", "draft: true # not yet", "draft: on", "draft: YES", "published: off",
+		"Published: No", "publish: false", "Status: Draft", "publishDate: 2099-01-01",
+		"expiryDate: 2001-01-01",
+	} {
+		doc := "---\ntitle: \"Secret launch plan\"\n" + mark + "\n---\n# Secret launch plan\n\nDRAFT-MD-MARKER not for the public yet.\n"
+		rep, err := Import(Markdown, strings.NewReader(doc), now)
+		if err == nil {
+			t.Errorf("%s: imported as %d page(s)", mark, len(rep.Pages))
+			continue
+		}
+		key, _, _ := strings.Cut(mark, ":")
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: the refusal does not name the line that held it back: %v", mark, err)
+		}
+	}
+	for _, mark := range []string{"draft: false # it is out", "Draft: off", "publishDate: 2001-01-01",
+		"expiryDate: 2099-01-01", "status: open"} {
+		doc := "---\ntitle: A post\n" + mark + "\n---\nWords.\n"
+		if _, err := Import(Markdown, strings.NewReader(doc), now); err != nil {
+			t.Errorf("%s: refused: %v", mark, err)
+		}
+	}
+}
+
+// A list of pages from a headless system leaves out the ones it marks as
+// not published, as every other import does.
+//
+// A JSON list is what such a system writes, each page with its own state
+// beside its words: "status": "draft", "draft": true. Those were fields
+// like any other, which nothing reads, and the draft was published with
+// the rest. A file this program exported, a map of names to pages, is read
+// back as it was written: its pages are held by the fields this program
+// honours, and a round trip must not lose one.
+func TestAJSONListLeavesOutThePagesItMarksAsHeld(t *testing.T) {
+	doc := `[
+	  {"title": "About", "body": "We bake."},
+	  {"title": "Launch plan", "body": "HELD-JSON-MARKER one", "status": "draft"},
+	  {"title": "Next season", "body": "HELD-JSON-MARKER two", "draft": true},
+	  {"title": "Staff only", "body": "HELD-JSON-MARKER three", "visibility": "private"},
+	  {"title": "Taken down", "body": "HELD-JSON-MARKER four", "published": false}
+	]`
+	rep, err := Import(JSON, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		t.Errorf("the import brought %d page(s): %+v", len(rep.Pages), rep.Pages)
+	}
+	for _, p := range rep.Pages {
+		if body, _ := p.Fields["body"].(string); strings.Contains(body, "HELD-JSON-MARKER") {
+			t.Errorf("page %s holds the words of a page its source held back", p.Name)
+		}
+	}
+	// Each is named with why, so a loss is not found months later.
+	said := strings.Join(rep.Skipped, " | ")
+	for _, title := range []string{"Launch plan", "Next season", "Staff only", "Taken down"} {
+		if !strings.Contains(said, title) {
+			t.Errorf("nothing says %q was left out: %s", title, said)
+		}
+	}
+	// A list of nothing but held pages is refused, saying why.
+	if _, err := Import(JSON, strings.NewReader(`[{"title": "Launch plan", "body": "x", "draft": true}]`), now); err == nil ||
+		!strings.Contains(err.Error(), "draft") {
+		t.Errorf("a list holding only a draft: %v", err)
+	}
+
+	// This program's own export keeps every page it wrote, whatever its
+	// fields are called.
+	own := `{"launch": {"title": "Launch plan", "body": "Words.", "status": "draft", "draft": true}}`
+	rep, err = Import(JSON, strings.NewReader(own), now)
+	if err != nil || len(rep.Pages) != 1 || rep.Pages[0].Fields["status"] != "draft" || rep.Pages[0].Fields["draft"] != true {
+		t.Errorf("an export read back lost a page or its fields: %+v %v", rep, err)
 	}
 }

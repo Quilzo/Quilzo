@@ -14,7 +14,9 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/fleet"
+	"github.com/quilzo/quilzo/internal/mcp"
 )
 
 // The fleet is who called what as the log recorded it, the things that
@@ -126,6 +128,52 @@ func TestAnotherVendorsAgentIsRegisteredByItsCard(t *testing.T) {
 	for _, u := range []string{"http://agents.example.com/card", "https://user:pw@agents.example.com/card", "file:///etc/passwd"} {
 		if _, err := cardFetch(context.Background(), u); err == nil {
 			t.Errorf("%s was fetched", u)
+		}
+	}
+}
+
+// A client holding a person's own token is drawn as that person, wherever it
+// called. Its calls are recorded under the person with mcp-client for the
+// model, which the map read as an app's name: every person's client was one
+// app, mcp-client, that called every tool anybody called through the
+// gateway, and an agent asked over A2A was asked by that app and by no
+// person at all, where the map had drawn the person who asked.
+func TestAPersonsOwnClientIsDrawnAsThePerson(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	// lee may read and not run agents, so the task is refused.
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gatewayCallAs(t, root, auth.Token{ID: "tok_rae", Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	lee := &mcp.Caller{Principal: "lee", Data: auth.Token{ID: "tok_lee", Principal: "lee", Role: auth.RoleAuthor, Resource: "/"}}
+	_, _ = a2aHost(root, lee).Send(nil, "tidy", "Tidy the welcome page")
+	sam := &mcp.Caller{Principal: "sam", Data: auth.Token{ID: "tok_sam", Principal: "sam"}}
+	record(root, appCallRecord(sam, "quilzo_read", "list_pages", nil))
+	// An app is still drawn as the app, for the person who connected it.
+	record(root, appCallRecord(&mcp.Caller{Principal: "sam", Client: "https://app.example.com/meta",
+		Data: appToken("sam", auth.RoleReader)}, "quilzo_read", "list_pages", nil))
+
+	v, err := buildFleet(root, 30, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges := map[string]bool{}
+	for _, e := range v.Edges {
+		edges[e.From+" > "+e.To] = true
+	}
+	for _, want := range []string{"person:rae > tool:tracker", "person:lee > agent:tidy", "person:sam > quilzo",
+		"app:https://app.example.com/meta > quilzo", "person:sam > app:https://app.example.com/meta"} {
+		if !edges[want] {
+			t.Errorf("no edge %s in %v", want, edges)
+		}
+	}
+	for _, n := range v.Nodes {
+		if n.ID == "app:mcp-client" {
+			t.Errorf("every person's client was drawn as one app: %+v", n)
 		}
 	}
 }

@@ -546,8 +546,12 @@ func (s *Server) handleTodayAsk(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/today", http.StatusSeeOther)
 		return
 	}
-	if len(question) > maxQuestion {
-		question = question[:maxQuestion]
+	// Characters, as the box's maxlength counts them, and cut between two:
+	// cut at 300 bytes, a question in Japanese lost two thirds of what the
+	// box had taken, and one cut inside a character reached the model as
+	// text that is not text.
+	if rs := []rune(question); len(rs) > maxQuestion {
+		question = string(rs[:maxQuestion])
 	}
 	a := &asked{Question: question}
 	model := s.Ask.Model(p.Name)
