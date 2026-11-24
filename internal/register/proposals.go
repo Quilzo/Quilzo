@@ -145,6 +145,18 @@ func (r *Register) decider(by Actor, p Proposal) error {
 	if p.Subject != "" && p.Subject == by.Subject || p.Agent != "" && auth.SamePerson(p.Agent, by.Name) {
 		return fmt.Errorf("%w: whoever proposed a record is not the one who decides it", ErrRefused)
 	}
+	// A person's proposal names them by pseudonym, and a decider the
+	// surface gave none of could be them.
+	if p.Subject != "" && !by.Subject.Valid() {
+		return fmt.Errorf("%w: a person's proposal is decided by somebody this session names by pseudonym, "+
+			"so that they can be told apart from whoever proposed it", ErrRefused)
+	}
+	// A decision is recorded, so none is made while it could not be.
+	if r.Ready != nil {
+		if err := r.Ready(); err != nil {
+			return fmt.Errorf("nothing was decided, because the audit log cannot record it: %w", err)
+		}
+	}
 	return nil
 }
 

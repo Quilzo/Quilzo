@@ -245,3 +245,44 @@ func TestAnEncryptedStoresIndexIsNotKeptInTheClear(t *testing.T) {
 		return nil
 	})
 }
+
+// A person's proposal is decided by somebody the register can tell apart
+// from them. The proposer is named by pseudonym, so a decider whose
+// surface gave no pseudonym could be the proposer, and was let decide.
+func TestAPersonsProposalIsNotDecidedBySomebodyWithoutAPseudonym(t *testing.T) {
+	b := newBench(t)
+	if _, err := b.Propose(dana, "dana's draft", control("AC-05")); err != nil {
+		t.Fatal(err)
+	}
+	id := mustID(t, control("AC-05"))
+	nameless := dana
+	nameless.Subject = ""
+	if _, err := b.Accept(nameless, id, nil); !errors.Is(err, ErrRefused) {
+		t.Errorf("a decider with no pseudonym accepted a person's proposal: %v", err)
+	}
+	if err := b.Reject(nameless, id); !errors.Is(err, ErrRefused) {
+		t.Errorf("a decider with no pseudonym rejected a person's proposal: %v", err)
+	}
+	if b.Head() != "" {
+		t.Error("the refused acceptance wrote the record")
+	}
+	if _, err := b.Accept(lee, id, nil); err != nil {
+		t.Errorf("somebody else accepting it: %v", err)
+	}
+}
+
+// Rejecting a proposal is a decision, recorded as one: while the audit log
+// cannot take its entry, nothing is taken off the proposals ref.
+func TestARejectionWaitsForTheAuditLog(t *testing.T) {
+	b := newBench(t)
+	if _, err := b.Propose(model, "a draft", control("AC-06")); err != nil {
+		t.Fatal(err)
+	}
+	b.Ready = func() error { return errors.New("the log's disk is full") }
+	if err := b.Reject(lee, mustID(t, control("AC-06"))); err == nil {
+		t.Error("a rejection went ahead with the audit log unable to record it")
+	}
+	if left, _ := b.Proposals(); len(left) != 1 {
+		t.Errorf("%d proposals wait after a rejection the log could not record", len(left))
+	}
+}
