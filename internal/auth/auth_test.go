@@ -651,6 +651,18 @@ func TestAnAudienceBoundTokenWorksOnlyAtItsResource(t *testing.T) {
 	if ts.RevokeGrant("") != 0 {
 		t.Fatal("an empty grant id revoked something")
 	}
+	// The revocation endpoint finds an app's access token's grant, revoked
+	// or not, and no grant for any other secret: a person's own token is
+	// not an app's to revoke there.
+	if g, c := ts.GrantOf(secret); g != "gr_1" || c != "https://app.example/c.json" {
+		t.Errorf("an app's access token is of %q, %q", g, c)
+	}
+	for what, s := range map[string]string{"a person's own token": plain,
+		"a token nobody issued": "qz_" + strings.Repeat("a", 52), "nonsense": "nonsense", "nothing": ""} {
+		if g, c := ts.GrantOf(s); g != "" || c != "" {
+			t.Errorf("%s is of %q, %q", what, g, c)
+		}
+	}
 }
 
 func TestAppTokensAreBoundedAndSweptAway(t *testing.T) {

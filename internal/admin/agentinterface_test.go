@@ -45,6 +45,8 @@ func (t rigTokens) Issue(g oauthas.Grant, role auth.Role, ttl time.Duration, now
 
 func (t rigTokens) RevokeGrant(id string) error { t.srv.Tokens.RevokeGrant(id); return nil }
 
+func (t rigTokens) GrantOf(token string) (string, string) { return t.srv.Tokens.GrantOf(token) }
+
 func newIfaceRig(t *testing.T) *ifaceRig {
 	t.Helper()
 	srv, token := emptyStore(t)

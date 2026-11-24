@@ -87,6 +87,13 @@ func (g grantTokens) RevokeGrant(id string) error {
 	return nil
 }
 
+func (g grantTokens) GrantOf(token string) (string, string) {
+	if g.srv.Tokens == nil {
+		return "", ""
+	}
+	return g.srv.Tokens.GrantOf(token)
+}
+
 // admitGrant is asked before a connected app is given tokens. Somebody
 // whose access ended (an identity provider's suspension, a deny) gets
 // nothing more through an app they connected before it; and a lockdown

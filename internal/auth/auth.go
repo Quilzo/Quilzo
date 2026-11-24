@@ -1617,6 +1617,27 @@ func (ts *TokenStore) RevokeGrant(grant string) int {
 	return n
 }
 
+// GrantOf is the grant an app's access token was issued under and the app
+// it was issued to, or empty for any other secret: for the revocation
+// endpoint, which an app may hand its access token as well as its refresh
+// token (RFC 7009). Found whether or not the token still works, because an
+// app revoking an expired one still means to disconnect, and compared in
+// constant time, as Authenticate compares.
+func (ts *TokenStore) GrantOf(secret string) (grant, client string) {
+	if !strings.HasPrefix(secret, TokenPrefix) {
+		return "", ""
+	}
+	want := []byte(hashToken(secret))
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if subtle.ConstantTimeCompare([]byte(ts.Tokens[i].Hash), want) == 1 {
+			grant, client = ts.Tokens[i].Grant, ts.Tokens[i].Client
+		}
+	}
+	return grant, client
+}
+
 // errUnknown marks a secret that is no credential this store ever issued:
 // a guess, a forgery or a decoy, as against one that expired or was
 // revoked, which is somebody's real credential used late.
