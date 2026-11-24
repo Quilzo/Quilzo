@@ -869,6 +869,13 @@ var commandNeeds = map[string]need{
 	"-h":        {why: "prints usage"},
 	"--help":    {why: "prints usage"},
 
+	// Which features run is read by anybody who may read the store, and
+	// changed by an administrator only, with a reason (profilecmd.go).
+	"profile":         {action: auth.ActView},
+	"profile apply":   {action: auth.ActGrant},
+	"profile enable":  {action: auth.ActGrant},
+	"profile disable": {action: auth.ActGrant},
+
 	// -- read-only subcommands of otherwise privileged commands, so that
 	// somebody locked out can still find out why.
 	"auth explain": {action: auth.ActView},

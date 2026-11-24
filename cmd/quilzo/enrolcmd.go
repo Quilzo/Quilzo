@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/enrol"
+	"github.com/quilzo/quilzo/internal/profile"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -165,18 +166,50 @@ func enteredBefore(root string) bool {
 // flag mistyped was refused only after the store's folders had been, and
 // the store was then taken for one already in use. A word after init is
 // refused, with where a store goes (runInit).
-func initFlags(args []string) (*string, error) {
+// initOptions are what `quilzo init` was asked for.
+type initOptions struct {
+	// admin is the first administrator, empty for none.
+	admin string
+	// profile is the profile to apply (internal/profile): security for the
+	// security install, public for a public instance, empty for none.
+	profile string
+	// pin is the internal instance's published head keys, which a public
+	// instance imports transfers signed by and nothing else.
+	pin string
+}
+
+func initFlags(args []string) (initOptions, error) {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
+	prof := fs.String("profile", "", "security: switch off the features with no security use, as the security install does; "+
+		"public: make a public instance, which serves only what the internal instance sends it")
+	pin := fs.String("pin", "", "with --profile public: the internal instance's head.pub.json, the only key transfers are taken from")
 	var pos []string
 	if err := parseFlags(fs, args, &pos, 1); err != nil {
-		return nil, err
+		return initOptions{}, err
 	}
 	if len(pos) > 0 {
-		return nil, errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
+		return initOptions{}, errMisused{fmt.Errorf("usage: quilzo init [--admin NAME] [--profile security|public]\n"+
 			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
 	}
-	return admin, nil
+	switch *prof {
+	case "", profile.Standard, profile.Security:
+		if *pin != "" {
+			return initOptions{}, errMisused{errors.New("--pin is for a public instance: quilzo init --profile public --pin head.pub.json")}
+		}
+	case profile.Public:
+		if *admin != "" {
+			return initOptions{}, errMisused{errors.New("a public instance has no administrator and no admin: " +
+				"it serves what the internal instance sends it, and is administered there")}
+		}
+		if *pin == "" {
+			return initOptions{}, errMisused{errors.New("a public instance takes transfers signed by one key, and --pin names it: " +
+				"quilzo init --profile public --pin head.pub.json, copied from the internal instance")}
+		}
+	default:
+		return initOptions{}, errMisused{fmt.Errorf("%q is not a profile; there are security, standard and public", *prof)}
+	}
+	return initOptions{admin: *admin, profile: *prof, pin: *pin}, nil
 }
 
 // nobodyHasBeenHere reports whether a store has never had a person: no
@@ -251,10 +284,11 @@ func issueEnrolment(root, name, by string, life time.Duration, caller *Caller) e
 // first day; the grace an upgraded installation gets is for people who were
 // already signing in with a token.
 func initAdmin(root string, args []string, created bool) error {
-	admin, err := initFlags(args)
+	opts, err := initFlags(args)
 	if err != nil {
 		return err
 	}
+	admin := &opts.admin
 	// New is a store nobody has had access to, not only one this run made
 	// the folders of. `quilzo demo`, `quilzo log`, or `init --admni` with a
 	// typo, made the folders, before only init made a store (needStore) and

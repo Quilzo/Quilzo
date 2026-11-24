@@ -4,6 +4,7 @@
 package profile
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -131,15 +132,24 @@ func (sm Signed) Verify(v *audit.HeadVerifier) (Manifest, error) {
 	if len(sm.Manifest) == 0 {
 		return Manifest{}, errors.New("there is no manifest to check")
 	}
-	if got := digestOf(sm.Manifest); got != sm.Digest {
+	// Compacted first. The manifest was signed as encoding/json writes it,
+	// with no space between its tokens, and a file written with indentation
+	// for a person to read carries the same tokens laid out: whitespace
+	// between tokens is the one thing compacting changes, so a pretty
+	// printer cannot break the signature and an edit to a value still does.
+	var body bytes.Buffer
+	if err := json.Compact(&body, sm.Manifest); err != nil {
+		return Manifest{}, fmt.Errorf("the manifest does not parse: %w", err)
+	}
+	if got := digestOf(body.Bytes()); got != sm.Digest {
 		return Manifest{}, fmt.Errorf("the manifest's digest is %s and it says %s: it was changed after it was made",
 			got, sm.Digest)
 	}
-	if err := v.VerifyStatement(ManifestContext, sm.Manifest, sm.Signature); err != nil {
+	if err := v.VerifyStatement(ManifestContext, body.Bytes(), sm.Signature); err != nil {
 		return Manifest{}, fmt.Errorf("the feature manifest's signature does not verify: %w", err)
 	}
 	var m Manifest
-	if err := json.Unmarshal(sm.Manifest, &m); err != nil {
+	if err := json.Unmarshal(body.Bytes(), &m); err != nil {
 		return Manifest{}, fmt.Errorf("the manifest does not parse: %w", err)
 	}
 	if m.Format != 1 {

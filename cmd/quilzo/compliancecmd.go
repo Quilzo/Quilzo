@@ -423,6 +423,10 @@ func complianceComponent(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The signed feature manifest, as CM-7's evidence (profilecmd.go).
+	if err := profileEvidence(root, &cd); err != nil {
+		fmt.Fprintf(os.Stderr, "  %s%v%s\n", noteYellow, err, noteReset)
+	}
 	body, err := json.MarshalIndent(cd, "", "  ")
 	if err != nil {
 		return err

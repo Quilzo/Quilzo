@@ -527,6 +527,12 @@ func visibleTo(s *Server, p principal) []destination {
 			!(d.Key == "approvals" && approver(s.Policy, p.Name)) {
 			continue
 		}
+		// A screen of a feature the security profile switches off is
+		// not offered: its address answers that it is off, and a menu of
+		// such doors teaches people to ignore the menu.
+		if s.SwitchedOff != nil && s.SwitchedOff(d.Path) {
+			continue
+		}
 		out = append(out, d)
 	}
 	return out

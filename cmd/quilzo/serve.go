@@ -58,6 +58,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
+	"github.com/quilzo/quilzo/internal/profile"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/saml"
@@ -862,6 +863,8 @@ func cmdServe(root string, args []string) error {
 		}
 		return json.MarshalIndent(plan, "", "  ")
 	}
+	// Which features run, on the Security profile screen (profilecmd.go).
+	wireProfile(srv, root, signedIn)
 	srv.Parameters = &admin.Parameters{Path: paramsPath(root), Organisation: organisationOf(root),
 		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) }}
 	srv.ShieldAdmin = &admin.ShieldAdmin{Root: root,
@@ -997,7 +1000,9 @@ func cmdServe(root string, args []string) error {
 			},
 		})
 	}
-	srv.API = apiSrv.Handler()
+	// With the security record's routes in front, behind the same door
+	// (apisecurity.go).
+	srv.API = securityAPI(root, apiSrv)
 	srv.OnAuthFailure = func(source string, failures int) {
 		// ASVS 5.0 asks for a reaction above five failures an hour. An audit
 		// record is the reaction: a SIEM rule can match it, and this program
@@ -1241,8 +1246,12 @@ func cmdServe(root string, args []string) error {
 	//
 	// Inside the guard, the design is looked at before each request, so the
 	// preview and the Design screen are of the design on disk (designWatch).
+	//
+	// And the security profile's gate, in front of the router: a screen of
+	// a feature it switches off answers that it is off (profilecmd.go).
 	httpSrv := &http.Server{Addr: *addr,
-		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, dw.Wrap(srv.Handler())))}
+		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin,
+			dw.Wrap(profileGate(root, profile.AdminSurface, srv.Handler()))))}
 	hupCtx, stopHup := context.WithCancel(context.Background())
 	defer stopHup()
 	onHangup(hupCtx, "admin", dw.Reload)

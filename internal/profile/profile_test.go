@@ -347,3 +347,25 @@ func TestTheRefusalsAreAccessible(t *testing.T) {
 		}
 	}
 }
+
+// A manifest laid out for a person to read still verifies: indentation is
+// not a change to what was signed.
+func TestAManifestLaidOutForReadingStillVerifies(t *testing.T) {
+	c := newClock()
+	key := signer(t, 3)
+	sm, err := Sign(Build(secured(t, c), "0.1.0", c.now()), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pretty, err := json.MarshalIndent(sm, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Signed
+	if err := json.Unmarshal(pretty, &back); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := back.Verify(key.Verifier()); err != nil {
+		t.Fatalf("an indented manifest does not verify: %v", err)
+	}
+}

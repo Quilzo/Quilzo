@@ -99,6 +99,9 @@ func (s *Server) handleControlsComponent(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if s.ComponentEvidence != nil {
+		s.ComponentEvidence(&cd)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="quilzo.component-definition.json"`)
 	w.Header().Set("Cache-Control", "no-store")

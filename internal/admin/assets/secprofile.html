@@ -1,0 +1,77 @@
+{{/*
+  The security profile: which features this installation runs, the change
+  that set each one, and the signed feature manifest that is CM-7 evidence.
+  Every switch asks for a reason, named beside its field when it is missing
+  and summarised at the top, because a change to what the installation runs
+  is one the record has to explain.
+*/}}
+{{template "head" .}}
+<h1>Security profile</h1>
+<p class="lead">Which features this installation runs. The security profile switches off what a
+  security programme's record has no use for. Nothing is removed: each feature can be switched back
+  on with a reason, and the change is kept in the audit log and in the signed feature manifest.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}
+<div class="notice bad" role="alert">
+  <h2>There is a problem</h2>
+  <p>{{if .Field}}<a href="#reason-{{.Field}}">{{.Error}}</a>{{else}}{{.Error}}{{end}}</p>
+</div>
+{{end}}
+
+{{if .Off}}
+<p>This build keeps no profile.</p>
+{{else}}
+<h2>In force</h2>
+<p>{{if .Secured}}<span class="wf-band warning"><span class="wf-icon">{{icon "info"}}</span>Security profile</span>{{else}}<span class="wf-band good"><span class="wf-icon">{{icon "check_circle"}}</span>Standard profile</span>{{end}}
+  {{if not .View.Since.IsZero}} applied {{.View.Since.Format "2 January 2006"}} by {{.View.By}}.{{else}} — no profile has been applied, so every feature runs.{{end}}</p>
+{{if not .Secured}}<p class="hint">The security install applies the security profile: <code>quilzo profile apply security --reason "the security install"</code>, or <code>quilzo init --profile security</code> for a new store.</p>{{end}}
+
+<div class="table-wrap">
+<table>
+  <caption>Features the profile switches, and how each stands</caption>
+  <thead><tr><th scope="col">Feature</th><th scope="col">State</th><th scope="col">Why the security profile has it off</th>
+    <th scope="col">Last change</th>{{if .CanSwitch}}<th scope="col">Change it</th>{{end}}</tr></thead>
+  <tbody>
+  {{range .View.Features}}
+  <tr>
+    <th scope="row">{{.Title}}<div class="hint">{{.Where}}</div></th>
+    <td>{{if .On}}<span class="wf-band good"><span class="wf-icon">{{icon "check_circle"}}</span>On</span>{{else}}<span class="wf-band"><span class="wf-icon">{{icon "close"}}</span>Off</span>{{end}}</td>
+    <td>{{sentence .Why}}.{{with .Also}} <span class="hint">When off, {{.}}.</span>{{end}}</td>
+    <td>{{with .Change}}Switched {{if .On}}on{{else}}off{{end}} {{.At.Format "2 January 2006"}} by {{.By}}: {{.Reason}}{{else}}<span class="hint">as the profile has it</span>{{end}}</td>
+    {{if $.CanSwitch}}
+    <td>
+      {{$bad := eq $.Field .Name}}
+      <form method="post" action="/security/profile/act">
+        <input type="hidden" name="feature" value="{{.Name}}">
+        <input type="hidden" name="to" value="{{if .On}}off{{else}}on{{end}}">
+        <div class="field"><label for="reason-{{.Name}}">Reason for switching {{.Title}} {{if .On}}off{{else}}on{{end}} {{template "req"}}</label>
+          <input id="reason-{{.Name}}" name="reason" required maxlength="300"
+            aria-describedby="help-{{.Name}}{{if $bad}} err-{{.Name}}{{end}}"{{if $bad}} aria-invalid="true"{{end}}>
+          <p id="help-{{.Name}}" class="help">Kept with your name in the audit log and the signed manifest.</p>
+          {{if $bad}}<p id="err-{{.Name}}" class="hint warn">Error: {{$.Error}}</p>{{end}}
+        </div>
+        <button type="submit">{{if .On}}Switch off{{else}}Switch back on{{end}}</button>
+      </form>
+    </td>
+    {{end}}
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{if not .CanSwitch}}<p class="hint">An administrator of this store switches features, with a reason.</p>{{end}}
+
+<h2>The signed feature manifest</h2>
+{{if .View.Problem}}
+<p class="notice bad"><span class="wf-icon">{{icon "warning"}}</span> Not evidence: {{.View.Problem}}</p>
+{{else if .View.Manifest}}
+<p>The manifest <code>{{.View.Manifest}}</code>, signed with the store's head keys (key <code>{{.View.Key}}</code>),
+  records every feature above as it stands and the change that set it. It is attached to CM-7, least
+  functionality, in Quilzo's own OSCAL component on the <a href="/security/controls">Controls</a> screen.</p>
+{{if .HasManifest}}<p><a href="/security/profile/manifest.json" download>Download the signed manifest</a>; check it
+  anywhere with <code>quilzo profile verify FILE --keys head.pub.json</code>.</p>{{end}}
+{{else}}
+<p>No manifest has been signed: one is signed when a profile is applied, and again at every change.</p>
+{{end}}
+{{end}}
+{{template "foot" .}}

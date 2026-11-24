@@ -32,6 +32,7 @@ import (
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/ext"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/profile"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/atomicfile"
@@ -132,6 +133,8 @@ const usageText = `quilzo — the self-hosted AI agent platform: a control plane
 
 content (immutable, and publishing moves a pointer; templates cannot execute anything)
   quilzo init [--admin NAME]               create a content store, and its first administrator
+  quilzo init [--profile security]         the security install: features with no security use switched off
+  quilzo init [--profile public --pin FILE]   a public instance, which serves only what the internal one sends it
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
   quilzo find WORDS                        a page, screen, setting, type or file
@@ -472,6 +475,10 @@ access
   quilzo saml list | show NAME | metadata NAME | presets | remove NAME
   quilzo network                           what this may connect to, and whether
   quilzo marking                           the classification scheme, if any
+  quilzo profile show | manifest [-o FILE]   which features run, and the signed manifest that says so
+  quilzo profile apply security|standard --reason WHY   the security profile switches off what has no security use
+  quilzo profile enable|disable FEATURE --reason WHY    switch one back on, or off, on the record
+  quilzo profile verify FILE [--keys head.pub.json]     check a manifest somebody was handed
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
   quilzo transfer verify DIR               check what arrived is what left
   quilzo move OLD NEW [--dry-run]          a page and everything under it
@@ -990,6 +997,14 @@ func main() {
 		}
 	}
 
+	// The security profile, asked once for every command as authorisation
+	// is: a command of a feature it switches off is refused before it
+	// runs, with the line that switches the feature back on.
+	if err := profileRefuses(root, cmd); err != nil {
+		w.Error(err)
+		os.Exit(exitCode(err))
+	}
+
 	var err error
 	switch cmd {
 	case "init":
@@ -1032,6 +1047,8 @@ func main() {
 		err = cmdNetwork(root, cmdArgs)
 	case "marking":
 		err = cmdMarking(root, cmdArgs)
+	case "profile":
+		err = cmdProfile(root, cmdArgs)
 	case "transfer":
 		err = cmdTransfer(root, cmdArgs)
 	case "compliance":
@@ -1515,17 +1532,26 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 	return flags, positional
 }
 
-// runInit is `quilzo init [--admin NAME]`.
+// runInit is `quilzo init [--admin NAME] [--profile security|public]`.
 //
 // The line is read before anything is made. `quilzo init mysite`, as git
 // takes a directory, made ./.quilzo and said so, and the store was not where
 // the next command, `quilzo --root mysite serve`, looked for it.
 func runInit(root string, args []string) error {
-	if _, err := initFlags(args); err != nil {
+	opts, err := initFlags(args)
+	if err != nil {
 		return err
+	}
+	if opts.profile == profile.Public {
+		return initPublicInstance(root, opts.pin)
 	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {
+		return err
+	}
+	// The profile before the administrator, so the first thing a person
+	// is shown in the admin is the installation as it is meant to run.
+	if err := applyProfileAtInit(root, opts.profile, created); err != nil {
 		return err
 	}
 	return initAdmin(root, args, created)
