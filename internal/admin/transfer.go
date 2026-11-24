@@ -301,6 +301,22 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		if pages == nil {
 			pages = map[string]any{}
 		}
+		// Each page as the import would write it, and the page it would
+		// replace, for a credential limited to some content types or
+		// languages (fieldsLimit), as `quilzo import` asks of its pages. The
+		// gate above asked about the whole site, which is no one type or
+		// language, so a token issued `--locales fr` replaced the English
+		// page here, and started English pages.
+		for _, pg := range rep.Pages {
+			why := s.fieldsLimit(p, auth.ActEditDraft, pg.Name, pg.Fields)
+			if old, exists := pages[pg.Name]; exists && why == "" {
+				why = s.fieldsLimit(p, auth.ActEditDraft, pg.Name, old)
+			}
+			if why != "" {
+				s.transferRedirect(w, r, "", pg.Name+": "+why)
+				return
+			}
+		}
 		// Merged over what is there rather than replacing it. An import that
 		// replaces the draft deletes everything the site had that the export
 		// did not mention, which is most of a site when somebody is importing

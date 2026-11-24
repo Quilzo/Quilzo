@@ -4,7 +4,12 @@
 package admin
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,5 +161,76 @@ func TestATokenLimitedToTypesRebindsNoPageOfAnotherType(t *testing.T) {
 	}
 	if _, bound := types.Bound["returns"]; bound {
 		t.Error("the policy page is still bound after its unbinding was answered")
+	}
+}
+
+// A credential limited to some content types or languages imports only the
+// pages it may write, as `quilzo import` does: each page in the file is
+// asked about as it would be written, and about the page it would replace.
+//
+// The Transfer screen's import asked whether the caller may write the whole
+// site, which is no one type or language, and then wrote every page in the
+// file over the draft, so a token issued `--types policy` replaced the
+// product page, and one issued `--locales fr` the English page and started
+// English pages.
+func TestATokenLimitedToTypesOrLocalesImportsOnlyWhatItMayWrite(t *testing.T) {
+	srv, _ := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{
+		"index":   map[string]any{"title": "Home"},
+		"pen":     map[string]any{"title": "Brass pen", "locale": "en"},
+		"returns": map[string]any{"title": "Retours", "locale": "fr"},
+	}, "typed", "test"); err != nil {
+		t.Fatal(err)
+	}
+	types := &schema.Store{Registry: schema.NewRegistry(), Bound: map[string]string{
+		"pen": "product", "returns": "policy"}}
+	srv.Types = &Types{Load: func() (*schema.Store, error) { return types, nil }}
+	srv.MFAFrom = time.Now().Add(time.Hour)
+	var saved map[string]any
+	srv.Transfer = &Transfer{
+		Pages: func() (map[string]any, error) { return site.PagesAt(srv.Store, site.RefDraft) },
+		Save:  func(p map[string]any, _, _, _ string) error { saved = p; return nil },
+	}
+	importAs := func(secret, slug, locale string) *httptest.ResponseRecorder {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		_ = mw.WriteField("source", "markdown")
+		_ = mw.WriteField("write", "1")
+		fw, _ := mw.CreateFormFile("file", "page.md")
+		_, _ = fw.Write([]byte("---\ntitle: T\nslug: " + slug + "\nlocale: " + locale + "\n---\nhello\n"))
+		_ = mw.Close()
+		req := httptest.NewRequest(http.MethodPost, "/transfer/import", &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+secret)
+		res := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(res, req)
+		return res
+	}
+	for _, tc := range []struct {
+		scope        auth.Scope
+		slug, locale string
+		may          bool
+		why          string
+	}{
+		{auth.Scope{Types: []string{"policy"}}, "pen", "fr", false, "scoped to policy"},
+		{auth.Scope{Types: []string{"policy"}}, "returns", "fr", true, ""},
+		{auth.Scope{Locales: []string{"fr"}}, "fresh", "en", false, "scoped to fr"},
+		{auth.Scope{Locales: []string{"fr"}}, "pen", "fr", false, "scoped to fr"},
+		{auth.Scope{Locales: []string{"fr"}}, "returns", "fr", true, ""},
+	} {
+		secret, _, err := srv.Tokens.IssueScoped("limited", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, tc.scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved = nil
+		w := importAs(secret, tc.slug, tc.locale)
+		loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+		if tc.may && (saved == nil || strings.Contains(loc, "e=")) {
+			t.Errorf("limited to %s, importing %s in %s was refused: %d %s", tc.scope, tc.slug, tc.locale, w.Code, loc)
+		}
+		if !tc.may && (saved != nil || !strings.Contains(loc, tc.why)) {
+			t.Errorf("limited to %s, importing %s in %s wrote %v: %d %s", tc.scope, tc.slug, tc.locale,
+				saved != nil, w.Code, loc)
+		}
 	}
 }
