@@ -257,3 +257,74 @@ func TestASessionConfinedToSecurityCannotUnlockAnAdministrator(t *testing.T) {
 		t.Fatal("a session confined to /@security unlocked an administrator of the whole site")
 	}
 }
+
+// The Sign-ins screen asks about the account it would unlock, not about
+// the name as somebody typed it.
+//
+// The lockout record finds an account by its name in any case
+// (strings.EqualFold), which folds more than the checks before it: the
+// policy compares names exactly, so "BOSS" administered nothing and a
+// session confined to /@security let boss, who administers the whole site,
+// in again; and auth.SamePerson does not take the long s, ſ (U+017F),
+// for an s, so ross, locked out, unlocked himself as "roſs".
+func TestSignInsUnlocksTheAccountItAskedAbout(t *testing.T) {
+	srv, _ := setup(t)
+	for _, who := range []string{"boss", "ross"} {
+		if err := srv.Policy.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv.Lockout = &lockout.Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	now := time.Now()
+	for _, who := range []string{"boss", "ross"} {
+		for i := 0; i < lockout.Threshold; i++ {
+			if _, _, err := srv.Lockout.Fail(who, "203.0.113.7:5000", now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	held := func() []string {
+		t.Helper()
+		accounts, err := srv.Lockout.Held(time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, a := range accounts {
+			out = append(out, a.Name)
+		}
+		return out
+	}
+	if got := held(); len(got) != 2 {
+		t.Fatalf("control: %v", got)
+	}
+	sec, _, err := srv.Tokens.IssueSession("sec-only", "editor", auth.RoleAdmin, auth.AreaSecurity, time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"BOSS", "Boss", "bo\u017fs"} {
+		postForm(t, srv, "/security/signins/unlock", sec, url.Values{"person": {name}}.Encode())
+	}
+	ross, _, err := srv.Tokens.IssueSession("ross-session", "ross", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ro\u017fs", "ROSS"} {
+		w := postForm(t, srv, "/security/signins/unlock", ross, url.Values{"person": {name}}.Encode())
+		if !strings.Contains(w.Header().Get("Location"), "e=") {
+			t.Errorf("ross unlocking %q: %d %s", name, w.Code, w.Header().Get("Location"))
+		}
+	}
+	if got := held(); len(got) != 2 {
+		t.Fatalf("let in again by a name that was not checked: still held %v", got)
+	}
+	// An administrator of the whole site unlocks either, and the screen
+	// names the account it unlocked.
+	w := postForm(t, srv, "/security/signins/unlock", ross, url.Values{"person": {"BOSS"}}.Encode())
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "m=boss+can+sign+in") {
+		t.Fatalf("unlocking boss: %d %s", w.Code, loc)
+	}
+	if got := held(); len(got) != 1 || got[0] != "ross" {
+		t.Fatalf("held %v", got)
+	}
+}

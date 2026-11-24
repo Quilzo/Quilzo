@@ -391,12 +391,25 @@ func shieldTrust(root string, args []string) error {
 	if len(args) != 2 || (args[0] != "add" && args[0] != "remove") {
 		return errMisused{errors.New("usage: quilzo shield trust [list] | add CIDR | remove CIDR")}
 	}
-	c, _ := shieldBy(root)
-	if err := shield.Trust(root, args[1], args[0] == "add", time.Now()); err != nil {
+	c, by := shieldBy(root)
+	add := args[0] == "add"
+	// The network as it is kept, which is what is said, recorded and told:
+	// 198.51.100.7/24 is 198.51.100.0/24 on the list.
+	network := args[1]
+	if pfx, err := shield.Network(network); err == nil {
+		network = pfx.String()
+	}
+	if err := shield.Trust(root, args[1], add, time.Now()); err != nil {
+		// Somebody asking for most of the internet never to be blocked is
+		// worth a line in the log; a network that was not on the list is not.
+		if add {
+			shieldAudit(root, c, "shield.trust-add", audit.Denied, map[string]string{"network": network, "error": err.Error()})
+		}
 		return err
 	}
-	shieldAudit(root, c, "shield.trust-"+args[0], audit.Success, map[string]string{"network": args[1]})
-	w.Human("%s%s%s %s\n", green, map[string]string{"add": "never blocked:", "remove": "no longer trusted:"}[args[0]], reset, args[1])
+	shieldAudit(root, c, "shield.trust-"+args[0], audit.Success, map[string]string{"network": network})
+	tellOfTrust(root, add, network, by)
+	w.Human("%s%s%s %s\n", green, map[string]string{"add": "never blocked:", "remove": "no longer trusted:"}[args[0]], reset, network)
 	return nil
 }
 

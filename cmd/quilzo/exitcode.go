@@ -65,7 +65,8 @@ func exitCode(err error) int {
 		errors.Is(err, memory.ErrNoEntry), errors.Is(err, schedule.ErrNothingPending),
 		errors.Is(err, research.ErrNotFound), errors.Is(err, research.ErrNoProject),
 		errors.Is(err, auth.ErrNoToken), errors.Is(err, shield.ErrNoProtection),
-		errors.Is(err, shield.ErrNoChange), errors.Is(err, oauthas.ErrNoConnection),
+		errors.Is(err, shield.ErrNoChange), errors.Is(err, shield.ErrNotTrusted),
+		errors.Is(err, oauthas.ErrNoConnection),
 		errors.Is(err, odp.ErrNoProposal), errors.Is(err, newsletter.ErrNoIssue),
 		errors.Is(err, audit.ErrNoEntry):
 		return out.ExitNotFound

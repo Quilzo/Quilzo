@@ -58,11 +58,10 @@ func compile(st *State) *index {
 		case "source":
 			ix.src[value] = append(ix.src[value], i)
 		case "net":
-			pfx, err := netip.ParsePrefix(value)
+			pfx, err := Network(value)
 			if err != nil {
 				continue
 			}
-			pfx = pfx.Masked()
 			if ix.net[pfx.Bits()] == nil {
 				ix.net[pfx.Bits()] = map[netip.Prefix][]int{}
 				ix.bits = append(ix.bits, pfx.Bits())
@@ -102,7 +101,10 @@ func (g *Guard) state(now time.Time) *State {
 	if err != nil {
 		// A shield that cannot be read protects nothing, and stopping
 		// every request because of it would be the attack. It keeps what
-		// it last read, and the posture check reports the file.
+		// it last read; a guard started since has read nothing and holds
+		// nothing, which the Shield screen says and the posture check
+		// reports (shield.record-unreadable). The screen used to say that
+		// what the record held stayed in force, and nothing reported it.
 		if g.st == nil {
 			g.st, g.ix = &State{}, compile(&State{})
 		}
@@ -168,7 +170,7 @@ func trusted(st *State, a netip.Addr) bool {
 		return true
 	}
 	for _, t := range st.Trusted {
-		if p, err := netip.ParsePrefix(t); err == nil && p.Contains(a) {
+		if p, err := Network(t); err == nil && p.Contains(a) {
 			return true
 		}
 	}

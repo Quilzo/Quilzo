@@ -387,6 +387,21 @@ type SelfFacts struct {
 	Problem     string    `json:"problem,omitempty"`
 }
 
+// ShieldFacts is the shield's own record (internal/shield) as it stands:
+// whether it can be read, and which of the networks declared never to be
+// blocked are wide ones.
+type ShieldFacts struct {
+	Checked bool `json:"checked"`
+	// Unreadable says why the record cannot be read.
+	Unreadable string `json:"unreadable,omitempty"`
+	// Wide are the trusted networks wider than the shield blocks as one
+	// network, and Most the ones wider than it lets anybody declare
+	// trusted, which only a record kept by an older version or changed by
+	// hand still holds.
+	Wide []string `json:"wide,omitempty"`
+	Most []string `json:"most,omitempty"`
+}
+
 // StreamFacts is the audit log's push to a SIEM (siem.stream.url).
 type StreamFacts struct {
 	Set      bool      `json:"set"`
@@ -550,6 +565,7 @@ type State struct {
 	Reviews    ReviewFacts       `json:"reviews"`
 	Alerts     AlertFacts        `json:"alerts"`
 	Self       SelfFacts         `json:"self"`
+	Shield     ShieldFacts       `json:"shield"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
@@ -876,6 +892,8 @@ func inputFor(rule string) string {
 		return "alerts"
 	case strings.HasPrefix(rule, "self."):
 		return "self"
+	case strings.HasPrefix(rule, "shield."):
+		return "shield"
 	}
 	return ""
 }
@@ -903,6 +921,8 @@ func supplied(s State, input string) bool {
 		return s.Alerts.Checked
 	case "self":
 		return s.Self.Checked
+	case "shield":
+		return s.Shield.Checked
 	}
 	return true
 }

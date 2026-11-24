@@ -54,7 +54,8 @@ type Response struct {
 	Stage    int       `json:"stage"`
 	// Mode is act; watch; held (every playbook is held to watching); or
 	// limited (the playbook reached its hourly limit, did nothing, and is
-	// quiet for the rest of the hour).
+	// quiet for the rest of the hour: about everything, or, when what it
+	// reached is the count of sources it may never block, about those).
 	Mode string   `json:"mode"`
 	Key  string   `json:"key"`
 	Did  []string `json:"did"`
@@ -93,6 +94,9 @@ type Engine struct {
 	sim    map[string][]mark
 	quiet  map[string]time.Time
 	hourly map[string][]time.Time
+	// spared is hourly for the responses that could put nothing in force,
+	// their source being one the shield never blocks (cross).
+	spared map[string][]time.Time
 	touch  map[string]time.Time
 }
 
@@ -235,6 +239,30 @@ type crossing struct {
 	addr  netip.Addr
 	stage int
 	mode  string
+	// spared says the response was counted with those that could put
+	// nothing in force (spared), so a limit reached is that count's.
+	spared bool
+}
+
+// spared reports a stage that can put nothing in force for this signal:
+// all it does besides telling somebody is block or slow the source, and
+// the source is one no playbook blocks or slows (step): this machine, a
+// trusted network, or an address that cannot be trusted enough to act on
+// (Signal.Unverified).
+func spared(stage Stage, st *State, addr netip.Addr, s Signal) bool {
+	if !s.Unverified && !(addr.IsValid() && trusted(st, addr)) {
+		return false
+	}
+	blocks := false
+	for _, step := range stage.Do {
+		switch {
+		case strings.HasPrefix(step.Action, "block-") || strings.HasPrefix(step.Action, "slow-"):
+			blocks = true
+		case step.Action != "notify" && step.Action != "open-case":
+			return false
+		}
+	}
+	return blocks
 }
 
 // liftedEarly reports whether a person ended any of these protections
@@ -259,6 +287,7 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 	defer e.mu.Unlock()
 	if e.counts == nil {
 		e.counts, e.stages, e.hourly = map[string][]hit{}, map[string][]mark{}, map[string][]time.Time{}
+		e.spared = map[string][]time.Time{}
 		e.sim = map[string][]mark{}
 		e.quiet, e.touch = map[string]time.Time{}, map[string]time.Time{}
 	}
@@ -317,16 +346,31 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 		// The hourly limit, watching or acting: past it, the playbook says
 		// so once and is then quiet until the hour has moved on, so a flood
 		// blocks nobody more and writes nothing more.
+		//
+		// A response that can put nothing in force, its source being one
+		// the shield never blocks, has a count of its own to the same
+		// limit. In one count, thirty-one such sources used the limit up
+		// with "did not block or slow", and being one takes no more than
+		// a forwarding header on the request, which makes its address one
+		// the shield does not act on alone (Signal.Unverified); the
+		// playbook then blocked nobody for the rest of the hour, the real
+		// source included. Apart, they are still said only so often, and
+		// what the playbook may do is kept for the sources it can do it
+		// to.
 		limit := pb.PerHour
 		if limit == 0 {
 			limit = DefaultPerHour
 		}
-		e.hourly[pb.Name] = prune(e.hourly[pb.Name], now.Add(-time.Hour))
-		used := len(e.hourly[pb.Name])
+		hour, idle := e.hourly, spared(pb.Stages[stage], st, addr, s)
+		if idle {
+			hour = e.spared
+		}
+		hour[pb.Name] = prune(hour[pb.Name], now.Add(-time.Hour))
+		used := len(hour[pb.Name])
 		if used > limit {
 			continue
 		}
-		e.hourly[pb.Name] = append(e.hourly[pb.Name], now)
+		hour[pb.Name] = append(hour[pb.Name], now)
 		mode := pb.Mode
 		switch {
 		case used == limit:
@@ -338,7 +382,7 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 		// something that keeps happening (a spent budget, a refused route)
 		// would otherwise go round its stages every five minutes.
 		e.quiet[ck] = s.At.Add(max(Cooldown, time.Duration(pb.On.Within)))
-		due = append(due, crossing{pb, key, ck, addr, stage, mode})
+		due = append(due, crossing{pb, key, ck, addr, stage, mode, idle})
 	}
 	return due
 }
@@ -457,6 +501,12 @@ func (e *Engine) respond(d crossing, s Signal, now time.Time, st *State) Respons
 			r.Applied = append(r.Applied, id)
 		}
 		r.Tell = r.Tell || tell
+	}
+	if d.mode == "limited" && d.spared {
+		// No step says so for it: each stopped at the source before it
+		// came to the limit.
+		r.Did = append(r.Did, "says no more this hour about sources it may not block or slow, having "+
+			"reached its hourly limit of those; it still acts on the others")
 	}
 	return r
 }

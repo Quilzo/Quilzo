@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -316,5 +318,114 @@ func TestTheOnlyAdministratorChangesAPlaybookOnTheScreenAsOnTheCommandLine(t *te
 	}
 	if len(told) != 2 || told[1] != "false editor fixed" {
 		t.Fatalf("told: %q", told)
+	}
+}
+
+// shieldAnswer is what the screen said back to a change: the message it
+// redirects with, and the error.
+func shieldAnswer(t *testing.T, srv *Server, token string, form url.Values) (said, refused string) {
+	t.Helper()
+	w := postForm(t, srv, "/security/shield/act", token, form.Encode())
+	u, err := url.Parse(w.Header().Get("Location"))
+	if w.Code != http.StatusSeeOther || err != nil {
+		t.Fatalf("%v answered %d %q", form, w.Code, w.Header().Get("Location"))
+	}
+	return u.Query().Get("m"), u.Query().Get("e")
+}
+
+// A network declared trusted on the screen is one the shield never blocks
+// or slows, and one administrator declares it. Most of the internet is not
+// taken (0.0.0.0/0 was, and the shield then blocked nobody); what is taken
+// is said, recorded and told to the security contact as the network it is;
+// and removing one that is not on the list says so, where it said "is no
+// longer trusted" of a network that stayed trusted.
+func TestTrustingANetworkOnTheScreenIsBoundedToldAndRemovedForReal(t *testing.T) {
+	srv, token := setup(t)
+	root, _ := wireShield(t, srv)
+	var told []string
+	srv.ShieldAdmin.TellTrust = func(added bool, network, by string) {
+		told = append(told, fmt.Sprintf("%v %s %s", added, network, by))
+	}
+	trusted := func() []string {
+		t.Helper()
+		st, err := shield.Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Trusted
+	}
+	for _, n := range []string{"0.0.0.0/0", "::/0"} {
+		said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {n}})
+		if said != "" || !strings.Contains(refused, "wider than a /8") {
+			t.Errorf("%s: said %q, refused %q", n, said, refused)
+		}
+	}
+	if len(trusted()) != 0 || len(told) != 0 {
+		t.Fatalf("most of the internet is trusted: %v, told %q", trusted(), told)
+	}
+	said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"198.51.100.7/24"}})
+	if refused != "" || said != "198.51.100.0/24 is never blocked." {
+		t.Fatalf("adding an office: said %q, refused %q", said, refused)
+	}
+	if got := trusted(); len(got) != 1 || got[0] != "198.51.100.0/24" {
+		t.Fatalf("kept as %v", got)
+	}
+	if len(told) != 1 || told[0] != "true 198.51.100.0/24 editor" {
+		t.Fatalf("declaring a network trusted told: %q", told)
+	}
+	said, refused = shieldAnswer(t, srv, token, url.Values{"do": {"trust-remove"}, "network": {"203.0.113.0/24"}})
+	if said != "" || !strings.Contains(refused, "203.0.113.0/24 is not a trusted network") || len(told) != 1 {
+		t.Fatalf("removing a network that was never trusted: said %q, refused %q, told %q", said, refused, told)
+	}
+	said, refused = shieldAnswer(t, srv, token, url.Values{"do": {"trust-remove"}, "network": {"198.51.100.99/24"}})
+	if refused != "" || said != "198.51.100.0/24 is no longer trusted." || len(trusted()) != 0 {
+		t.Fatalf("removing it in another spelling: said %q, refused %q, left %v", said, refused, trusted())
+	}
+	if len(told) != 2 || told[1] != "false 198.51.100.0/24 editor" {
+		t.Fatalf("taking a network off told: %q", told)
+	}
+	// The screen gives the bound as Trust keeps it: a /16 of IPv6, and the
+	// private ranges, fd00::/8 among them, whole.
+	if said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"2600::/8"}}); said != "" ||
+		!strings.Contains(refused, "a /16 of IPv6") {
+		t.Errorf("2600::/8: said %q, refused %q", said, refused)
+	}
+	if said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"fd00::/8"}}); refused != "" {
+		t.Errorf("fd00::/8: said %q, refused %q", said, refused)
+	}
+	if page := getPage(t, srv, "/security/shield", token); !strings.Contains(page, "a /16 of IPv6 outside its private ranges") {
+		t.Error("the screen does not give the bound on a trusted network")
+	}
+}
+
+// The Shield screen says what an unreadable record means.
+//
+// It said "what it holds stays in force". That is so only of a server
+// that was running when the record stopped reading, which keeps what it
+// last read; a server started since has read nothing, and no block,
+// lockdown or feature shield is in force there. Somebody reading the old
+// sentence restarted the server to be safe and lifted the lockdown. What
+// reads the record for itself is refused instead, as though it held
+// everything: publishing, agents, and enrolment links, which say the admin
+// is locked down.
+func TestTheShieldScreenSaysWhatAnUnreadableRecordMeans(t *testing.T) {
+	srv, token := setup(t)
+	root, _ := wireShield(t, srv)
+	if err := os.MkdirAll(filepath.Dir(shield.Path(root)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shield.Path(root), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	page := getPage(t, srv, "/security/shield", token)
+	if strings.Contains(page, "stays in force") {
+		t.Error("the screen says what the record holds stays in force, which a restart ends")
+	}
+	for _, want := range []string{"record cannot be read", "keeps what it last read", "A server started since",
+		"no block, slowing, lockdown, suspended token or feature turned off is in force",
+		"nothing can be applied or lifted", "enrolment links wait", "quilzo shield repair"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the screen lacks %q", want)
+		}
 	}
 }

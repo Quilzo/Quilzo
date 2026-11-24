@@ -14,7 +14,9 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mail"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 // mailbox is what would have been sent to the security contact.
@@ -115,6 +117,141 @@ func TestHoldingThePlaybooksAndLettingThemActAgainAreBothTold(t *testing.T) {
 	if len(told) != 2 || told[0].Detail["about"] != "held" || told[1].Detail["about"] != "released" ||
 		told[0].Outcome != audit.Success {
 		t.Fatalf("the log does not say the security contact was told: %+v", told)
+	}
+}
+
+// Declaring a network trusted puts everything in it out of the shield's
+// reach, and takes one administrator. It used to tell nobody, and it took
+// 0.0.0.0/0: one command, and the shield blocked nobody from then on. Most
+// of the internet is refused and the refusal is in the log; what is taken,
+// and what is taken off again, reach the security contact as the network
+// it is kept as, and the log says whether the message went.
+func TestDeclaringANetworkTrustedIsBoundedAndTold(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	box := securityMailbox(t, root)
+	for _, n := range []string{"0.0.0.0/0", "::/0"} {
+		if err := shieldTrust(root, []string{"add", n}); err == nil || !strings.Contains(err.Error(), "wider than a /8") {
+			t.Fatalf("shield trust add %s: %v", n, err)
+		}
+	}
+	if st, err := shield.Load(root); err != nil || len(st.Trusted) != 0 {
+		t.Fatalf("most of the internet is trusted: %+v %v", st, err)
+	}
+	if got := box.read(); len(got) != 0 {
+		t.Fatalf("a refusal told the security contact a network was trusted: %+v", got)
+	}
+	if denied := auditFor(t, root, "shield.trust-add"); len(denied) != 2 || denied[0].Outcome != audit.Denied ||
+		denied[0].Detail["network"] != "0.0.0.0/0" {
+		t.Fatalf("the refusals are not in the log: %+v", denied)
+	}
+	if err := shieldTrust(root, []string{"add", "198.51.100.7/24"}); err != nil {
+		t.Fatal(err)
+	}
+	got := box.read()
+	if len(got) != 1 || got[0].To != "security@crumb.example" || !strings.Contains(got[0].Body, "198.51.100.0/24 trusted") ||
+		!strings.Contains(got[0].Body, "never blocks or slows") {
+		t.Fatalf("declaring a network trusted told: %+v", got)
+	}
+	// One that is not on the list is not removed, and nobody is told it was.
+	err := shieldTrust(root, []string{"remove", "203.0.113.0/24"})
+	if !errors.Is(err, shield.ErrNotTrusted) || exitCode(err) != out.ExitNotFound {
+		t.Fatalf("removing a network that was never trusted: %v", err)
+	}
+	if got := box.read(); len(got) != 1 {
+		t.Fatalf("a removal that removed nothing was told: %+v", got)
+	}
+	if err := shieldTrust(root, []string{"remove", "198.51.100.200/24"}); err != nil {
+		t.Fatal(err)
+	}
+	got = box.read()
+	if len(got) != 2 || !strings.Contains(got[1].Body, "198.51.100.0/24 off the trusted") {
+		t.Fatalf("taking a network off told: %+v", got)
+	}
+	if st, err := shield.Load(root); err != nil || len(st.Trusted) != 0 {
+		t.Fatalf("still trusted: %+v %v", st, err)
+	}
+	told := auditFor(t, root, "shield.told")
+	if len(told) != 2 || told[0].Detail["about"] != "trusted" || told[1].Detail["about"] != "untrusted" ||
+		told[0].Detail["network"] != "198.51.100.0/24" || told[0].Outcome != audit.Success {
+		t.Fatalf("the log does not say the security contact was told: %+v", told)
+	}
+}
+
+// shieldFindings is what the posture says about the shield, for this store,
+// by finding.
+func shieldFindings(t *testing.T, root string) map[string]posture.Finding {
+	t.Helper()
+	out := map[string]posture.Finding{}
+	for _, f := range posture.Scan(Observe(root, t.TempDir(), posture.ServerFacts{}), nil).Findings {
+		if strings.HasPrefix(f.Rule, "shield.") {
+			out[f.ID()] = f
+		}
+	}
+	return out
+}
+
+// The posture says when the shield is not protecting what it seems to.
+//
+// A network declared trusted that is as wide as a provider or a country
+// was nobody's finding, and neither was a record that cannot be read,
+// which the Shield screen said "stays in force" while a server started
+// since enforced none of it. Both are findings now, and the high ones are
+// what the drift check tells the security contact of.
+func TestAWideTrustedNetworkAndAnUnreadableRecordAreFindings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	if got := shieldFindings(t, root); len(got) != 0 {
+		t.Fatalf("a store that has trusted nothing: %+v", got)
+	}
+	for _, n := range []string{"198.51.100.0/24", "10.0.0.0/8"} {
+		if err := shieldTrust(root, []string{"add", n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := shieldFindings(t, root)
+	if f, ok := got["shield.trusts-widely:10.0.0.0/8"]; len(got) != 1 || !ok || f.Severity != posture.Medium {
+		t.Fatalf("an office and the whole of 10.0.0.0/8: %+v", got)
+	}
+	// One an older version took, when anything was taken.
+	if err := shield.Change(root, time.Now(), func(st *shield.State) error {
+		st.Trusted = append(st.Trusted, "0.0.0.0/0")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got = shieldFindings(t, root)
+	if f, ok := got["shield.trusts-widely:0.0.0.0/0"]; len(got) != 2 || !ok || f.Severity != posture.High {
+		t.Fatalf("most of the internet, kept from before: %+v", got)
+	}
+	// A record nobody can read.
+	if err := os.WriteFile(shield.Path(root), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got = shieldFindings(t, root)
+	f, ok := got["shield.record-unreadable:shield/state.json"]
+	if len(got) != 1 || !ok || f.Severity != posture.High || !strings.HasPrefix(f.Fix, "quilzo shield repair") {
+		t.Fatalf("a record that cannot be read: %+v", got)
+	}
+	// The drift check tells the security contact of it.
+	box := securityMailbox(t, root)
+	if opened, _, err := postureDrift(root, Observe(root, t.TempDir(), posture.ServerFacts{}), time.Now()); err != nil || opened == 0 {
+		t.Fatalf("opened %d: %v", opened, err)
+	}
+	said := false
+	for _, m := range box.read() {
+		said = said || strings.Contains(m.Subject+m.Body, "shield's record cannot be read")
+	}
+	if !said {
+		t.Fatal("nobody was told the shield's record cannot be read")
+	}
+	if err := shieldRepair(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := shieldFindings(t, root); len(got) != 0 {
+		t.Fatalf("after the repair: %+v", got)
 	}
 }
 

@@ -772,6 +772,63 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "shield.record-unreadable",
+		Title:    "The shield's record cannot be read",
+		Severity: High,
+		Controls: []string{"IR-4", "SI-4"},
+		Why: "The shield's record is what is in force: the blocks, a lockdown, " +
+			"the features turned off, the tokens suspended. A server that was " +
+			"running when the record stopped reading keeps what it last read. " +
+			"One started since has nothing to go by and enforces none of it, " +
+			"so a restart quietly ends a containment; and until the record is " +
+			"repaired nothing can be applied or lifted, publishing and agents " +
+			"are refused, and enrolment links wait as during a lockdown.",
+		Check: func(s State) []Finding {
+			if !s.Shield.Checked || s.Shield.Unreadable == "" {
+				return nil
+			}
+			return []Finding{{Resource: "shield/state.json",
+				Detail: "the shield's record cannot be read, so a server started since enforces no block, " +
+					"lockdown or feature shield it held: " + s.Shield.Unreadable,
+				Fix: "quilzo shield repair  # sets it aside and keeps the trusted networks, vouched sources " +
+					"and decoys that still read; then apply again what still matters"}}
+		},
+	},
+	{
+		ID:       "shield.trusts-widely",
+		Title:    "The shield never blocks a wide network",
+		Severity: Medium,
+		Controls: []string{"SC-7", "IR-4"},
+		OWASP:    "A02:2025 Security Misconfiguration",
+		Why: "A network declared trusted is never blocked or slowed, by a " +
+			"playbook or by a person, whatever comes from it. That is meant for " +
+			"the office, the VPN, a load balancer. One wider than the shield " +
+			"itself blocks as a network, a /16 or an IPv6 /48, is most of a " +
+			"provider or a country, and an attack from anywhere in it meets " +
+			"no block at all; one wider than may be declared, a /8 or an IPv6 " +
+			"/16, is more than any one network, a registry's region or the " +
+			"internet, and nobody anywhere in it is blocked.",
+		Check: func(s State) []Finding {
+			if !s.Shield.Checked {
+				return nil
+			}
+			var out []Finding
+			for _, n := range s.Shield.Most {
+				out = append(out, Finding{Severity: High, Resource: n,
+					Detail: n + " is declared trusted, which is more than any one network: the shield blocks and slows nobody there",
+					Fix:    "quilzo shield trust remove " + n + "  # then add the networks your people work from"})
+			}
+			for _, n := range s.Shield.Wide {
+				out = append(out, Finding{Resource: n,
+					Detail: n + " is declared trusted, and is wider than the shield blocks as one network: " +
+						"no source anywhere in it is ever blocked or slowed",
+					Fix: "quilzo shield trust remove " + n + "  # then add the networks your people work from, " +
+						"or accept it with quilzo posture suppress"})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "mfa.no-second-factor",
 		Title:    "Somebody with access has no second factor",
 		Severity: High,

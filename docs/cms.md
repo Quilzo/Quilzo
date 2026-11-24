@@ -3037,8 +3037,11 @@ who it carries makes every visitor its address, so add it with
 them. The same holds for a container's published port: Docker's own proxy
 hands the container a connection from this machine as one from the bridge
 gateway, such as 172.17.0.1, so a browser on the host is that address and can
-be blocked like any other. `quilzo shield lift ID`, on this machine, ends any
-block.
+be blocked like any other. A trusted network is a /8 at the widest, or a /16
+of IPv6 (the unique-local fc00::/7 and link-local fe80::/10 ranges can be
+declared whole), the security contact is told of each one added or removed,
+and one wider than a /16 (a /48 of IPv6) is a finding in the posture scan
+until it is narrowed or accepted there. `quilzo shield lift ID`, on this machine, ends any block.
 
 ## Why you might choose this, and when you should not
 

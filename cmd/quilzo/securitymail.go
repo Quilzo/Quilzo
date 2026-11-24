@@ -146,3 +146,31 @@ func tellOfHold(root string, held bool, by, why string) {
 			Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
 	})
 }
+
+// tellOfTrust mails the security contact that a network was declared
+// trusted (added), or taken off that list, in the background, and records
+// whether it reached them. A trusted network is never blocked or slowed
+// whatever comes from it, declaring one takes one administrator, and it
+// used to tell nobody: somebody with a stolen administrator's session
+// could put their own network out of the shield's reach unheard.
+func tellOfTrust(root string, added bool, network, by string) {
+	summary := fmt.Sprintf("Shield: %s declared the network %s trusted. The shield never blocks or slows a "+
+		"source there, whatever it sees from it, until the network is removed: quilzo shield trust remove %s, "+
+		"or on the Shield screen.", by, network, network)
+	about := "trusted"
+	if !added {
+		summary = fmt.Sprintf("Shield: %s took the network %s off the trusted ones. A source there is blocked "+
+			"and slowed like anybody's again.", by, network)
+		about = "untrusted"
+	}
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"about": about, "network": network, "did": did}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = err.Error(), audit.Failure
+		}
+		record(root, audit.Record{Action: "shield.told", Resource: "/security/shield", Outcome: outcome,
+			Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
+	})
+}

@@ -10,7 +10,11 @@
   <p><a href="/security/shield">Back to the shield</a></p>
 </div>
 {{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
-{{else if .Broken}}<p class="notice bad" role="alert">The shield's record cannot be read, so what it holds stays in force: {{.Broken}}. On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read.</p>
+{{else if .Broken}}<div class="notice bad" role="alert">
+  <p><strong>The shield's record cannot be read:</strong> {{.Broken}}.</p>
+  <p>A server that was running when it stopped reading keeps what it last read, until each protection ends. A server started since has nothing to go by: there, no block, slowing, lockdown, suspended token or feature turned off is in force. Until the record is repaired nothing can be applied or lifted, publishing and agents are refused, and enrolment links wait as during a lockdown.</p>
+  <p>On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read. Then apply again what still matters.</p>
+</div>
 {{else}}
 <p class="lead">Quilzo protecting itself: blocking a source, turning a public feature down, locking the admin to passkeys and single sign-on, freezing publishing, pausing an agent. Playbooks decide these beforehand and act at once; each protection ends by itself, within a day when a playbook set it, and any of them can be lifted here.</p>
 
@@ -143,7 +147,7 @@
 </form>
 
 <h2>Never blocked</h2>
-<p>This machine is never blocked, and neither is a network added here. A machine on a private network or behind carrier-grade NAT is blocked like any other; add the networks your people work from{{if .Trusted}}:{{else}}.{{end}}</p>
+<p>This machine is never blocked, and neither is a network added here. A machine on a private network or behind carrier-grade NAT is blocked like any other; add the networks your people work from. A network is a /8 at the widest, or a /16 of IPv6 outside its private ranges, and the security contact is told of each one added or removed{{if .Trusted}}:{{else}}.{{end}}</p>
 {{if .Trusted}}<ul class="auto-list">{{range .Trusted}}<li class="auto-card"><div class="auto-head"><code>{{.}}</code>
   <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="trust-remove"><input type="hidden" name="network" value="{{.}}">
     <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.}}</span></button></form></div></li>{{end}}</ul>{{end}}

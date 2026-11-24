@@ -30,7 +30,10 @@
 //     in; and the command line on the machine never goes through any of
 //     this, so `quilzo shield lift all` there is the way out of anything.
 //     A private network is a place, not a pass: a machine on one is
-//     blocked like anybody's unless its network is declared.
+//     blocked like anybody's unless its network is declared. Nothing wider
+//     than a /8, or a /16 of IPv6, is declared: never blocking most of the
+//     internet is not trusting a network, it is the shield switched off
+//     (Trust).
 //   - A source an administrator signed in from with a passkey or single
 //     sign-on in the last thirty days is not blocked from the admin by a
 //     playbook: that is the security contact's call, and they are told.
@@ -364,19 +367,22 @@ func (p Protection) Validate(now time.Time) error {
 				return errors.New("a source is blocked by its handle in the audit log")
 			}
 		case "net":
-			pfx, err := netip.ParsePrefix(value)
+			pfx, err := Network(value)
 			if err != nil {
-				return fmt.Errorf("%q is not a network", value)
+				return err
 			}
 			// Wider than a /16 or /48 is most of a country or a provider:
 			// that is a decision with a name, the provider's, not a range.
-			if (pfx.Addr().Is4() && pfx.Bits() < 16) || (pfx.Addr().Is6() && pfx.Bits() < 48) {
+			if wide(pfx) {
 				return errors.New("a network wider than /16 (or /48) is blocked by its provider instead")
 			}
 			for _, in := range clientip.Loopback() {
 				if pfx.Overlaps(in) {
 					return fmt.Errorf("%s is this machine (%s), which is never blocked", pfx, in)
 				}
+			}
+			if holdsMapped(pfx) {
+				return errMapped(pfx)
 			}
 		case "asn":
 			if n, err := strconv.ParseUint(value, 10, 32); err != nil || n == 0 {
@@ -429,6 +435,14 @@ func (p Protection) Validate(now time.Time) error {
 // is lengthened, not doubled, so a signal that keeps coming keeps the
 // block in place rather than filling the list.
 func Apply(root string, p Protection, now time.Time) (Protection, bool, error) {
+	// A network is kept as Network reads it, so the one listed is the one
+	// requests are held against, and the same network in another spelling
+	// lengthens the protection there is.
+	if value, isNet := strings.CutPrefix(p.Target, "net:"); isNet && (p.Kind == Block || p.Kind == Slow) {
+		if pfx, err := Network(value); err == nil {
+			p.Target = "net:" + pfx.String()
+		}
+	}
 	if err := p.Validate(now); err != nil {
 		return p, false, err
 	}
@@ -436,9 +450,9 @@ func Apply(root string, p Protection, now time.Time) (Protection, bool, error) {
 	fresh := false
 	err := Change(root, now, func(st *State) error {
 		if p.Kind == Block && strings.HasPrefix(p.Target, "net:") {
-			pfx, _ := netip.ParsePrefix(strings.TrimPrefix(p.Target, "net:"))
+			pfx, _ := Network(strings.TrimPrefix(p.Target, "net:"))
 			for _, t := range st.Trusted {
-				if tp, err := netip.ParsePrefix(t); err == nil && tp.Overlaps(pfx) {
+				if tp, err := Network(t); err == nil && tp.Overlaps(pfx) {
 					return fmt.Errorf("%s overlaps the trusted network %s, which is never blocked", pfx, t)
 				}
 			}
@@ -578,18 +592,147 @@ func release(root string, now time.Time) error {
 	})
 }
 
-// Trust adds or removes a network that is never blocked.
-func Trust(root, network string, add bool, now time.Time) error {
-	pfx, err := netip.ParsePrefix(network)
+// mapped is every IPv4 address as IPv6 writes one: ::ffff:203.0.113.9.
+var mapped = netip.MustParsePrefix("::ffff:0.0.0.0/96")
+
+// Network reads a network as somebody wrote it and returns it as the
+// shield keeps and compares it: by its first address, and as the IPv4
+// network when it was written as IPv4 inside IPv6.
+//
+// A request's address is compared as IPv4 whichever way it arrived (the
+// guard unmaps it), and a range is compared only within its own family. So
+// ::ffff:203.0.113.0/120, which is 203.0.113.0/24 as a dual-stack listener
+// and a copied log line write it, was taken as a block, listed as in force
+// and refused nobody; ::ffff:127.0.0.1/128 passed the rule that this
+// machine is never blocked; and a network trusted in that spelling spared
+// nobody. Every place a network is read reads it here, a record an older
+// version kept in the other spelling included.
+func Network(s string) (netip.Prefix, error) {
+	pfx, err := netip.ParsePrefix(strings.TrimSpace(s))
 	if err != nil {
-		return fmt.Errorf("%q is not a network", network)
+		return netip.Prefix{}, fmt.Errorf("%q is not a network", s)
+	}
+	pfx = pfx.Masked()
+	if mapped.Contains(pfx.Addr()) && pfx.Bits() >= mapped.Bits() {
+		return netip.PrefixFrom(pfx.Addr().Unmap(), pfx.Bits()-mapped.Bits()), nil
+	}
+	return pfx, nil
+}
+
+// holdsMapped reports an IPv6 network wide enough to hold every IPv4
+// address as IPv6 writes one, such as ::ffff:0.0.0.0/90. Whoever writes
+// one means all of IPv4, and no request's address is compared with an
+// address written that way, so it would be listed while matching none of
+// them.
+func holdsMapped(pfx netip.Prefix) bool {
+	return pfx.Addr().Is6() && pfx.Contains(mapped.Addr())
+}
+
+func errMapped(pfx netip.Prefix) error {
+	return fmt.Errorf("%s holds every IPv4 address as IPv6 writes one and matches none of them: "+
+		"write the IPv4 network itself, like 203.0.113.0/24", pfx)
+}
+
+// wide reports a network wider than the shield blocks as one: more than a
+// /16, or than a /48 of IPv6.
+func wide(pfx netip.Prefix) bool {
+	return (pfx.Addr().Is4() && pfx.Bits() < 16) || (pfx.Addr().Is6() && pfx.Bits() < 48)
+}
+
+// TrustedWidely are the trusted networks that take a wide part of the
+// internet out of the shield's reach, for the posture check, which is where
+// somebody accepts one with a reason and an end or narrows it: broad are
+// wider than the shield blocks as one network, and most are wider than
+// Trust takes at all, which only a record an older version kept, or one
+// changed by hand, still holds. One that does not read as a network
+// trusts nobody and is in neither.
+func (s *State) TrustedWidely() (broad, most []string) {
+	for _, t := range s.Trusted {
+		pfx, err := Network(t)
+		switch {
+		case err != nil:
+		case tooWideToTrust(pfx):
+			most = append(most, t)
+		case wide(pfx):
+			broad = append(broad, t)
+		}
+	}
+	return broad, most
+}
+
+// ErrNotTrusted is a network asked to be removed from the trusted ones
+// that is not among them, for errors.Is: the command line exits 4 for it,
+// "not found", where it said "no longer trusted" and exited 0.
+var ErrNotTrusted = errors.New("not a trusted network")
+
+// tooWideToTrust reports a network wider than may be declared trusted: a
+// /8, which is the largest network any organisation holds, or a /16 of
+// IPv6, which is more than the largest providers hold.
+//
+// It was a /8 in either family. A /8 of IPv6 is thirty-two times the
+// largest block any one organisation has been given, and holds whole
+// registries: 2600::/8 holds what the registry for North America gives
+// out, and with it declared trusted nobody coming from there over IPv6,
+// as a dual-stack browser does first, was ever blocked or slowed. The
+// ranges never routed on the internet, unique-local (fc00::/7) and
+// link-local (fe80::/10), are declared whole, as 10.0.0.0/8 is: a machine
+// there is on a network of the operator's own.
+func tooWideToTrust(pfx netip.Prefix) bool {
+	if pfx.Addr().Is4() {
+		return pfx.Bits() < 8
+	}
+	for _, in := range neverRouted {
+		if pfx.Bits() >= in.Bits() && in.Contains(pfx.Addr()) {
+			return false
+		}
+	}
+	return pfx.Bits() < 16
+}
+
+// neverRouted are the IPv6 ranges no address on the internet is in, which
+// tooWideToTrust lets be declared whole.
+var neverRouted = []netip.Prefix{netip.MustParsePrefix("fc00::/7"), netip.MustParsePrefix("fe80::/10")}
+
+// Trust adds or removes a network that is never blocked or slowed.
+//
+// The network is kept and compared as Network reads it. The list was
+// compared as text, so one added from an address inside it
+// (198.51.100.7/24) stayed trusted when 198.51.100.0/24 was removed, and
+// removing one that was never there answered like removing one that was;
+// that is ErrNotTrusted now.
+//
+// Nothing wider than a /8, or a /16 of IPv6, is added (tooWideToTrust).
+// 0.0.0.0/0 was taken like an office's /24, from one administrator and at
+// once, and from then on no playbook and no person could block or slow
+// anybody. Stopping the shield acting is a hold (HoldAll): it says why,
+// the security contact is told, and letting the playbooks act again takes
+// a second administrator. Removing is never refused, so one an older
+// version took can be taken off.
+func Trust(root, network string, add bool, now time.Time) error {
+	pfx, err := Network(network)
+	if err != nil {
+		return err
+	}
+	if add && tooWideToTrust(pfx) {
+		return fmt.Errorf("%s is wider than a /8, or a /16 of IPv6, which is more than any one network: the "+
+			"shield would block and slow nobody there. To stop the shield acting, hold every playbook instead, "+
+			"which says why and takes a second administrator to undo", pfx)
+	}
+	if add && holdsMapped(pfx) {
+		return errMapped(pfx)
 	}
 	return Change(root, now, func(st *State) error {
 		var keep []string
+		found := false
 		for _, t := range st.Trusted {
-			if t != pfx.String() {
-				keep = append(keep, t)
+			if tp, err := Network(t); err == nil && tp == pfx {
+				found = true
+				continue
 			}
+			keep = append(keep, t)
+		}
+		if !add && !found {
+			return fmt.Errorf("%s is %w, so there was nothing to remove", pfx, ErrNotTrusted)
 		}
 		if add {
 			keep = append(keep, pfx.String())
