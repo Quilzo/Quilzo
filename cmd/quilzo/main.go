@@ -2616,7 +2616,8 @@ func readableHistory(root string, s *store.Store, head string, limit int) ([]str
 	// "/", which is no one type or language, and may still not read the
 	// whole site: shown the whole history, a token issued `--types policy`
 	// was listed each commit to the product page that diff leaves out.
-	if authorise(root, caller, auth.ActView, "/") == nil && !caller.Limits.LimitsContent() {
+	if authorise(root, caller, auth.ActView, "/") == nil && !caller.Limits.LimitsContent() &&
+		!deniedReadingSomewhere(root, caller) {
 		return s.History(head, limit)
 	}
 	may, err := pageCheck(root, caller, auth.ActView)
@@ -2658,6 +2659,27 @@ func readableHistory(root string, s *store.Store, head string, limit int) ([]str
 		}
 	}
 	return kept, nil
+}
+
+// deniedReadingSomewhere reports whether the caller is denied reading some
+// part of the site's content, which being let read "/" does not show: a
+// deny on /legal does not reach "/". Shown the whole history for being let
+// read "/", a reader denied /legal was listed each commit to the terms by
+// its message and its author, which diff, find and lock list left out.
+//
+// Unreadable policy counts as a deny, so the log errs towards showing less.
+func deniedReadingSomewhere(root string, c *Caller) bool {
+	p, err := loadPolicy(root)
+	if err != nil {
+		return true
+	}
+	for _, b := range p.Snapshot() {
+		if b.Deny && strings.EqualFold(b.Principal, c.Name) && !auth.IsArea(b.Resource) &&
+			!p.Evaluate(c.Name, auth.ActView, b.Resource).Allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func cmdRender(root string, args []string) error {

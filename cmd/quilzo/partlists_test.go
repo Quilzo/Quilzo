@@ -131,3 +131,47 @@ func TestPartOfTheSiteIsListedToWhoeverHoldsIt(t *testing.T) {
 		}
 	}
 }
+
+// A reader of the whole site who is denied part of it is shown no commit to
+// that part by the log, as diff, find and lock list show them nothing of it.
+//
+// The log showed its whole history to whoever was let read "/", and a deny
+// on /legal does not reach "/", so a reader denied /legal was listed each
+// commit to the terms by its message and its author, which every other
+// list left out.
+func TestALogLeavesOutWhatADenyKeepsFromTheReader(t *testing.T) {
+	root := partStore(t)
+	for _, g := range [][]string{{"grant", "rex", "reader"}, {"deny", "rex", "reader", "--on", "/legal"}} {
+		if err := cmdAuth(root, g); err != nil {
+			t.Fatalf("%v: %v", g, err)
+		}
+	}
+	confinedTo(t, root, "rex", "/")
+	doc, err := jsonAnswer(t, func() error { return cmdLog(root, nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fmt.Sprint(doc)
+	if strings.Contains(got, "legal") {
+		t.Errorf("a reader denied /legal is listed its commits: %s", got)
+	}
+	if !strings.Contains(got, "edit blog/first") {
+		t.Errorf("a reader denied /legal is not listed the commit to the blog: %s", got)
+	}
+
+	// Denied only writing there, they read it, and are listed it all.
+	if err := cmdAuth(root, []string{"grant", "ada", "reader"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"deny", "ada", "author", "--on", "/legal"}); err != nil {
+		t.Fatal(err)
+	}
+	confinedTo(t, root, "ada", "/")
+	doc, err = jsonAnswer(t, func() error { return cmdLog(root, nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(doc); !strings.Contains(got, "edit legal/terms") || !strings.Contains(got, "message:first") {
+		t.Errorf("a reader denied only writing /legal is not listed the whole history: %s", got)
+	}
+}
