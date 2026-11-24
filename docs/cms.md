@@ -1134,6 +1134,80 @@ too: entries removed from the end of the log leave a shorter chain that
 still verifies, so only a head taken while they were there shows they are
 gone, and a head saved after they went does not stand in for it.
 
+## The security install, and the public instance
+
+A security install is made with `quilzo init --profile security`, or an
+existing store is given the profile with `quilzo profile apply security
+--reason WHY`. The profile switches off, while the program runs, the
+features a security programme's record has no use for: payments and
+commerce, social posting to the fediverse, the desktop portal, browser
+hands, experiments, personalisation and member boards. Each is refused
+where it is reached: its commands before they run, its admin screens and
+site addresses with 404 in front of the routers, its operations at the
+agent interface, and an agent run asking for a browser. The menu leaves its
+screens out. Nothing is removed: `quilzo profile enable FEATURE --reason
+WHY` switches one back on, `disable` off again, each recorded in the audit
+log with who and why. A store with no profile runs every feature, as before.
+
+The state is written as a feature manifest, signed with the log's head keys
+under its own context, and `quilzo compliance component` (and the Controls
+screen's download) attaches it to CM-7, least functionality, in Quilzo's own
+OSCAL component: the manifest's digest, the key, and each feature that is
+off. `quilzo profile manifest` hands the manifest out and `quilzo profile
+verify FILE --keys head.pub.json` checks it anywhere. A manifest edited by
+hand does not verify and is not attached.
+
+The internal instance never faces the internet: the admin says at start when
+it listens on every interface or on a public address. The public faces are
+served by a fourth process, on a host of its own:
+
+```
+quilzo init --profile public --pin head.pub.json   make the public instance, pinned to one key
+quilzo serve --profile public                       serve it: the page, the head feed, security.txt
+```
+
+It holds no admin, no register and no secret. Its configuration is the
+internal instance's published head keys and nothing else, it refuses to
+start on a directory that holds tokens, a vault, sealed credentials, a
+signing key, a policy or any ref, it runs offline, so it opens no connection
+off its host, and the admin, the site and `init --admin` refuse its
+directory. It is sent its content one way: the internal instance signs a
+`marking/transfer` manifest of the projection with its head keys and posts
+it to the public instance's intake (`quilzo public target https://HOST`), or
+writes it to a directory for a person or a one-way link to carry
+(`quilzo public target /DIR`, then `quilzo public import DIR` on the public
+host). The public instance takes a transfer only when the pinned key signed
+it, only the three files of the projection (`attestations.json`,
+`heads.json` and `security.txt`), bounded in files and bytes before anything
+is read, each parsed and checked before any is served, and never one older
+than what it serves. The page is drawn by its own code from typed data, so a
+transfer carries no markup and no script.
+
+The page shows attestations only: the reports and certificates held, the
+period each covers, the auditor or certification body, how to obtain it, the
+policies in force, and the newest signed head of the record, with every head
+sent so far at `/heads.json`. It shows no operational figure: the file it is
+drawn from has no field for one, refuses a field it does not know, and
+refuses a percentage or a count of controls written into a description.
+"Compliant" is refused wherever no attestation backs it, and "certified"
+wherever no certificate in force does (internal/brand's attestation rules).
+`quilzo attest set FILE` keeps the file as the draft; `quilzo attest publish
+--reason WHY` proposes it, and a second administrator approves it on People
+or with `quilzo pending approve ID` before anything is sent. An approval
+sends only the draft that was proposed; a store with one administrator
+publishes alone, and the record says so. `quilzo public send` sends what was
+published again with a fresh head. The Security profile and Public instance
+screens, the agent interface's `profile_status` and `public_status`, and
+`/api/v1/profile` and `/api/v1/attestations` do the same as the command line.
+
+What is verified, and what is not. The tests run an internal instance and a
+public instance as two servers on one machine, posting and carrying
+transfers between them; they do not run two hosts, a firewall or a data
+diode between them, and the deploy directory has no unit for the public
+instance yet. The attestations are a file a person writes: the register,
+when it is in this tree, will produce the same file from its records, and
+the file's format is the contract between the two.
+
 ## What is in it
 
 **Content.** Pages and structured records. Content types with typed, validated
