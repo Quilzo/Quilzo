@@ -360,11 +360,12 @@ func TestPublicHasNoRegisterOrAdminRoutes(t *testing.T) {
 			t.Errorf("the public instance answers %s with %d", p, code)
 		}
 	}
-	if err := cmdServe(pub, []string{"--addr", "127.0.0.1:0"}); err == nil || !strings.Contains(err.Error(), "public instance") {
-		t.Errorf("the admin started on a public instance's root: %v", err)
-	}
-	if err := cmdSite(pub, []string{"--addr", "127.0.0.1:0"}); err == nil || !strings.Contains(err.Error(), "public instance") {
-		t.Errorf("the site started on a public instance's root: %v", err)
+	// Run as a person runs them, so an admin or a site that did start is a
+	// command that did not finish, reported, and not a test that hangs.
+	for _, line := range [][]string{{"serve", "--addr", "127.0.0.1:0"}, {"site", "--addr", "127.0.0.1:0"}} {
+		if _, stderr, code := cliRun(t, pub, "", line...); code == 0 || !strings.Contains(stderr, "public instance") {
+			t.Errorf("`quilzo %s` on a public instance's root exited %d: %s", line[0], code, firstLines(stderr, 3))
+		}
 	}
 	if err := runInit(pub, []string{"--admin", "mallory"}); err == nil {
 		t.Error("init gave a public instance an administrator")
