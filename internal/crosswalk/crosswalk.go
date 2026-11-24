@@ -282,7 +282,8 @@ func (m Mapping) Record() audit.Record {
 // Latest folds a list of mappings down to the newest for each pair.
 //
 // Two mappings of one pair are somebody changing their mind rather than a
-// conflict, which is the same rule internal/vuln applies to assessments.
+// conflict, which is the rule a VEX statement follows too: the newest
+// assessment of a flaw is the one that stands.
 func Latest(in []Mapping) []Mapping {
 	byKey := map[string]Mapping{}
 	for _, m := range in {

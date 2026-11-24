@@ -144,7 +144,8 @@ func TestAPeriodTooShortForTwoCyclesSaysSoRatherThanLoweringTheBar(t *testing.T)
 	}
 }
 
-// internal/detect refuses a rule that has never matched. The same argument.
+// A detection rule that has never matched is not trusted to catch anything.
+// The same argument holds of a control check that has never failed.
 func TestAControlThatHasNeverFailedIsReported(t *testing.T) {
 	c := control("backups", Daily)
 	// Forty observations that tile the window, so the only thing left to

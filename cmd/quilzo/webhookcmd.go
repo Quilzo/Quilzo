@@ -329,8 +329,8 @@ var hooksMu sync.Mutex
 
 // fireWebhooks posts an event to the configured endpoints.
 //
-// Named for what it does rather than the bare "notify" it used to be: since
-// internal/notify exists, a function called notify in this package would be
+// Named for what it does rather than the bare "notify" it used to be: this
+// program also tells people, by mail, and a function called notify would be
 // the one that tells machines, sitting next to the one that tells people,
 // with nothing in the name to say which.
 func fireWebhooks(root, eventType, commit string, pages []string,

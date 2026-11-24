@@ -1645,8 +1645,8 @@ not reach what it was pointed at covers nothing — counting those windows as
 covered is the easiest way to make a gap disappear. A quarterly control with
 one occurrence in six months has been shown to have happened, not to operate.
 A control with forty passes and no failure is either one that always works or
-a check that cannot report one, and internal/detect refuses a rule that has
-never matched for the same reason. There is no percentage: a compliance score
+a check that cannot report one, for the reason a detection rule that has
+never matched is not trusted to catch anything. There is no percentage: a compliance score
 is controls-passing over controls-in-scope, and scope is chosen by whoever
 wants the number.
 

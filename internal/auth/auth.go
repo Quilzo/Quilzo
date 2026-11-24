@@ -773,8 +773,9 @@ type Token struct {
 	Kind string `json:"kind,omitempty"`
 
 	// StepUp, when set, says why this session must prove its person before
-	// it may do anything else: an automation judged a sign-in, or something
-	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
+	// it may do anything else: the sign-in policy judged a sign-in, or
+	// something seen elsewhere, unlike them (cmd/quilzo's signinpolicy.go).
+	// Cleared when they do.
 	StepUp string `json:"step_up,omitempty"`
 	// StepUpAt is when a step-up was last asked for and StepUpCleared when
 	// one was last passed, in nanoseconds. Two copies of the store meet when

@@ -79,7 +79,7 @@ func Records(st *State) []Record {
 
 // wilson is the 95% Wilson score interval for k successes in n: an
 // interval that is honest at 0% and 100%, where a small sample most needs
-// one (the same as internal/detect's).
+// one (the interval a careful team puts on a detection rule's precision).
 func wilson(k, n int) (low, high float64) {
 	if n == 0 {
 		return 0, 1
