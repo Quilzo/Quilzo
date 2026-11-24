@@ -67,7 +67,7 @@ already pay for.
 git clone https://github.com/quilzo/quilzo && cd quilzo
 go build -o quilzo ./cmd/quilzo      # Go 1.27 or later, nothing to fetch
 
-./quilzo init                        # a store in the current directory
+./quilzo init --profile security     # a store in the current directory, as a security install
 ./quilzo demo                        # something for agents to work on
 ./quilzo agent new helper --kind retrieval
 ./quilzo agent run helper            # walks its declaration; needs no model
@@ -93,6 +93,12 @@ export QUILZO_MODEL=llama3.1
 ./quilzo agent receipt RUN -o r.json # and proved, against a signed head of the log
 ```
 
+No release is published yet; everything below is on `main`.
+[Install](#install) says how to build the container image, and what each
+release will carry.
+
+## The security install
+
 A security install starts from the security profile, which switches off at
 runtime what a security programme's record has no use for (payments,
 social posting, the desktop portal, browser hands, experiments,
@@ -101,10 +107,13 @@ CM-7 evidence. Nothing is removed: `quilzo profile enable FEATURE --reason
 WHY` switches one back on, on the record.
 
 ```bash
-./quilzo init --profile security --admin you   # the security install
 ./quilzo profile                     # which features run, and the signed manifest
-./quilzo serve                       # the internal instance: on an internal network, never the internet
+./quilzo profile enable commerce --reason "the conference sells tickets"
 ```
+
+The store the Quickstart makes is the internal instance: it belongs on an
+internal network, and `quilzo serve` warns when it listens where the
+internet could reach it.
 
 The public faces are served by a public instance on a host of its own,
 which holds no admin, no record and no secret, and takes only transfers
@@ -120,10 +129,6 @@ signed by the internal instance's key:
 ./quilzo attest set attestations.json  # the reports and certificates held, and the policies
 ./quilzo attest publish --reason "the 2026 report is in"   # a second administrator approves
 ```
-
-No release is published yet; everything below is on `main`.
-[Install](#install) says how to build the container image, and what each
-release will carry.
 
 ## Why Quilzo
 
