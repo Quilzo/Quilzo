@@ -202,8 +202,30 @@ func (r *Register) AcceptWith(by Actor, id ID, approval *Approval, follows ...Re
 	if err := r.drop(p, "accepted"); err != nil {
 		return rc, err
 	}
+	// A record that follows and was itself waiting, as it was proposed, is
+	// accepted with the decision: a control test's query waits beside the
+	// test, and is in the register once the test is approved.
+	for _, f := range follows {
+		fid, err := IDOf(f)
+		if err != nil {
+			continue
+		}
+		if q, err := r.proposal(fid); err == nil && sameFields(q.Record, f) {
+			if err := r.drop(q, "accepted"); err != nil {
+				return rc, err
+			}
+		}
+	}
 	return rc, r.audit2(by, audit.Success, map[string]string{"decision": "accepted", "id": string(id),
 		"kind": kinds[p.Kind].Collection, "commit": rc.Commit})
+}
+
+// sameFields reports whether two records are the same record, field for
+// field.
+func sameFields(a, b Record) bool {
+	x, errA := canonicalFields(a)
+	y, errB := canonicalFields(b)
+	return errA == nil && errB == nil && string(x) == string(y)
 }
 
 // Reject takes a waiting record off the proposals ref and writes nothing to
