@@ -89,7 +89,7 @@ func RecordTransfer(dir string, t Transfer, now time.Time) (*Transfer, error) {
 		}
 	}
 
-	t.Created = now.UTC().Format(time.RFC3339)
+	t.Created = now.UTC().Format(time.RFC3339Nano)
 	t.Algorithm = "sha256"
 	t.Files = map[string]string{}
 	t.Bytes = 0
