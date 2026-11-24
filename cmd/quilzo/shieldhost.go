@@ -268,6 +268,15 @@ func (h *shieldHost) badToken(r *http.Request, presented string, err error) {
 	}
 }
 
+// failedSignIn is a passkey sign-in that proved nobody: a credential the
+// store does not know, or one whose signature does not verify. Counted as
+// a guessed token is, by where it came from (admin.Server.OnFailedSignIn):
+// only tokens reached the shield, so guessing at the passkey ceremony from
+// one address was slowed by the throttle and never stopped.
+func (h *shieldHost) failedSignIn(r *http.Request) {
+	h.signal("signin-failures", "", r)
+}
+
 // admit is the lockdown and the suspended tokens, as the token stores the
 // servers load ask them.
 func (h *shieldHost) admit(c auth.Credential) error {

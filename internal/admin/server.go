@@ -488,6 +488,15 @@ type Server struct {
 	// counts a secret never issued here as a guess (internal/shield). Nil
 	// tells nobody.
 	OnBadToken func(r *http.Request, presented string, err error)
+	// OnFailedSignIn is told of every passkey sign-in that proved nobody: a
+	// credential the store does not know, or one whose signature or counter
+	// does not verify, throttled or not. The shield counts it by where it
+	// came from, as it counts a guessed token (internal/shield's
+	// signin-failures): only tokens were told, so guessing at the passkey
+	// ceremony was slowed by the throttle and stopped by nothing. A key
+	// whose holder was not asked for a PIN is not told: it verified, and is
+	// its holder. Nil tells nobody.
+	OnFailedSignIn func(r *http.Request)
 	// OnStrongSignIn is told of a sign-in by passkey or single sign-on that
 	// nothing held back, so the shield never blocks its source from the
 	// admin. Nil tells nobody.

@@ -823,6 +823,7 @@ func cmdServe(root string, args []string) error {
 	// through. Off until mcp.remote is set. See agentinterface.go.
 	wireInterface(root, s, srv, sh, *tplDir)
 	srv.OnBadToken = sh.badToken
+	srv.OnFailedSignIn = sh.failedSignIn
 	srv.OnStrongSignIn = sh.vouch
 	srv.Shield = sh.off
 	srv.Frozen = sh.frozen

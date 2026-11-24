@@ -151,6 +151,32 @@ func TestGuessesAreCountedAndLateCredentialsAreNot(t *testing.T) {
 	}
 }
 
+// Passkey sign-ins that prove nobody are failed sign-ins from their source,
+// as guessed tokens are: five within the hour and the source is stopped at
+// the admin. They were only slowed by the throttle, and the playbook for
+// repeated failed sign-ins never heard of them.
+func TestFailedPasskeySignInsFromOneSourceAreStopped(t *testing.T) {
+	root := shieldRoot(t)
+	h := newShieldHost(root)
+	h.where = shield.Admin
+	for i := 0; i < 4; i++ {
+		h.failedSignIn(fromAddr("198.51.100.20"))
+	}
+	h.guard.Refresh()
+	if _, b := h.guard.Blocked("198.51.100.20", shield.Admin, time.Now()); b {
+		t.Fatal("four failures were taken for an attack")
+	}
+	h.failedSignIn(fromAddr("198.51.100.20"))
+	h.guard.Refresh()
+	if _, b := h.guard.Blocked("198.51.100.20", shield.Admin, time.Now()); !b {
+		t.Fatal("five passkey sign-ins that proved nobody were not stopped")
+	}
+	st, _ := shield.Load(root)
+	if len(st.Responses) != 1 || st.Responses[0].Playbook != "signin-attack" {
+		t.Fatalf("%+v", st.Responses)
+	}
+}
+
 // errUnknownForTest is what the token store answers for a secret it never
 // issued.
 func errUnknownForTest() error {

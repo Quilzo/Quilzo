@@ -275,8 +275,8 @@ func sentenceCase(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// shieldTrigger is a playbook's trigger in words: "When 5 guessed tokens
-// come from one source within an hour."
+// shieldTrigger is a playbook's trigger in words: "5 failed sign-ins from
+// one source within an hour."
 func shieldTrigger(pb shield.Playbook) string {
 	nouns, ok := shield.Counted[pb.On.Signal]
 	if !ok {
