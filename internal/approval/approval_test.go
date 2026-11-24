@@ -360,6 +360,14 @@ func TestSecondApproverAboveThreshold(t *testing.T) {
 	if e, err := b2.reg.Get(id2); err != nil || len(register.ApprovalOf(e.Record).Signers) != 2 {
 		t.Fatalf("the approval of the second from the risk function was not written: %v", err)
 	}
+	// The named second may be the one whose signature completes it.
+	id4 := b2.propose("dana", b2.risk("R-6b", "dana", 5))
+	if _, err := b2.sign("ciso", id4); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := b2.sign("head-of-risk", id4); err != nil || !out.Done {
+		t.Fatalf("the head of risk's signature did not complete the approval: %+v %v", out, err)
+	}
 	id3 := b2.propose("dana", b2.risk("R-6", "dana", 5))
 	if _, err := b2.sign("ciso", id3); err != nil {
 		t.Fatal(err)

@@ -560,12 +560,16 @@ func complete(a *Ask, signers []Signed) bool {
 // actor is the signer as the register names a writer. Being eligible under
 // the separation policy is what lets them write the decision, so the gate
 // is asked the rule's atom for the kind, in place of the register's own
-// permission to approve; everything else is asked as their session asks.
+// permission to approve, and a second the policy names is eligible by
+// being named; everything else is asked as their session asks.
 func (m *Approvals) actor(by Person, subject register.ID, a *Ask) register.Actor {
 	spec, _ := register.SpecOf(string(a.Proposal.Kind))
 	return register.Actor{Name: by.Name, Subject: subject, Kind: by.Kind, Verified: by.Verified,
 		May: func(act auth.Action, resource string) error {
 			if act == auth.ActApprove && resource == spec.Resource() {
+				if a.seconds[auth.PersonKey(by.Name)] != "" {
+					return nil
+				}
 				return m.ask2(by, a.Rule.Atom, resource)
 			}
 			return m.ask2(by, act, resource)
