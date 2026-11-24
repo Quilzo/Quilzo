@@ -875,6 +875,16 @@ var commandNeeds = map[string]need{
 	"profile apply":   {action: auth.ActGrant},
 	"profile enable":  {action: auth.ActGrant},
 	"profile disable": {action: auth.ActGrant},
+	// What the public instance shows is read by anybody who may read the
+	// store; setting it, saying where it goes and sending it are an
+	// administrator's, and publishing is two (attestcmd.go).
+	"attest":         {action: auth.ActView},
+	"attest set":     {action: auth.ActGrant},
+	"attest publish": {action: auth.ActGrant},
+	"public":         {action: auth.ActView},
+	"public target":  {action: auth.ActGrant},
+	"public send":    {action: auth.ActGrant},
+	"public import":  {action: auth.ActGrant},
 
 	// -- read-only subcommands of otherwise privileged commands, so that
 	// somebody locked out can still find out why.

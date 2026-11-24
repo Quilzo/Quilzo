@@ -368,25 +368,10 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		// Where somebody reports a problem with this site. Published only when
 		// an operator has said, because a security.txt with nothing in it
 		// answers the scanner that went looking and tells the person nothing.
-		if contact := strings.TrimSpace(cfg.Raw("security.contact")); contact != "" {
-			expires := time.Now().Add(365 * 24 * time.Hour)
-			if raw := strings.TrimSpace(cfg.Raw("security.expires")); raw != "" {
-				when, perr := time.Parse("2006-01-02", raw)
-				if perr != nil {
-					return nil, fmt.Errorf(
-						"security.expires is %q; it wants a date like "+
-							"2027-01-31", raw)
-				}
-				expires = when
-			}
-			st.Security = &public.SecurityContact{
-				Contact: splitList(contact),
-				Expires: expires,
-				Policy:  strings.TrimSpace(cfg.Raw("security.policy")),
-				Acknowledgments: strings.TrimSpace(
-					cfg.Raw("security.acknowledgments")),
-				Encryption: strings.TrimSpace(cfg.Raw("security.encryption")),
-			}
+		if contact, cerr := securityContactFrom(cfg); cerr != nil {
+			return nil, cerr
+		} else if contact != nil {
+			st.Security = contact
 		}
 		// How eagerly a browser may fetch the next page. Refused rather than
 		// ignored when it is not one of the three: a typo here is a
@@ -858,4 +843,31 @@ func fediverseFetcher(keyID string, signer crypto.Signer) func(string) ([]byte, 
 // configuration (chatbot.questions.*).
 func chatbotQuestions(c *config.Config) *rate.Limiter {
 	return rate.PerHour(c.Int("chatbot.questions.per_hour"), c.Int("chatbot.questions.burst"))
+}
+
+// securityContactFrom is the security contact the settings declare, nil
+// when they declare none: the site's security.txt, and the public
+// instance's (outpostcmd.go).
+func securityContactFrom(cfg *config.Config) (*public.SecurityContact, error) {
+	contact := strings.TrimSpace(cfg.Raw("security.contact"))
+	if contact == "" {
+		return nil, nil
+	}
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	if raw := strings.TrimSpace(cfg.Raw("security.expires")); raw != "" {
+		when, perr := time.Parse("2006-01-02", raw)
+		if perr != nil {
+			return nil, fmt.Errorf(
+				"security.expires is %q; it wants a date like "+
+					"2027-01-31", raw)
+		}
+		expires = when
+	}
+	return &public.SecurityContact{
+		Contact:         splitList(contact),
+		Expires:         expires,
+		Policy:          strings.TrimSpace(cfg.Raw("security.policy")),
+		Acknowledgments: strings.TrimSpace(cfg.Raw("security.acknowledgments")),
+		Encryption:      strings.TrimSpace(cfg.Raw("security.encryption")),
+	}, nil
 }

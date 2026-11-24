@@ -244,6 +244,9 @@ func applyDual(root string, r dual.Request, by string) error {
 		return grantSends(root, ch, r.Why, r.By, by, r.Alone, resolveCaller(root, ""))
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
+	case dualPublishExternal:
+		// A publication to the public instance (attestcmd.go).
+		return applyPublishExternal(root, r, by)
 	}
 	return fmt.Errorf("request %s is a %q, which this version does not know how to apply", r.ID, r.Kind)
 }

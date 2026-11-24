@@ -479,6 +479,13 @@ access
   quilzo profile apply security|standard --reason WHY   the security profile switches off what has no security use
   quilzo profile enable|disable FEATURE --reason WHY    switch one back on, or off, on the record
   quilzo profile verify FILE [--keys head.pub.json]     check a manifest somebody was handed
+  quilzo attest show | set FILE            the attestations the public page shows: reports, certificates, policies
+  quilzo attest publish --reason WHY       publish them to the public instance; a second administrator approves
+  quilzo public status | key               where the public instance is, what was sent, and the key it pins
+  quilzo public target [URL|DIR]           where signed transfers go: its intake, or a directory to carry
+  quilzo public send [--reason WHY]        send what was published again, with a fresh head of the record
+  quilzo public import DIR                 on the public host: take a transfer carried to it
+  quilzo serve --profile public [--addr ADDR] [--intake=false]   serve a public instance: the page, the head feed, security.txt
   quilzo transfer record DIR --approved-by WHO   paperwork for carrying an export
   quilzo transfer verify DIR               check what arrived is what left
   quilzo move OLD NEW [--dry-run]          a page and everything under it
@@ -1049,6 +1056,10 @@ func main() {
 		err = cmdMarking(root, cmdArgs)
 	case "profile":
 		err = cmdProfile(root, cmdArgs)
+	case "public":
+		err = cmdPublic(root, cmdArgs)
+	case "attest":
+		err = cmdAttest(root, cmdArgs)
 	case "transfer":
 		err = cmdTransfer(root, cmdArgs)
 	case "compliance":
@@ -1544,6 +1555,9 @@ func runInit(root string, args []string) error {
 	}
 	if opts.profile == profile.Public {
 		return initPublicInstance(root, opts.pin)
+	}
+	if isPublicInstance(root) {
+		return errPublicInstance(root, "has no administrator and no content of its own")
 	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {

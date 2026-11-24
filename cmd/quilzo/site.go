@@ -45,6 +45,11 @@ import (
 // the internet at. Running both on one port would mean one misconfiguration
 // exposes the editing interface.
 func cmdSite(root string, args []string) error {
+	// A public instance's root serves only what it was sent, with its own
+	// server (outpostcmd.go).
+	if isPublicInstance(root) {
+		return errPublicInstance(root, "serves its own page and not a site")
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "new":

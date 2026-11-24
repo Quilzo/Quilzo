@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
+	"github.com/quilzo/quilzo/internal/attest"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/profile"
@@ -32,6 +33,8 @@ type apiRoute struct {
 var securityRoutes = []apiRoute{
 	{"/api/v1/profile", apiProfile},
 	{"/api/v1/profile/features/", apiProfileFeature},
+	{"/api/v1/attestations", apiAttestations},
+	{"/api/v1/attestations/publish", apiAttestationsPublish},
 }
 
 // securityAPI is the content API with the security routes in front of it.
@@ -165,4 +168,64 @@ func apiProfileFeature(root string, c *Caller, w http.ResponseWriter, r *http.Re
 		return
 	}
 	apiJSON(w, http.StatusOK, map[string]string{"feature": name, "state": onOff(body.On), "manifest": sm.Digest})
+}
+
+// apiAttestations is GET /api/v1/attestations, the public instance as the
+// internal one sees it, and PUT with a file of attestations, which keeps it
+// as the draft.
+func apiAttestations(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
+	if !onlyMethods(w, r, http.MethodGet, http.MethodHead, http.MethodPut) {
+		return
+	}
+	if r.Method == http.MethodPut {
+		body, err := io.ReadAll(io.LimitReader(r.Body, attest.MaxBytes+1))
+		if err != nil {
+			apiFail(w, http.StatusBadRequest, err)
+			return
+		}
+		f, err := setDraft(root, c, body, "api")
+		if err != nil {
+			apiFail(w, 0, err)
+			return
+		}
+		apiJSON(w, http.StatusOK, map[string]string{"draft_digest": f.Digest()})
+		return
+	}
+	if err := authoriseUnder(root, c, auth.ActView, auth.AreaSecurity); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	v, err := viewPublic(root)
+	if err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, v)
+}
+
+// apiAttestationsPublish is POST /api/v1/attestations/publish with
+// {"reason": "..."}: a proposal, which a second administrator approves
+// before anything is sent.
+func apiAttestationsPublish(root string, c *Caller, w http.ResponseWriter, r *http.Request) {
+	if !onlyMethods(w, r, http.MethodPost) {
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := readBody(r, &body); err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	sent, err := proposePublication(root, c, body.Reason)
+	if err != nil {
+		apiFail(w, 0, err)
+		return
+	}
+	state := "waiting for a second administrator"
+	if sent {
+		state = "published, approved alone"
+	}
+	v, _ := viewPublic(root)
+	apiJSON(w, http.StatusOK, map[string]string{"state": state, "request": v.Waiting})
 }

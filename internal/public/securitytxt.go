@@ -89,6 +89,14 @@ func (st *Site) securityTxt(w http.ResponseWriter, r *http.Request) {
 	// address changing and a day-old copy is a day of reports going nowhere.
 	h.Set("Cache-Control", "public, max-age=3600")
 
+	_, _ = w.Write([]byte(SecurityText(c, st.BaseURL)))
+}
+
+// SecurityText is the file for a contact, with its canonical address under
+// baseURL when one is given: what the site serves, and what the internal
+// instance sends a public instance to serve (cmd/quilzo outpostcmd.go), so
+// the two never say different things.
+func SecurityText(c *SecurityContact, baseURL string) string {
 	var b strings.Builder
 	b.WriteString("# Reporting a security problem with this site.\n" +
 		"# https://www.rfc-editor.org/rfc/rfc9116\n\n")
@@ -109,11 +117,11 @@ func (st *Site) securityTxt(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&b, "Preferred-Languages: %s\n",
 			strings.Join(c.PreferredLanguages, ", "))
 	}
-	if st.BaseURL != "" {
+	if baseURL != "" {
 		// The canonical location, so a copy found somewhere else can be
 		// checked against where it is supposed to live.
 		fmt.Fprintf(&b, "Canonical: %s%s\n",
-			strings.TrimRight(st.BaseURL, "/"), SecurityTxtPath)
+			strings.TrimRight(baseURL, "/"), SecurityTxtPath)
 	}
-	_, _ = w.Write([]byte(b.String()))
+	return b.String()
 }

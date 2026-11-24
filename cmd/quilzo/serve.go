@@ -74,6 +74,15 @@ import (
 )
 
 func cmdServe(root string, args []string) error {
+	// A public instance is served by its own server, which has no admin;
+	// and the admin is not served on a public instance's root
+	// (outpostcmd.go).
+	if servesPublic(args) {
+		return servePublic(root, args)
+	}
+	if isPublicInstance(root) {
+		return errPublicInstance(root, "has no admin")
+	}
 	// Idle grant browsers close on a clock, not on traffic; the runs a
 	// restarted process left saying running are ended for what they are.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
@@ -94,6 +103,11 @@ func cmdServe(root string, args []string) error {
 		"where the public site is served, for the posture scan")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
+	}
+	// The internal instance never faces the internet: said at start when it
+	// listens where the internet could reach it (outpostcmd.go).
+	if line := publicBindWarning(*addr); line != "" {
+		fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteYellow, line, noteReset)
 	}
 
 	s, err := open(root)

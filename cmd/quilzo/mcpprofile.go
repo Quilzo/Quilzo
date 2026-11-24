@@ -31,4 +31,18 @@ func registerProfileOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		return v, nil
 	})
+
+	srv.Register(mcp.Operation{
+		Name: "public_status", NeedsRole: "reader", Area: auth.AreaSecurity,
+		Summary: "what the public instance is sent: where it is, the draft of attestations, the last " +
+			"publication and who approved it, and any publication waiting for a second administrator",
+		Detail: "The public instance's address, the key it is pinned to, the draft of attestations (reports " +
+			"and certificates held, their periods and issuers, and the policies in force) with whether it is " +
+			"publishable, the last transfer sent, by whom it was approved and whether alone, and the request " +
+			"waiting, if one is. Read-only: setting, proposing and approving a publication are people's.",
+		Keywords: []string{"public instance", "attestation", "trust page", "soc 2", "iso 27001", "certificate",
+			"report", "policies", "published", "head feed"},
+	}, func(map[string]any) (any, error) {
+		return viewPublic(root)
+	})
 }

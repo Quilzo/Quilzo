@@ -14,7 +14,7 @@ import (
 // which key. The public instance checks the signatures before it serves a
 // head (internal/outpost); the page shows what was checked.
 type Head struct {
-	Size  int64
+	Size  int
 	Root  string
 	At    time.Time
 	KeyID string
