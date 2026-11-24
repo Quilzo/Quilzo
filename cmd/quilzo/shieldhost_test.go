@@ -527,3 +527,19 @@ func TestTheShieldCommandsNameTheNetworkTheyActedOn(t *testing.T) {
 		t.Fatalf("blocking this machine, written as IPv6, exited %d: %s", code, e)
 	}
 }
+
+// How often a playbook was right is said with its counts in agreement:
+// `shield status` said "0 right, 1 mistakes".
+func TestAPlaybooksVerdictsAreCountedInWords(t *testing.T) {
+	for _, c := range []struct {
+		r    shield.Record
+		want string
+	}{
+		{shield.Record{Applied: 1, Mistakes: 1}, "0 right, 1 mistake:"},
+		{shield.Record{Applied: 3, Right: 1, Mistakes: 2}, "1 right, 2 mistakes:"},
+	} {
+		if got := precisionWords(c.r); !strings.Contains(got, c.want) {
+			t.Errorf("%q, not %q", got, c.want)
+		}
+	}
+}

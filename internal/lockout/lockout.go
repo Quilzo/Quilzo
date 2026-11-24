@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -154,9 +155,34 @@ func decide(a Account, place string, now time.Time) Decision {
 	if !a.familiar(place) && now.Before(a.LockedUntil) {
 		wait := a.LockedUntil.Sub(now)
 		return Decision{RetryAfter: wait, Why: fmt.Sprintf("too many failed sign-ins on this account from places it "+
-			"is not used from, so they are locked out of it for %s", wait.Round(time.Minute))}
+			"is not used from, so they are locked out of it for %s", inWords(wait))}
 	}
 	return Decision{Allowed: true}
+}
+
+// inWords is how long a place waits, as a person says it: "30 minutes",
+// "an hour", "2 hours and 5 minutes". Rounded up to the minute, so nobody
+// told to wait comes back while they are still refused.
+//
+// It was Go's own rendering, "locked out of it for 30m0s", which is exact
+// and is not English; and rounded to the nearest minute, so 29 minutes and
+// 40 seconds was said as 30 minutes and 20 seconds as none.
+func inWords(d time.Duration) string {
+	m := max(int((d+time.Minute-1)/time.Minute), 1)
+	count := func(n int, one, many string) string {
+		if n == 1 {
+			return one
+		}
+		return strconv.Itoa(n) + " " + many
+	}
+	hours, minutes := count(m/60, "an hour", "hours"), count(m%60, "1 minute", "minutes")
+	switch {
+	case m < 60:
+		return minutes
+	case m%60 == 0:
+		return hours
+	}
+	return hours + " and " + minutes
 }
 
 // Check is whether an attempt on name from addr may go ahead. It records

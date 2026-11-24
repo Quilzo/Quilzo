@@ -347,7 +347,7 @@ func (p Protection) Validate(now time.Time) error {
 		return errors.New("a protection has to end in the future")
 	}
 	if p.Until.Sub(now) > max+time.Minute {
-		return fmt.Errorf("a protection set %s ends within %s", map[bool]string{true: "automatically", false: "by a person"}[p.Auto], max)
+		return fmt.Errorf("a protection set %s ends within %s", map[bool]string{true: "automatically", false: "by a person"}[p.Auto], inWords(max))
 	}
 	if strings.TrimSpace(p.Reason) == "" || len(p.Reason) > 300 {
 		return errors.New("a protection says why, in at most 300 characters")

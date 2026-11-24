@@ -67,8 +67,8 @@
     {{range .Throttled}}
     <tr>
       <td>{{.Failures}}</td>
-      <td>{{.Since}}</td>
-      <td>{{if .RetryIn}}{{.RetryIn}}{{else}}<span class="hint">now</span>{{end}}</td>
+      <td>{{.Over}}</td>
+      <td>{{with .Next}}{{.}}{{else}}<span class="hint">now</span>{{end}}</td>
       <td>
         {{if .Locked}}<span class="tag tag-bad">locked out</span>
         {{else if .Alerted}}<span class="tag tag-warn">past the alert threshold</span>

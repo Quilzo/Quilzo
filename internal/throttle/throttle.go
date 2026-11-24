@@ -50,6 +50,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -234,7 +235,7 @@ func (l *Limiter) checkOne(key string, now time.Time) Decision {
 			Why: fmt.Sprintf(
 				"%d failed attempts in the last hour, which is the ceiling. "+
 					"Nothing further is accepted for %s.",
-				r.failures, round(wait)),
+				r.failures, inWords(wait)),
 		}
 	}
 	// After is how many failures are free, so the delay starts on the one
@@ -255,7 +256,7 @@ func (l *Limiter) checkOne(key string, now time.Time) Decision {
 			RetryAfter: wait, Failures: r.failures,
 			Why: fmt.Sprintf(
 				"%d recent failures, so attempts are being slowed down. Try "+
-					"again in %s.", r.failures, round(wait)),
+					"again in %s.", r.failures, inWords(wait)),
 		}
 	}
 	return Decision{Allowed: true, Failures: r.failures}
@@ -447,6 +448,29 @@ type Snapshot struct {
 	Alerted  bool
 }
 
+// Over is how long the failures have gone on, in words, for a screen: to
+// the second under a minute and to the minute above it. The Security
+// screen wrote Since into the page as it was, "3m12.348276112s".
+func (s Snapshot) Over() string {
+	if s.Since < time.Second {
+		return "under a second"
+	}
+	d := s.Since.Truncate(time.Second)
+	if d >= time.Minute {
+		d = d.Truncate(time.Minute)
+	}
+	return inWords(d)
+}
+
+// Next is how long until the next attempt is taken, in words, for a
+// screen; empty when it is taken now.
+func (s Snapshot) Next() string {
+	if s.RetryIn <= 0 {
+		return ""
+	}
+	return inWords(s.RetryIn)
+}
+
 // State returns a snapshot of every tracked subject, worst first.
 func (l *Limiter) State() []Snapshot {
 	l.mu.Lock()
@@ -469,11 +493,32 @@ func (l *Limiter) State() []Snapshot {
 	return out
 }
 
-func round(d time.Duration) time.Duration {
-	if d < time.Second {
-		return d.Round(time.Millisecond)
+// inWords is how long to wait, as a person says it: "1 second", "15
+// minutes", "an hour". Rounded up, to the second under a minute and to the
+// minute above it, so nobody told to wait comes back while still refused,
+// and never less than the second Retry-After says.
+//
+// It was Go's own rendering, which the sign-in page showed to a person as
+// "Try again in 1s" and "Nothing further is accepted for 59m32s".
+func inWords(d time.Duration) string {
+	count := func(n int, one, many string) string {
+		if n == 1 {
+			return one
+		}
+		return strconv.Itoa(n) + " " + many
 	}
-	return d.Round(time.Second)
+	if secs := max(int((d+time.Second-1)/time.Second), 1); secs < 60 {
+		return count(secs, "1 second", "seconds")
+	}
+	m := int((d + time.Minute - 1) / time.Minute)
+	hours, minutes := count(m/60, "an hour", "hours"), count(m%60, "1 minute", "minutes")
+	switch {
+	case m < 60:
+		return minutes
+	case m%60 == 0:
+		return hours
+	}
+	return hours + " and " + minutes
 }
 
 // randRead is crypto/rand.Read, named so the panic above reads clearly.

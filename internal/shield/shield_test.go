@@ -492,3 +492,35 @@ func TestASlabOfIPv6IsNotATrustedNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The limits on how long a protection lasts are said in words: they were
+// Go's own rendering, "a protection set by a person ends within 168h0m0s"
+// and "block-source lasts a minute to 24h0m0s".
+func TestTheShieldsLimitsAreSaidInWords(t *testing.T) {
+	long := ok(Freeze, "")
+	long.Until = t0.Add(MaxManual + time.Hour)
+	auto := ok(Freeze, "")
+	auto.Auto, auto.Until = true, t0.Add(MaxAuto+time.Hour)
+	pb := Builtins()[0]
+	pb.Stages[0].Do[0].For = Duration(MaxAuto + time.Hour)
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{long.Validate(t0), "set by a person ends within a week"},
+		{auto.Validate(t0), "set automatically ends within a day"},
+		{pb.Validate(), "lasts a minute to a day"},
+	} {
+		if c.err == nil || !strings.Contains(c.err.Error(), c.want) {
+			t.Errorf("%v, not %q", c.err, c.want)
+		}
+	}
+	for d, want := range map[time.Duration]string{
+		24 * time.Hour: "a day", 7 * 24 * time.Hour: "a week", 48 * time.Hour: "2 days",
+		time.Hour: "an hour", 90 * time.Minute: "90 minutes",
+	} {
+		if got := inWords(d); got != want {
+			t.Errorf("%s is %q, not %q", d, got, want)
+		}
+	}
+}

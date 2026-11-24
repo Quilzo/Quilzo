@@ -159,8 +159,8 @@ func precisionWords(r shield.Record) string {
 	case r.Right+r.Mistakes == 0:
 		s += "; none judged yet"
 	case !enough:
-		s += fmt.Sprintf("; %d right, %d mistakes: not enough verdicts to say (%d needed)",
-			r.Right, r.Mistakes, shield.MinVerdicts)
+		s += fmt.Sprintf("; %d right, %s: not enough verdicts to say (%d needed)",
+			r.Right, countWord(r.Mistakes, "mistake", "mistakes"), shield.MinVerdicts)
 	default:
 		s += fmt.Sprintf("; right %.0f%% of the time (95%%: %.0f–%.0f%%)", rate*100, low*100, high*100)
 	}

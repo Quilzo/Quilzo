@@ -293,7 +293,7 @@ func (s Step) validate(on Trigger) error {
 	}
 	timed := s.Action != "notify" && s.Action != "open-case"
 	if timed && (time.Duration(s.For) < time.Minute || time.Duration(s.For) > MaxAuto) {
-		return fmt.Errorf("%s lasts a minute to %s", s.Action, MaxAuto)
+		return fmt.Errorf("%s lasts a minute to %s", s.Action, inWords(MaxAuto))
 	}
 	if !timed && s.For != 0 {
 		return fmt.Errorf("%s has no duration", s.Action)
