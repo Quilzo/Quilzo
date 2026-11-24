@@ -91,15 +91,40 @@ func hasRefs(root string) bool {
 	return found
 }
 
-// publicSecrets is every secret a root holds that a public instance must
-// not: credentials, keys and the configuration of the systems they reach.
+// publicSecrets is every file a root holds outside the public instance's
+// own directory, which a public instance must not hold: its configuration
+// is the pinned key and its content what it was sent, both under public/,
+// so anything else is a store's, and may be a secret.
+//
+// Every file and not a list of secrets: a list named the tokens, the vault
+// and the signing key, and let a root holding the second-factor secrets,
+// the provenance key or the pseudonymisation key start as a public
+// instance, and would have let next year's secret do the same. The named
+// ones are said first, by name, since they are what a person needs to see.
 func publicSecrets(root string) []string {
 	var found []string
+	said := map[string]bool{}
 	for _, p := range []string{tokensPath(root), passkeysPath(root), keyringPath(root), agentSecretsPath(root),
 		headKeyPath(root), connectionsPath(root), scimTokenPath(root), oidcPath(root), policyPath(root)} {
 		if fileExists(p) {
-			found = append(found, filepath.Base(p))
+			found, said[filepath.Clean(p)] = append(found, filepath.Base(p)), true
 		}
+	}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || said[filepath.Clean(path)] {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return nil
+		}
+		if rel = filepath.ToSlash(rel); !strings.HasPrefix(rel, "public/") {
+			found = append(found, rel)
+		}
+		return nil
+	})
+	if len(found) > 12 {
+		found = append(found[:12], fmt.Sprintf("and %d more", len(found)-12))
 	}
 	return found
 }

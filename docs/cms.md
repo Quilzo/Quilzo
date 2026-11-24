@@ -1171,8 +1171,9 @@ quilzo serve --profile public                       serve it: the page, the head
 
 It holds no admin, no register and no secret. Its configuration is the
 internal instance's published head keys and nothing else, it refuses to
-start on a directory that holds tokens, a vault, sealed credentials, a
-signing key, a policy or any ref, it runs offline, so it opens no connection
+start on a directory that holds any file but its own (tokens, a vault,
+sealed credentials, a signing key, a policy, a ref, or anything else a
+store keeps), it runs offline, so it opens no connection
 off its host, and the admin, the site and `init --admin` refuse its
 directory. It is sent its content one way: the internal instance signs a
 `marking/transfer` manifest of the projection with its head keys and posts

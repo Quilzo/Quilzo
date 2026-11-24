@@ -397,8 +397,15 @@ func TestPublicHoldsNoVaultSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every secret a store keeps, not only the ones a list names: the
+	// second-factor secrets, the provenance and pseudonymisation keys, the
+	// newsletter's key and an agent credential issuer's, and a file of a
+	// kind nobody has yet. A public instance holds its pinned key and what
+	// it was sent, so anything else on its root is a store's.
 	for _, planted := range []string{tokensPath(pub), keyringPath(pub), agentSecretsPath(pub), headKeyPath(pub),
-		passkeysPath(pub), connectionsPath(pub), scimTokenPath(pub), oidcPath(pub)} {
+		passkeysPath(pub), connectionsPath(pub), scimTokenPath(pub), oidcPath(pub), policyPath(pub),
+		mfaPath(pub), provenanceKeyPath(pub), auditKeyPath(pub), newsletterKeyPath(pub), credKeysPath(pub),
+		filepath.Join(pub, "a-secret-of-next-year.key")} {
 		if err := os.MkdirAll(filepath.Dir(planted), 0o700); err != nil {
 			t.Fatal(err)
 		}
