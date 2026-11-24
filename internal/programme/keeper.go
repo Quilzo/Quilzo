@@ -99,14 +99,8 @@ func (k *FileKeeper) Pseudonym(name string, typ register.SubjectType) (register.
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	path := k.personPath(name)
-	if b, err := os.ReadFile(path); err == nil {
-		var p person
-		if err := json.Unmarshal(b, &p); err != nil || p.Name != name || !p.Pseudonym.Valid() {
-			return "", fmt.Errorf("the pseudonym kept for %s cannot be read", name)
-		}
-		return p.Pseudonym, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
+	if id, err := readPerson(path, name); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return id, err
 	}
 	id, err := register.NewSubjectID()
 	if err != nil {
@@ -116,10 +110,33 @@ func (k *FileKeeper) Pseudonym(name string, typ register.SubjectType) (register.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if err := atomicfile.Write(path, b, 0o600); err != nil {
+	// Written whole beside the file and linked into place, which fails if
+	// another process minted one first: one person has one pseudonym, and
+	// the one that lost reads the winner's.
+	tmp := path + "." + string(id) + ".new"
+	if err := atomicfile.Write(tmp, b, 0o600); err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp)
+	if err := os.Link(tmp, path); errors.Is(err, os.ErrExist) {
+		return readPerson(path, name)
+	} else if err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+// readPerson is the pseudonym kept in a person's file.
+func readPerson(path, name string) (register.ID, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var p person
+	if err := json.Unmarshal(b, &p); err != nil || p.Name != name || !p.Pseudonym.Valid() {
+		return "", fmt.Errorf("the pseudonym kept for %s cannot be read", name)
+	}
+	return p.Pseudonym, nil
 }
 
 func (k *FileKeeper) textPath(t register.Text) (string, bool) {

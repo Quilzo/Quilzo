@@ -30,8 +30,8 @@ func withProgramme(t *testing.T, srv *Server) register.ID {
 	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
 	lee := register.Actor{Name: "lee", Subject: "1ee00000000000000000000000000002", Kind: audit.KindHuman, Verified: true, May: allow}
 	p := &programme.Programme{Reg: r, Now: r.Now, Keep: &programme.FileKeeper{Dir: filepath.Join(srv.Store.Root(), "programme")}}
-	alone := programme.Decider{By: olu, Eligible: 1, Proof: "a test"}
-	two := programme.Decider{By: olu, Eligible: 2, Proof: "a test"}
+	alone := programme.Decider{By: olu, Eligible: 1, MayApprove: true, Proof: "a test"}
+	two := programme.Decider{By: olu, Eligible: 2, MayApprove: true, Proof: "a test"}
 	check := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -71,7 +71,7 @@ func withProgramme(t *testing.T, srv *Server) register.ID {
 		Query: programme.DraftQuery{Of: "Observation", Member: "about", Terms: append(fact,
 			register.Term{Field: "value", Op: register.OpEquals, Values: []register.Scalar{register.BoolValue(true)}})}})
 	check(err)
-	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, Proof: "a test"}, d.TestID)
+	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "a test"}, d.TestID)
 	check(err)
 	_, rc, err := p.RunTest(programme.Scheduler(), d.TestID)
 	check(err)

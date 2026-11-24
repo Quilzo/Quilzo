@@ -82,6 +82,13 @@ func TestStarterInstallsAsOneDecision(t *testing.T) {
 	if !got.Approval.Alone || got.Approval.ReviewDue == 0 {
 		t.Errorf("a decision made alone is not marked so: %+v", got.Approval)
 	}
+	// Somebody who may not approve decides nothing alone, even where only
+	// one person may: what they raise waits for that person.
+	b3 := newBench(t)
+	notEligible := Decider{By: lee, Eligible: 1, MayApprove: false, Proof: "lee's session"}
+	if d := must(b3.Install(notEligible, "dora")); !d.Waits || b3.Reg.Head() != "" {
+		t.Errorf("somebody who may not approve installed a starter alone: %+v", d)
+	}
 	// And a starter this program does not carry, or another edition of
 	// one, is not what would be written, so it is refused.
 	forged := iso.Decision(true)
@@ -378,5 +385,46 @@ func TestStartersAreInQuilzosOwnWords(t *testing.T) {
 		if strings.EqualFold(c.Line, frameworks.Title("nis2", c.Ref)) {
 			t.Errorf("NIS2 %s is the Directive's own words, not Quilzo's", c.Ref)
 		}
+	}
+}
+
+// A person has one pseudonym however many processes ask for it at once,
+// and it is the same the next time it is asked for.
+func TestAPersonHasOnePseudonym(t *testing.T) {
+	dir := t.TempDir()
+	ids := make(chan register.ID, 8)
+	for range 8 {
+		go func() {
+			k := &FileKeeper{Dir: dir}
+			id, err := k.Pseudonym("dana@example.org", "person")
+			if err != nil {
+				t.Error(err)
+			}
+			ids <- id
+		}()
+	}
+	first := <-ids
+	for range 7 {
+		if id := <-ids; id != first {
+			t.Errorf("one person was given %s and %s", first, id)
+		}
+	}
+	if !first.Valid() {
+		t.Fatalf("the pseudonym is %q", first)
+	}
+	k := &FileKeeper{Dir: dir}
+	if again, _ := k.Pseudonym("dana@example.org", "person"); again != first {
+		t.Errorf("asked again, the pseudonym is %s, not %s", again, first)
+	}
+	words := "We hold no premises of our own."
+	text := must(k.Keep(words))
+	if got, ok := k.Words(text); !ok || got != words {
+		t.Errorf("the words kept read back as %q", got)
+	}
+	sealed := &FileKeeper{Dir: t.TempDir(), NoWords: true}
+	if text := must(sealed.Keep(words)); text != TextOf(words) {
+		t.Error("a keeper that keeps no words gave another digest")
+	} else if _, ok := sealed.Words(text); ok {
+		t.Error("a keeper that keeps no words read some back")
 	}
 }

@@ -69,7 +69,8 @@ func deciderFor(root string, c *Caller, by register.Actor, kind register.Kind) p
 	if c.Verified {
 		proof = "verified by the credential " + c.Credential
 	}
-	return programme.Decider{By: by, Eligible: eligibleFor(root, auth.ActApprove, spec.Resource()), Proof: proof}
+	return programme.Decider{By: by, Eligible: eligibleFor(root, auth.ActApprove, spec.Resource()),
+		MayApprove: authorise(root, c, auth.ActApprove, spec.Resource()) == nil, Proof: proof}
 }
 
 // eligibleFor is how many principals the policy lets act on a resource. A

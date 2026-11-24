@@ -55,11 +55,11 @@ var (
 )
 
 // asDana and asLee are the two people who decide, with two eligible.
-func asDana() Decider { return Decider{By: dana, Eligible: 2, Proof: "dana's session"} }
-func asLee() Decider  { return Decider{By: lee, Eligible: 2, Proof: "lee's session"} }
+func asDana() Decider { return Decider{By: dana, Eligible: 2, MayApprove: true, Proof: "dana's session"} }
+func asLee() Decider  { return Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "lee's session"} }
 
 // alone is dana as the only person eligible.
-func alone() Decider { return Decider{By: dana, Eligible: 1, Proof: "dana's session"} }
+func alone() Decider { return Decider{By: dana, Eligible: 1, MayApprove: true, Proof: "dana's session"} }
 
 // must is a value a test needs, or the end of the test. It panics, which
 // the test runner reports as the test's failure with where it was.

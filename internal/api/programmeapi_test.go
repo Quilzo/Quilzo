@@ -29,7 +29,7 @@ func withProgramme(t *testing.T, s *Server) register.ID {
 	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
 	p := &programme.Programme{Reg: r, Now: r.Now,
 		Keep: &programme.FileKeeper{Dir: filepath.Join(s.Store.Root(), "programme")}}
-	alone := programme.Decider{By: olu, Eligible: 1, Proof: "a test"}
+	alone := programme.Decider{By: olu, Eligible: 1, MayApprove: true, Proof: "a test"}
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -60,7 +60,7 @@ func withProgramme(t *testing.T, s *Server) register.ID {
 	must(err)
 	lee := olu
 	lee.Name, lee.Subject = "lee", "1ee00000000000000000000000000002"
-	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, Proof: "a test"}, d.TestID)
+	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "a test"}, d.TestID)
 	must(err)
 	_, rc, err := p.RunTest(programme.Scheduler(), d.TestID)
 	must(err)

@@ -47,8 +47,13 @@ type Decider struct {
 	// person's: By.Kind is a person and By.Subject their pseudonym.
 	By register.Actor
 	// Eligible is how many people may approve a decision of this kind, as
-	// the access policy has it when they ask, themselves included.
+	// the access policy has it when they ask, themselves included when
+	// MayApprove says they are one of them.
 	Eligible int
+	// MayApprove says the policy lets this person approve a decision of
+	// this kind. Somebody who may not decides nothing alone: what they
+	// raise waits for somebody who may.
+	MayApprove bool
 	// Proof is what the surface proved them by: the name of the credential
 	// they signed in with and how. It is hashed with the decision's surface
 	// into the approval's assertion, so the approval names what was
@@ -92,7 +97,7 @@ func approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time
 		Signers: []register.Signer{{Subject: d.By.Subject, At: register.TimeOf(at),
 			Assertion: register.Digest("sha256:" + hex.EncodeToString(h.Sum(nil)))}}}
 	if raised == d.By.Subject {
-		if eligible > 1 {
+		if eligible > 1 || !d.MayApprove {
 			return nil, ErrWaits
 		}
 		a.Rule, a.Alone, a.ReviewDue = "only-person-eligible", true, register.TimeOf(at.Add(ReviewWithin))
