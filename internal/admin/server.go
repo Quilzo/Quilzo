@@ -1797,6 +1797,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/start/done", s.handleStartDone)
 	mux.HandleFunc("/playground", s.playground)
+	// The security modules' screens, each registered from its own file
+	// (modules.go) rather than written into this list.
+	s.mountModules(mux)
 	// The content API, mounted here so the playground can reach it.
 	//
 	// Its relative URLs resolve against this origin, and there is deliberately

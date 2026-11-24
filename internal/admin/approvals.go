@@ -198,6 +198,10 @@ func (s *Server) waitingSources(p principal) waiting.Sources {
 	if s.Memory != nil && s.Memory.Store != nil {
 		src.Memories = s.Memory.Store.List
 	}
+	// Records proposed for the security register (registerscreen.go).
+	if s.Store != nil {
+		src.Register = s.registerWaiting
+	}
 	return src
 }
 

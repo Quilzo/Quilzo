@@ -3583,7 +3583,9 @@ td code, td .mono { overflow-wrap: break-word; }
   border-radius: var(--shape-md); background: var(--surface-container-low); color: var(--on-surface); }
 .kit-tile-label { margin: 0 0 .25rem; font-weight: 600; }
 .kit-tile-status { margin: .5rem 0 0; }
-.kit-count { font-weight: 600; font-variant-numeric: tabular-nums; }
+.kit-count { font-weight: 600; }
+.kit-n, .kit-of { font-variant-numeric: tabular-nums; }
+.kit-tile-figure { margin: .25rem 0 0; }
 .kit-tile .kit-count { font-size: 1.75rem; line-height: 1.2; }
 .kit-unit { color: var(--on-surface-variant); }
 .kit-none { color: var(--on-surface-variant); font-style: italic; }
@@ -3603,6 +3605,7 @@ td code, td .mono { overflow-wrap: break-word; }
 .kit-hash { font-family: var(--mono); overflow-wrap: anywhere; word-break: break-all; }
 .kit-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .05rem .55rem;
   border: 1px solid transparent; border-radius: var(--shape-sm); font-weight: 500; }
+.kit-badge-word { overflow-wrap: anywhere; }
 .kit-badge-icon { display: inline-flex; flex: none; }
 .kit-badge-icon .icon { width: 18px; height: 18px; }
 .kit-good { background: var(--ok-container); color: var(--on-ok-container); }
@@ -3621,6 +3624,7 @@ td code, td .mono { overflow-wrap: break-word; }
 .kit-approve-row button { min-height: 44px; }
 .kit-timeline { margin: 0 0 1rem; padding: 0 0 0 1rem; border-left: 2px solid var(--outline-variant); list-style: none; }
 .kit-timeline > li { margin: 0 0 .6rem; overflow-wrap: anywhere; }
+.kit-event { font-weight: 500; }
 .kit-empty { padding: 1rem; border: 1px dashed var(--outline); border-radius: var(--shape-md); }
 .kit-empty-title { margin-top: 0; font-weight: 600; }
 .kit-errors { margin: 0 0 1rem; padding: .75rem 1rem; border: 3px solid var(--error); border-radius: var(--shape-md); }

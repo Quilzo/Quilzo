@@ -1,0 +1,11 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Empty}}{{template "kit-empty" .}}{{else}}
+<div class="table-wrap"><table class="kit-table">
+<caption>Waiting for a person to accept or reject, oldest first</caption>
+<thead><tr><th scope="col">Proposed</th><th scope="col">Kind</th><th scope="col">Proposed by</th><th scope="col">Why, as the proposing code gave it</th></tr></thead>
+<tbody>{{range .Items}}<tr id="p-{{.ID}}"><th scope="row"><code class="kit-hash">{{.ID}}</code></th><td>{{.Kind}}</td><td>{{.By}}</td><td>{{.Why}}<br><span class="hint"><time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.Format "2 Jan 2006, 15:04"}} UTC</time></span></td></tr>{{end}}</tbody>
+</table></div>
+<p class="hint">What each proposal holds is shown where it is decided, fenced and labelled as proposed: here it is only named. <code>quilzo register proposals</code> lists the same.</p>
+{{end}}
+{{template "foot" .}}

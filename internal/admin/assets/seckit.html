@@ -42,7 +42,7 @@
 
 {{define "kit-cell"}}{{if eq .Kind "figure"}}{{template "kit-figure" .Figure}}{{else if eq .Kind "badge"}}{{template "kit-badge" .Badge}}{{else if eq .Kind "link"}}<a href="{{.Href}}">{{.Text}}</a>{{else if eq .Kind "time"}}<time datetime="{{.Stamp}}">{{.When}}</time>{{else if eq .Kind "hash"}}{{template "kit-hash" .}}{{else if eq .Kind "none"}}<span class="kit-none">None</span>{{else}}{{.Text}}{{end}}{{end}}
 
-{{define "kit-table"}}<div class="table-wrap kit-table"><table>
+{{define "kit-table"}}<div class="table-wrap"><table class="kit-table">
 <caption>{{.Caption}}</caption>
 <thead><tr>{{range .Columns}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
 <tbody>{{range .Rows}}<tr><th scope="row">{{template "kit-cell" .Head}}</th>{{range .Cells}}<td>{{template "kit-cell" .}}</td>{{end}}</tr>{{end}}</tbody>

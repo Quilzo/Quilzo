@@ -12,9 +12,10 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/icons"
+	"github.com/quilzo/quilzo/internal/register"
 )
 
-// A module's screens, registered from the module's own file.
+// A security module's screens, registered from the module's own file.
 //
 // A screen has always been four edits in four files: a route in Handler, a
 // row in the navigation, an icon in the icon table and its other names in
@@ -26,16 +27,17 @@ import (
 //
 // What is registered is held to what the tables are held to, by the same
 // tests. A module's routes are read with the ones in server.go by the test
-// helper that lists what is served, so each screen is opened, rendered and
-// run through the accessibility checks, each must be reachable from the menu
-// or from a link, and each entry in the menu needs an icon, a section and a
-// page of the manual, exactly as if it had been written into the tables.
+// helper that lists what is served (servedRoutes), so each screen is opened,
+// rendered and run through the accessibility checks, must be reachable from
+// the menu or a link, and each entry in the menu needs an icon, a section and
+// a page of the manual, exactly as if it had been written into the tables.
+// The screens are built from the security kit (assets/seckit.html), and each
+// module's templates are files of its own in assets.
 
 // screens is what a module adds to the admin.
 type screens struct {
-	// module is the module's name. It is the name its commands and its
-	// routes in the content API are registered under too, which is how a
-	// test finds that one of the three is missing.
+	// module is the module's name, under which its command and its routes
+	// in the content API are registered too (internal/register's ledger).
 	module string
 	routes []screenRoute
 	nav    []navEntry
@@ -48,43 +50,50 @@ type screenRoute struct {
 	path string
 	// handle is the handler, as a method expression: (*Server).handleX.
 	handle func(*Server, http.ResponseWriter, *http.Request)
-	// notScreen says why the address is not a page somebody opens: a
-	// form's target, a download. Empty for a screen.
-	notScreen string
 }
 
 // navEntry is one entry a module adds to the menu.
 type navEntry struct {
 	destination
-	// icon is the entry's Material Symbol, by its name in internal/icons.
+	// icon is the entry's Material Symbol, Rounded, by its name in
+	// internal/icons, which holds the same family as assets/icons; drawn
+	// filled for the screen being looked at.
 	icon string
-	// area is the area of the admin the screen belongs to, when it is not
-	// the site's content: see screenAreas.
+	// area is the area of the access policy the screen belongs to, which
+	// is what its entry is shown for (screenAreas).
 	area string
-	// also is what else somebody looking for the screen would type.
+	// also is what else somebody looking for the screen would type into
+	// Find.
 	also []string
 }
 
 var (
 	// moduleScreens is every module's screens, in the order of their names.
 	moduleScreens []screens
-	// moduleAlso is the other names of the modules' screens, for the finder.
-	moduleAlso = map[string][]string{}
+	// moduleAlso is the other names of the modules' screens, for Find, and
+	// moduleFilled each one's symbol filled.
+	moduleAlso   = map[string][]string{}
+	moduleFilled = map[string]string{}
 
 	reModule = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
 	reRoute  = regexp.MustCompile(`^/[a-z0-9][a-z0-9/._-]*$`)
 )
 
 // registerScreens adds a module's screens. It is called from an init in the
-// module's own file. A module that is declared wrongly stops the program
-// starting, with what is wrong: that is a mistake in the program, found the
-// first time anything runs, tests included.
+// module's own file. A module declared wrongly stops the program starting,
+// with what is wrong: that is a mistake in the program, found the first time
+// anything runs, tests included.
 func registerScreens(m screens) {
 	if err := checkScreens(m); err != nil {
 		panic("admin: the module " + m.module + ": " + err.Error())
 	}
 	moduleScreens = append(moduleScreens, m)
 	sort.SliceStable(moduleScreens, func(i, j int) bool { return moduleScreens[i].module < moduleScreens[j].module })
+	var paths []string
+	for _, r := range m.routes {
+		paths = append(paths, r.path)
+	}
+	register.Offer(m.module, register.SurfaceAdmin, paths...)
 	for _, n := range m.nav {
 		destinations = append(destinations, n.destination)
 		iconPath[n.Key] = icons.Path(n.icon, "rounded")
@@ -97,10 +106,6 @@ func registerScreens(m screens) {
 		}
 	}
 }
-
-// moduleFilled is each module screen's symbol filled, for the screen being
-// looked at.
-var moduleFilled = map[string]string{}
 
 // checkScreens is what registerScreens refuses, without changing anything.
 func checkScreens(m screens) error {
@@ -141,6 +146,8 @@ func checkScreens(m screens) error {
 			return fmt.Errorf("the menu entry %q goes to %s, which the module does not serve", n.Key, n.Path)
 		case !knownGroup(n.Group):
 			return fmt.Errorf("the menu entry %q is in the section %q, and the sections are %s", n.Key, n.Group, strings.Join(groups, ", "))
+		case !docSections[n.Doc]:
+			return fmt.Errorf("the menu entry %q points at %q, which is not a page the manual carries", n.Key, n.Doc)
 		case icons.Path(n.icon, "rounded") == "":
 			return fmt.Errorf("the menu entry %q has the icon %q, which is not one of internal/icons", n.Key, n.icon)
 		case n.area != "" && !auth.IsArea(n.area):
@@ -164,7 +171,9 @@ func knownGroup(name string) bool {
 	return false
 }
 
-// mountModules adds every module's routes to the admin's mux.
+// mountModules adds every module's routes to the admin's mux. A route the
+// admin serves already is a mux that panics, in the first test that builds
+// one.
 func (s *Server) mountModules(mux *http.ServeMux) {
 	for _, m := range moduleScreens {
 		for _, r := range m.routes {
@@ -176,7 +185,7 @@ func (s *Server) mountModules(mux *http.ServeMux) {
 
 // ModuleRoutes is the addresses each module serves, by the module's name.
 // It is for the tests that hold a module to having every surface: the
-// command line's reads it to check that the screen a command claims exists.
+// command line's read it to check that the screen a command claims exists.
 func ModuleRoutes() map[string][]string {
 	out := map[string][]string{}
 	for _, m := range moduleScreens {

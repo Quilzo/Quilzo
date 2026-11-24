@@ -617,6 +617,10 @@ func Screens() []find.Destination {
 		"playground":   {"api", "rest", "endpoint", "json"},
 		"profile":      {"me", "my account", "sign out", "session"},
 	}
+	// A module's screens bring their other names with them (modules.go).
+	for key, words := range moduleAlso {
+		also[key] = words
+	}
 	out := make([]find.Destination, 0, len(destinations))
 	for _, d := range destinations {
 		out = append(out, find.Destination{

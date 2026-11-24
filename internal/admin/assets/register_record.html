@@ -1,0 +1,8 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+<p>A {{template "kit-cell" .Kind}} record, identified by <code class="kit-hash">{{.Entry.ID}}</code>.</p>
+{{template "kit-table" .Table}}
+<h2>Its history</h2>
+{{template "kit-timeline" .Events}}
+<p class="hint">Stored as <code class="kit-hash">{{.Entry.Object}}</code>, the hash of the record as it stands. <code>quilzo register show {{.Entry.ID}}</code> answers the same from a terminal.</p>
+{{template "foot" .}}

@@ -195,6 +195,13 @@ func servedRoutes(t *testing.T) map[string]bool {
 				"dead. Declare it as a plain string constant in server.go.", m[1])
 		}
 	}
+	// And the screens the security modules register from their own files
+	// (modules.go), which the mux serves as surely as these.
+	for _, routes := range ModuleRoutes() {
+		for _, r := range routes {
+			out[r] = true
+		}
+	}
 	return out
 }
 
