@@ -384,6 +384,18 @@ func TestTrustingANetworkOnTheScreenIsBoundedToldAndRemovedForReal(t *testing.T)
 	if len(told) != 2 || told[1] != "false 198.51.100.0/24 editor" {
 		t.Fatalf("taking a network off told: %q", told)
 	}
+	// The screen gives the bound as Trust keeps it: a /16 of IPv6, and the
+	// private ranges, fd00::/8 among them, whole.
+	if said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"2600::/8"}}); said != "" ||
+		!strings.Contains(refused, "a /16 of IPv6") {
+		t.Errorf("2600::/8: said %q, refused %q", said, refused)
+	}
+	if said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"fd00::/8"}}); refused != "" {
+		t.Errorf("fd00::/8: said %q, refused %q", said, refused)
+	}
+	if page := getPage(t, srv, "/security/shield", token); !strings.Contains(page, "a /16 of IPv6 outside its private ranges") {
+		t.Error("the screen does not give the bound on a trusted network")
+	}
 }
 
 // The Shield screen says what an unreadable record means.
