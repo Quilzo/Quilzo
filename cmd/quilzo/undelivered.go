@@ -158,7 +158,10 @@ func integrationsUndelivered(root string, args []string) error {
 	for i, u := range list {
 		w.Human("%s%d%s  %s%s %s%s by %s, %s\n", bold, i+1, reset, yellow, u.Integration, u.Tool, reset, u.Agent,
 			u.At.Local().Format("2 Jan 15:04"))
-		w.Human("    %s%s%s\n", dim, u.Error, reset)
+		// What the far side said, as text: printed as it answered, a
+		// server that failed a write could clear the line saying so and
+		// print one of its own, and the write would read as delivered.
+		w.Human("    %s%s%s\n", dim, onOneLine(u.Error), reset)
 		if u.Run != "" {
 			w.Human("    %srun %s, step %d, key %s%s\n", dim, u.Run, u.Step, u.Key, reset)
 		}

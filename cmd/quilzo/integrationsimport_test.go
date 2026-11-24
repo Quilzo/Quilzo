@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 const billingAPI = `{
@@ -102,5 +103,39 @@ func TestTheGatewayOffersARESTAPIsPinnedOperations(t *testing.T) {
 	}
 	if sentTo != "GET https://api.billing.example/v1/invoices/7" || key != "k3y" {
 		t.Errorf("sent %q with key %q", sentTo, key)
+	}
+}
+
+// What an MCP server offers, listed before anything is declared, is the
+// server's words printed as text.
+//
+// `quilzo integrations import server.json` without --uses asks the server
+// what it offers, and printed each tool's name and description as the
+// server sent them: the list a person reads to choose what to declare could
+// be cleared and rewritten by a tool on it, or have the tool that ought to
+// stand out moved off it, before anything had been agreed to or pinned.
+func TestWhatAnMCPServerOffersIsListedAsText(t *testing.T) {
+	root, _ := identityStore(t)
+	mcpTransport = viaHandler(loud{})
+	t.Cleanup(func() { mcpTransport = nil })
+	doc := filepath.Join(t.TempDir(), "server.json")
+	if err := os.WriteFile(doc, []byte(`{"name":"example/loud","description":"Looks things up.",`+
+		`"remotes":[{"type":"streamable-http","url":"https://loud.example/mcp"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, printed := captureStdout(t)
+	saved := w
+	w = out.New(false)
+	t.Cleanup(func() { w = saved })
+	err := integrationsImport(root, []string{doc})
+	listed := printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(listed, "\x1b\x07\u009b") {
+		t.Errorf("the tools on offer were listed with what drives a terminal: %q", listed)
+	}
+	if !strings.Contains(listed, "Looks up") || !strings.Contains(listed, "fail") {
+		t.Errorf("the tools on offer were not listed: %q", listed)
 	}
 }

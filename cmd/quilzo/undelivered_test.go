@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agentexec"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // An undelivered write is kept, privately, with no more than which call
@@ -59,5 +60,30 @@ func TestUndeliveredWritesAreKeptAndSettled(t *testing.T) {
 	log, _ := os.ReadFile(auditPath(root))
 	if !strings.Contains(string(log), "integration.undelivered") {
 		t.Fatal("not on the record")
+	}
+}
+
+// What the far side said of a write that did not get through is printed as
+// text.
+//
+// It is the server's words, kept as it answered, and the list printed them
+// as they came: a server that failed a write could clear the line saying so
+// and print one of its own, and the person settling the write would read
+// that it had got through, or nothing at all.
+func TestWhatTheFarSideSaidOfAnUndeliveredWriteIsText(t *testing.T) {
+	root := demoStore(t)
+	keepUndelivered(root)(agentexec.Undelivered{At: time.Now(), Agent: "errands", Run: "run-1", Step: 1, Integration: "crm",
+		Tool: "createContact", Key: "qz-1", Error: "crm refused tools/call: no\x1b[1A\x1b[2K\u009b2Kdelivered after all (code -32000)"})
+	_, printed := captureStdout(t)
+	saved := w
+	w = out.New(false)
+	t.Cleanup(func() { w = saved })
+	err := integrationsUndelivered(root, nil)
+	listed := printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(listed, "\x1b\u009b") || !strings.Contains(listed, "delivered after all") {
+		t.Errorf("an undelivered write was listed with what drives a terminal: %q", listed)
 	}
 }

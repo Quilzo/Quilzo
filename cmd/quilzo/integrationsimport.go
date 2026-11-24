@@ -102,7 +102,7 @@ func listOnOffer(root string, imp *apiimport.Imported) error {
 		defer cancel()
 		tools, err := newMCPClient(root).Tools(ctx, probe)
 		if err != nil {
-			return fmt.Errorf("%s at %s could not be asked what it offers: %w", in.Name, in.Where(), err)
+			return farError{fmt.Errorf("%s at %s could not be asked what it offers: %w", in.Name, in.Where(), err)}
 		}
 		for _, t := range tools {
 			offered = append(offered, apiimport.Offered{Name: t.Name, Summary: clip(t.Description, 100)})
@@ -117,7 +117,11 @@ func listOnOffer(root string, imp *apiimport.Imported) error {
 		if o.Writes {
 			mark = yellow + " ! " + reset
 		}
-		w.Human("%s%-32s %-6s %s %s%s%s\n", mark, o.Name, o.Method, o.Path, dim, clip(o.Summary, 70), reset)
+		// As text: an MCP server's tools are named and described by the
+		// server, asked just now. Printed as it sent them, a tool on this
+		// list could clear it and print another in its place before a
+		// person had chosen anything from it.
+		w.Human("%s%-32s %-6s %s %s%s%s\n", mark, onOneLine(o.Name), o.Method, onOneLine(o.Path), dim, onOneLine(clip(o.Summary, 70)), reset)
 	}
 	for _, n := range imp.Notes {
 		w.Human("  %s%s%s\n", dim, n, reset)
