@@ -84,9 +84,10 @@ var (
 	reKindName  = regexp.MustCompile(`^[A-Z][A-Za-z]{1,31}$`)
 )
 
-// Prefix begins the name of every collection the register owns. It is
-// reserved in collection.ValidName, so no generic write path can create or
-// change a collection of this name.
+// Prefix begins the name of every collection the register owns. The
+// collection package refuses every write to such a name
+// (collection.Reserved), so no generic write path can create or change a
+// collection of the register's.
 const Prefix = "sec_"
 
 // define adds a kind to the register, from its struct. It is called once per

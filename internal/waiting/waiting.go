@@ -299,8 +299,11 @@ func List(src Sources, now time.Time) ([]Item, error) {
 		}
 	}
 	// A record proposed for the security register, for whoever may approve
-	// records of its kind there, and never for whoever proposed it, as the
-	// register refuses them too (register.Accept).
+	// records of its kind there, and not for the agent or the principal
+	// that proposed it under their own name. A person's proposal names them
+	// by their pseudonym, which this list cannot yet tell is the person
+	// looking: until the map from pseudonym to person exists it is offered
+	// to them, and the register refuses their decision (register.Accept).
 	if src.Register != nil {
 		list, _ := src.Register()
 		for _, p := range list {

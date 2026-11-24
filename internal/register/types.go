@@ -234,9 +234,9 @@ type Approval struct {
 	// Signers are the people who agreed, each with when and with the digest
 	// of their authentication evidence.
 	Signers []Signer `json:"signers" reg:"required" about:"who agreed, when, and on what authentication evidence"`
-	// Alone marks a decision made by the only person eligible. It is shown
-	// wherever the record is, and ReviewDue is when somebody else has to
-	// have looked at it.
+	// Alone marks a decision made by the only person eligible, so Of is
+	// one. It is shown wherever the record is, and ReviewDue is when
+	// somebody else has to have looked at it.
 	Alone     bool `json:"alone,omitempty" about:"the decision was made by the only person eligible"`
 	ReviewDue Time `json:"review_due,omitempty" about:"when a compensating review of a decision made alone is due"`
 }
