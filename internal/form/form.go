@@ -53,7 +53,9 @@
 //
 //	A minimum time between the form being served and the form coming back.
 //	A person cannot read a form and answer it in under a second; a script
-//	does it in twenty milliseconds.
+//	does it in twenty milliseconds. When it was served is the server's
+//	word, signed (Stamp), so a script that never loads the page cannot
+//	write it.
 //
 //	A per-source rate limit, on the same limiter the rest of the program
 //	uses.
@@ -72,7 +74,10 @@
 package form
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -509,8 +514,81 @@ func (f *Form) Retention() time.Duration {
 const Honeypot = "website_url"
 
 // StampField carries when the form was served, so a submission that arrives
-// impossibly fast can be refused.
+// impossibly fast can be refused. Its value is a Stamp.
 const StampField = "form_started"
+
+// Stamp is StampField's value for a page served at at: the Unix time, a
+// dot, and the server's signature over it with key.
+//
+// It was the Unix time alone, which the sender sends back, so a script that
+// never loaded the page passed the timing check by writing the time ten
+// seconds ago itself, and with the honeypot left empty it passed both: the
+// form, a booking and the newsletter's sign-up took whatever it posted as
+// a person's. Signed, the time is what the server said it was, and a
+// sender can only send back one it was given. A script that loads the page
+// first and sends back what it was given still passes, as a person does;
+// what it can send that way is the per-source limit's to bound.
+func Stamp(key []byte, at time.Time) string {
+	unix := strconv.FormatInt(at.Unix(), 10)
+	return unix + "." + stampMAC(key, unix)
+}
+
+// stampMAC is a stamp's signature: sixteen bytes of HMAC-SHA256, for this
+// purpose alone.
+func stampMAC(key []byte, unix string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("quilzo form stamp\x00" + unix))
+	return base64.RawURLEncoding.EncodeToString(m.Sum(nil)[:16])
+}
+
+// MakeStampKey makes the key stamps are signed with, at path, once: a key
+// already there is kept, because every page served with the old one would
+// be refused under a new one. Made by whoever may write the store, before
+// the site that reads it is confined.
+func MakeStampKey(path string) error {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".new-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(hex.EncodeToString(key) + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
+		return err
+	}
+	// Linked rather than renamed, so two processes making it at once keep
+	// the first and neither signs with a key the other does not hold.
+	if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	return nil
+}
+
+// LoadStampKey reads the key MakeStampKey made.
+func LoadStampKey(path string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	key, err := hex.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil || len(key) < 32 {
+		return nil, fmt.Errorf("%s is not a key for forms' stamps", filepath.Base(path))
+	}
+	return key, nil
+}
 
 // Submission is one thing somebody sent.
 type Submission struct {
@@ -535,8 +613,8 @@ type Submission struct {
 // a browser extension adding a field, or a form served from a cached older
 // version, should not make a person's message vanish.
 func Accept(f *Form, values map[string]string, source string,
-	now time.Time) (Submission, error) {
-	return accept(f, values, source, now, true)
+	now time.Time, key []byte) (Submission, error) {
+	return acceptAll(f, values, nil, source, now, key, true)
 }
 
 // AcceptShare takes a submission that arrived from the operating system's
@@ -563,12 +641,13 @@ func Accept(f *Form, values map[string]string, source string,
 // with its own bugs.
 func AcceptShare(f *Form, values map[string]string, source string,
 	now time.Time) (Submission, error) {
-	return accept(f, values, source, now, false)
+	return acceptAll(f, values, nil, source, now, nil, false)
 }
 
 // ErrSpam is a submission refused as a script's: the honeypot filled, the
-// timing stamp missing, or the form answered faster than a person can read
-// it. The sender is told only that it was not accepted, as before.
+// timing stamp missing or not one this server signed, or the form answered
+// faster than a person can read it. The sender is told only that it was
+// not accepted, as before.
 var ErrSpam = errors.New("this submission was not accepted")
 
 // ErrOld is a page that was opened longer ago than the route answering it
@@ -586,17 +665,18 @@ const OldestPage = 24 * time.Hour
 
 // CheckHuman makes the two checks a page this server rendered lets a route
 // make of what came back from it: the field nobody sees (Honeypot), and
-// when the page was read (StampField). It answers ErrSpam for a script's,
-// ErrOld for a page opened more than oldest ago, and nil for a person's.
-// An oldest of zero is no upper bound, for a route whose page may be
-// cached, as a newsletter sign-up in a page's footer is.
+// when the page was read (StampField), signed with key (Stamp). It answers
+// ErrSpam for a script's, ErrOld for a page opened more than oldest ago,
+// and nil for a person's. An oldest of zero is no upper bound, for a route
+// whose page may be cached, as a newsletter sign-up in a page's footer is.
+// With no key nothing is signed, and every stamp is refused.
 //
 // A form, a booking and the newsletter's sign-up each made these checks in
 // a copy of their own, so a change to one (what a stamp may look like, how
 // quickly a person reads) would have reached one route and not the others.
 // Each route still tells the shield under its own name and answers in its
 // own words; this is only the judgement.
-func CheckHuman(honeypot, stamp string, now time.Time, oldest time.Duration) error {
+func CheckHuman(honeypot, stamp string, key []byte, now time.Time, oldest time.Duration) error {
 	// The honeypot. A person never sees this field; anything filling in
 	// every field it finds does.
 	if strings.TrimSpace(honeypot) != "" {
@@ -606,8 +686,13 @@ func CheckHuman(honeypot, stamp string, now time.Time, oldest time.Duration) err
 	// two seconds; a script does it in twenty milliseconds. A missing or
 	// unparseable stamp is refused rather than waved through — otherwise
 	// removing the field is how the check is bypassed. A stamp from the
-	// future is refused with them: it is less than two seconds old.
-	started, err := strconv.ParseInt(strings.TrimSpace(stamp), 10, 64)
+	// future is refused with them: it is less than two seconds old. So is
+	// one this server did not sign, which is a time the sender wrote.
+	unix, sig, _ := strings.Cut(strings.TrimSpace(stamp), ".")
+	if len(key) == 0 || !hmac.Equal([]byte(sig), []byte(stampMAC(key, unix))) {
+		return ErrSpam
+	}
+	started, err := strconv.ParseInt(unix, 10, 64)
 	if err != nil {
 		return ErrSpam
 	}
@@ -621,13 +706,8 @@ func CheckHuman(honeypot, stamp string, now time.Time, oldest time.Duration) err
 	return nil
 }
 
-func accept(f *Form, values map[string]string, source string,
-	now time.Time, human bool) (Submission, error) {
-	return acceptAll(f, values, nil, source, now, human)
-}
-
 func acceptAll(f *Form, values map[string]string, files map[string]Upload, source string,
-	now time.Time, human bool) (Submission, error) {
+	now time.Time, key []byte, human bool) (Submission, error) {
 
 	if f.Closed {
 		return Submission{}, fmt.Errorf(
@@ -641,7 +721,7 @@ func acceptAll(f *Form, values map[string]string, files map[string]Upload, sourc
 	// share from the operating system did not, so AcceptShare skips them —
 	// see the note there for what replaces them.
 	if human {
-		if err := CheckHuman(values[Honeypot], values[StampField], now, OldestPage); err != nil {
+		if err := CheckHuman(values[Honeypot], values[StampField], key, now, OldestPage); err != nil {
 			return Submission{}, err
 		}
 	}

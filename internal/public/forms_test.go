@@ -68,7 +68,7 @@ func good() url.Values {
 	return url.Values{
 		"name":          {"Dana"},
 		"email":         {"dana@example.org"},
-		form.StampField: {fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())},
+		form.StampField: {signed(time.Now().Add(-5 * time.Second))},
 	}
 }
 
@@ -206,7 +206,7 @@ func TestTheResultIsNotCached(t *testing.T) {
 // layout cannot get wrong on its own.
 func TestARenderedFormCarriesAFreshTimingStamp(t *testing.T) {
 	now := time.Now()
-	src := render.Sources{Name: "Aster & Alum", Now: func() time.Time { return now }}
+	src := render.Sources{Name: "Aster & Alum", Now: func() time.Time { return now }, Stamp: signed}
 	ctx, err := src.For("wholesale", map[string]any{
 		"title": "Wholesale",
 		"form":  "wholesale",
@@ -230,7 +230,7 @@ func TestARenderedFormCarriesAFreshTimingStamp(t *testing.T) {
 			"nothing; the field arrives empty and the submission is refused",
 			stamp)
 	}
-	if got != fmt.Sprint(now.Unix()) {
+	if got != signed(now) {
 		t.Errorf("the stamp is %s, not this render's time %d", got, now.Unix())
 	}
 
@@ -243,7 +243,7 @@ func TestARenderedFormCarriesAFreshTimingStamp(t *testing.T) {
 	if _, err := form.Accept(f, map[string]string{
 		"shop":          "Tolgus Cloth",
 		form.StampField: fmt.Sprint(got),
-	}, "127.0.0.1", now.Add(30*time.Second)); err != nil {
+	}, "127.0.0.1", now.Add(30*time.Second), ownStampKey()); err != nil {
 		t.Errorf("a submission carrying the rendered stamp was refused: %v", err)
 	}
 }
@@ -293,7 +293,7 @@ func TestASubmissionNotifiesWithoutCarryingWhatWasTyped(t *testing.T) {
 	body := url.Values{
 		"shop":          {"Tolgus Cloth"},
 		"email":         {"jo@example.com"},
-		form.StampField: {fmt.Sprint(time.Now().Add(-time.Minute).Unix())},
+		form.StampField: {signed(time.Now().Add(-time.Minute))},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/form/wholesale",
 		strings.NewReader(body.Encode()))
@@ -365,7 +365,7 @@ func TestAStaticCopyIsStampedWithItsVersionNotItsRender(t *testing.T) {
 	}
 	st := New(s, render.OneLayout(`<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>`+
 		`<body><p id="stamp">{{ stamp }}</p></body></html>`))
-	stampOf := func(copy bool) int64 {
+	raw := func(copy bool) string {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		if copy {
@@ -375,9 +375,17 @@ func TestAStaticCopyIsStampedWithItsVersionNotItsRender(t *testing.T) {
 		st.Handler().ServeHTTP(rec, req)
 		_, rest, ok := strings.Cut(rec.Body.String(), `<p id="stamp">`)
 		v, _, _ := strings.Cut(rest, "<")
-		var n int64
-		if _, err := fmt.Sscan(v, &n); !ok || err != nil {
+		if !ok || v == "" {
 			t.Fatalf("no stamp in the page (%d): %s", rec.Code, rec.Body.String())
+		}
+		return v
+	}
+	stampOf := func(copy bool) int64 {
+		t.Helper()
+		unix, _, _ := strings.Cut(raw(copy), ".")
+		var n int64
+		if _, err := fmt.Sscan(unix, &n); err != nil {
+			t.Fatalf("the stamp %q is not a time", raw(copy))
 		}
 		return n
 	}
@@ -387,6 +395,16 @@ func TestAStaticCopyIsStampedWithItsVersionNotItsRender(t *testing.T) {
 	}
 	if got := stampOf(true); got != made {
 		t.Errorf("a static copy is stamped %d, not when the published version was made (%d)", got, made)
+	}
+	// A page served is signed with the site's key, and its forms take it;
+	// a copy carries the time alone, whatever the key, because its bytes
+	// are its identifier and the key is this server's, not the content's.
+	st.StampKey = []byte("this site's own key for its stamps")
+	if err := form.CheckHuman("", raw(false), st.StampKey, time.Now().Add(5*time.Second), 0); err != nil {
+		t.Errorf("a page's own stamp was refused: %v", err)
+	}
+	if got := raw(true); got != fmt.Sprint(made) {
+		t.Errorf("a static copy carries %q, which depends on more than the version", got)
 	}
 }
 
@@ -448,7 +466,7 @@ func TestAFormIsAnsweredOnlyWhereTheSiteOffersIt(t *testing.T) {
 			Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "asked", Description: "Ask us"}}}}}, nil
 	}}
 
-	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	stamp := signed(time.Now().Add(-5 * time.Second))
 	for name, offered := range map[string]bool{
 		"contact": true, "pasted": true, "asked": true,
 		"restock": false, "later": false, "gone": false, "drafted": false,
@@ -505,7 +523,7 @@ func TestAFormOfferedOnlyWhereNobodyCanReachItIsNotOffered(t *testing.T) {
 	}}
 	answers := func(when string, want map[string]bool) {
 		t.Helper()
-		stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+		stamp := signed(time.Now().Add(-5 * time.Second))
 		for name, offered := range want {
 			w := post(t, st, "/form/"+name, url.Values{"name": {"Dana"}, form.StampField: {stamp}})
 			if offered != (w.Code == http.StatusOK) {

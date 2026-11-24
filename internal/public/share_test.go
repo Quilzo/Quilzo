@@ -4,7 +4,6 @@
 package public
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -142,7 +141,7 @@ func TestAShareIsAuditedAndNotifiedAsASubmissionIs(t *testing.T) {
 
 	// The form's own route, for what the share is to match.
 	if code := send("/form/contact", "198.51.100.4", url.Values{"name": {"Ana"},
-		form.StampField: {fmt.Sprint(time.Now().Add(-time.Minute).Unix())}}); code != http.StatusOK {
+		form.StampField: {signed(time.Now().Add(-time.Minute))}}); code != http.StatusOK {
 		t.Fatalf("control: the form answered %d", code)
 	}
 	if len(audited) != 1 || len(notified) != 1 {

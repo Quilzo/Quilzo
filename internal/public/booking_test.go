@@ -4,7 +4,6 @@
 package public
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,13 +100,13 @@ func TestAVisitorBooksSeesAndCancelsATime(t *testing.T) {
 	if rep := a11y.Check("book", body); rep.Blocks() {
 		t.Fatalf("the booking form is not usable by everybody: %+v", rep)
 	}
-	stamp := regexp.MustCompile(`name="form_started" value="(\d+)"`).FindStringSubmatch(body)
+	stamp := regexp.MustCompile(`name="form_started" value="([^"]+)"`).FindStringSubmatch(body)
 	if stamp == nil {
 		t.Fatal("the form carries no stamp")
 	}
 	// The page's stamp is the real clock's; this site's clock is fixed, so
 	// the visitor read the page a minute before booking by that one.
-	read := fmt.Sprint(now.Unix())
+	read := signed(*now)
 	*now = now.Add(time.Minute)
 	slot := m[1][1]
 	res := postTo(st, "/book/cut", url.Values{"page": {"book"}, "slot": {slot}, "name": {"Ann Example"},
@@ -177,7 +176,7 @@ func TestABookingThatShouldNotGoThroughDoesNot(t *testing.T) {
 	st, _, _, now := bookingSite(t)
 	body := getPage(st, "/book").Body.String()
 	slot := reSlot.FindStringSubmatch(body)[1]
-	stamp := fmt.Sprint(now.Unix())
+	stamp := signed(*now)
 	*now = now.Add(time.Minute)
 	cases := []struct {
 		v    url.Values

@@ -88,7 +88,7 @@ func newsletterSite(t *testing.T) *newsletterRig {
 }
 
 func (rig *newsletterRig) signUp(addr string) *httptest.ResponseRecorder {
-	read := fmt.Sprint(rig.now.Add(-time.Minute).Unix())
+	read := signed(rig.now.Add(-time.Minute))
 	return postTo(rig.st, "/newsletter/subscribe", url.Values{"page": {"news"}, "email": {addr}, "form_started": {read}})
 }
 
@@ -206,7 +206,7 @@ func TestAVisitorSignsUpConfirmsAndLeaves(t *testing.T) {
 
 func TestASignUpThatShouldNotGoThroughDoesNot(t *testing.T) {
 	rig := newsletterSite(t)
-	now := fmt.Sprint(rig.now.Unix())
+	now := signed(*rig.now)
 	for name, c := range map[string]struct {
 		v    url.Values
 		want string
@@ -216,7 +216,7 @@ func TestASignUpThatShouldNotGoThroughDoesNot(t *testing.T) {
 		"no time to read the page": {url.Values{"page": {"news"}, "email": {"a@example.com"},
 			"form_started": {now}}, "newsletter_error=refused"},
 		"not an address": {url.Values{"page": {"news"}, "email": {"ann at example"},
-			"form_started": {"1"}}, "newsletter_error=address"},
+			"form_started": {signed(time.Unix(1, 0))}}, "newsletter_error=address"},
 	} {
 		res := postTo(rig.st, "/newsletter/subscribe", c.v)
 		if !strings.Contains(res.Header().Get("Location"), c.want) {

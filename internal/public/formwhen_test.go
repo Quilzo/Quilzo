@@ -4,7 +4,6 @@
 package public
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,7 +42,7 @@ func TestAQuestionAskedOnAnAnswerOnThePublicSite(t *testing.T) {
 		t.Fatalf("%v", order)
 	}
 
-	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	stamp := signed(time.Now().Add(-5 * time.Second))
 	if w := post(t, st, "/form/contact", url.Values{"topic": {"Returns"}, form.StampField: {stamp}}); w.Code == http.StatusOK || w.Code == http.StatusSeeOther {
 		t.Fatalf("asked and not answered: %d", w.Code)
 	}

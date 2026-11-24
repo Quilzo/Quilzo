@@ -65,7 +65,7 @@ func valid(st *Site, who string) *httptest.ResponseRecorder {
 	body := url.Values{
 		"who":           {who},
 		form.Honeypot:   {""},
-		form.StampField: {fmt.Sprint(time.Now().Add(-time.Hour).Unix())},
+		form.StampField: {signed(time.Now().Add(-time.Hour))},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/form/enquiry",
 		strings.NewReader(body.Encode()))

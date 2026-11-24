@@ -67,9 +67,9 @@ func TestTheEmbedSnippetSatisfiesTheChecksItDescribes(t *testing.T) {
 	values["body"] = "Is the harbour one for sale?"
 	values["agree"] = "true"
 	values[Honeypot] = ""
-	values[StampField] = itoa(now.Add(-time.Minute).Unix())
+	values[StampField] = Stamp(testKey, now.Add(-time.Minute))
 
-	sub, err := Accept(f, values, "192.0.2.1", now)
+	sub, err := Accept(f, values, "192.0.2.1", now, testKey)
 	if err != nil {
 		t.Fatalf("a submission built from the snippet this product hands out "+
 			"was refused: %v", err)
@@ -106,6 +106,12 @@ func TestTheSnippetSaysWhatTheChecksActuallyRequire(t *testing.T) {
 	}
 	if !strings.Contains(s, `aria-hidden="true"`) {
 		t.Error("the honeypot is not hidden from assistive technology")
+	}
+	// The stamp is the one the site signs as it renders the page: a time
+	// written anywhere else is refused, so a placeholder for one was an
+	// instruction that could not work.
+	if !strings.Contains(s, `name="`+StampField+`" value="{{ stamp }}"`) {
+		t.Error("the snippet does not carry the stamp the site renders and signs")
 	}
 	// The stated wait has to be the enforced wait.
 	if !strings.Contains(s, itoa(int64(MinFillSeconds))) {

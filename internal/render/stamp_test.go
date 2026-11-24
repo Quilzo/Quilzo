@@ -55,11 +55,6 @@ func TestEveryShippedTemplateFillsTheTimingField(t *testing.T) {
 			if expr == "{{ stamp }}" || expr == "{{stamp}}" {
 				continue
 			}
-			// The documentation snippet in internal/form deliberately carries
-			// a placeholder for a template author to replace.
-			if expr == "UNIX_TIMESTAMP_WHEN_RENDERED" {
-				continue
-			}
 			t.Errorf("%s fills the timing field with %q. The renderer "+
 				"provides \"stamp\" at the top level of the context, so "+
 				"anything else is empty — and an empty stamp means every "+

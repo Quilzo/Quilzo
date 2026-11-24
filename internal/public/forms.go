@@ -4,6 +4,7 @@
 package public
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
@@ -108,6 +110,28 @@ func (st *Site) formsNow() time.Time {
 	}
 	return time.Now()
 }
+
+// stamp is the timing stamp for a page this site serves at at, signed
+// with its key (form.Stamp).
+func (st *Site) stamp(at time.Time) string { return form.Stamp(st.stampKey(), at) }
+
+// stampKey is the key this site's stamps are signed with: StampKey, or,
+// when the host gave none, this process's own.
+func (st *Site) stampKey() []byte {
+	if len(st.StampKey) > 0 {
+		return st.StampKey
+	}
+	return ownStampKey()
+}
+
+// ownStampKey is this process's key for stamps, for a site whose host gave
+// it none: every page it serves is answered while it runs, and one served
+// before a restart is asked to be sent again.
+var ownStampKey = sync.OnceValue(func() []byte {
+	k := make([]byte, 32)
+	_, _ = rand.Read(k) // crypto/rand does not fail; it stops the program
+	return k
+})
 
 // submit receives one form.
 // formStyle serves /form/NAME.css: the rules that hide a question until the
@@ -291,7 +315,7 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		st.Forms.Limit.Spend(throttle.Subject{Source: source})
 	}
 
-	sub, err := form.AcceptWithFiles(f, values, files, source, st.formsNow())
+	sub, err := form.AcceptWithFiles(f, values, files, source, st.formsNow(), st.stampKey())
 	if err != nil {
 		if st.Forms.Audit != nil {
 			st.Forms.Audit(name, source, false)

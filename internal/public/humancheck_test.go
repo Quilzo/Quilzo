@@ -28,8 +28,12 @@ type humanCase struct {
 	want string
 }
 
+// signed is the stamp a site given no key of its own signs a page served
+// at at with, as every site in these tests is (Site.StampKey).
+func signed(at time.Time) string { return form.Stamp(ownStampKey(), at) }
+
 func ago(d time.Duration) func(time.Time) string {
-	return func(now time.Time) string { return fmt.Sprint(now.Add(-d).Unix()) }
+	return func(now time.Time) string { return signed(now.Add(-d)) }
 }
 
 var humanCases = []humanCase{
@@ -44,6 +48,9 @@ var humanCases = []humanCase{
 	{"a stamp in spaces", "", func(now time.Time) string { return " " + ago(time.Minute)(now) + " " }, "person"},
 	{"a stamp of a day ago", "", ago(24 * time.Hour), "person"},
 	{"a stamp of a day and a minute ago", "", ago(24*time.Hour + time.Minute), "yesterday"},
+	// The time alone, as a script writes it without loading the page: it
+	// passed every check while the stamp was a number the sender sent back.
+	{"a stamp the sender wrote", "", func(now time.Time) string { return fmt.Sprint(now.Add(-time.Minute).Unix()) }, "spam"},
 }
 
 // humanRoute sends one case to one route and says what it made of it.
