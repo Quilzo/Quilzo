@@ -35,6 +35,7 @@ package collection
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -84,8 +85,14 @@ func ValidName(s string) error {
 // owns: sec_control, sec_evidence and the rest (internal/register).
 const ReservedPrefix = "sec_"
 
+// ErrReserved is a write refused because the collection is the security
+// register's. It is a refusal, not a failure: no retry writes it.
+var ErrReserved = errors.New("reserved for the security register")
+
 // Reserved refuses a write to a collection the security register owns, and
-// answers nil for any other name.
+// answers nil for any other name. The refusal is ErrReserved, so a surface
+// answers it as a refusal: 403 from the content API, exit 3 from the
+// command line.
 //
 // The register's records are evidence, and each is written one way: through
 // register.Put, which runs the kind's invariants, asks the policy gate,
@@ -102,9 +109,9 @@ const ReservedPrefix = "sec_"
 func Reserved(name string) error {
 	if strings.HasPrefix(name, ReservedPrefix) {
 		return fmt.Errorf(
-			"%q is reserved: names beginning %s belong to the security register, "+
-				"whose records are written through the register and read with quilzo register",
-			name, ReservedPrefix)
+			"%q is %w: names beginning %s belong to it, "+
+				"and its records are written through the register and read with quilzo register",
+			name, ErrReserved, ReservedPrefix)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/board"
 	"github.com/quilzo/quilzo/internal/booking"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/member"
@@ -53,7 +54,7 @@ func exitCode(err error) int {
 		return out.OK
 	case errors.As(err, &blocked), errors.Is(err, dual.ErrRefused),
 		errors.Is(err, dual.ErrLastAdministrator), errors.Is(err, odp.ErrSameAdministrator),
-		errors.Is(err, shield.ErrSameProposer):
+		errors.Is(err, shield.ErrSameProposer), errors.Is(err, collection.ErrReserved):
 		return out.ExitBlocked
 	case errors.As(err, &misused):
 		return out.ExitUsage

@@ -47,14 +47,18 @@ func TestGenericWriteSurfacesRefuseSec(t *testing.T) {
 	if err := os.WriteFile(csv, []byte("ref,title\nAC-01,Second factor\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Each is a refusal, exit 3 as every refusal by a gate is, and none
+	// says first that it brought records in, or would: a dry run said so
+	// of an import the real run refuses.
 	for _, line := range [][]string{
 		{"records", "add", reserved, "ref=AC-01", "title=Second factor"},
 		{"records", "import", reserved, csv},
+		{"records", "import", reserved, csv, "--dry-run"},
 		{"records", "delete", reserved, "0123456789abcdef0123456789abcdef"},
 	} {
-		_, e, code := cliRun(t, root, token, line...)
-		if code == 0 || !strings.Contains(e, "reserved") {
-			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		o, e, code := cliRun(t, root, token, line...)
+		if code != 3 || !strings.Contains(e, "reserved") || strings.Contains(o, "record(s)") {
+			t.Errorf("`quilzo %s` exited %d: %s%s", strings.Join(line, " "), code, firstLines(o, 3), firstLines(e, 3))
 		}
 	}
 
