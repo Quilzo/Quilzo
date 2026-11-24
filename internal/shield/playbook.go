@@ -214,6 +214,9 @@ type Playbook struct {
 	Stages []Stage `json:"stages"`
 	// PerHour bounds how many stages it runs an hour; past it, it watches
 	// and says so, so a flood of spoofed signals cannot block everybody.
+	// Stages run for a source the shield never blocks, which put nothing
+	// in force, are counted apart to the same number, so they cannot use
+	// up what the playbook may do (Engine.cross).
 	PerHour int `json:"per_hour,omitempty"`
 	// Builtin marks one that ships with Quilzo.
 	Builtin bool `json:"builtin,omitempty"`

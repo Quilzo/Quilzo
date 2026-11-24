@@ -520,3 +520,81 @@ func TestAMinuteIsOneMinute(t *testing.T) {
 		}
 	}
 }
+
+// A playbook's hourly limit is not spent on sources it may never block.
+//
+// The limit is there so a flood of signals cannot block everybody, and it
+// counted every response, whatever the response did. Thirty-one sources
+// the shield never blocks (this machine, a trusted network, or an address
+// that came with a forwarding header from no named proxy, which any sender
+// can add) used it up with "did not block or slow", and for the rest of
+// the hour the playbook blocked nobody: the real source, arriving next,
+// was let through. Those responses now have a count of their own, of the
+// same size, so they are still said only so often, and what the playbook
+// may do is kept for the sources it can do it to.
+func TestTheHourlyLimitIsNotSpentOnSourcesThatAreNeverBlocked(t *testing.T) {
+	pb := injection()
+	pb.On.Count, pb.PerHour = 1, 3
+	pb.Stages = []Stage{{Do: []Step{{Action: "block-source", Where: Site, For: Duration(time.Hour)}, {Action: "notify"}}}}
+	r := newRig(t, pb)
+	if err := Trust(r.Root, "198.51.100.0/24", true, t0); err != nil {
+		t.Fatal(err)
+	}
+	r.Guard.Refresh()
+	for i := 1; i <= 10; i++ {
+		r.see("chatbot-injection", fmt.Sprintf("127.0.0.%d", i), "")
+		r.see("chatbot-injection", fmt.Sprintf("198.51.100.%d", i), "")
+		r.Observe(Signal{Name: "chatbot-injection", Source: fmt.Sprintf("192.0.2.%d", i), Unverified: true, At: r.clock})
+	}
+	// Said as often as the limit allows, and once more that it has gone
+	// quiet about them: not thirty times.
+	spared := r.state(t).Responses
+	if len(spared) != 4 || spared[3].Mode != "limited" || len(r.notified) != 4 {
+		t.Fatalf("%d responses and %d messages about sources never blocked: %+v", len(spared), len(r.notified), spared)
+	}
+	if says := strings.Join(spared[3].Did, "; "); !strings.Contains(says, "hourly limit") || !strings.Contains(says, "still") {
+		t.Fatalf("the last one does not say what the playbook stopped and what it still does: %q", says)
+	}
+	for _, x := range spared {
+		if len(x.Applied) != 0 {
+			t.Fatalf("a source that is never blocked was blocked: %+v", x)
+		}
+	}
+	// The source that can be blocked is.
+	got := r.see("chatbot-injection", "203.0.113.9", "")
+	if len(got) != 1 || got[0].Mode != "act" || len(got[0].Applied) != 1 {
+		t.Fatalf("the real source after the flood: %+v", got)
+	}
+	if _, blocked := r.Guard.Blocked("203.0.113.9", Site, r.clock); !blocked {
+		t.Fatal("the real source was let through")
+	}
+	// What the playbook does is limited as before: three an hour, and then
+	// it says so and stops.
+	for i := 10; i < 12; i++ {
+		if got := r.see("chatbot-injection", fmt.Sprintf("203.0.113.%d", i), ""); len(got) != 1 || got[0].Mode != "act" {
+			t.Fatalf("within the limit: %+v", got)
+		}
+	}
+	if got := r.see("chatbot-injection", "203.0.113.12", ""); len(got) != 1 || got[0].Mode != "limited" {
+		t.Fatalf("past the limit: %+v", got)
+	}
+	if _, blocked := r.Guard.Blocked("203.0.113.12", Site, r.clock); blocked {
+		t.Fatal("blocked past the limit")
+	}
+	if got := r.see("chatbot-injection", "203.0.113.13", ""); len(got) != 0 {
+		t.Fatalf("still responding past the limit: %+v", got)
+	}
+	// A stage that does something whoever raised it is not one of them: a
+	// decoy presented from this machine still locks the admin, and that is
+	// counted with what the playbook does.
+	lock := Playbook{Name: "decoy-lock", Title: "A decoy was touched: lock the admin down", Mode: "act", PerHour: 1,
+		On:     Trigger{Signal: "decoy", Per: "source", Count: 1, Within: Duration(time.Hour)},
+		Stages: []Stage{{Do: []Step{{Action: "block-source", Where: All, For: Duration(time.Hour)}, {Action: "lockdown", For: Duration(time.Hour)}}}}}
+	r = newRig(t, lock)
+	if got := r.see("decoy", "127.0.0.1", ""); len(got) != 1 || got[0].Mode != "act" || len(got[0].Applied) != 1 {
+		t.Fatalf("a decoy presented from this machine: %+v", got)
+	}
+	if got := r.see("decoy", "127.0.0.2", ""); len(got) != 1 || got[0].Mode != "limited" {
+		t.Fatalf("a second lockdown within the hour, past a limit of one: %+v", got)
+	}
+}
