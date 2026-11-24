@@ -48,6 +48,12 @@ type ShieldAdmin struct {
 	// acting is the first thing somebody with a stolen administrator's
 	// session would do. Nil tells nobody.
 	TellHold func(held bool, by, why string)
+	// TellTrust tells the security contact that a network was declared
+	// trusted (added), or taken off that list, and by whom. A trusted
+	// network is never blocked or slowed and declaring one takes one
+	// administrator, so it is told as a hold is; it used to reach nobody.
+	// Nil tells nobody.
+	TellTrust func(added bool, network, by string)
 }
 
 // shieldProtection is one protection, for the screen.
@@ -566,14 +572,23 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		changed()
 		back("m", sentenceCase(shield.Describe(applied))+".")
 	case "trust-add", "trust-remove":
-		network := strings.TrimSpace(r.FormValue("network"))
+		typed := strings.TrimSpace(r.FormValue("network"))
 		add := r.FormValue("do") == "trust-add"
-		if err := shield.Trust(root, network, add, now); err != nil {
+		// The network as it is kept, which is what is said, recorded and
+		// told: 198.51.100.7/24 is 198.51.100.0/24 on the list.
+		network := typed
+		if pfx, err := shield.Network(typed); err == nil {
+			network = pfx.String()
+		}
+		if err := shield.Trust(root, typed, add, now); err != nil {
 			back("e", err.Error())
 			return
 		}
 		audit(r.FormValue("do"), map[string]string{"network": network})
 		changed()
+		if s.ShieldAdmin.TellTrust != nil {
+			s.ShieldAdmin.TellTrust(add, network, p.Name)
+		}
 		if add {
 			back("m", network+" is never blocked.")
 		} else {

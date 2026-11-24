@@ -391,3 +391,40 @@ func TestANewPageWinningEverythingIsACase(t *testing.T) {
 		t.Fatalf("%+v", st.Responses)
 	}
 }
+
+// The command line says what it did to a network, and to which.
+//
+// `shield trust remove` answered "no longer trusted" and exited 0 for a
+// network it did not remove: one never added, or one added from an address
+// inside it and kept in that spelling. A block of an IPv4 network written
+// inside IPv6 was taken, listed as in force and refused nobody.
+func TestTheShieldCommandsNameTheNetworkTheyActedOn(t *testing.T) {
+	root, token := accessStore(t)
+	o, e, code := cliRun(t, root, token, "shield", "trust", "add", "198.51.100.7/24")
+	if code != 0 || !strings.Contains(o, "never blocked: 198.51.100.0/24") {
+		t.Fatalf("trust add exited %d: %s%s", code, o, e)
+	}
+	if _, e, code = cliRun(t, root, token, "shield", "trust", "remove", "203.0.113.0/24"); code != 4 || !strings.Contains(e, "203.0.113.0/24 is not a trusted network") {
+		t.Fatalf("removing a network that was never trusted exited %d: %s", code, e)
+	}
+	if o, e, code = cliRun(t, root, token, "shield", "trust", "remove", "198.51.100.0/24"); code != 0 || !strings.Contains(o, "no longer trusted: 198.51.100.0/24") {
+		t.Fatalf("trust remove exited %d: %s%s", code, o, e)
+	}
+	if o, _, _ = cliRun(t, root, token, "shield", "trust", "list"); strings.Contains(o, "198.51.100") {
+		t.Fatalf("still listed: %s", o)
+	}
+	if _, e, code = cliRun(t, root, token, "shield", "trust", "remove", "198.51.100.0/24"); code != 4 {
+		t.Fatalf("removing it twice exited %d: %s", code, e)
+	}
+	if _, e, code = cliRun(t, root, token, "shield", "trust", "add", "0.0.0.0/0"); code == 0 || !strings.Contains(e, "wider than a /8") ||
+		!strings.Contains(e, "hold every playbook") {
+		t.Fatalf("trusting the internet exited %d: %s", code, e)
+	}
+	o, e, code = cliRun(t, root, token, "shield", "block", "::ffff:203.0.113.0/120", "--where", "site", "--reason", "probing")
+	if code != 0 || !strings.Contains(o, "blocked the network 203.0.113.0/24 on the site") {
+		t.Fatalf("a block written as IPv4 inside IPv6 exited %d: %s%s", code, o, e)
+	}
+	if _, e, code = cliRun(t, root, token, "shield", "block", "::ffff:127.0.0.1/128", "--reason", "x"); code == 0 || !strings.Contains(e, "this machine") {
+		t.Fatalf("blocking this machine, written as IPv6, exited %d: %s", code, e)
+	}
+}

@@ -869,7 +869,8 @@ func cmdServe(root string, args []string) error {
 		History:     func(days int) ([]shield.Signal, error) { return history(root, days, time.Now()) },
 		Changed:     sh.guard.Refresh,
 		CanLockdown: func() bool { return canSignInStrongly(root) },
-		TellHold:    func(held bool, by, why string) { tellOfHold(root, held, by, why) }}
+		TellHold:    func(held bool, by, why string) { tellOfHold(root, held, by, why) },
+		TellTrust:   func(added bool, network, by string) { tellOfTrust(root, added, network, by) }}
 
 	// The audit log, read-only. This process cannot write it where the writer
 	// has been separated out, so there is no edit path to withhold.

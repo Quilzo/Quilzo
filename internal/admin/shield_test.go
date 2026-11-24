@@ -318,3 +318,68 @@ func TestTheOnlyAdministratorChangesAPlaybookOnTheScreenAsOnTheCommandLine(t *te
 		t.Fatalf("told: %q", told)
 	}
 }
+
+// shieldAnswer is what the screen said back to a change: the message it
+// redirects with, and the error.
+func shieldAnswer(t *testing.T, srv *Server, token string, form url.Values) (said, refused string) {
+	t.Helper()
+	w := postForm(t, srv, "/security/shield/act", token, form.Encode())
+	u, err := url.Parse(w.Header().Get("Location"))
+	if w.Code != http.StatusSeeOther || err != nil {
+		t.Fatalf("%v answered %d %q", form, w.Code, w.Header().Get("Location"))
+	}
+	return u.Query().Get("m"), u.Query().Get("e")
+}
+
+// A network declared trusted on the screen is one the shield never blocks
+// or slows, and one administrator declares it. Most of the internet is not
+// taken (0.0.0.0/0 was, and the shield then blocked nobody); what is taken
+// is said, recorded and told to the security contact as the network it is;
+// and removing one that is not on the list says so, where it said "is no
+// longer trusted" of a network that stayed trusted.
+func TestTrustingANetworkOnTheScreenIsBoundedToldAndRemovedForReal(t *testing.T) {
+	srv, token := setup(t)
+	root, _ := wireShield(t, srv)
+	var told []string
+	srv.ShieldAdmin.TellTrust = func(added bool, network, by string) {
+		told = append(told, fmt.Sprintf("%v %s %s", added, network, by))
+	}
+	trusted := func() []string {
+		t.Helper()
+		st, err := shield.Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Trusted
+	}
+	for _, n := range []string{"0.0.0.0/0", "::/0"} {
+		said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {n}})
+		if said != "" || !strings.Contains(refused, "wider than a /8") {
+			t.Errorf("%s: said %q, refused %q", n, said, refused)
+		}
+	}
+	if len(trusted()) != 0 || len(told) != 0 {
+		t.Fatalf("most of the internet is trusted: %v, told %q", trusted(), told)
+	}
+	said, refused := shieldAnswer(t, srv, token, url.Values{"do": {"trust-add"}, "network": {"198.51.100.7/24"}})
+	if refused != "" || said != "198.51.100.0/24 is never blocked." {
+		t.Fatalf("adding an office: said %q, refused %q", said, refused)
+	}
+	if got := trusted(); len(got) != 1 || got[0] != "198.51.100.0/24" {
+		t.Fatalf("kept as %v", got)
+	}
+	if len(told) != 1 || told[0] != "true 198.51.100.0/24 editor" {
+		t.Fatalf("declaring a network trusted told: %q", told)
+	}
+	said, refused = shieldAnswer(t, srv, token, url.Values{"do": {"trust-remove"}, "network": {"203.0.113.0/24"}})
+	if said != "" || !strings.Contains(refused, "203.0.113.0/24 is not a trusted network") || len(told) != 1 {
+		t.Fatalf("removing a network that was never trusted: said %q, refused %q, told %q", said, refused, told)
+	}
+	said, refused = shieldAnswer(t, srv, token, url.Values{"do": {"trust-remove"}, "network": {"198.51.100.99/24"}})
+	if refused != "" || said != "198.51.100.0/24 is no longer trusted." || len(trusted()) != 0 {
+		t.Fatalf("removing it in another spelling: said %q, refused %q, left %v", said, refused, trusted())
+	}
+	if len(told) != 2 || told[1] != "false 198.51.100.0/24 editor" {
+		t.Fatalf("taking a network off told: %q", told)
+	}
+}

@@ -58,11 +58,10 @@ func compile(st *State) *index {
 		case "source":
 			ix.src[value] = append(ix.src[value], i)
 		case "net":
-			pfx, err := netip.ParsePrefix(value)
+			pfx, err := Network(value)
 			if err != nil {
 				continue
 			}
-			pfx = pfx.Masked()
 			if ix.net[pfx.Bits()] == nil {
 				ix.net[pfx.Bits()] = map[netip.Prefix][]int{}
 				ix.bits = append(ix.bits, pfx.Bits())
@@ -168,7 +167,7 @@ func trusted(st *State, a netip.Addr) bool {
 		return true
 	}
 	for _, t := range st.Trusted {
-		if p, err := netip.ParsePrefix(t); err == nil && p.Contains(a) {
+		if p, err := Network(t); err == nil && p.Contains(a) {
 			return true
 		}
 	}
