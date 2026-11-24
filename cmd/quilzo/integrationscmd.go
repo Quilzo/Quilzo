@@ -163,7 +163,7 @@ func integrationsTools(root string, args []string) error {
 
 	tools, err := newMCPClient(root).Tools(ctx, in)
 	if err != nil {
-		return err
+		return farError{err}
 	}
 	var unreviewed int
 	for _, t := range tools {
@@ -182,9 +182,13 @@ func integrationsTools(root string, args []string) error {
 		case t.Pinned != "":
 			pin = green + "  pinned" + reset
 		}
-		fmt.Printf("%s%-28s%s %s%s%s%s\n", bold, t.Name, reset, colour, mark, reset, pin)
+		// The name and the description are the server's words, printed
+		// as text: as it sent them, a tool it had just added could carry
+		// the escape that moves the cursor back over its own line, and be
+		// gone from the list that exists to show it.
+		fmt.Printf("%s%-28s%s %s%s%s%s\n", bold, onOneLine(t.Name), reset, colour, mark, reset, pin)
 		if t.Description != "" {
-			fmt.Printf("  %s%s%s\n", dim, wrapIndent(t.Description, 62, 2), reset)
+			fmt.Printf("  %s%s%s\n", dim, wrapIndent(forTerminal(t.Description), 62, 2), reset)
 		}
 	}
 	if unreviewed > 0 {
@@ -267,16 +271,28 @@ func integrationsCall(root string, args []string) error {
 		}
 		record(root, caller.auditRecord("integration.call", name, outcome,
 			map[string]string{"tool": tool, "error": why}))
-		return cerr
+		return farError{cerr}
 	}
 	// Recorded whatever it returned. A call into somebody else's system is the
 	// one thing here that cannot be rolled back, so the record of having made
 	// it is the only thing that survives.
 	record(root, caller.auditRecord("integration.call", name, audit.Success,
 		map[string]string{"tool": tool, "endpoint": in.Endpoint}))
-	fmt.Println(out)
+	fmt.Println(forTerminal(out))
 	return nil
 }
+
+// farError is an error carrying what another system wrote, a tool's
+// failure, a server's refusal or the names its schema takes, on its way to
+// the terminal of the person who ran the command. Printed as it came, a
+// tool that failed could clear the line saying so and print a success of
+// its own. It unwraps to the error it was made from, so what decides the
+// exit status, and whether a call was refused here, still sees that.
+type farError struct{ err error }
+
+func (e farError) Error() string { return forTerminal(e.err.Error()) }
+
+func (e farError) Unwrap() error { return e.err }
 
 func oneIntegration(root, name string) (agent.Integration, error) {
 	set, err := loadIntegrations(root)
@@ -355,7 +371,7 @@ func integrationsPin(root string, args []string) error {
 	defer cancel()
 	tools, err := newMCPClient(root).Tools(ctx, in)
 	if err != nil {
-		return err
+		return farError{err}
 	}
 	// The tools named, when some are, and which of them the server still
 	// offers. Two sets, because one set struck off as each tool was found
@@ -381,13 +397,16 @@ func integrationsPin(root string, args []string) error {
 		found[t.Name] = true
 		looked = append(looked, t.Name)
 		// Shown in full: this is what is being approved, and a model that
-		// chooses it is choosing what this says.
-		fmt.Printf("%s%s%s  %s\n", bold, t.Name, reset, t.Definition[:16])
+		// chooses it is choosing what this says. As text, never as what a
+		// terminal obeys: printed as the server sent it, a description
+		// could clear the screen and put a review of the server's own
+		// choosing in place of the one being approved.
+		fmt.Printf("%s%s%s  %s\n", bold, onOneLine(t.Name), reset, t.Definition[:16])
 		if t.Description != "" {
-			fmt.Printf("  %s\n", wrapIndent(t.Description, 70, 2))
+			fmt.Printf("  %s\n", wrapIndent(forTerminal(t.Description), 70, 2))
 		}
 		if len(t.InputSchema) > 0 {
-			fmt.Printf("  %sinput: %s%s\n", dim, clampString(string(t.InputSchema), 400), reset)
+			fmt.Printf("  %sinput: %s%s\n", dim, onOneLine(clampString(string(t.InputSchema), 400)), reset)
 		}
 		if old := in.Pins[t.Name]; old != t.Definition {
 			in.Pins[t.Name] = t.Definition
@@ -578,10 +597,13 @@ func integrationsHeld(root string) error {
 		if h.Client != "" {
 			by = h.Client + " for " + h.Principal
 		}
-		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, h.Tool, h.Integration, by,
-			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), clip(h.Args, 300))
+		// What another system's agent sent, and what was found in it: the
+		// arguments are JSON, which escapes the C0 controls and not the C1
+		// ones a terminal also obeys.
+		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, onOneLine(h.Tool), h.Integration, onOneLine(by),
+			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), onOneLine(clip(h.Args, 300)))
 		if h.Why != "" {
-			w.Human("    %s%s%s\n", yellow, h.Why, reset)
+			w.Human("    %s%s%s\n", yellow, onOneLine(h.Why), reset)
 		}
 	}
 	w.Human("  %squilzo integrations approve ID, or decline ID%s\n", dim, reset)
