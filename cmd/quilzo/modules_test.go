@@ -154,6 +154,44 @@ func TestEveryRegisteredCommandKeepsItsContract(t *testing.T) {
 	}
 }
 
+// Each module's lines are in the help as it is printed, not only in the
+// source the other help tests read: in `quilzo help` under the module's
+// heading, and in `quilzo help COMMAND` and `quilzo COMMAND --help`, each of
+// which exits 0. The tests that read the help's source read the module's
+// own lines, so a help that printed none of them passed every one.
+func TestEveryRegisteredCommandIsInThePrintedHelp(t *testing.T) {
+	if len(cliModules) == 0 {
+		t.Fatal("no module registers a command")
+	}
+	all, e, code := cliRun(t, "", "", "help")
+	if code != 0 {
+		t.Fatalf("`quilzo help` exited %d: %s", code, firstLines(e, 3))
+	}
+	for _, m := range cliModules {
+		if !strings.Contains(all, "\n"+m.heading+"\n") {
+			t.Errorf("`quilzo help` has no section headed %q", m.heading)
+		}
+		lines := strings.Split(strings.TrimRight(m.help, "\n"), "\n")
+		for _, line := range lines {
+			if !strings.Contains(all, line+"\n") {
+				t.Errorf("`quilzo help` does not print the line %q", strings.TrimSpace(line))
+			}
+		}
+		for _, asked := range [][]string{{"help", m.command}, {m.command, "--help"}} {
+			o, e, code := cliRun(t, "", "", asked...)
+			if code != 0 {
+				t.Errorf("`quilzo %s` exited %d: %s", strings.Join(asked, " "), code, firstLines(e, 3))
+				continue
+			}
+			for _, line := range lines {
+				if strings.HasPrefix(line, "  quilzo ") && !strings.Contains(o, line) {
+					t.Errorf("`quilzo %s` does not print the line %q", strings.Join(asked, " "), strings.TrimSpace(line))
+				}
+			}
+		}
+	}
+}
+
 // What registerCLI refuses, it refuses before anything is changed: a
 // command already taken, one with no lines in the help or lines about
 // another command, a row of the privilege table that needs nothing and does
