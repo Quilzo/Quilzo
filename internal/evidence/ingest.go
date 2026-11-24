@@ -151,6 +151,12 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 			return Result{}, err
 		}
 	}
+	// Nothing is sealed for a write the audit log could not record.
+	if g.Reg.Ready != nil {
+		if err := g.Reg.Ready(); err != nil {
+			return Result{}, fmt.Errorf("nothing was sealed or written, because the audit log cannot record it: %w", err)
+		}
+	}
 	now := g.now()
 	sealed, err := g.Raw.Seal(in.Body, now, g.Keep)
 	if err != nil {
