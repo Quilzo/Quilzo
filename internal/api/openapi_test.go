@@ -11,12 +11,17 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/vector"
 )
 
 // The description is served without a token, parses, and describes every
-// route the API serves: a route added without it is a test that fails.
+// route the API serves: a route added without it is a test that fails. Of a
+// server with records and a vector index, because a server without them
+// describes only what it serves (TestEachServerDescribesWhatItServes).
 func TestTheAPIDescribesItself(t *testing.T) {
-	s := &Server{}
+	s := &Server{Records: &Records{Tree: func() (string, error) { return "", nil }},
+		Vectors: func() *vector.Index { return nil }, Tokenise: strings.Fields}
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
