@@ -93,6 +93,12 @@ func TestEveryFlagTheHelpListsUnderACommandIsOneItTakes(t *testing.T) {
 		return lits
 	}
 	cases := commandCases(t, pkg)
+	// A module's command is the function it registered (modules.go).
+	for _, m := range cliModules {
+		if fn := funcs[funcName(m.run)]; fn != nil {
+			cases[m.command] = fn.Body.List
+		}
+	}
 
 	claims := helpFlagClaims(helpText(t))
 	if len(claims["site"]) == 0 || len(claims["serve"]) == 0 {
