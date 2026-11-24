@@ -252,3 +252,47 @@ func TestATokenLimitedToTypesOrLocalesIsHeldToWhatItWrites(t *testing.T) {
 		}
 	}
 }
+
+// A token limited to content types takes no page out of its type, and so
+// into its reach, by unbinding it: an unbinding is asked about the page it
+// unbinds, as a binding is.
+//
+// `quilzo types unbind` was asked about the whole site and nothing else,
+// which is no one type, so a token issued `--types policy` unbound the
+// product page and then wrote it, as a page of no type, which every limit
+// to some types lets through (auth.Scope.AllowsType).
+func TestATokenLimitedToTypesUnbindsNoPageOfAnotherType(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := typedStore(t)
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	asOnly(t, root, "boss")
+	limitedAs(t, root, "boss", auth.Scope{Types: []string{"policy"}})
+	for _, tc := range []struct {
+		cmd, page string
+		may       bool
+	}{{"types", "pen", false}, {"type", "pen", false}, {"types", "returns", true}} {
+		args := []string{"unbind", tc.page}
+		err := authoriseCommand(root, tc.cmd, args)
+		if err == nil {
+			_, err = humanOutput(t, func() error { return cmdTypes(root, args) })
+		}
+		if tc.may && err != nil {
+			t.Errorf("a token limited to policy could not unbind %s, a policy: %v", tc.page, err)
+		}
+		if !tc.may && (err == nil || !strings.Contains(err.Error(), "scoped to policy")) {
+			t.Errorf("a token limited to policy unbound %s, a product, with %s unbind: %v", tc.page, tc.cmd, err)
+		}
+	}
+	st, err := schema.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Bound["pen"] != "product" {
+		t.Errorf("the product page is bound to %q after a token limited to policy unbound it", st.Bound["pen"])
+	}
+	if err := authoriseCommand(root, "section", []string{"set", "pen", "0", "body=x"}); err == nil {
+		t.Error("a token limited to policy may write the product page")
+	}
+}

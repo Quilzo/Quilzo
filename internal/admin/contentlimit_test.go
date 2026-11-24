@@ -110,3 +110,51 @@ func TestATokenLimitedToALanguageSavesNoOther(t *testing.T) {
 		t.Error("a token limited to French started a page in English")
 	}
 }
+
+// A credential limited to content types takes no page out of its type, and
+// so into its reach, on the Types screen: binding a page and unbinding one
+// are asked about the page as well as about the whole site.
+//
+// Both were asked about the whole site and nothing else, which is no one
+// type, so a token issued `--types policy` unbound the product page, or
+// bound it to policy, and then saved it.
+func TestATokenLimitedToTypesRebindsNoPageOfAnotherType(t *testing.T) {
+	srv, _ := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{
+		"pen":     map[string]any{"title": "Brass pen"},
+		"returns": map[string]any{"title": "Returns"},
+	}, "typed", "test"); err != nil {
+		t.Fatal(err)
+	}
+	reg := schema.NewRegistry()
+	for _, name := range []string{"product", "policy"} {
+		if err := reg.Add(schema.Type{Name: name, Fields: []schema.Field{{Name: "title", Kind: schema.Text}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	types := &schema.Store{Registry: reg, Bound: map[string]string{"pen": "product", "returns": "policy"}}
+	srv.Types = &Types{
+		Load: func() (*schema.Store, error) { return types, nil },
+		Save: func(st *schema.Store) error { types = st; return nil },
+	}
+	srv.MFAFrom = time.Now().Add(time.Hour)
+	secret, _, err := srv.Tokens.IssueScoped("types", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{Types: []string{"policy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, form := range []string{"page=pen&unbind=1", "page=pen&type=policy"} {
+		if w := postForm(t, srv, "/types/bind", secret, form); w.Code != http.StatusForbidden {
+			t.Errorf("a token limited to policy posted %s: %d %s", form, w.Code, w.Header().Get("Location"))
+		}
+		if types.Bound["pen"] != "product" {
+			t.Fatalf("a token limited to policy left the product page bound to %q with %s", types.Bound["pen"], form)
+		}
+	}
+	if w := postForm(t, srv, "/types/bind", secret, "page=returns&unbind=1"); w.Code != http.StatusSeeOther {
+		t.Errorf("a token limited to policy could not unbind the policy page: %d", w.Code)
+	}
+	if _, bound := types.Bound["returns"]; bound {
+		t.Error("the policy page is still bound after its unbinding was answered")
+	}
+}

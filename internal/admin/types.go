@@ -332,6 +332,14 @@ func (s *Server) handleTypeBind(w http.ResponseWriter, r *http.Request) {
 		s.typeRedirect(w, r, "", "no page given")
 		return
 	}
+	// Asked about the page as well as the whole site (typeWriter), as the
+	// command line binds one. A page of no type, or of another, is in reach
+	// of a credential limited to some types that the page as it is bound is
+	// not, so a token issued `--types policy`, asked about the whole site
+	// alone, unbound the product page, or bound it to policy, and saved it.
+	if !s.canPage(w, r, p, auth.ActPublish, page) {
+		return
+	}
 
 	if name == "" || r.FormValue("unbind") != "" {
 		if _, bound := st.Bound[page]; !bound {
