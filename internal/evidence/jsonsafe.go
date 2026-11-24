@@ -41,6 +41,9 @@ func checkJSON(b []byte, lines bool) error {
 	for {
 		tok, err := d.Token()
 		if err == io.EOF {
+			if len(stack) > 0 {
+				return errors.New("it ends before its JSON document does")
+			}
 			break
 		}
 		if err != nil {
@@ -57,8 +60,7 @@ func checkJSON(b []byte, lines bool) error {
 			return fmt.Errorf("it holds more than %d values", maxValues)
 		}
 		top := len(stack) - 1
-		if top >= 0 && stack[top].object && stack[top].key {
-			k, _ := tok.(string)
+		if k, isKey := tok.(string); isKey && top >= 0 && stack[top].object && stack[top].key {
 			if stack[top].keys[k] {
 				return fmt.Errorf("an object gives the key %q twice, and two readers would read different values", label(k))
 			}

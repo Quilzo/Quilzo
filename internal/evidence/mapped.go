@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"reflect"
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/register"
@@ -636,4 +636,136 @@ func jsonCell(text string, native any, place string) cell {
 		c.value = register.TextValue(label(text))
 	}
 	return c
+}
+
+// Draft is a column map drafted from a table's headings, for a person to
+// look at, change and confirm, with the first rows it would read. It is
+// never used as it is: an import reads only a map in the register.
+type Draft struct {
+	Map      register.ColumnMap `json:"map"`
+	Headings []string           `json:"headings"`
+	// Sample is the first rows, as text, under the headings.
+	Sample [][]string `json:"sample"`
+	// Unmapped is the headings the draft reads nothing from.
+	Unmapped []string `json:"unmapped,omitempty"`
+}
+
+// DraftMap drafts a column map for reading a table into a kind: each
+// heading that is a field's name read into that field, and for
+// observations the first heading that names a thing (a serial, a host, an
+// identifier) as what the facts are about, and every other heading as a
+// fact. What it guesses is a guess, and says so by being a draft.
+func DraftMap(f Format, body []byte, kind, name, sheetName string) (*Draft, error) {
+	if !f.mapped() {
+		return nil, fmt.Errorf("%w: only a table is read through a column map, and %s is not one", ErrUnreadable, f)
+	}
+	spec, ok := register.SpecOf(kind)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q is not a kind the register has", ErrUnreadable, label(kind))
+	}
+	if name == "" {
+		name = slug(string(spec.Kind) + "-" + string(f))
+	}
+	rd := &reader{in: Input{Format: f, Body: body}, records: map[register.ID]*held{}}
+	var (
+		t   *table
+		err error
+	)
+	switch f {
+	case FormatCSV:
+		t, err = csvTable(body, 1)
+	case FormatXLSX:
+		t, err = xlsxTable(rd, body, sheetName, 1)
+	case FormatJSON:
+		t, err = jsonTable(body, "", nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	m := register.ColumnMap{Name: slug(name), Makes: string(spec.Kind), Format: register.MapFormat(f), Sheet: sheetName}
+	d := &Draft{}
+	for _, h := range t.headings {
+		if h != "" {
+			d.Headings = append(d.Headings, h)
+		}
+	}
+	used := map[string]bool{}
+	if spec.Kind == register.KindObservation {
+		for _, h := range d.Headings {
+			n := norm(h)
+			if strings.Contains(n, "serial") || strings.Contains(n, "host") || strings.Contains(n, "device") ||
+				n == "id" || strings.HasSuffix(n, "id") || strings.Contains(n, "asset") {
+				typ := register.AssetType("other")
+				if strings.Contains(n, "serial") || strings.Contains(n, "host") || strings.Contains(n, "device") {
+					typ = "device"
+				}
+				m.Columns = append(m.Columns, register.MapColumn{Field: "about", Column: h, Asset: typ})
+				used[h] = true
+				break
+			}
+		}
+		if len(m.Columns) == 0 && len(d.Headings) > 0 {
+			m.Columns = append(m.Columns, register.MapColumn{Field: "about", Column: d.Headings[0], Asset: "other"})
+			used[d.Headings[0]] = true
+		}
+		for _, h := range d.Headings {
+			if !used[h] {
+				m.Facts = append(m.Facts, register.MapFact{Fact: slug(h), Column: h})
+				used[h] = true
+			}
+		}
+	} else {
+		byNorm := map[string]register.Field{}
+		for _, fl := range spec.Fields {
+			switch fl.Name {
+			case "grade", "raw", "place", "taint":
+				continue
+			}
+			if fl.Name == "source" && fl.Ref == register.KindSource {
+				continue
+			}
+			byNorm[norm(fl.Name)] = fl
+		}
+		for _, h := range d.Headings {
+			fl, ok := byNorm[norm(h)]
+			if !ok || used[fl.Name] {
+				continue
+			}
+			c := register.MapColumn{Field: fl.Name, Column: h}
+			if fl.Type == "id" && fl.Ref != "" {
+				c.Of = string(fl.Ref)
+			}
+			m.Columns = append(m.Columns, c)
+			used[fl.Name], used[h] = true, true
+		}
+	}
+	for _, h := range d.Headings {
+		if !used[h] {
+			d.Unmapped = append(d.Unmapped, h)
+		}
+	}
+	for i, row := range t.rows {
+		if i == 5 {
+			break
+		}
+		line := make([]string, len(d.Headings))
+		for j, h := range d.Headings {
+			line[j] = label(row.cells[h].text)
+		}
+		d.Sample = append(d.Sample, line)
+	}
+	d.Map = m
+	return d, nil
+}
+
+// norm is a heading or a field's name with only its letters and digits,
+// in lower case, for matching one with the other.
+func norm(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
