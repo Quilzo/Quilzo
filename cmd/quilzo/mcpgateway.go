@@ -208,8 +208,17 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 // offered as destructive, as MCP reads one that does not say, whatever the
 // server says of it; said explicitly, because a client that reads a missing
 // hint as false would take it as only adding.
+//
+// A REST operation has no server to say so, and says it by its method
+// instead, in the declaration a person pinned, as the executor reads it:
+// asked of annotations only a server gives, every GET of an API offered to
+// readers went to other systems' agents as destructive.
 func gatewayHints(in agent.Integration, t mcpclient.Tool) map[string]any {
-	readOnly := !in.Writes && t.Annotations.SaysReadOnly()
+	saysReadOnly := t.Annotations.SaysReadOnly()
+	if op, ok := in.Operation(t.Name); ok && in.Kind == agent.IntegrationHTTP {
+		saysReadOnly = !op.Writes()
+	}
+	readOnly := !in.Writes && saysReadOnly
 	if in.Gateway != nil && in.Gateway.Asks(t.Name) {
 		readOnly = false
 	}

@@ -97,6 +97,12 @@ func TestTheGatewayOffersARESTAPIsPinnedOperations(t *testing.T) {
 	if err != nil || len(srv.Direct.Tools) != 1 || srv.Direct.Tools[0].Name != "getInvoice" {
 		t.Fatalf("%v %+v", err, srv)
 	}
+	// A GET says by its method, in the declaration that was pinned, that it
+	// changes nothing; no server gives a REST operation annotations, so
+	// read-only asked of them alone offered every read as destructive.
+	if hints := srv.Direct.Tools[0].Annotations; hints["readOnlyHint"] != true || hints["destructiveHint"] != nil {
+		t.Errorf("a GET on an integration that does not write is offered as %v", hints)
+	}
 	out, err := srv.Direct.Call("getInvoice", map[string]any{"id": "7"})
 	if err != nil || !strings.Contains(out, `"amount":12`) {
 		t.Fatalf("%q %v", out, err)
