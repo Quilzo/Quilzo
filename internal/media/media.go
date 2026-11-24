@@ -1111,14 +1111,21 @@ var vttForbidden = []string{
 // a semicolon across much of Europe), so a formula in any of those places,
 // in a file a visitor attached to a form, ran when the owner opened it.
 // The file's size is already bounded, so reading all of it costs little.
+//
+// A line ends wherever a spreadsheet ends a row: at a line feed, at a
+// carriage return and line feed, and at a carriage return alone, which is
+// how a Mac wrote the file for twenty years and how every spreadsheet still
+// reads one. It read lines only at a line feed, so a file with nothing but
+// carriage returns was one line to it, and a formula beginning any row but
+// the first sat in the middle of a cell and went through.
 func verifyCSV(b []byte) error {
 	if err := verifyUTF8(b); err != nil {
 		return err
 	}
+	text := csvLineEnds.Replace(strings.TrimPrefix(string(b), "\ufeff"))
 	n := 0
-	for line := range strings.SplitSeq(strings.TrimPrefix(string(b), "\ufeff"), "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		n++
-		line = strings.TrimSuffix(line, "\r")
 		// Once for each separator, rather than splitting on all three at
 		// once, so a tab that begins a comma's cell is still seen as one.
 		for _, sep := range []string{",", ";", "\t"} {
@@ -1129,7 +1136,7 @@ func verifyCSV(b []byte) error {
 				if !sheet.IsFormula(cell) {
 					continue
 				}
-				if cell[0] == '\t' || cell[0] == '\r' {
+				if cell[0] == '\t' {
 					return fmt.Errorf("line %d has a cell starting with a control "+
 						"character used to smuggle formulas past filters", n)
 				}
@@ -1141,6 +1148,11 @@ func verifyCSV(b []byte) error {
 	}
 	return nil
 }
+
+// csvLineEnds writes every way a spreadsheet ends a row as a line feed, so
+// a file's lines are its rows whichever way it ends them. A carriage
+// return can no longer begin a cell, since one always ends the row.
+var csvLineEnds = strings.NewReplacer("\r\n", "\n", "\r", "\n")
 
 // SoundKnown reports whether a recording's sound was recorded, and what it
 // was.
