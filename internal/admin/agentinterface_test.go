@@ -832,6 +832,9 @@ func TestATokensUseAtTheInterfaceIsToldToTheHost(t *testing.T) {
 // admin's own host in capitals was another site's page.
 func TestTheAgentInterfaceKnowsItsOwnOriginWhateverItsCase(t *testing.T) {
 	r := newIfaceRig(t)
+	// With no admin.base_url, the address the request reached is its own
+	// (pageOrigin); TestARebindingPageIsNotTheInterfacesOwn has it set.
+	r.oauth = false
 	for origin, want := range map[string]int{
 		"http://example.com":   http.StatusOK,
 		"http://EXAMPLE.com":   http.StatusOK,
