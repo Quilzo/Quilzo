@@ -519,3 +519,75 @@ func TestTheIdleClockHoldsAcrossARestart(t *testing.T) {
 			w.Code, w.Header().Get("Location"))
 	}
 }
+
+// Signing in is written down as its person's use of the session it makes,
+// in the store a restarted admin reads, by each door that mints one: a
+// token pasted into the form, and a passkey.
+//
+// The tests above write that use themselves, to stand in for the minutes
+// that have passed since, so they went on passing with the sign-in writing
+// nothing, and the clock went back to beginning a session at its first
+// request: a session signed in to and then left was not idle until
+// somebody sent it, however long after that was.
+func TestASignInIsWrittenDownAsTheSessionsFirstUse(t *testing.T) {
+	// What a restarted admin would read of the session secret names.
+	writtenAt := func(t *testing.T, srv *Server, stored []byte, secret string) int64 {
+		t.Helper()
+		id := sessionID(t, srv, secret)
+		var file struct {
+			Tokens []auth.Token `json:"tokens"`
+		}
+		if err := json.Unmarshal(stored, &file); err != nil {
+			t.Fatalf("nothing was stored: %v", err)
+		}
+		for _, k := range file.Tokens {
+			if k.ID == id {
+				return k.Active
+			}
+		}
+		t.Fatalf("the session %s was not stored", id)
+		return 0
+	}
+	capture := func(srv *Server) *[]byte {
+		var stored []byte
+		srv.SaveTokens = func(ts *auth.TokenStore) error {
+			b, err := json.Marshal(ts)
+			stored = b
+			return err
+		}
+		return &stored
+	}
+	now := func(at int64) bool {
+		d := time.Since(time.Unix(at, 0))
+		return d >= -time.Second && d < time.Minute
+	}
+
+	srv, token := tokenSignIn(t)
+	stored := capture(srv)
+	c := sessionCookie(t, srv, token)
+	if at := writtenAt(t, srv, *stored, c.Value); !now(at) {
+		t.Errorf("signing in with a token wrote the session's use as %d, not now", at)
+	}
+
+	srv, token = fullyWired(t)
+	stored = capture(srv)
+	key := newFake(t, "credential-one")
+	key.register(t, srv, token)
+	key.count++
+	w := key.signIn(t, srv)
+	if w.Code != http.StatusOK {
+		t.Fatalf("signing in with a passkey answered %d: %s", w.Code, w.Body.String())
+	}
+	session := ""
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "quilzo_token" {
+			session = ck.Value
+		}
+	}
+	if session == "" {
+		t.Fatal("signing in with a passkey set no session cookie")
+	}
+	if at := writtenAt(t, srv, *stored, session); !now(at) {
+		t.Errorf("signing in with a passkey wrote the session's use as %d, not now", at)
+	}
+}
