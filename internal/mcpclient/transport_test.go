@@ -569,3 +569,83 @@ func TestAnArgumentGivenAsTextIsWhatThePinnedSchemaTakes(t *testing.T) {
 		t.Fatalf("sent: %v", srv.calls)
 	}
 }
+
+// pagedTools is a server that lists its tools a page at a time, as the
+// protocol lets one: each page names the cursor for the next, and the last
+// names none. loop makes every page name the same cursor again.
+type pagedTools struct {
+	loop    bool
+	cursors []string
+	calls   []string
+}
+
+func (s *pagedTools) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Name   string `json:"name"`
+			Cursor string `json:"cursor"`
+		} `json:"params"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	tool := func(name string) string {
+		return fmt.Sprintf(`{"name":%q,"description":"Does %s.","inputSchema":{"type":"object"}}`, name, name)
+	}
+	if msg.Method == "tools/call" {
+		s.calls = append(s.calls, msg.Params.Name)
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"done"}]}}`, msg.ID)
+		return
+	}
+	s.cursors = append(s.cursors, msg.Params.Cursor)
+	switch {
+	case s.loop:
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[],"nextCursor":"again"}}`, msg.ID)
+	case msg.Params.Cursor == "":
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[%s],"nextCursor":"page-2"}}`, msg.ID, tool("search"))
+	case msg.Params.Cursor == "page-2":
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[%s,%s],"nextCursor":"page-3"}}`, msg.ID,
+			tool("create_issue"), tool("close_issue"))
+	default:
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[%s]}}`, msg.ID, tool("delete_project"))
+	}
+}
+
+// What a server offers is every page of its answer to tools/list.
+//
+// Only the first page was read, so a tool on the second was missing from
+// `integrations tools`, could not be pinned ("the server no longer offers
+// it"), and once pinned was refused as no longer offered; and a tool that
+// appeared on a later page, which is where a server adds one, was never
+// shown to the person comparing what it offers with what they agreed to.
+func TestEveryPageOfAServersToolsIsRead(t *testing.T) {
+	srv := &pagedTools{}
+	c := &Client{Do: via(srv, nil)}
+	in := integration("search", "create_issue")
+	tools, err := c.Tools(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tl := range tools {
+		names = append(names, tl.Name)
+	}
+	if strings.Join(names, " ") != "search create_issue close_issue delete_project" {
+		t.Fatalf("read %v", names)
+	}
+	if strings.Join(srv.cursors, "|") != "|page-2|page-3" {
+		t.Fatalf("asked with the cursors %q", srv.cursors)
+	}
+	// A tool on the second page is one this may pin and call.
+	in.Pins = map[string]string{"create_issue": tools[1].Definition}
+	if out, err := c.CallStrict(context.Background(), in, "create_issue", nil); err != nil || out != "done" {
+		t.Fatalf("a pinned tool on the second page: %q %v", out, err)
+	}
+	// A server whose pages never end is stopped, not followed.
+	loop := &pagedTools{loop: true}
+	c = &Client{Do: via(loop, nil)}
+	if _, err := c.Tools(context.Background(), in); err == nil || len(loop.cursors) > 2 {
+		t.Fatalf("a cursor that comes back again was followed %d time(s): %v", len(loop.cursors), err)
+	}
+}

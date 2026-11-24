@@ -204,3 +204,54 @@ func TestHintsThatAreNotBooleansDoNotLoseTheTools(t *testing.T) {
 		t.Errorf("a server's own destructive hint was lost: %+v", tools[2].Annotations)
 	}
 }
+
+// A tool is read-only only where its server says so in so many words.
+//
+// MCP's default for a tool whose annotations say nothing of it is that it
+// may change anything and destroy it. Asked only whether the server said a
+// tool changes something, a tool that gave no annotations at all was
+// offered through the gateway as read-only.
+func TestOnlyAToolThatSaysItChangesNothingIsReadOnly(t *testing.T) {
+	yes, no := true, false
+	for _, c := range []struct {
+		name string
+		h    *Hints
+		want bool
+	}{
+		{"no annotations", nil, false},
+		{"annotations that say nothing of it", &Hints{OpenWorld: &no}, false},
+		{"not read-only", &Hints{ReadOnly: &no}, false},
+		{"read-only", &Hints{ReadOnly: &yes}, true},
+		{"read-only and only adding", &Hints{ReadOnly: &yes, Destructive: &no}, true},
+		{"read-only and destructive", &Hints{ReadOnly: &yes, Destructive: &yes}, false},
+	} {
+		if got := c.h.SaysReadOnly(); got != c.want {
+			t.Errorf("%s: read-only is %v", c.name, got)
+		}
+	}
+	var h Hints
+	if err := json.Unmarshal([]byte(`{"readOnlyHint":"true"}`), &h); err != nil || h.SaysReadOnly() {
+		t.Errorf("a hint that is not a boolean was taken as read-only: %v %+v", err, h)
+	}
+}
+
+// An argument given as text is typed by its definition where the schema
+// defines it once and points at it, as generated schemas do.
+//
+// Arguments are held to the whole schema, which follows a $ref, so the type
+// an argument is given has to be read the same way: read from the property
+// alone, a $ref said nothing, order_id=42 went as the number 42, and the
+// call was refused for sending a number where the definition takes text.
+func TestAnArgumentDefinedOnceIsTypedByItsDefinition(t *testing.T) {
+	tool := Tool{InputSchema: json.RawMessage(`{"type":"object","$defs":{"id":{"type":"string"}},` +
+		`"properties":{"order_id":{"$ref":"#/$defs/id"},"count":{"type":"integer"}},"required":["order_id"]}`)}
+	if got := tool.Typed("order_id", "42", 42.0); got != "42" {
+		t.Errorf("order_id=42 is sent as %#v", got)
+	}
+	if got := tool.Typed("count", "3", 3.0); got != 3.0 {
+		t.Errorf("count=3 is sent as %#v", got)
+	}
+	if err := tool.takes(map[string]any{"order_id": tool.Typed("order_id", "42", 42.0)}); err != nil {
+		t.Errorf("what it was typed as is refused: %v", err)
+	}
+}

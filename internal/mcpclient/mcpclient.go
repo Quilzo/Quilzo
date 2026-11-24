@@ -225,6 +225,15 @@ func (h *Hints) SaysDestructive() bool {
 	return h != nil && h.Destructive != nil && *h.Destructive
 }
 
+// SaysReadOnly reports whether the server says, in so many words, that the
+// tool changes nothing, and does not also say that it destroys. MCP's
+// default for a tool that does not say is that it may change anything, so
+// annotations that are missing, or that say nothing of it, are not read as
+// read-only: they were, by whoever asked only MayChange.
+func (h *Hints) SaysReadOnly() bool {
+	return h != nil && h.ReadOnly != nil && *h.ReadOnly && !h.SaysDestructive()
+}
+
 // Matches reports whether a pinned tool is still the tool that was pinned.
 func (t Tool) Matches() bool { return t.Pinned != "" && t.Pinned == t.Definition }
 
@@ -466,6 +475,11 @@ func (c *Client) Approved(ctx context.Context, in agent.Integration, tool string
 // one it went out as it was until arguments were held to the schema; then
 // an order id, a postcode or a version that the tool takes as text was
 // refused as a number, and nothing a person could type made it text.
+//
+// The property is read within the whole schema, as the arguments are held
+// to it: one defined once and pointed at with $ref, read alone, said
+// nothing, and went as the type it looked like to be refused by its
+// definition.
 func (t Tool) Typed(name, text string, guessed any) any {
 	var schema struct {
 		Properties map[string]json.RawMessage `json:"properties"`
@@ -474,7 +488,7 @@ func (t Tool) Typed(name, text string, guessed any) any {
 		return guessed
 	}
 	p, ok := schema.Properties[name]
-	if !ok || jsonschema.Check(p, guessed) == nil || jsonschema.Check(p, text) != nil {
+	if !ok || jsonschema.CheckPart(t.InputSchema, p, guessed) == nil || jsonschema.CheckPart(t.InputSchema, p, text) != nil {
 		return guessed
 	}
 	return text
@@ -518,26 +532,59 @@ func (c *Client) Tools(ctx context.Context, in agent.Integration) ([]Tool, error
 	if in.Kind == agent.IntegrationA2A {
 		return c.a2aTools(ctx, in)
 	}
-	raw, err := c.send(ctx, in, "tools/list", map[string]any{})
-	if err != nil {
-		return nil, err
+	// Every page of the answer. A server may list its tools a page at a
+	// time, each naming the cursor for the next, and only the first was
+	// read: a tool on the second was missing from what an operator is
+	// shown, could not be pinned, and once pinned was refused as no longer
+	// offered. The cursor is sent back as it came, which is all the
+	// protocol says of it; one that comes back again is a server going
+	// round in circles, and a listing is bounded as one answer is.
+	var tools []Tool
+	params := map[string]any{}
+	seen := map[string]bool{}
+	for page := 1; ; page++ {
+		raw, err := c.send(ctx, in, "tools/list", params)
+		if err != nil {
+			return nil, err
+		}
+		var out struct {
+			Tools      []Tool          `json:"tools"`
+			NextCursor json.RawMessage `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("%s answered tools/list with something this "+
+				"cannot read: %w", in.Name, err)
+		}
+		tools = append(tools, out.Tools...)
+		if len(tools) > maxTools {
+			return nil, refuse(fmt.Errorf("%s offers more than %d tools; that is not a server anybody reviewed", in.Name, maxTools))
+		}
+		next := string(out.NextCursor)
+		if next == "" || next == "null" || next == `""` {
+			break
+		}
+		if seen[next] {
+			return nil, fmt.Errorf("%s answered tools/list with a page it had already given", in.Name)
+		}
+		if page >= maxToolPages {
+			return nil, fmt.Errorf("%s did not finish listing its tools in %d pages", in.Name, maxToolPages)
+		}
+		seen[next] = true
+		params = map[string]any{"cursor": out.NextCursor}
 	}
-	var out struct {
-		Tools []Tool `json:"tools"`
+	for i := range tools {
+		tools[i].Definition = definitionOf(tools[i])
+		tools[i].Pinned = in.Pins[tools[i].Name]
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("%s answered tools/list with something this "+
-			"cannot read: %w", in.Name, err)
-	}
-	if len(out.Tools) > 1000 {
-		return nil, refuse(fmt.Errorf("%s offers %d tools; that is not a server anybody reviewed", in.Name, len(out.Tools)))
-	}
-	for i := range out.Tools {
-		out.Tools[i].Definition = definitionOf(out.Tools[i])
-		out.Tools[i].Pinned = in.Pins[out.Tools[i].Name]
-	}
-	return markAllowed(out.Tools, in.Uses), nil
+	return markAllowed(tools, in.Uses), nil
 }
+
+// The most tools a server is taken to offer, over every page of its
+// answer, and the most pages that answer is read in.
+const (
+	maxTools     = 1000
+	maxToolPages = 100
+)
 
 // markAllowed says which of a server's tools this install agreed to.
 //

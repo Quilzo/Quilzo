@@ -193,20 +193,37 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 //
 // Read-only only when everything that could say otherwise does not: the
 // integration is not declared as writing, a person does not approve each
-// call of it, and the server does not say it changes or destroys anything.
-// Every tool was offered by the integration's mark alone, so on one declared
-// with a list of tools and no "writes" mark a tool the server published as
-// destructive was offered as read-only, and a client that runs read-only
-// tools without asking would have run it. The server's hints only ever make
-// a tool sound more dangerous here: they are outside what a person pinned,
-// and a server that changed them to sound safer would otherwise be believed.
+// call of it, and the server says, in so many words, that it changes
+// nothing. Every tool was offered by the integration's mark alone, so on one
+// declared with a list of tools and no "writes" mark a tool the server
+// published as destructive was offered as read-only, and a client that runs
+// read-only tools without asking would have run it. A tool whose server
+// gave no annotations, or none about what it changes, was offered as
+// read-only the same way, though MCP's default for a tool that says nothing
+// is that it may change anything and destroy it.
+//
+// The server's hints only ever make a tool sound more dangerous here: they
+// are outside what a person pinned, and a server that changed them to sound
+// safer would otherwise be believed. So a tool that is not read-only is
+// offered as destructive, as MCP reads one that does not say, whatever the
+// server says of it; said explicitly, because a client that reads a missing
+// hint as false would take it as only adding.
+//
+// A REST operation has no server to say so, and says it by its method
+// instead, in the declaration a person pinned, as the executor reads it:
+// asked of annotations only a server gives, every GET of an API offered to
+// readers went to other systems' agents as destructive.
 func gatewayHints(in agent.Integration, t mcpclient.Tool) map[string]any {
-	readOnly := !in.Writes && !t.Annotations.MayChange()
+	saysReadOnly := t.Annotations.SaysReadOnly()
+	if op, ok := in.Operation(t.Name); ok && in.Kind == agent.IntegrationHTTP {
+		saysReadOnly = !op.Writes()
+	}
+	readOnly := !in.Writes && saysReadOnly
 	if in.Gateway != nil && in.Gateway.Asks(t.Name) {
 		readOnly = false
 	}
 	hints := map[string]any{"readOnlyHint": readOnly, "openWorldHint": true}
-	if !readOnly && t.Annotations.SaysDestructive() {
+	if !readOnly {
 		hints["destructiveHint"] = true
 	}
 	return hints
