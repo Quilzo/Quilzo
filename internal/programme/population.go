@@ -72,6 +72,36 @@ type Count struct {
 	OnlyHere  []register.ID `json:"only_here,omitempty"`
 	OnlyThere []register.ID `json:"only_there,omitempty"`
 	Labels    []Label       `json:"labels,omitempty"`
+	// Source and CrossName are what the two sources are called.
+	Source    string `json:"source"`
+	CrossName string `json:"cross_check,omitempty"`
+}
+
+// Disagreement is a count as one line: each source with its number, and
+// how many are unexplained, or that there is one source and nothing
+// checked it. Code writes it from the count; it is the line a screen shows
+// beside the figure.
+func Disagreement(c Count) string {
+	if c.Population.CrossCheck == "" {
+		return fmt.Sprintf("%s %d: single source, unchecked", c.Source, len(c.Members))
+	}
+	return fmt.Sprintf("%s %d, %s %d: %d unexplained", c.Source, len(c.Members), c.CrossName, len(c.Cross), c.Unexplained())
+}
+
+// sourceName is what a source is called: its title, or its machine name.
+func sourceName(v *register.View, id register.ID) string {
+	e, err := v.Get(id)
+	if err != nil {
+		return string(id)
+	}
+	s, ok := e.Record.(register.Source)
+	if !ok {
+		return string(id)
+	}
+	if s.Title != "" {
+		return s.Title
+	}
+	return s.Name
 }
 
 // Unexplained is the disagreement between the two sources: what either has
@@ -96,7 +126,7 @@ func CountAt(v *register.View, id register.ID, now time.Time) (Count, error) {
 	if err != nil {
 		return Count{}, err
 	}
-	c := Count{ID: id, Population: pop, Members: sel.Members}
+	c := Count{ID: id, Population: pop, Members: sel.Members, Source: sourceName(v, pop.Source)}
 	if pop.CrossCheck != "" {
 		cq, err := queryAt(v, pop.CrossQuery)
 		if err != nil {
@@ -106,7 +136,7 @@ func CountAt(v *register.View, id register.ID, now time.Time) (Count, error) {
 		if err != nil {
 			return Count{}, err
 		}
-		c.Cross = cross.Members
+		c.Cross, c.CrossName = cross.Members, sourceName(v, pop.CrossCheck)
 		links, err := linked(v)
 		if err != nil {
 			return Count{}, err

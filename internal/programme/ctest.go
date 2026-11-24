@@ -38,12 +38,12 @@ import (
 // control and the population by, and the query in full. It is what a model
 // fills in, and nothing else is read from what it sends.
 type Draft struct {
-	Control    string      `json:"control"`
-	Name       string      `json:"name"`
-	Population string      `json:"population"`
-	Assertion  string      `json:"assertion"`
-	Every      int64       `json:"every,omitempty"`
-	Query      DraftQuery  `json:"query"`
+	Control    string     `json:"control"`
+	Name       string     `json:"name"`
+	Population string     `json:"population"`
+	Assertion  string     `json:"assertion"`
+	Every      int64      `json:"every,omitempty"`
+	Query      DraftQuery `json:"query"`
 }
 
 // DraftQuery is the query of a draft.
