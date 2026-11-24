@@ -340,7 +340,13 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (Credentia
 	//
 	// Only meaningful when the authenticator keeps a counter at all. Many do
 	// not, and report zero forever -- refusing those would refuse most phones.
-	if cred.SignCount != 0 && count != 0 && count <= cred.SignCount {
+	// But a key is judged by what it has reported, not by what this one use
+	// says: once the stored counter is above zero, a zero is a counter that
+	// went back like any other, as the specification has it. Skipping the
+	// check whenever the assertion said zero let a copy sign in every time by
+	// reporting zero, and stored that zero, which turned the check off for
+	// the original too.
+	if (cred.SignCount != 0 || count != 0) && count <= cred.SignCount {
 		return Credential{}, counterError{was: cred.SignCount, now: count}
 	}
 
