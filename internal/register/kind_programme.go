@@ -116,7 +116,7 @@ const KindScope Kind = "Scope"
 
 func (Scope) Kind() Kind              { return KindScope }
 func (s Scope) Key() (string, string) { return Local, s.Name }
-func (Scope) Check() error            { return nil }
+func (s Scope) Check() error          { return boundTo(s, s.Approval, "scope") }
 
 var _ = define[Scope]("What the programme covers: domains, populations and frameworks.", ClassInternal, signed)
 
@@ -137,7 +137,9 @@ func (Applicability) Kind() Kind { return KindApplicability }
 func (a Applicability) Key() (string, string) {
 	return Local, string(a.Scope) + "/" + string(a.Requirement)
 }
-func (Applicability) Check() error { return nil }
+func (a Applicability) Check() error {
+	return boundTo(a, a.Approval, "line of the statement of applicability")
+}
 func (a Applicability) index(r *Row) {
 	r.About, r.Via = a.Requirement.bytes(), a.Scope.bytes()
 	if a.Applicable {
@@ -301,6 +303,17 @@ func (e Evidence) index(r *Row) {
 }
 
 var _ = define[Evidence]("How a control stood at a moment, from a test run or a person's statement.", ClassInternal)
+
+// boundTo holds a decision to an approval given for it: one whose Surface
+// is the hash of this record as its approvers were shown it. An approval
+// moved onto a changed record, or onto another, is the approval of
+// something else, wherever it is written from.
+func boundTo(rec Record, a *Approval, what string) error {
+	if a != nil && a.Surface != SurfaceOf(rec) {
+		return fmt.Errorf("the approval is of another %s: a decision that changed is approved again", what)
+	}
+	return nil
+}
 
 // SurfaceOf is the hash of a decision as its approvers are shown it: the
 // kind, and the record's fields with its approval left out, since an

@@ -190,13 +190,19 @@ func schemaOf(t reflect.Type) ([]Field, error) {
 
 // validate holds a record to what its fields' types and tags say, and then
 // to its own Check. The error names the field as JSON writes it.
-func validate(rec Record) error {
+func validate(rec Record) error { return validateAs(rec, false) }
+
+// validateAs is validate, and for a decision that waits on the proposals
+// ref (waiting) it does not ask for the approval: a proposal is what a
+// person is asked to approve, so it cannot already carry their approval,
+// and the one a proposer sends is not kept (Register.prepare).
+func validateAs(rec Record, waiting bool) error {
 	v := reflect.Indirect(reflect.ValueOf(rec))
 	if !v.IsValid() || v.Kind() != reflect.Struct {
 		return fmt.Errorf("%w: it is not a record", ErrInvalid)
 	}
 	what := strings.ToLower(string(rec.Kind()))
-	if err := validStruct(v, ""); err != nil {
+	if err := validStruct(v, "", waiting); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrInvalid, what, err)
 	}
 	if err := rec.Check(); err != nil {
@@ -205,7 +211,7 @@ func validate(rec Record) error {
 	return nil
 }
 
-func validStruct(v reflect.Value, path string) error {
+func validStruct(v reflect.Value, path string, waiting bool) error {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		r, ok, err := ruleOf(t.Field(i))
@@ -218,7 +224,7 @@ func validStruct(v reflect.Value, path string) error {
 		at := path + r.name
 		f := v.Field(i)
 		if f.IsZero() {
-			if r.required {
+			if r.required && !(waiting && f.Type() == reflect.TypeOf((*Approval)(nil))) {
 				return fmt.Errorf("%q is needed%s", at, aboutOf(r))
 			}
 			continue
@@ -328,9 +334,9 @@ func validValue(f reflect.Value, r rule, at string) error {
 			}
 		}
 	case reflect.Pointer:
-		return validStruct(f.Elem(), at+".")
+		return validStruct(f.Elem(), at+".", false)
 	case reflect.Struct:
-		return validStruct(f, at+".")
+		return validStruct(f, at+".", false)
 	}
 	return nil
 }

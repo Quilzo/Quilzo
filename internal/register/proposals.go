@@ -165,6 +165,19 @@ func (r *Register) decider(by Actor, p Proposal) error {
 // approval of a record that is a decision; it replaces whatever the
 // proposal carried, because a proposer cannot approve its own proposal.
 func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) {
+	return r.AcceptWith(by, id, approval)
+}
+
+// AcceptWith is Accept, with the records that follow from the decision
+// written in the same commit: a framework's requirements, which a starter's
+// installation brings and which are its content, not decisions of their
+// own. The decision and what it brings are one commit, so the register
+// never holds one without the other.
+//
+// The records that follow are written with the accepter's own permissions:
+// approving the decision is what lets them write the proposed record, and
+// nothing else.
+func (r *Register) AcceptWith(by Actor, id ID, approval *Approval, follows ...Record) (Receipt, error) {
 	p, err := r.proposal(id)
 	if err != nil {
 		return Receipt{}, err
@@ -182,7 +195,7 @@ func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) 
 		}
 		return by.May(act, res)
 	}
-	rc, err := r.Put(accepter, acceptedWhy(p.Why), rec)
+	rc, err := r.Put(accepter, acceptedWhy(p.Why), append([]Record{rec}, follows...)...)
 	if err != nil {
 		return rc, err
 	}
