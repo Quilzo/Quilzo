@@ -185,8 +185,8 @@ func (m ColumnMap) Check() error {
 		case "grade", "raw", "place", "taint":
 			return fmt.Errorf("the field %q is the importer's to write, never a column's", c.Field)
 		}
-		if spec.Kind == KindObservation && c.Field == "source" {
-			return fmt.Errorf("an observation's source is the one it is imported under, never a column")
+		if f, ok := fields[c.Field]; ok && c.Field == "source" && f.Ref == KindSource {
+			return fmt.Errorf("a %s's source is the one it is imported under, never a column", strings.ToLower(string(spec.Kind)))
 		}
 	}
 	seen := map[string]bool{}
@@ -284,3 +284,21 @@ func (PinnedKey) attested() bool { return true }
 func (k PinnedKey) index(r *Row) { r.At, r.State = int64(k.Pinned), ordinal(k.Algorithm) }
 
 var _ = define[PinnedKey]("A third party's public key, pinned by a person, that signed files are verified against.", ClassInternal)
+
+// Validate holds a record to its kind's field rules and its Check, as Put
+// will, without writing anything: an importer asks it of each record it
+// read, so a preview names the row that would be refused before a person
+// is asked to confirm anything.
+func Validate(rec Record) error {
+	if rec == nil {
+		return fmt.Errorf("%w: an empty record", ErrInvalid)
+	}
+	if _, err := specFor(rec.Kind()); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if err := validate(rec); err != nil {
+		return err
+	}
+	_, err := IDOf(rec)
+	return err
+}
