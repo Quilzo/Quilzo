@@ -20,7 +20,7 @@ import (
 // with nobody signed in is a refusal at the door, and is listed here by
 // name; anything else has to say who.
 func TestEveryAdminRecordNamesWhoActed(t *testing.T) {
-	atTheDoor := map[string]bool{"enrol.refused": true, "signin.saml.refused": true,
+	atTheDoor := map[string]bool{"enrol.refused": true, "signin.saml.refused": true, "signin.oidc.refused": true,
 		"account.locked": true, "account.disabled": true, "passkey.counter-refused": true}
 	call := regexp.MustCompile(`s\.audit\(`)
 	files, _ := filepath.Glob("*.go")

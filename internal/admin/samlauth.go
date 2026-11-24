@@ -335,33 +335,36 @@ func label(c *saml.Config) string { return c.Called() }
 // not in the access policy, otherwise a session of this program's own.
 func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, how string,
 	ttl time.Duration, proof ssoProof, detail map[string]string, asked string, before func()) {
-	if s.suspended(principal) {
+	// Recorded as the refusals before it are (samlACS), naming who the
+	// provider said it was. These wrote nothing, so somebody suspended, or
+	// not in the access policy, was turned away and the log never said so.
+	refuse := func(reason, hint string) {
 		before()
-		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
+		s.audit("signin.saml.refused", "/", map[string]string{"provider": detail["provider"],
+			"principal": principal, "why": reason})
+		s.refuseSignIn(w, r, reason, hint)
+	}
+	if s.suspended(principal) {
+		refuse(principal+" is suspended here: the identity provider deactivated or removed them.", "")
 		return
 	}
 	if !s.knownPrincipal(principal) {
-		before()
-		s.refuseSignIn(w, r,
-			fmt.Sprintf("%s signed in successfully, but is not in the access policy for this site.", principal),
+		refuse(fmt.Sprintf("%s signed in successfully, but is not in the access policy for this site.", principal),
 			fmt.Sprintf("An administrator can add them:  quilzo auth grant %s author", principal))
 		return
 	}
 	if ttl < time.Minute {
-		before()
-		s.refuseSignIn(w, r, "The identity provider's own session ends in under a minute. Sign in there again.", "")
+		refuse("The identity provider's own session ends in under a minute. Sign in there again.", "")
 		return
 	}
 	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.method())
 	if err != nil {
-		before()
-		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
+		refuse("the session could not be created: "+err.Error(), "")
 		return
 	}
 	if s.SaveTokens != nil {
 		if err := s.SaveTokens(s.Tokens); err != nil {
-			before()
-			s.refuseSignIn(w, r, "the session could not be stored: "+err.Error(), "")
+			refuse("the session could not be stored: "+err.Error(), "")
 			return
 		}
 	}
@@ -373,8 +376,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 	s.auditProof(principal, tok.ID, proof)
 	stepUp, serr := s.signInCheck(r, principal, tok.ID, "sso", false)
 	if serr != nil {
-		before()
-		s.refuseSignIn(w, r, serr.Error(), "")
+		refuse(serr.Error(), "")
 		return
 	}
 	s.signInDone(r, tok.ID)

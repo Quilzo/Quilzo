@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/oidc"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // OIDC wires an identity provider into the admin.
@@ -210,23 +212,39 @@ func (o *OIDC) take(state string) *oidcPending {
 	return nil
 }
 
+// unstarted is a refusal of an answer to no sign-in this server has in
+// progress: no state, or one nobody here started. It is refused without
+// a record, as an unsolicited SAML response is (samlACS), because anybody
+// can open the callback address, and only the answer to a sign-in begun
+// here is somebody trying to sign in.
+type unstarted struct{ error }
+
+func (u unstarted) Unwrap() error { return u.error }
+
 // callback finishes a sign-in, in the browser that started it, and says
-// where the sign-in was going.
+// where the sign-in was going. Refused once the provider has said who
+// somebody is, it says who that was, for the record of the refusal.
 func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, ssoProof, string, error) {
-	if e := r.URL.Query().Get("error"); e != "" {
-		return "", ssoProof{}, "", fmt.Errorf("the provider refused: %s (%s)", e,
-			r.URL.Query().Get("error_description"))
-	}
 	state := r.URL.Query().Get("state")
+	if e := r.URL.Query().Get("error"); e != "" {
+		err := fmt.Errorf("the provider refused: %s (%s)", e,
+			r.URL.Query().Get("error_description"))
+		// The sign-in it answers is over, and taken so it cannot be
+		// answered again.
+		if state == "" || o.take(state) == nil {
+			return "", ssoProof{}, "", unstarted{err}
+		}
+		return "", ssoProof{}, "", err
+	}
 	if state == "" {
-		return "", ssoProof{}, "", fmt.Errorf("no state parameter; this response did not come " +
-			"from a sign-in this server started")
+		return "", ssoProof{}, "", unstarted{fmt.Errorf("no state parameter; this response did not come " +
+			"from a sign-in this server started")}
 	}
 	p := o.take(state)
 	if p == nil {
-		return "", ssoProof{}, "", fmt.Errorf("this state does not match a sign-in in progress. " +
+		return "", ssoProof{}, "", unstarted{fmt.Errorf("this state does not match a sign-in in progress. " +
 			"It has already been used, it expired, or the request did not " +
-			"originate here")
+			"originate here")}
 	}
 	c, err := r.Cookie(cookie)
 	if err != nil {
@@ -253,9 +271,22 @@ func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (st
 
 	principal, err := o.principalFor(claims)
 	if err != nil {
-		return "", ssoProof{}, "", err
+		return o.claimed(claims), ssoProof{}, "", err
 	}
 	return principal, o.proof(claims, req.MaxAge, time.Now()), p.next, nil
+}
+
+// claimed is who a verified token says somebody is, by the claim this
+// provider names people with, before anything here has decided whether
+// that is anybody: the name a refusal of it speaks of.
+func (o *OIDC) claimed(c *oidc.Claims) string {
+	switch o.Claim {
+	case "sub":
+		return c.Subject
+	case "preferred_username":
+		return strings.ToLower(strings.TrimSpace(rawString(c, "preferred_username")))
+	}
+	return c.Email
 }
 
 // rawString reads a claim the Claims struct does not name.
@@ -372,11 +403,61 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cn, Value: "", Path: "/", HttpOnly: true,
 		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	principal, proof, asked, err := s.OIDC.callback(ctx, r, cn)
-	if err != nil {
+	if errors.As(err, new(unstarted)) {
 		s.refuseSignIn(w, r, err.Error(), "")
 		return
 	}
+	if err != nil {
+		// The provider's own refusal is shown in full and recorded by its
+		// code alone, as a SAML refusal's record keeps the provider's
+		// status codes and not its message (samlACS). The description is
+		// free text that often names the person, in a log whose identities
+		// are pseudonymised; and the whole answer is a query that anybody
+		// who began a sign-in can type, as long as a request line may be.
+		why := err.Error()
+		if code := r.URL.Query().Get("error"); code != "" {
+			why = "the provider refused: " + plaintext.Clip(code, 80, "…")
+		}
+		s.oidcRefused(why, principal)
+		s.refuseSignIn(w, r, err.Error(), "")
+		return
+	}
+	s.finishOIDC(w, r, principal, proof, asked)
+}
 
+// oidcRefused records a refused OIDC sign-in, as a SAML sign-in's refusal
+// is recorded (signin.saml.refused), naming who the provider said it was
+// when it had got that far.
+//
+// Nothing was recorded. The provider saying no, another browser's answer,
+// a token for another tenant, an unverified address, somebody suspended or
+// not in the access policy: each was shown to the browser and written
+// nowhere, so the log of who tried to sign in and was turned away held
+// every SAML attempt and no OIDC one. who is kept as an identity
+// (audit.IdentityKeys), because the reason names them too; and the reason
+// is kept to a kilobyte, because some of it is the provider's own words,
+// and a refusal is a record anybody can cause.
+func (s *Server) oidcRefused(why, who string) {
+	d := map[string]string{"why": plaintext.Clip(why, 1024, "…")}
+	if who != "" {
+		d["principal"] = who
+	}
+	if s.OIDC != nil && s.OIDC.Provider != nil {
+		d["issuer"] = s.OIDC.Provider.Discovery.Issuer
+	}
+	s.audit("signin.oidc.refused", "/", d)
+}
+
+// refuseOIDC refuses an OIDC sign-in, and records that it did (oidcRefused).
+func (s *Server) refuseOIDC(w http.ResponseWriter, r *http.Request, reason, hint, who string) {
+	s.oidcRefused(reason, who)
+	s.refuseSignIn(w, r, reason, hint)
+}
+
+// finishOIDC is the end of an OIDC sign-in, once the provider has said who
+// somebody is: refused if suspended or not in the access policy, otherwise
+// a session of this program's own.
+func (s *Server) finishOIDC(w http.ResponseWriter, r *http.Request, principal string, proof ssoProof, asked string) {
 	// No auto-provisioning, and this is the decision that matters most here.
 	//
 	// A verified token proves the provider knows this person. It does not say
@@ -393,15 +474,15 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// given a session here until somebody opened a screen.
 	s.refresh()
 	if s.suspended(principal) {
-		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
+		s.refuseOIDC(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "", principal)
 		return
 	}
 	if !s.knownPrincipal(principal) {
-		s.refuseSignIn(w, r,
+		s.refuseOIDC(w, r,
 			fmt.Sprintf("%s signed in successfully, but is not in the access "+
 				"policy for this site.", principal),
 			fmt.Sprintf("An administrator can add them:  quilzo auth grant %s author",
-				principal))
+				principal), principal)
 		return
 	}
 
@@ -411,12 +492,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		"oidc:"+principal, principal, s.roleFor(principal), "/",
 		s.oidcTTL(), auth.RoleAdmin, proof.method())
 	if err != nil {
-		s.refuseSignIn(w, r, "the session could not be created: "+err.Error(), "")
+		s.refuseOIDC(w, r, "the session could not be created: "+err.Error(), "", principal)
 		return
 	}
 	if s.SaveTokens != nil {
 		if err := s.SaveTokens(s.Tokens); err != nil {
-			s.refuseSignIn(w, r, "the session could not be stored: "+err.Error(), "")
+			s.refuseOIDC(w, r, "the session could not be stored: "+err.Error(), "", principal)
 			return
 		}
 	}
@@ -426,7 +507,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	s.auditProof(principal, tok.ID, proof)
 	stepUp, serr := s.signInCheck(r, principal, tok.ID, "sso", false)
 	if serr != nil {
-		s.refuseSignIn(w, r, serr.Error(), "")
+		s.refuseOIDC(w, r, serr.Error(), "", principal)
 		return
 	}
 	s.signInDone(r, tok.ID)

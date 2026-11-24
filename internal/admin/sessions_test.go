@@ -160,9 +160,11 @@ func TestTheOIDCCallbackReadsTheStoreBeforeDeciding(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(b)
-	start := strings.Index(src, "\nfunc (s *Server) handleOIDCCallback(")
+	// The decision is made where the callback finishes, once the provider
+	// has said who somebody is.
+	start := strings.Index(src, "\nfunc (s *Server) finishOIDC(")
 	if start < 0 {
-		t.Fatal("oidcauth.go has no handleOIDCCallback")
+		t.Fatal("oidcauth.go has no finishOIDC")
 	}
 	body := src[start:]
 	if end := strings.Index(body, "\n}\n"); end > 0 {
