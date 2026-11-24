@@ -279,26 +279,31 @@ func assistantGaps(root string, args []string) error {
 			int(gapsKept(root).Hours()/24), reset)
 		return nil
 	}
+	// A visitor typed the questions into the public chatbot, so each is
+	// printed as text on a line of its own (onOneLine). Printed as kept,
+	// an anonymous visitor's escape cleared the line above and wrote
+	// another in its place, and a line break began a line that read as
+	// this program's.
 	for _, g := range groups {
 		status := yellow + "open" + reset
 		switch {
 		case g.Closed != nil && g.Closed.How == "answered":
 			status = green + "answered" + reset
 			if g.Closed.Page != "" {
-				status += " from " + g.Closed.Page
+				status += " from " + onOneLine(g.Closed.Page)
 			}
 		case g.Closed != nil:
-			status = dim + "closed by " + g.Closed.By + reset
+			status = dim + "closed by " + onOneLine(g.Closed.By) + reset
 		case g.Since > 0:
 			status = yellow + fmt.Sprintf("open again: asked %s since it was closed", plural2(g.Since, "once", "times")) + reset
 		}
 		if g.Unhelpful > 0 {
 			status += fmt.Sprintf("; %d said the answer did not help", g.Unhelpful)
 		}
-		w.Human("%s%s%s  asked %s, last %s  [%s]\n", bold, g.Questions[0], reset, plural2(g.Count, "once", "times"),
+		w.Human("%s%s%s  asked %s, last %s  [%s]\n", bold, onOneLine(g.Questions[0]), reset, plural2(g.Count, "once", "times"),
 			g.Last.Local().Format("2 Jan"), status)
 		for _, q := range g.Questions[1:] {
-			w.Human("    %s%s%s\n", dim, q, reset)
+			w.Human("    %s%s%s\n", dim, onOneLine(q), reset)
 		}
 		w.Human("    %sgroup %s%s\n", dim, g.Key, reset)
 	}

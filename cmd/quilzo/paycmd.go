@@ -546,14 +546,19 @@ func payOrders(root string, args []string, caller *Caller) error {
 		w.Human("no completed checkouts yet\n")
 		return nil
 	}
+	// A buyer typed their name, address and email at the provider's
+	// checkout, so each is printed as text on this line (onOneLine).
+	// Printed as the provider sent them, an escape in a buyer's name
+	// cleared the line above and wrote another.
 	for _, o := range orders {
 		paid := "paid"
 		if !o.Paid {
 			paid = "not paid"
 		}
-		w.Human("%s  %-14s %-8s %s  %s <%s>\n", o.At.Format("2 Jan 15:04"), o.Total(), paid, o.Offer, o.Name, o.Email)
+		w.Human("%s  %-14s %-8s %s  %s <%s>\n", o.At.Format("2 Jan 15:04"), o.Total(), paid, onOneLine(o.Offer),
+			onOneLine(o.Name), onOneLine(o.Email))
 		if o.Ship != "" {
-			w.Human("    deliver to %s\n", o.Ship)
+			w.Human("    deliver to %s\n", onOneLine(o.Ship))
 		}
 	}
 	return nil

@@ -233,6 +233,9 @@ func scheduleList(root string) error {
 			dim, reset)
 		return nil
 	}
+	// Whoever scheduled a publish wrote its note and its reason, so each is
+	// printed as text on its line (onOneLine), as a claim's note is:
+	// printed as kept, an escape in one cleared the line above.
 	for _, st := range states {
 		at := time.Unix(st.Entry.At, 0)
 		mark, colour := "pending", dim
@@ -244,14 +247,14 @@ func scheduleList(root string) error {
 		}
 		w.Human("  %s%-8s%s %s  %s\n", colour, mark, reset,
 			at.UTC().Format("2006-01-02 15:04"), short(st.Entry.Commit))
-		w.Human("           %sby %s", dim, st.Entry.By)
+		w.Human("           %sby %s", dim, onOneLine(st.Entry.By))
 		if st.Entry.Note != "" {
-			w.Human(" — %s", st.Entry.Note)
+			w.Human(" — %s", onOneLine(st.Entry.Note))
 		}
 		w.Human("%s\n", reset)
 		if st.Entry.UnmarkedReason != "" {
 			w.Human("           %spublishes pages with no provenance, because: %s%s\n",
-				dim, st.Entry.UnmarkedReason, reset)
+				dim, onOneLine(st.Entry.UnmarkedReason), reset)
 		}
 		if st.Stale {
 			w.Human("           %sthe draft has moved to %s since this was "+
