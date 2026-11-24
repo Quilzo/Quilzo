@@ -59,7 +59,7 @@
   }
   function say(text) { said.textContent = text; }
 
-  var forms = document.querySelectorAll(".kit-approval form, form.approval-review, form.approval-batch");
+  var forms = document.querySelectorAll(".kit-approval form, form[data-ceremony]");
   Array.prototype.forEach.call(forms, function (form) {
     form.addEventListener("submit", function (e) {
       e.preventDefault();

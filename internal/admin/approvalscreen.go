@@ -180,7 +180,7 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	me, _ := approval.PeopleAt(s.Store.Root()).Pseudonym(p.Name)
+	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
 	var rows []approvalRow
 	for _, a := range waiting {
 		row := approvalRow{ID: string(a.Proposal.ID), Kind: string(a.Proposal.Kind), Label: labelOf(a.Proposal.Record, a.Proposal.ID),
@@ -226,8 +226,8 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	data := map[string]any{"Title": "Decisions", "Nav": "signoff", "Principal": p,
-		"Header": seckit.Header{Title: "Decisions", Lead: "Risks accepted, exceptions granted and the other decisions of " +
+	data := map[string]any{"Title": "Sign-off", "Nav": "signoff", "Principal": p,
+		"Header": seckit.Header{Title: "Sign-off", Lead: "Risks accepted, exceptions granted and the other decisions of " +
 			"the security record, each approved by the people the separation policy names, with a passkey bound to the " +
 			"hash of exactly what they were shown."},
 		"Waiting": rows, "Held": len(heldRows) > 0, "HeldTable": table, "Problems": problems, "Said": said,
@@ -488,7 +488,7 @@ func (s *Server) handleApprovalItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := m.Reject(s.approver(p), id); err != nil {
-			s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Decisions",
+			s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Sign-off",
 				"Principal": p, "Heading": "It was not rejected", "Body": err.Error()})
 			return
 		}
@@ -527,7 +527,7 @@ func (s *Server) renderAsk(w http.ResponseWriter, r *http.Request, p principal, 
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	me, _ := approval.PeopleAt(s.Store.Root()).Pseudonym(p.Name)
+	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
 	label := labelOf(a.Proposal.Record, a.Proposal.ID)
 	base := "/register/approvals/item/" + string(a.Proposal.ID)
 	if batch != "" {
@@ -631,7 +631,7 @@ func (s *Server) handleApprovalBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Decisions",
+			s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Sign-off",
 				"Principal": p, "Heading": "This is not your batch to open", "Body": err.Error()})
 			return
 		}

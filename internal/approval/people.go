@@ -72,6 +72,30 @@ func (f PeopleFile) Pseudonym(name string) (register.ID, error) {
 	return out, err
 }
 
+// Known is the name's pseudonym if it has one, minting nothing: what a read
+// asks, so that looking at what waits writes nobody into the map.
+func (f PeopleFile) Known(name string) (register.ID, bool) {
+	var out register.ID
+	_ = atomicfile.Update(f.Path, func(pf *peopleFile) error {
+		out = pf.People[auth.PersonKey(name)]
+		return atomicfile.ErrUnchanged
+	})
+	return out, out != ""
+}
+
+// known is a name's pseudonym as a read asks it: without minting, where the
+// map can say so.
+func known(p People, name string) (register.ID, bool, error) {
+	if k, ok := p.(interface {
+		Known(string) (register.ID, bool)
+	}); ok {
+		id, found := k.Known(name)
+		return id, found, nil
+	}
+	id, err := p.Pseudonym(name)
+	return id, err == nil, err
+}
+
 // Forget deletes a name's entry, after which its pseudonym names nobody and
 // the approvals that hold it say "a person since erased".
 func (f PeopleFile) Forget(name string) error {

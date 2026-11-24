@@ -305,8 +305,10 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 		a.Raised = register.ID(raised)
 	}
 	if a.Raised == "" && p.Agent != "" {
-		if a.Raised, err = m.people().Pseudonym(p.Agent); err != nil {
+		if id, ok, err := known(m.people(), p.Agent); err != nil {
 			return nil, err
+		} else if ok {
+			a.Raised = id
 		}
 	}
 
@@ -318,11 +320,11 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 	// raised it, and the other may only be second.
 	free := 0
 	for name := range a.eligible {
-		id, err := m.people().Pseudonym(name)
+		id, ok, err := known(m.people(), name)
 		if err != nil {
 			return nil, err
 		}
-		if !a.raisers[id] {
+		if !ok || !a.raisers[id] {
 			free++
 		}
 	}
@@ -510,6 +512,11 @@ func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, 
 	for _, sg := range signers {
 		ap.Signers = append(ap.Signers, register.Signer{Subject: sg.Subject, At: sg.At, Assertion: sg.Evidence,
 			Method: sg.Method, Batch: sg.Batch})
+	}
+	if ap.Raised == "" && a.Proposal.Agent != "" {
+		if ap.Raised, err = m.people().Pseudonym(a.Proposal.Agent); err != nil {
+			return nil, err
+		}
 	}
 	if ap.Raised == "" {
 		ap.Raised = subject

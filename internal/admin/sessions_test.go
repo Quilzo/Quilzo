@@ -182,8 +182,10 @@ func TestTheOIDCCallbackReadsTheStoreBeforeDeciding(t *testing.T) {
 // TestSigningOutEndsAnIdentityProviderSession, the path that was broken.
 func TestSigningOutEndsAnIdentityProviderSession(t *testing.T) {
 	srv, _ := setup(t)
+	// An administrator's single sign-on, which said it used a method that
+	// cannot be phished, as theirs has to (approvalscreen.go).
 	secret, _, err := srv.Tokens.IssueSession("oidc:editor", "editor",
-		srv.roleFor("editor"), "/", DefaultSessionTTL, "admin", auth.MethodSSO)
+		srv.roleFor("editor"), "/", DefaultSessionTTL, "admin", auth.MethodSSO, auth.MethodSSOPhishingResistant)
 	if err != nil {
 		t.Fatal(err)
 	}

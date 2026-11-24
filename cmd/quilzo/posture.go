@@ -99,6 +99,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s.Alerts = observeAlerts(root)
 	s.Self = observeSelf(root)
 	s.Shield = observeShield(root)
+	s.Approvals = observeApprovals(root)
 
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.

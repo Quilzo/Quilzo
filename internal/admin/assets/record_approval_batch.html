@@ -12,7 +12,7 @@
 <dt>What you sign</dt><dd>The Merkle root of the hashes above, in this order: <code class="kit-hash">{{.Root}}</code></dd>
 <dt>Waits until</dt><dd><time datetime="{{.Until.Format "2006-01-02T15:04:05Z07:00"}}">{{.Until.Format "2 Jan 2006, 15:04"}} UTC</time></dd>
 </dl>
-<form method="post" action="{{.Action}}" class="approval-batch">
+<form method="post" action="{{.Action}}" data-ceremony="batch">
 <p class="kit-approve-row"><button type="submit">Approve them with my passkey</button> <span class="hint">Your passkey signs the root <code>{{.Short}}</code>, and the batch's record carries it, with the time you spent on each.</span></p>
 </form>
 </section>

@@ -7,7 +7,7 @@
 {{with .Reviewed}}<p class="notice" role="status">{{icon "info"}} It has been reviewed: {{.Outcome}}.</p>
 {{else}}<section class="kit-approval" aria-labelledby="review-h">
 <h2 id="review-h">Your review</h2>
-<form method="post" action="{{.Action}}" class="approval-review">
+<form method="post" action="{{.Action}}" data-ceremony="review">
 <fieldset><legend>Does the decision stand?</legend>
 <p class="choice"><input type="radio" name="outcome" value="upheld" id="outcome-upheld" checked> <label for="outcome-upheld">It stands: uphold it</label></p>
 <p class="choice"><input type="radio" name="outcome" value="challenged" id="outcome-challenged"> <label for="outcome-challenged">Challenge it: it stands, marked challenged, until it is decided again</label></p>

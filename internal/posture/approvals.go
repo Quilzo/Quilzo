@@ -72,7 +72,7 @@ func init() {
 			ID:       "approval.lapsed",
 			Title:    "An approval in the security record has lapsed",
 			Severity: Medium,
-			Controls: []string{"AC-5", "RA-7"},
+			Controls: []string{"AC-5", "CA-7"},
 			Remind:   true,
 			Why: "An approval is given for a term. Once it has passed, what it decided (a risk accepted, an " +
 				"exception granted, a scope approved) is held by nobody, and it is decided again or it stands " +

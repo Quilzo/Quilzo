@@ -136,7 +136,9 @@ func TestSingleSignOnRequiredHoldsOnEveryRequest(t *testing.T) {
 		!strings.Contains(w.Body.String(), "requires signing in through") {
 		t.Errorf("a passkey session went round single sign-on: %d", w.Code)
 	}
-	if w := get(t, srv, "/", session("dana@quilzo.io", auth.MethodSSO)); w.Code != http.StatusOK {
+	// Said to have used a method that cannot be phished, as an
+	// administrator's sign-in has to (approvalscreen.go).
+	if w := get(t, srv, "/", session("dana@quilzo.io", auth.MethodSSO, auth.MethodSSOPhishingResistant)); w.Code != http.StatusOK {
 		t.Errorf("a single sign-on session was refused: %d", w.Code)
 	}
 	if w := get(t, srv, "/", session("glass@quilzo.io", auth.MethodPasskey)); w.Code != http.StatusOK {
