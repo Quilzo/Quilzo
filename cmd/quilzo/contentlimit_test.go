@@ -191,8 +191,8 @@ func TestATokenLimitedToTypesOrLocalesIsHeldToWhatItWrites(t *testing.T) {
 		if tc.may && err != nil {
 			t.Errorf("a token limited to policy could not import into %s: %v", tc.collection, err)
 		}
-		if !tc.may && err == nil {
-			t.Errorf("a token limited to policy imported records into %s", tc.collection)
+		if !tc.may && (err == nil || !strings.Contains(err.Error(), "limited to the content types policy")) {
+			t.Errorf("a token limited to policy imported records into %s: %v", tc.collection, err)
 		}
 	}
 
@@ -230,16 +230,25 @@ func TestATokenLimitedToTypesOrLocalesIsHeldToWhatItWrites(t *testing.T) {
 			t.Errorf("a token limited to French could not write %s and %s in French: %v %+v",
 				tc.add, tc.mcp, err, refused)
 		}
-		if !tc.may && err == nil {
-			t.Errorf("a token limited to French wrote %s as English with quilzo add", tc.add)
+		if !tc.may && (err == nil || !strings.Contains(err.Error(), "scoped to fr")) {
+			t.Errorf("a token limited to French wrote %s as English with quilzo add: %v", tc.add, err)
 		}
-		if !tc.may && refused == nil {
-			t.Errorf("a token limited to French wrote %s as English with write_page", tc.mcp)
+		if !tc.may && (refused == nil || !strings.Contains(refused.Message, "scoped to fr")) {
+			t.Errorf("a token limited to French wrote %s as English with write_page: %+v", tc.mcp, refused)
 		}
 	}
-	md := fileOf(t, "export.md", "---\ntitle: Contact\nslug: contact\nlocale: en\n---\nhello\n")
-	args := []string{md, "--redirects-out", filepath.Join(t.TempDir(), "r.json")}
-	if err := run("import", args, func() error { return cmdImport(root, args) }); err == nil {
-		t.Error("a token limited to French imported a page in English")
+	for _, tc := range []struct {
+		slug, locale string
+		may          bool
+	}{{"contact", "en", false}, {"contact", "fr", true}} {
+		md := fileOf(t, "export.md", "---\ntitle: Contact\nslug: "+tc.slug+"\nlocale: "+tc.locale+"\n---\nhello\n")
+		args := []string{md, "--redirects-out", filepath.Join(t.TempDir(), "r.json")}
+		err := run("import", args, func() error { return cmdImport(root, args) })
+		if tc.may && err != nil {
+			t.Errorf("a token limited to French could not import a page in French: %v", err)
+		}
+		if !tc.may && (err == nil || !strings.Contains(err.Error(), "scoped to fr")) {
+			t.Errorf("a token limited to French imported a page in English: %v", err)
+		}
 	}
 }
