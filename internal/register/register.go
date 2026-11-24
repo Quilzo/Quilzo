@@ -331,6 +331,27 @@ func (r *Register) Counts() (map[Kind]int, error) {
 	return out, nil
 }
 
+// Census is a kind with how many records of it the register holds, as
+// every surface that describes the register says it.
+type Census struct {
+	Spec
+	Records int `json:"records"`
+}
+
+// Census is every kind, in the alphabet's order, with how many records of
+// it there are.
+func (r *Register) Census() ([]Census, error) {
+	counts, err := r.Counts()
+	if err != nil {
+		return nil, err
+	}
+	var out []Census
+	for _, k := range Kinds() {
+		out = append(out, Census{Spec: k, Records: counts[k.Kind]})
+	}
+	return out, nil
+}
+
 // Head is the commit the register stands at: the hash that names the whole
 // record as it is now. Empty for a register nothing was written to.
 func (r *Register) Head() string { return r.Store.GetRef(Ref) }

@@ -105,32 +105,12 @@ func openRegister(root string) (*register.Register, error) {
 	return register.Open(s), nil
 }
 
-// kindView is a kind as the register's surfaces describe it.
-type kindView struct {
-	register.Spec
-	// Records is how many the register holds.
-	Records int `json:"records"`
-}
-
-// registerKindViews is every kind, with how many records of it there are.
-func registerKindViews(r *register.Register) ([]kindView, error) {
-	counts, err := r.Counts()
-	if err != nil {
-		return nil, err
-	}
-	var out []kindView
-	for _, k := range register.Kinds() {
-		out = append(out, kindView{Spec: k, Records: counts[k.Kind]})
-	}
-	return out, nil
-}
-
 func registerKinds(root string) error {
 	r, err := openRegister(root)
 	if err != nil {
 		return err
 	}
-	views, err := registerKindViews(r)
+	views, err := r.Census()
 	if err != nil {
 		return err
 	}
@@ -293,7 +273,7 @@ func registerRegisterOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		views, err := registerKindViews(r)
+		views, err := r.Census()
 		if err != nil {
 			return nil, err
 		}

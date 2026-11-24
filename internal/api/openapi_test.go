@@ -39,8 +39,17 @@ func TestTheAPIDescribesItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	re := regexp.MustCompile(`mux\.HandleFunc\("(/api/v1/[^"]*)"`)
+	var routes []string
 	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
-		route := m[1]
+		routes = append(routes, m[1])
+	}
+	// And the routes the security modules register from their own files.
+	for _, m := range apiModules {
+		for _, r := range m.routes {
+			routes = append(routes, r.path)
+		}
+	}
+	for _, route := range routes {
 		if route == "/api/v1/" {
 			continue
 		}

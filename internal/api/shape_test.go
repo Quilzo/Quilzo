@@ -452,6 +452,21 @@ func TestEachServerDescribesWhatItServes(t *testing.T) {
 			}
 			path := strings.NewReplacer("{name}", "index", "{collection}", "samples",
 				"{ref}", "live").Replace(p)
+			tok := c.tok
+			// A module's route is tried as its own test file says, with a
+			// token that may read it (moduleExamples).
+			if moduleRoute(strings.SplitN(p, "{", 2)[0]) {
+				ex, ok := moduleExamples[p]
+				if !ok {
+					t.Errorf("%s is a module's and no test file of the module says how to try it", p)
+					continue
+				}
+				path, tok = ex(t, c.s)
+				if w := req(t, c.s, "GET", path, tok, nil, nil); w.Code != http.StatusOK {
+					t.Errorf("%s describes %s, and GET %s answers %d: %s", name, p, path, w.Code, w.Body)
+				}
+				continue
+			}
 			switch {
 			case strings.HasPrefix(path, "/api/v1/replica/object/"):
 				path = strings.Replace(path, "{id}", live, 1)

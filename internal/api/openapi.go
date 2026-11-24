@@ -88,6 +88,18 @@ func op(summary, id string, params []any, body map[string]any, ok map[string]any
 
 // OpenAPI is the API's description.
 func OpenAPI() map[string]any {
+	doc := openAPI()
+	// And the security modules' routes, each described in its own file
+	// (modules.go).
+	paths := doc["paths"].(map[string]any)
+	for tmpl, item := range moduleDescriptions() {
+		paths[tmpl] = item
+	}
+	return doc
+}
+
+// openAPI is the description of the routes Handler serves of its own.
+func openAPI() map[string]any {
 	paging := []any{
 		param("limit", "query", "how many to return", false, posInt),
 		param("offset", "query", "how many to skip", false, nonNeg),
