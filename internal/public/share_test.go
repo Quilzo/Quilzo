@@ -91,14 +91,36 @@ func TestTheManifestDeclaresAServerSideShare(t *testing.T) {
 	}
 }
 
-// A shared value that is enormous is clamped rather than stored whole.
+// A shared value that is enormous is not stored, whole or cut, and an
+// ordinary one is stored as it was shared.
+//
+// Each value is cut to maxShareField before the form sees it, which bounds
+// what the form is given to check. Every value cut is still longer than any
+// answer a form takes, so the form refuses it rather than keep a part.
 func TestSharedValuesAreBounded(t *testing.T) {
-	long := strings.Repeat("x", maxShareField*3)
-	if got := clampShare(long); len(got) != maxShareField {
-		t.Errorf("a %d-character share came through at %d", len(long), len(got))
+	st, fs := withForm(t)
+	st.Share = &ShareTarget{Form: "contact", TitleField: "name"}
+	send := func(title string) int {
+		t.Helper()
+		v := url.Values{"title": {title}}
+		r := httptest.NewRequest(http.MethodPost, "/share", strings.NewReader(v.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("User-Agent", browser)
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		return w.Code
 	}
-	if got := clampShare("short"); got != "short" {
-		t.Errorf("an ordinary value was altered: %q", got)
+	if code := send(strings.Repeat("中", maxShareField)); code != http.StatusBadRequest {
+		t.Errorf("an enormous share answered %d", code)
+	}
+	if subs, _ := fs.List("contact"); len(subs) != 0 {
+		t.Fatalf("an enormous share was stored: %+v", subs)
+	}
+	if code := send("Ana"); code != http.StatusSeeOther {
+		t.Fatalf("an ordinary share answered %d", code)
+	}
+	if subs, _ := fs.List("contact"); len(subs) != 1 || subs[0].Values["name"] != "Ana" {
+		t.Errorf("an ordinary share was stored as %+v", subs)
 	}
 }
 

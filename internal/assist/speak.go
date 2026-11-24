@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Text to speech, from an endpoint that serves OpenAI's /audio/speech:
@@ -62,7 +64,7 @@ func (h *HTTPModel) Speak(ctx context.Context, text, voice string) ([]byte, Usag
 	if resp.StatusCode != http.StatusOK {
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
-		return nil, Usage{}, &StatusError{Code: resp.StatusCode, Body: clip300(strings.TrimSpace(buf.String()))}
+		return nil, Usage{}, &StatusError{Code: resp.StatusCode, Body: plaintext.Clip(strings.TrimSpace(buf.String()), 300, "")}
 	}
 	audio, err := io.ReadAll(io.LimitReader(resp.Body, MaxSpoken+1))
 	if err != nil {

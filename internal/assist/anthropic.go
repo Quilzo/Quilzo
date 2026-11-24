@@ -515,7 +515,7 @@ func readAnthropicStream(r io.Reader) (anthropicReply, error) {
 			se := &StatusError{Code: http.StatusInternalServerError, Body: "the stream failed"}
 			if ev.Error != nil {
 				se.Code = anthropicErrorStatus(ev.Error.Type)
-				se.Body = clip300(ev.Error.Type + ": " + ev.Error.Message)
+				se.Body = plaintext.Clip(ev.Error.Type+": "+ev.Error.Message, 300, "")
 			}
 			return se
 		}
@@ -581,11 +581,4 @@ func anthropicErrorStatus(kind string) int {
 		return 529
 	}
 	return http.StatusInternalServerError
-}
-
-func clip300(s string) string {
-	if len(s) > 300 {
-		return s[:300]
-	}
-	return s
 }
