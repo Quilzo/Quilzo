@@ -136,14 +136,19 @@ func (l *List) SaveIssue(is Issue) error {
 	return atomicfile.Write(l.issuePath(is.ID), append(body, '\n'), 0o600)
 }
 
+// ErrNoIssue is an id that names no issue, for errors.Is: the command line
+// exits 4 for it, "not found", as the help documents, where `quilzo
+// newsletter dismiss` of an id nobody has exited 1.
+var ErrNoIssue = errors.New("there is no issue")
+
 // Issue reads one issue.
 func (l *List) Issue(id string) (Issue, error) {
 	if !ValidIssue(id) {
-		return Issue{}, fmt.Errorf("there is no issue %q", id)
+		return Issue{}, fmt.Errorf("%w %q", ErrNoIssue, id)
 	}
 	body, err := os.ReadFile(l.issuePath(id))
 	if errors.Is(err, os.ErrNotExist) {
-		return Issue{}, fmt.Errorf("there is no issue %q", id)
+		return Issue{}, fmt.Errorf("%w %q", ErrNoIssue, id)
 	}
 	if err != nil {
 		return Issue{}, err

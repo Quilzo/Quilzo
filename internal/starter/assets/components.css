@@ -339,7 +339,15 @@ pre {
   container-type: inline-size;
   padding-block: var(--space-7);
 }
-.section + .section { padding-top: 0; }
+/* Two plain sections in a row share one gap, the first one's. Neither may
+   be a tinted band, a gradient or a media surface, whose padding is inside
+   its colour: this outranked the bands' own padding, so a closing band after
+   another section lost its top padding and its heading sat on the band's top
+   edge, and a plain section after a band had nothing between its words and
+   the band's bottom edge. The exclusions are inside :where() so the rule
+   weighs what ".section + .section" did: as :not() alone they outweighed the
+   gradient's own padding below, which had won by coming later. */
+.section:where(:not([class*="tone-"], .surface-gradient, .surface-media)) + .section:where(:not([class*="tone-"], .surface-gradient, .surface-media)) { padding-top: 0; }
 .section-head { display: flex; flex-direction: column; gap: var(--space-3); max-width: 60ch; margin-bottom: var(--space-5); }
 .section-head.center { align-items: center; text-align: center; }
 .tone-quiet { background: var(--surface); }
@@ -354,6 +362,11 @@ pre {
    filled button on a tinted band lost its label colour. */
 .tone-accent a:not(.btn), .tone-primary a:not(.btn),
 .tone-accent .btn-outlined, .tone-primary .btn-outlined { color: inherit; }
+/* A standfirst on a tinted band takes the band's text colour too. It kept
+   the secondary text colour, which the theme checks against the page and a
+   card and never against a band, and a closing band's standfirst read at
+   2.59:1 on sites that passed every check. */
+.tone-accent .lead, .tone-primary .lead { color: inherit; }
 
 /* -- hero ------------------------------------------------------------------ */
 
@@ -366,10 +379,25 @@ pre {
   display: flex; flex-direction: column; gap: var(--space-4);
   align-items: flex-start;
 }
-.hero .lead { color: inherit; opacity: 0.88; }
-.hero .chip { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
+/* The hero's standfirst and chip are in the hero's own text colour on the
+   hero's own background, the pair the theme checks. The standfirst was faded
+   with an opacity and the chip sat on a tint of the text, and the palette
+   generator places that pair at exactly the ratio it needs, so both were
+   below it on every generated site (3.7:1 and 2.7:1) and no check saw them.
+   The chip is drawn as an outline instead of a tint. */
+.hero .lead { color: inherit; }
+.hero .chip { background: transparent; color: inherit; box-shadow: inset 0 0 0 1px currentColor; }
 .hero.hero-center { align-items: center; text-align: center; }
 .hero.hero-center .lead { margin-inline: auto; }
+/* The eyebrow of a centred hero is centred too. The rule above that keeps a
+   chip from stretching into a bar sets align-self: start on every chip in a
+   hero, and it beat the hero's own align-items, so a centred heading sat
+   under a chip pinned to the left edge. */
+.hero.hero-center > .chip { align-self: center; }
+/* And its buttons, when there are more than fit on one line: at phone
+   width they wrapped against the left edge under a centred heading. A
+   centred section heading's buttons likewise. */
+.hero.hero-center .actions, .section-head.center .actions { justify-content: center; }
 .hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0;
   /* A plain hero is text on the page: no style draws a card around it. */
   box-shadow: none; border: 0; }
@@ -378,12 +406,18 @@ pre {
 .hero-media img { border-radius: var(--radius-lg); width: 100%; }
 
 /* A CSS-drawn surface, for a hero that wants an image and does not have one.
-   Two radial washes and a conic sheen over the token palette — no bytes, no
-   request, and it recolours with the theme instead of fighting it. */
+   Two radial washes over the token palette — no bytes, no request, and it
+   recolours with the theme instead of fighting it.
+   The washes are of the lowest surface, which is lighter than the hero in
+   the light scheme and darker in the dark, so they only ever move the hero
+   away from its words. They were of the accent and the second accent, which
+   moved it towards them wherever those were darker in light or lighter in
+   dark, and the hero's heading read at 2.7:1 on generated palettes the
+   theme had checked at 4.5:1. */
 .surface-wash {
   background:
-    radial-gradient(120% 90% at 12% 8%, color-mix(in srgb, var(--primary) 26%, transparent), transparent 60%),
-    radial-gradient(90% 70% at 92% 92%, color-mix(in srgb, var(--tertiary-container) 55%, transparent), transparent 62%),
+    radial-gradient(120% 90% at 12% 8%, color-mix(in srgb, var(--surface-container-lowest) 40%, transparent), transparent 60%),
+    radial-gradient(90% 70% at 92% 92%, color-mix(in srgb, var(--surface-container-lowest) 24%, transparent), transparent 62%),
     var(--primary-container);
 }
 .surface-grid {
@@ -590,7 +624,11 @@ pre {
 
 /* The bar. --pct is set inline from a value the template puts through the
    `round` filter, which refuses anything that is not a number — so the only
-   thing that can reach this custom property is a numeral. */
+   thing that can reach this custom property is a numeral.
+
+   The fill is the bar's whole width, scaled from the start of the line: a
+   change moves on the compositor, where animating width laid the page out
+   again on every frame of it. */
 .bar {
   --pct: 0;
   height: 0.5rem;
@@ -600,11 +638,13 @@ pre {
 }
 .bar > span {
   display: block; height: 100%;
-  width: calc(clamp(0, var(--pct), 100) * 1%);
+  transform: scaleX(calc(clamp(0, var(--pct), 100) / 100));
+  transform-origin: left;
   border-radius: inherit;
   background: var(--primary);
-  transition: width var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease);
 }
+.bar > span:dir(rtl) { transform-origin: right; }
 .bar-positive > span { background: var(--positive); }
 .bar-caution  > span { background: var(--caution); }
 .bar-critical > span { background: var(--critical); }
@@ -739,8 +779,9 @@ blockquote.pull footer { font-size: var(--text-sm); color: var(--on-surface-vari
 .logos li {
   font-family: var(--font-display); font-weight: 800;
   font-size: var(--text-lg); letter-spacing: -0.02em;
+  /* Not faded: a wordmark is words, and an opacity of 0.75 put the
+     secondary text colour, which is checked unfaded, below its ratio. */
   color: var(--on-surface-variant);
-  opacity: 0.75;
 }
 
 .notice {
@@ -768,7 +809,8 @@ blockquote.pull footer { font-size: var(--text-sm); color: var(--on-surface-vari
 .plan .price { display: flex; align-items: baseline; gap: 0.3em; }
 .plan .price .amount { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 800; font-variant-numeric: tabular-nums; }
 .plan .price .period { font-size: var(--text-sm); color: var(--on-surface-variant); }
-.plan.featured .price .period { color: inherit; opacity: 0.8; }
+/* Unfaded: an opacity on the featured plan's "/month" put it at 3.3:1. */
+.plan.featured .price .period { color: inherit; }
 .plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); }
 .plan li { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2); }
 .plan li::before { content: "✓"; font-weight: 700; color: var(--primary); }
@@ -931,10 +973,38 @@ figure { margin: 0; }
   }
 }
 
-/* Cross-document transitions: same-origin navigation crossfades with no script
-   at all. Browsers without it navigate normally. */
+/* Page transitions, on a site that runs no script.
+
+   The View Transitions API is usually reached by calling
+   document.startViewTransition. This site sends script-src 'none', so that
+   call never happens — but the cross-document form needs no call at all: two
+   same-origin pages that both carry this at-rule transition between
+   themselves, and the trigger is the navigation itself.
+
+   Which makes it the rare case where the constraint costs nothing. Paired
+   with the speculation rules this site already sends, a link followed on a
+   static page behaves like one in an application, and neither half is a
+   script.
+
+   Chromium and Safari 18.2 do this today; a browser that does not simply
+   navigates, which is what it did before.
+
+   One rule, with only the reduced-motion block below and a site's motion
+   setting after it. There were two, the second after that block, and the
+   last @view-transition is the one a browser uses: a visitor who had asked
+   for less motion was given navigation: auto again. */
 @view-transition { navigation: auto; }
 
+/* The header and footer stay put while the content changes, rather than
+   cross-fading with it. Naming them is what makes the transition read as one
+   page changing instead of two pages dissolving. */
+.site-header { view-transition-name: site-header; }
+.site-footer { view-transition-name: site-footer; }
+
+/* Somebody who has asked for less motion is asking about all of it, and a
+   page transition is animation: the setting is not advisory. The transition
+   is switched off, and its pseudo-elements, which the universal selector
+   does not reach, are stilled for a browser that starts one anyway. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -943,6 +1013,11 @@ figure { margin: 0; }
     scroll-behavior: auto !important;
   }
   @view-transition { navigation: none; }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 
 /* -- forced colours -------------------------------------------------------- */
@@ -967,41 +1042,6 @@ figure { margin: 0; }
   .site-header, .site-footer, .skip, .actions { display: none; }
   body { background: #fff; color: #000; }
   a::after { content: " (" attr(href) ")"; font-size: 0.85em; }
-}
-
-/* Page transitions, on a site that runs no script.
-
-   The View Transitions API is usually reached by calling
-   document.startViewTransition. This site sends script-src 'none', so that
-   call never happens — but the cross-document form needs no call at all: two
-   same-origin pages that both carry this at-rule transition between
-   themselves, and the trigger is the navigation itself.
-
-   Which makes it the rare case where the constraint costs nothing. Paired
-   with the speculation rules this site already sends, a link followed on a
-   static page behaves like one in an application, and neither half is a
-   script.
-
-   Chromium and Safari 18.2 do this today; a browser that does not simply
-   navigates, which is what it did before. */
-@view-transition {
-  navigation: auto;
-}
-
-/* The header and footer stay put while the content changes, rather than
-   cross-fading with it. Naming them is what makes the transition read as one
-   page changing instead of two pages dissolving. */
-.site-header { view-transition-name: site-header; }
-.site-footer { view-transition-name: site-footer; }
-
-/* Somebody who has asked for less motion is asking about this.
-   A transition is animation, and the setting is not advisory. */
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
 }
 
 /* -- an answer above the search results ------------------------------------ */

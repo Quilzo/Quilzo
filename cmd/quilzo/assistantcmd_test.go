@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -16,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // publishedShop is a store with a small shop published, and a draft that is
@@ -106,8 +108,14 @@ func assistantMCP(t *testing.T, root string) *mcp.Server {
 func TestAnAgentBuildsAChatbotAndCannotLaunchIt(t *testing.T) {
 	root := publishedShop(t)
 	srv := assistantMCP(t, root)
+	// Asking for it public is asking for an argument it does not take.
 	if _, err := callTool(t, srv, "quilzo_write", "declare_assistant", map[string]any{
-		"name": "help", "title": "Help", "public": true}); err != nil {
+		"name": "help", "title": "Help", "public": true}); err == nil || err.Code != mcp.CodeInvalidParams ||
+		!strings.Contains(err.Message, "public") {
+		t.Fatalf("declared with public: %+v", err)
+	}
+	if _, err := callTool(t, srv, "quilzo_write", "declare_assistant", map[string]any{
+		"name": "help", "title": "Help"}); err != nil {
 		t.Fatal(err.Message)
 	}
 	a, err := loadAssistant(root, "help")
@@ -161,5 +169,117 @@ func TestAChatbotsOwnerIsToldWhatItWillNotRead(t *testing.T) {
 	kept, said = screenKnowledge(assistant.Assistant{Name: "help", KeepInstructions: true}, ps)
 	if len(kept) != 2 || said != nil {
 		t.Fatalf("a chatbot that keeps them lost some: kept %v, said %q", kept, said)
+	}
+}
+
+// The owner's chatbot reads what the visitors' reads: not a members-only
+// page, nor one outside its publish window. The test console, ask, eval
+// and the gap check read both, so the gap loop closed a visitor's question
+// as "answered from" a members-only page while the public chatbot still
+// could not answer it, and a reply drafted for a visitor could quote it.
+func TestTheOwnersChatbotReadsWhatVisitorsDo(t *testing.T) {
+	root := publishedShop(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(s, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["zqmembers"] = map[string]any{"title": "Members", "members_only": true,
+		"body": "Members get pallet delivery to the Zqvel Highlands for £60 with the code ZQMEMBER60."}
+	pages["zqlater"] = map[string]any{"title": "Summer offer", "starts": "2999-01-01",
+		"body": "Pallet delivery to Zqvel Islands costs £5 until the end of August."}
+	pages["zqgone"] = map[string]any{"title": "Spring offer", "expires": "2001-01-01",
+		"body": "Pallet delivery to Zqvel Moor costs £3."}
+	if _, err := site.SaveDraft(s, pages, "more", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := loadAssistant(root, "help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, _, err := assistantKnowledge(root, a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := map[string]bool{}
+	for _, p := range idx.Passages {
+		read[p.Page] = true
+	}
+	for _, p := range []string{"zqmembers", "zqlater", "zqgone"} {
+		if read[p] {
+			t.Errorf("the owner's chatbot reads %s, which no visitor's does", p)
+		}
+	}
+	if !read["returns"] {
+		t.Fatalf("the owner's chatbot reads %v", read)
+	}
+}
+
+// A chatbot is built, tried and measured on an encrypted store as on any
+// other, and so is everything else that reads what is published.
+//
+// After `quilzo vault enable` and a publish, every owner-side chatbot path
+// (ask, eval, gaps --check, the MCP tool and the admin's test console)
+// said "nothing is published yet ... encrypted and no key was supplied"
+// although the key was supplied, because the chatbot's knowledge opened the
+// store without the keyring every other command opens it with. The public
+// site kept answering, which made it look like the content's fault. Making
+// an issue from a page, and the other readers that opened the store the
+// same way, failed alike.
+func TestTheChatbotToolsReadAnEncryptedStore(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := storeFolder(t)
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	kr, err := vault.NewKeyring("k1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(keyEnv, vault.EncodeKey(kr.Keys["k1"].Key))
+	if err := saveJSON(keyringPath(root), kr); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openEncrypted(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index":    map[string]any{"title": "Marginalia", "intro": "Paper, made in small runs."},
+		"delivery": map[string]any{"title": "Delivery", "body": "UK delivery costs £4.50. We ship to the EU for £12."},
+	}
+	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	// What was published is sealed: read without the key, it cannot be.
+	if plain, err := store.Open(root); err == nil {
+		if _, err := site.PagesAt(plain, site.RefLive); err == nil {
+			t.Fatal("the published commit was written in the clear, so this test proves nothing")
+		}
+	}
+
+	idx, err := assistantIndex(root, assistant.Assistant{Name: "help", Title: "Help", Pages: []string{"delivery"}})
+	if err != nil {
+		t.Fatalf("the chatbot's knowledge, on an encrypted store with its key: %v", err)
+	}
+	if hits := idx.Retrieve("how much is UK delivery", 3); len(hits) == 0 {
+		t.Error("the chatbot found nothing about delivery on an encrypted store")
+	}
+	if _, _, err := issuePage(root, "delivery"); err != nil {
+		t.Errorf("an issue made from a page, on an encrypted store with its key: %v", err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -52,13 +53,13 @@ func themeImport(root string, args []string) error {
 	var one stringList
 	fs.Var(&one, "set",
 		"token=path, repeatable, for a mapping too short to be worth a file")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo theme import FILE [--list] [--map mapping.json] " +
-				"[--set token=path] [--scheme dark]")
+				"[--set token=path] [--scheme dark]")}
 	}
 
 	f, err := readTokenFile(pos[0])
@@ -195,6 +196,7 @@ func themeImport(root string, args []string) error {
 		w.Human("  %s%s%s\n", yellow, a.Detail, reset)
 	}
 	w.Human("  %severy contrast pair checked, in both schemes%s\n", dim, reset)
+	sayBackdrop(written)
 	if shared > 0 {
 		w.Human("\n  %s%d colour(s) are now the same in both schemes, so the "+
 			"dark scheme is showing the light palette.%s\n", yellow, shared, reset)
@@ -205,6 +207,7 @@ func themeImport(root string, args []string) error {
 			dim, reset)
 	}
 	w.Human("\n  %ssee it:  quilzo theme show%s\n", dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
 }
 
@@ -490,7 +493,7 @@ func themeExport(args []string) error {
 		"write here rather than to standard output")
 	tailwind := fs.Bool("tailwind", false,
 		"write a Tailwind CSS v4 @theme stylesheet instead of design tokens")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	values, err := loadThemeFile(*dir)
@@ -507,23 +510,54 @@ func themeExport(args []string) error {
 			return fmt.Errorf("%s", p.Detail)
 		}
 	}
+	// What was written, counted from what was written, in the format it was
+	// written in. This said len(theme.Tokens())*2 and "Design Tokens Format
+	// Module" whatever the file held: 96 over a file of 86, and the same
+	// words over a Tailwind stylesheet of 60 properties.
 	b := theme.Export(th)
+	written := strings.Count(string(b), `"$value"`)
+	format := "as Design Tokens Format Module 2025.10"
 	if *tailwind {
 		b = []byte(theme.Tailwind(th))
+		written = len(reCustomProperty.FindAll(b, -1))
+		format = "as a Tailwind CSS v4 @theme stylesheet"
 	}
-	if *out == "" {
+	// The choices are not tokens, so neither format carries them, and a site
+	// given the file drew it without the style, the scheme or the motion it
+	// was made with and nothing said they were left behind.
+	var choices, set []string
+	for _, tok := range theme.Tokens() {
+		if tok.Kind == theme.Choice {
+			v, _ := th.Value(tok.Name, false)
+			choices = append(choices, tok.Name+" "+v)
+			set = append(set, tok.Name, v)
+		}
+	}
+	notChoices := func(say func(format string, a ...any)) {
+		if len(choices) == 0 {
+			return
+		}
+		say("  %s%s are choices rather than design tokens, so they are not in it; "+
+			"on another Quilzo site:%s\n    quilzo theme set %s\n",
+			dim, strings.Join(choices, ", "), reset, strings.Join(set, " "))
+	}
+	// "-" is standard output, as no --out is: it wrote a file called -.
+	if toStdout(*out) {
 		_, werr := os.Stdout.Write(b)
+		notChoices(w.Notes().Human)
 		return werr
 	}
 	if err := os.WriteFile(*out, b, 0o644); err != nil {
 		return err
 	}
-	w.Human("%s%d token(s) written to %s%s\n",
-		bold, len(theme.Tokens())*2, *out, reset)
-	w.Human("  %sboth schemes, as Design Tokens Format Module 2025.10%s\n",
-		dim, reset)
+	w.Human("%s%d token(s) written to %s%s\n", bold, written, *out, reset)
+	w.Human("  %sboth schemes, %s%s\n", dim, format, reset)
+	notChoices(w.Human)
 	return nil
 }
+
+// reCustomProperty is one property a Tailwind export declares.
+var reCustomProperty = regexp.MustCompile(`(?m)^\s*--[a-z0-9-]+:`)
 
 // stringList collects a repeatable flag.
 type stringList []string

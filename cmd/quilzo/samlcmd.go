@@ -68,7 +68,7 @@ func saveSAML(root string, c saml.Config) error {
 
 func removeSAML(root, name string) error {
 	if _, err := os.Stat(samlFile(root, name)); err != nil {
-		return fmt.Errorf("there is no identity provider called %q", name)
+		return errNotFound{fmt.Errorf("there is no identity provider called %q", name)}
 	}
 	return os.Remove(samlFile(root, name))
 }
@@ -99,10 +99,10 @@ func samlFetch(root, addr string) ([]byte, error) {
 }
 
 func samlUsage() error {
-	return fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
+	return errMisused{fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
 		"add NAME --metadata FILE|URL --url https://YOUR-ADMIN [--preset okta] " +
 		"[--domain d] [--required] [--verified-attribute NAME | --allow-unverified-email] " +
-		"[--fingerprint SHA256] | remove NAME")
+		"[--fingerprint SHA256] | remove NAME")}
 }
 
 func cmdSAML(root string, args []string) error {
@@ -112,6 +112,9 @@ func cmdSAML(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := loadSAML(root)
 		if err != nil {
 			return err
@@ -128,19 +131,46 @@ func cmdSAML(root string, args []string) error {
 		}
 		return nil
 	case "presets":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		keys := make([]string, 0, len(saml.Presets))
 		for k := range saml.Presets {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		// One document under --json, as `saml list` is. This printed only
+		// through Human, so a script asking which providers have a preset
+		// was answered with nothing at all.
+		type row struct {
+			Name              string   `json:"name"`
+			Label             string   `json:"label"`
+			Where             string   `json:"where"`
+			NameIDFormat      string   `json:"name_id_format,omitempty"`
+			MFAContexts       []string `json:"mfa_contexts,omitempty"`
+			MFAAttribute      string   `json:"mfa_attribute,omitempty"`
+			MFAValues         []string `json:"mfa_values,omitempty"`
+			VerifiedAttribute string   `json:"verified_attribute,omitempty"`
+		}
+		rows := []row{}
 		for _, k := range keys {
 			p := saml.Presets[k]
-			w.Human("%-10s %s: %s\n", k, p.Label, p.Where)
+			rows = append(rows, row{k, p.Label, p.Where, p.NameIDFormat,
+				p.MFAContexts, p.MFAAttribute, p.MFAValues, p.VerifiedAttribute})
+		}
+		if w.JSON(map[string]any{"presets": rows}) {
+			return nil
+		}
+		for _, r := range rows {
+			w.Human("%-10s %s: %s\n", r.Name, r.Label, r.Where)
 		}
 		return nil
 	case "show", "metadata":
 		if len(args) < 2 {
 			return samlUsage()
+		}
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
 		}
 		c, err := findSAML(root, args[1])
 		if err != nil {
@@ -168,6 +198,11 @@ func cmdSAML(root string, args []string) error {
 		if len(args) < 2 {
 			return samlUsage()
 		}
+		// One provider. `saml remove okta azure` took okta away and said
+		// nothing of azure, which people went on signing in through.
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
+		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return fmt.Errorf("removing single sign-on is for an administrator of the whole site: %w", err)
 		}
@@ -191,7 +226,7 @@ func findSAML(root, name string) (*saml.Config, error) {
 			return &all[i], nil
 		}
 	}
-	return nil, fmt.Errorf("there is no identity provider called %q", name)
+	return nil, errNotFound{fmt.Errorf("there is no identity provider called %q", name)}
 }
 
 func samlShow(c *saml.Config) error {
@@ -250,7 +285,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return nil, err
 	}
 	if *meta == "" || *adminURL == "" {

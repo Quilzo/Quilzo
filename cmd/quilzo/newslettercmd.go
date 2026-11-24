@@ -23,7 +23,6 @@ import (
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -113,7 +112,7 @@ func publicNewsletter(root string) *public.Newsletter {
 // issuePage is a published page an issue can be made from: public now, and
 // not for members only. It answers the page and where it is served.
 func issuePage(root, name string) (map[string]any, string, error) {
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, "", err
 	}
@@ -395,10 +394,18 @@ func removeSubscriber(root, who string, caller *Caller) (bool, error) {
 	id := who
 	if !newsletter.ValidID(who) {
 		addr, err := newsletter.Normalize(who)
-		if err != nil {
+		switch {
+		case err == nil:
+			id = list.ID(addr)
+		case list.Has(list.ID(strings.ToLower(strings.TrimSpace(who)))):
+			// On the list from before the one address rule, which refuses
+			// it now ("a quote"@example.org): still taken off by the
+			// address it was kept under, because removing somebody must
+			// never depend on a rule tightening after they joined.
+			id = list.ID(strings.ToLower(strings.TrimSpace(who)))
+		default:
 			return false, err
 		}
-		id = list.ID(addr)
 	}
 	was, err := list.Remove(id, time.Now())
 	if err != nil {
@@ -425,7 +432,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, errors.New("say where these people agreed to get the newsletter, such as " +
 			"\"signed up on our Mailchimp form\": they are added as having said yes, and that is the record of it")
 	}
-	rows, err := newsletter.ReadCSV(io.LimitReader(r, 32<<20))
+	rows, readAs, err := newsletter.ReadCSVAs(io.LimitReader(r, 32<<20))
 	if err != nil {
 		return newsletter.Imported{}, err
 	}
@@ -434,6 +441,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, err
 	}
 	got, err := list.Import(rows, "Imported "+time.Now().UTC().Format("2 January 2006")+"; "+agreed, time.Now())
+	got.ReadAs = readAs
 	if err != nil {
 		return got, err
 	}
@@ -471,13 +479,17 @@ func exportSubscribers(root string, w io.Writer, caller *Caller) (int, error) {
 
 // newsletterProblems is what stops the site taking sign-ups or sending
 // issues, as a person fixes it.
+//
+// What goes in mail.json is said here. The advice pointed at `quilzo help
+// mail`, and there is no mail command: the help printed all of itself, and
+// nothing in it said what the file holds.
 func newsletterProblems(root string) []string {
 	var out []string
 	if m, err := loadMailer(root); err != nil {
 		out = append(out, "Mail is set up wrongly: "+err.Error())
 	} else if m == nil {
 		out = append(out, "No mail is set up, so the site cannot mail a sign-up its link. Put your relay in mail.json "+
-			"(quilzo help mail).")
+			`in the store: {"host": "HOST:PORT", "from": "ADDRESS"}, with "username" and "password" when it asks for them.`)
 	}
 	base := siteBaseURL(root)
 	if u, err := url.Parse(base); base == "" || err != nil || u.Scheme != "https" {
@@ -498,12 +510,15 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterStatus(root, caller)
 	case "list":
 		return newsletterList(root, args[1:], caller)
 	case "add":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter add ADDRESS")
+			return errMisused{errors.New("usage: quilzo newsletter add ADDRESS")}
 		}
 		if err := addSubscriber(root, args[1], caller); err != nil {
 			return err
@@ -511,8 +526,18 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		w.Human("asked: it joins when it says yes from the link mailed to it\n")
 		return nil
 	case "remove":
-		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter remove ADDRESS|ID")
+		fs := flag.NewFlagSet("newsletter remove", flag.ContinueOnError)
+		yes := fs.Bool("yes", false, "delete it; at a terminal, without this, only say what would go")
+		var pos []string
+		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return errMisused{errors.New("usage: quilzo newsletter remove ADDRESS|ID [--yes]")}
+		}
+		args = []string{args[0], pos[0]}
+		if erasureHeld(*yes, fmt.Sprintf("this would take %s off the list and delete it", onOneLine(args[1]))) {
+			return nil
 		}
 		was, err := removeSubscriber(root, args[1], caller)
 		if err != nil {
@@ -533,15 +558,18 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	case "send":
 		return newsletterSend(root, args[1:], caller)
 	case "issues":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterIssues(root, caller)
 	case "dismiss":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter dismiss ISSUE")
+			return errMisused{errors.New("usage: quilzo newsletter dismiss ISSUE")}
 		}
 		return dismissIssue(root, args[1], caller)
 	default:
-		return fmt.Errorf("unknown newsletter command %q; try status, list, add, remove, import, export, test, "+
-			"send, issues or dismiss", args[0])
+		return errMisused{fmt.Errorf("unknown newsletter command %q; try status, list, add, remove, import, export, test, "+
+			"send, issues or dismiss", args[0])}
 	}
 }
 
@@ -574,7 +602,7 @@ func newsletterStatus(root string, caller *Caller) error {
 func newsletterList(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "those waiting to confirm as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
@@ -615,23 +643,30 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("newsletter import", flag.ContinueOnError)
 	agreed := fs.String("agreed", "", "where these people agreed to get the newsletter")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")
+		return errMisused{errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")}
 	}
-	f, err := os.Open(pos[0])
-	if err != nil {
-		return err
+	var list io.Reader = os.Stdin
+	if pos[0] != stdio {
+		f, err := os.Open(pos[0])
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		list = f
 	}
-	defer f.Close()
-	got, err := importSubscribers(root, f, *agreed, caller)
+	got, err := importSubscribers(root, list, *agreed, caller)
 	if err != nil {
 		return err
 	}
 	if w.JSON(got) {
 		return nil
+	}
+	if got.ReadAs != "" {
+		w.Human("read as %s\n", got.ReadAs)
 	}
 	w.Human("added %d; %d already here; %d kept as having left, so never sent to; %d skipped as never confirmed "+
 		"or not an address\n", got.Added, got.Already, got.Left, got.Skipped+got.Bad)
@@ -639,17 +674,31 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 }
 
 func newsletterExport(root string, args []string, caller *Caller) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	n, err := exportSubscribers(root, &buf, caller)
 	if err != nil {
 		return err
 	}
-	if len(args) == 0 {
+	// Under --json, one document: the file written and how many, or with
+	// no file the CSV itself, as a field. The CSV went to stdout as it is,
+	// which is not the one document the help promises, and with a file the
+	// answer was nothing, exit 0.
+	if len(args) == 0 || toStdout(args[0]) {
+		if w.JSON(map[string]any{"addresses": n, "csv": buf.String()}) {
+			return nil
+		}
 		_, err := os.Stdout.Write(buf.Bytes())
 		return err
 	}
 	if err := os.WriteFile(args[0], buf.Bytes(), 0o600); err != nil {
 		return err
+	}
+	if w.JSON(map[string]any{"addresses": n, "file": args[0]}) {
+		return nil
 	}
 	w.Human("wrote %d addresses to %s, as a file other newsletter services import\n", n, args[0])
 	return nil
@@ -660,11 +709,11 @@ func newsletterTest(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter test", flag.ContinueOnError)
 	to := fs.String("to", "", "the address to send the test to")
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || *to == "" {
-		return errors.New("usage: quilzo newsletter test PAGE --to ADDRESS [--subject S]")
+		return errMisused{errors.New("usage: quilzo newsletter test PAGE --to ADDRESS [--subject S]")}
 	}
 	if err := testIssue(root, pos[0], *subject, *to, caller); err != nil {
 		return err
@@ -679,11 +728,11 @@ func newsletterSend(root string, args []string, caller *Caller) error {
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
 	issue := fs.String("issue", "", "send an issue an agent proposed, or carry on with one that stopped")
 	yes := fs.Bool("yes", false, "send it; without this, only say who it would go to")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 && *issue == "" {
-		return errors.New("usage: quilzo newsletter send PAGE [--subject S] --yes, or --issue ID --yes")
+		return errMisused{errors.New("usage: quilzo newsletter send PAGE [--subject S] --yes, or --issue ID --yes")}
 	}
 	list, err := openNewsletter(root)
 	if err != nil {
@@ -844,7 +893,7 @@ func newsletterHooks(root string, signedIn func(admin.Actor) *Caller) *admin.New
 			return all, err
 		},
 		Pages: func() ([]string, error) {
-			s, err := store.Open(root)
+			s, err := openEncrypted(root)
 			if err != nil {
 				return nil, err
 			}

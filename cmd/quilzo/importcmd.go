@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/importer"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
@@ -30,14 +31,19 @@ func cmdImport(root string, args []string) error {
 	from := fs.String("from", "", "wordpress, markdown or json (detected if omitted)")
 	dryRun := fs.Bool("dry-run", false, "report what would happen and write nothing")
 	prefix := fs.String("prefix", "", "prepend this to every imported page name")
-	author := fs.String("author", "import", "who to record as the author")
+	// Credit, and not who the import is recorded under (recordedAs). It
+	// was the commit's author, "import" unless it named somebody, and
+	// somebody who imported pages under another person's name approved
+	// them as that person's work.
+	author := fs.String("author", "", "who to credit for what is imported; "+
+		"the import is recorded as yours whatever this names")
 	redirectsOut := fs.String("redirects-out", "redirects.json",
 		"where to write the generated redirect map")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")
+		return errMisused{fmt.Errorf("usage: quilzo import <export-file> [--from wordpress]")}
 	}
 
 	body, err := os.ReadFile(pos[0])
@@ -105,12 +111,15 @@ func cmdImport(root string, args []string) error {
 		return importRecords(root, s, rep, *author)
 	}
 
-	base := s.GetRef(site.RefDraft)
-	pages := map[string]any{}
-	if base != "" {
-		if existing, err := site.PagesAt(s, base); err == nil {
-			pages = existing
-		}
+	// The page set and the commit it is read from, which the import is
+	// written against (site.SaveDraftOver). The base was the draft ref, so a
+	// store with no draft yet had none, which the write took as "whatever
+	// the draft is by then": on a new store an import beside five adds wrote
+	// its pages over whichever of them landed while it converted the file,
+	// and those adds had exited 0.
+	base, pages, err := draftOrLive(s)
+	if err != nil {
+		return err
 	}
 
 	// Refuse to overwrite. An import that silently replaces a page somebody
@@ -140,8 +149,13 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cid, err := site.SaveDraftFrom(s, pages,
-		fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src), *author, base)
+	// The caller's real identity, for the commit as for the record below.
+	caller := resolveCaller(root, "")
+	who, message := caller.recordedAs(*author, fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src))
+	// Merged with whatever landed since it was read, and refused where
+	// somebody else wrote a page this brings (a merge conflict), so a page
+	// that arrived meanwhile is neither replaced nor dropped.
+	cid, _, err := site.SaveDraftOver(s, pages, message, who, base)
 	if err != nil {
 		var imported []string
 		for _, pg := range rep.Pages {
@@ -157,7 +171,12 @@ func cmdImport(root string, args []string) error {
 	// out of somebody else's export, which is a thing it knows and the
 	// operator would otherwise have to assert page by page before the first
 	// publish. See markgenerated.go.
-	markGeneratedQuietly(root, s, *author,
+	//
+	// Answered for by whoever imported them, as the transfer screen's are.
+	// Named by --author, the person it named was one of the people whose
+	// model's or program's pages are in the draft (draftStarters), and so
+	// not asked to read anybody else's.
+	markGeneratedQuietly(root, s, who,
 		"imported from "+string(src)+" by quilzo import")
 
 	// The caller's real identity and its real verification state. The first
@@ -165,7 +184,6 @@ func cmdImport(root string, args []string) error {
 	// package refused outright — a service is only a service because a
 	// credential proved it. The record was silently dropped, leaving the least
 	// trustworthy operation in the system as the one with no log entry.
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
@@ -173,7 +191,7 @@ func cmdImport(root string, args []string) error {
 			"source": string(src), "pages": fmt.Sprintf("%d", len(rep.Pages)),
 			"skipped":   fmt.Sprintf("%d", len(rep.Skipped)),
 			"redirects": fmt.Sprintf("%d", len(rep.Redirects)),
-			"commit":    short(cid), "author": *author,
+			"commit":    short(cid), "author": who,
 		},
 	})
 
@@ -236,11 +254,14 @@ func cmdMedia(root string, args []string) error {
 	case "verify":
 		return cmdMediaVerify(root, args[1:])
 	case "formats":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return mediaFormats()
 	default:
-		return fmt.Errorf("unknown media command %q; try add, get, list, "+
+		return errMisused{fmt.Errorf("unknown media command %q; try add, get, list, "+
 			"remove, replace, renditions, origin, focus, edit, generate, "+
-			"captions, transcribe, speak, verify or formats", args[0])
+			"captions, transcribe, speak, verify or formats", args[0])}
 	}
 }
 
@@ -257,7 +278,7 @@ func cmdMedia(root string, args []string) error {
 func mediaRenditions(root string, args []string) error {
 	fs := flag.NewFlagSet("renditions", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "say what would be made, and make nothing")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	lib, err := openMedia(root)
@@ -366,15 +387,18 @@ func mediaRenditions(root string, args []string) error {
 // and the check is cheap because `quilzo rights` already walks the content for
 // image references.
 func mediaRemove(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
 	force := fs.Bool("force", false,
 		"remove it even though a published page uses it")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media remove --force ID` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media remove <id> [--force]")
+		return errMisused{fmt.Errorf("usage: quilzo media remove <id> [--force]")}
 	}
 	id := pos[0]
 
@@ -434,6 +458,11 @@ func mediaInUse(root, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Nothing published uses nothing, rather than being a question that
+	// could not be answered.
+	if s.GetRef(site.RefLive) == "" {
+		return false, nil
+	}
 	lib, err := openMedia(root)
 	if err != nil {
 		return false, err
@@ -448,9 +477,23 @@ func mediaInUse(root, id string) (bool, error) {
 	// A narrower copy is used when its parent is: no page names it, the
 	// browser chooses it from a srcset, and removing it would leave a
 	// candidate the browser may pick and fail to fetch.
-	if f, serr := lib.Stat(id); serr == nil && f.RenditionOf != "" {
+	f, serr := lib.Stat(id)
+	if serr == nil && f.RenditionOf != "" {
 		_, used := uses[f.RenditionOf]
 		return used, nil
+	}
+	// And a caption file is used when a video the live site shows carries
+	// it. No page names it either, the site reads it off the video; removed,
+	// it took the captions off the published page with no publish, which
+	// is the WCAG 1.2.2 failure the gate exists to refuse.
+	if serr == nil && f.Kind == media.Caption {
+		for _, u := range uses {
+			for _, t := range u.File.Tracks {
+				if t.ID == id {
+					return true, nil
+				}
+			}
+		}
 	}
 	return false, nil
 }
@@ -467,7 +510,7 @@ func mediaList(root string, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	all := fs.Bool("all", false,
 		"include the narrower copies made for phones")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	lib, err := openMedia(root)
@@ -525,6 +568,12 @@ func mediaList(root string, args []string) error {
 		if f.Width > 0 {
 			w.Human(" · %dx%d", f.Width, f.Height)
 		}
+		// Whether a recording has sound decides what a page showing it needs
+		// and whether it may be a backdrop, and it was said only once, when
+		// the file was added.
+		if f.Kind == media.Video {
+			w.Human(" · %s", soundPhrase(f))
+		}
 		w.Human("%s\n", reset)
 		if f.Alt != "" {
 			w.Human("  %s%s%s\n", dim, f.Alt, reset)
@@ -576,14 +625,28 @@ func mediaFormats() error {
 }
 
 func mediaAdd(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	alt := fs.String("alt", "", "description, required for images (WCAG 1.1.1)")
-	if err := fs.Parse(flags); err != nil {
+	// The browser's "Decorative, and needs no description", which the
+	// command line told people to wait for.
+	decorative := fs.Bool("decorative", false,
+		"the image is decorative and needs no description")
+	replaceAlt := fs.Bool("replace-alt", false,
+		"if the file is already in the library, give it this description "+
+			"instead of the one it has, wherever it is used")
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media add --alt "…" FILE` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\"]")
+		return errMisused{fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")}
+	}
+	if *decorative && strings.TrimSpace(*alt) != "" {
+		return fmt.Errorf("--decorative says the image needs no description, " +
+			"and --alt gives it one; say which")
 	}
 
 	body, err := os.ReadFile(pos[0])
@@ -609,16 +672,16 @@ func mediaAdd(root string, args []string) error {
 			// Reported, not fatal. The file has already been proved to be a
 			// valid image; failing the upload because the optimiser could not
 			// improve it would refuse something acceptable.
-			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", noteDim, oerr, noteReset)
 		} else if len(opt.Did) > 0 {
 			body = opt.Body
 			for _, did := range opt.Did {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, did, noteReset)
 			}
 			if opt.StrippedMetadata {
 				fmt.Fprintf(os.Stderr, "  %sthe original carried metadata — a "+
 					"photograph from a phone usually holds GPS coordinates%s\n",
-					yellow, reset)
+					noteYellow, noteReset)
 			}
 			// Re-accepted so the stored id is the hash of what is actually
 			// stored. Skipping this would file the optimised bytes under the
@@ -633,20 +696,31 @@ func mediaAdd(root string, args []string) error {
 		if len(body) > media.SingleFileWarn {
 			fmt.Fprintf(os.Stderr, "  %sthis one file is %d KB; a page carrying "+
 				"a few of these will be slow on a phone%s\n",
-				yellow, len(body)/1024, reset)
+				noteYellow, len(body)/1024, noteReset)
 		}
 	}
 
 	// Alt text is required at the point an image enters, not checked later. A
 	// library full of undescribed images is a library somebody has to go back
 	// through, and nobody ever does.
-	if f.Kind == media.Image && strings.TrimSpace(*alt) == "" {
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	// A file already here keeps its description unless --replace-alt asks
+	// for this one instead (medialib.Arriving), so a description is needed
+	// only of a new file, or of one whose description is being replaced.
+	_, _, here := lib.Arriving(f, false)
+	if f.Kind == media.Image && strings.TrimSpace(*alt) == "" && !*decorative && (!here || *replaceAlt) {
 		return errBlocked{fmt.Errorf(
 			"this image needs a description: --alt \"what it shows\"\n" +
 				"  Say what the image conveys, not that it is an image. If it is " +
-				"purely decorative, pass --alt \"\" explicitly once that is supported")}
+				"purely decorative, pass --decorative, which is a claim you are " +
+				"making rather than a step being skipped")}
 	}
 	f.Alt = strings.TrimSpace(*alt)
+	upload := f
+	f, was, here := lib.Arriving(upload, *replaceAlt)
 
 	// Stored, which it was not.
 	//
@@ -659,22 +733,39 @@ func mediaAdd(root string, args []string) error {
 	// says so: "stores accepted uploads, which nothing did". It was written and
 	// the command was never wired to it. Found by adding three images for a
 	// demonstration and finding an empty picker.
-	lib, err := openMedia(root)
-	if err != nil {
-		return fmt.Errorf("the media library could not be opened: %w", err)
+	if !here || f.Alt != was.Alt {
+		if err := lib.Put(f, body); err != nil {
+			return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
+		}
 	}
-	if err := lib.Put(f, body); err != nil {
-		return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
+	// What the probe found when it was stored: whether a recording has sound,
+	// which decides whether a page showing it owes captions or a description.
+	if f.Kind == media.Video {
+		if stored, serr := lib.Stat(f.ID); serr == nil {
+			f.Sound = stored.Sound
+		}
 	}
 
+	// An accepted upload is a file this site will serve to the public.
+	// Recorded before the JSON answer as well as the words, which it was not:
+	// `--json` returned first and the upload went unlogged.
+	detail := map[string]string{"file": f.Name, "id": short(f.ID), "format": string(f.Format)}
+	if f.Kind == media.Video {
+		detail["sound"] = f.SoundWord()
+	}
 	if w.JSON(f) {
+		record(root, resolveCaller(root, "").auditRecord("media.add", "/", audit.Success, detail))
 		return nil
 	}
-	// An accepted upload is a file this site will serve to the public.
-	record(root, resolveCaller(root, "").auditRecord("media.add", "/",
-		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
-			"format": string(f.Format)}))
-	w.Human("stored %s%s%s\n", bold, f.Name, reset)
+	record(root, resolveCaller(root, "").auditRecord("media.add", "/", audit.Success, detail))
+	if here {
+		w.Human("%s\n", medialib.AlreadyHere(upload.Name, was, f))
+		if f.Alt == was.Alt && upload.Alt != was.Alt {
+			w.Human("  %sto give it your description instead: --replace-alt%s\n", dim, reset)
+		}
+	} else {
+		w.Human("stored %s%s%s\n", bold, f.Name, reset)
+	}
 	w.Human("  %s%s · %s · %d bytes", dim, f.Format, f.Kind, f.Size)
 	if f.Width > 0 {
 		w.Human(" · %dx%d", f.Width, f.Height)
@@ -688,6 +779,16 @@ func mediaAdd(root string, args []string) error {
 	// building a demo page from the output and getting four grey boxes.
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
 	w.Human("  %sin a page: /media/%s%s\n", dim, f.ID, reset)
+	if f.Kind == media.Video {
+		switch f.SoundWord() {
+		case "no":
+			w.Human("  %sno sound: a page showing it needs its description rather than captions, and it may be a backdrop%s\n", dim, reset)
+		case "yes":
+			w.Human("  %shas sound: a page showing it needs captions (quilzo media captions)%s\n", dim, reset)
+		default:
+			w.Human("  %swhether it has sound could not be read (no ffprobe here), so a page showing it needs captions%s\n", dim, reset)
+		}
+	}
 	if !f.Inline() {
 		w.Human("  %sserved as a download, not rendered in the page's origin%s\n",
 			dim, reset)
@@ -696,14 +797,17 @@ func mediaAdd(root string, args []string) error {
 }
 
 func mediaGet(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("get", flag.ContinueOnError)
 	alt := fs.String("alt", "", "description, required for images")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media get --alt "…" URL` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")
+		return errMisused{fmt.Errorf("usage: quilzo media get <https://...> [--alt \"...\"]")}
 	}
 
 	c := fetch.For("import")
@@ -726,6 +830,10 @@ func mediaGet(root string, args []string) error {
 		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
 			"format": string(f.Format), "source": f.Source}))
 	w.Human("fetched and stored %s%s%s\n", bold, f.Name, reset)
+	if f.Alt != strings.TrimSpace(*alt) {
+		w.Human("  %sit was already in the library, and keeps the description %q%s\n",
+			dim, f.Alt, reset)
+	}
 	w.Human("  %sfrom %s%s\n", dim, res.FinalURL, reset)
 	w.Human("  %s%s · %d bytes%s\n", dim, f.Format, f.Size, reset)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
@@ -738,32 +846,11 @@ func mediaGet(root string, args []string) error {
 // The records keep the ids the export gave them. Fresh ids would make every
 // record a different record from the one anything else links to, and the
 // broken relations are found by a reader rather than by this command.
+//
+// named is whoever --author credits, and the records are recorded as the
+// caller's whatever it names (recordedAs), as the pages are.
 func importRecords(root string, s *store.Store, rep *importer.Report,
-	author string) error {
-
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-
-	// Refuse to overwrite, exactly as the page path does. An import that
-	// silently replaced a record somebody edited is the worst way to discover
-	// the ids collided.
-	var clashes []string
-	for _, r := range rep.Records {
-		if _, err := collection.Get(s, tree, rep.Collection, r.ID); err == nil {
-			clashes = append(clashes, r.ID)
-		}
-	}
-	if len(clashes) > 0 {
-		shown := clashes
-		if len(shown) > 5 {
-			shown = shown[:5]
-		}
-		return errBlocked{fmt.Errorf(
-			"%d record(s) already exist in %s and would be replaced: %s",
-			len(clashes), rep.Collection, strings.Join(shown, ", "))}
-	}
+	named string) error {
 
 	recs := make([]collection.Record, 0, len(rep.Records))
 	for _, r := range rep.Records {
@@ -771,23 +858,46 @@ func importRecords(root string, s *store.Store, rep *importer.Report,
 			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
 		})
 	}
-	// RestoreMany, not PutMany: the dates the export carried are real
-	// information and no destination can reconstruct them. A catalogue that
-	// arrives with every item created at import time sorts wrongly from its
-	// first day.
-	next, written, err := collection.RestoreMany(s, tree, rep.Collection, recs,
-		time.Now())
-	if err != nil {
-		return err
-	}
-	message := fmt.Sprintf("import %d record(s) into %s",
-		len(written), rep.Collection)
-	if err := commitTree(root, s, next, message, author); err != nil {
+	caller := resolveCaller(root, "")
+	author, _ := caller.recordedAs(named, "")
+	// Checked and written against the draft as it is under the lock
+	// (commitTree), so a record somebody wrote meanwhile is neither replaced
+	// nor dropped.
+	var written []collection.Record
+	if err := commitTree(s, author, func(tree string) (string, string, error) {
+		// Refuse to overwrite, exactly as the page path does. An import that
+		// silently replaced a record somebody edited is the worst way to
+		// discover the ids collided.
+		var clashes []string
+		for _, r := range rep.Records {
+			if _, err := collection.Get(s, tree, rep.Collection, r.ID); err == nil {
+				clashes = append(clashes, r.ID)
+			}
+		}
+		if len(clashes) > 0 {
+			shown := clashes
+			if len(shown) > 5 {
+				shown = shown[:5]
+			}
+			return "", "", errBlocked{fmt.Errorf(
+				"%d record(s) already exist in %s and would be replaced: %s",
+				len(clashes), rep.Collection, strings.Join(shown, ", "))}
+		}
+		// RestoreMany, not PutMany: the dates the export carried are real
+		// information and no destination can reconstruct them. A catalogue
+		// that arrives with every item created at import time sorts wrongly
+		// from its first day.
+		next, put, err := collection.RestoreMany(s, tree, rep.Collection, recs,
+			time.Now())
+		written = put
+		_, message := caller.recordedAs(named, fmt.Sprintf("import %d record(s) into %s",
+			len(put), rep.Collection))
+		return next, message, err
+	}); err != nil {
 		return err
 	}
 	cid := s.GetRef(site.RefDraft)
 
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/" + rep.Collection, Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
@@ -851,11 +961,11 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 			// already been proved a valid image, and refusing it because the
 			// optimiser could not improve it would refuse something
 			// acceptable.
-			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", noteDim, oerr, noteReset)
 		} else if len(opt.Did) > 0 {
 			body = opt.Body
 			for _, did := range opt.Did {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, did, noteReset)
 			}
 			// Re-accepted, because the id is the hash of the bytes and these
 			// are different bytes. Storing them under the original's hash
@@ -877,8 +987,28 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 	if err != nil {
 		return media.File{}, fmt.Errorf("the media library could not be opened: %w", err)
 	}
+	// A file already here keeps its record, description, rights and all, as
+	// an upload of it does (medialib.Arriving): fetched again by an import,
+	// it replaced the description a person had written with the one the old
+	// site gave it.
+	f, _, here := lib.Arriving(f, false)
+	if here {
+		return f, nil
+	}
 	if err := lib.Put(f, body); err != nil {
 		return media.File{}, fmt.Errorf("fetched and could not be stored: %w", err)
 	}
 	return f, nil
+}
+
+// soundPhrase says what the library knows of a recording's sound, in the
+// words `media list` and the MCP media list use.
+func soundPhrase(f media.File) string {
+	switch f.SoundWord() {
+	case "no":
+		return "no sound"
+	case "yes":
+		return "has sound"
+	}
+	return "sound not known"
 }

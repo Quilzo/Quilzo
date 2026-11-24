@@ -4,20 +4,18 @@
 package admin
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/memory"
-	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/waiting"
 )
 
 // Approvals: everything waiting for a person, in one place.
@@ -36,7 +34,7 @@ import (
 // a question is answered one at a time, because each answer is about its
 // own run.
 
-// approvalItem is one thing waiting.
+// approvalItem is one thing waiting, as the screens show it.
 type approvalItem struct {
 	Source, Agent, Title, Detail, Commits, Href, When string
 	Since                                             time.Time
@@ -47,14 +45,12 @@ type approvalItem struct {
 	Confidence, Batch string
 }
 
-// batchKey is what makes two waiting actions the same: the agent, the
-// action with its input, and the reason it waits.
-func batchKey(agentName string, w *agent.Pending) string {
-	in, _ := json.Marshal(w.Action.Input)
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", agentName, w.Kind, w.Action.Op, w.Action.Tool, in, w.Why)
-}
+// batchKey is what makes two waiting actions the same (waiting.BatchKey).
+func batchKey(agentName string, w *agent.Pending) string { return waiting.BatchKey(agentName, w) }
 
-// runApprovalsFor is what runs wait for that this session may decide.
+// runApprovalsFor is what runs wait for that this session may decide: the
+// runs' part of the one list, which is what the screen showed, so letting
+// several go ahead together is asked of the same list.
 //
 // Asked of the command line for every item, administrators included,
 // because what decides it is more than a role: the session's own limits,
@@ -63,171 +59,151 @@ func batchKey(agentName string, w *agent.Pending) string {
 // (agentpermissions.go). An item the person could not decide is not shown
 // as if they could.
 func (s *Server) runApprovalsFor(p principal, now time.Time) []approvalItem {
-	all := s.runApprovals(now)
-	// A read-only credential decides nothing, so it is offered nothing to
-	// decide.
-	if p.Limits.ReadOnly {
-		return nil
-	}
-	if s.Agents == nil || s.Agents.MayApprove == nil || s.Agents.RunGet == nil {
-		if s.allows(p, auth.ActApprove, auth.AreaAgents) {
-			return all
-		}
-		return nil
-	}
 	var out []approvalItem
-	for _, it := range all {
-		if rec, err := s.Agents.RunGet(it.RunID); err == nil && s.Agents.MayApprove(rec, p.actor()) {
+	for _, it := range s.waitingItems(p, now) {
+		if it.Source == "run" {
 			out = append(out, it)
 		}
 	}
 	return out
 }
 
-func (s *Server) runApprovals(now time.Time) []approvalItem {
-	if s.Agents == nil || s.Agents.Runs == nil {
-		return nil
-	}
-	runs, err := s.Agents.Runs("")
-	if err != nil {
-		return nil
-	}
-	declared := map[string]agent.Manifest{}
-	if s.Agents.Load != nil {
-		declared, _ = s.Agents.Load()
-	}
-	// Whether a tool's step writes is the integration's to say as well as
-	// the manifest's: the manifest's label defaults to off, and a write
-	// listed as a read was offered to approve with others like it.
-	var installed agent.Integrations
-	if s.Integrations != nil && s.Integrations.Declared != nil {
-		installed, _ = s.Integrations.Declared()
-	}
-	var out []approvalItem
-	for _, rec := range runs {
-		w := rec.Trace.Waiting
-		if w == nil || rec.Eval != "" {
-			continue
-		}
-		if w.Live && (rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter) {
-			continue
-		}
-		writes := installed.ToolWrites(declared[rec.Agent], w.Action.Tool)
-		what := w.Action.Name()
-		it := approvalItem{Source: "run", Agent: rec.Agent, RunID: rec.ID, Step: w.N, Kind: w.Kind,
-			Since: w.Since, Live: w.Live, Href: "/agents/run/" + rec.ID,
-			Expired: now.Sub(w.Since) > agent.PendingTTL,
-			Commits: agent.CommitOf(w.Action, w.Why, w.Kind, writes)}
-		switch w.Kind {
-		case agent.WaitQuestion:
-			var asks []string
-			low := 1.0
-			for _, q := range w.Questions {
-				asks = append(asks, q.Ask)
-				if q.Confidence < low {
-					low = q.Confidence
-				}
-			}
-			it.Title = "Answer: " + strings.Join(asks, "; ")
-			it.Confidence = fmt.Sprintf("%.2f", low)
-		case agent.WaitReview:
-			it.Title = what + ", which the reviewer refused"
-		default:
-			it.Title = what
-		}
-		it.Detail = clipText(firstNonEmpty(w.Why, rec.Goal), 240)
-		if agent.Batchable(it.Commits) && w.Kind == agent.WaitAsk && !it.Expired {
-			it.Batch = batchKey(rec.Agent, w)
-		}
-		out = append(out, it)
-	}
-	return out
-}
-
-// otherApprovals are what waits outside agent runs, as far as the person
-// looking may decide it.
-func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
-	var out []approvalItem
-	admin := s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed
-	if s.Policy.Evaluate(p.Name, auth.ActApprove, "/").Allowed && s.Integrations != nil && s.Integrations.Held != nil {
-		if held, err := s.Integrations.Held(); err == nil {
-			for _, h := range held {
-				if h.For == p.Name {
-					continue
-				}
-				out = append(out, approvalItem{Source: "gateway", Agent: firstNonEmpty(h.App, h.Integration),
-					Title: h.Tool + " on " + h.Integration, Detail: "for " + h.For + ", held until a second person decides",
-					Commits: "acts", Href: "/integrations/held", Since: h.Asked})
-			}
-		}
-	}
-	if s.Store != nil {
-		if draft := s.Store.GetRef(site.RefDraft); draft != "" && draft != s.Store.GetRef(site.RefLive) {
-			if st := s.approvalFor(p, draft); st.Configured && st.Proposed && st.Matches && st.CanApprove && st.Have < st.Need {
-				out = append(out, approvalItem{Source: "review", Agent: firstNonEmpty(st.Author, "content"),
-					Title: "Approve the change to the site", Commits: "publishes", Href: "/review",
-					Detail: fmt.Sprintf("%d of %d approvals; %s", st.Have, st.Need, clipText(st.Message, 160)),
-					Since:  now})
-			}
-		}
-	}
-	// A newsletter issue an agent proposed, for whoever may send it: it was
-	// on the Newsletter screen and nowhere a person looks for what waits.
-	if s.Newsletter != nil && s.Newsletter.Issues != nil && s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed {
-		if issues, err := s.Newsletter.Issues(); err == nil {
-			for _, is := range issues {
-				if is.State != newsletter.Proposed {
-					continue
-				}
-				out = append(out, approvalItem{Source: "newsletter", Agent: firstNonEmpty(is.By, "newsletter"),
-					Title:   "Send the issue “" + is.Subject + "”",
-					Detail:  firstNonEmpty(is.Note, "proposed from the page "+is.Page) + "; nothing is sent until a person sends it",
-					Commits: "sends", Href: "/newsletter", Since: is.Proposed})
-			}
-		}
-	}
-	if s.Memory != nil && s.Memory.Store != nil {
-		f := memory.Filter{}
-		if !admin {
-			f.About = p.Name
-		}
-		if all, err := s.Memory.Store.List(f); err == nil {
-			n, first := 0, now
-			for _, e := range all {
-				if e.Held && (admin || e.About == p.Name) {
-					n++
-					if e.Created.Before(first) {
-						first = e.Created
-					}
-				}
-			}
-			if n > 0 {
-				out = append(out, approvalItem{Source: "memory", Agent: "memory",
-					Title:   fmt.Sprintf("Confirm or forget %d held %s", n, map[bool]string{true: "memory", false: "memories"}[n == 1]),
-					Detail:  "learnt after reading somebody else's words, and not recalled until a person confirms it",
-					Commits: "writes", Href: "/memory", Since: first})
-			}
-		}
-	}
-	return out
-}
-
-// waitingItems is everything waiting that a person may decide, as Approvals
-// and Today both list it.
+// waitingItems is everything waiting that a person may decide, as
+// Approvals, Today and the assistant's waiting card all list it.
+//
+// The list is internal/waiting's, the one the command line prints. Built
+// here twice over, it drifted: an expired question was on one and not the
+// other, and what waited outside agent runs was offered to whoever the
+// person was rather than to the session they were using, so a read-only
+// session was offered a held call, an install, a newsletter issue and the
+// review to decide. `quilzo serve` hands the command line's own list over
+// as Waiting; without that hook it is built by the same rules from this
+// server's hooks.
 func (s *Server) waitingItems(p principal, now time.Time) []approvalItem {
+	var list []waiting.Item
+	if s.Waiting != nil {
+		list, _ = s.Waiting(p.actor(), now)
+	} else {
+		list, _ = waiting.List(s.waitingSources(p), now)
+	}
 	var items []approvalItem
-	items = append(items, s.runApprovalsFor(p, now)...)
-	items = append(items, s.otherApprovals(p, now)...)
-	items = append(items, s.featureApprovals(p)...)
+	// Held memories are one row here, which opens the page that confirms
+	// them; the command line lists each by the ID it is confirmed by.
+	memories, first := 0, now
+	for _, it := range list {
+		if it.Source == "memory" {
+			memories++
+			if it.Since.Before(first) {
+				first = it.Since
+			}
+			continue
+		}
+		items = append(items, approvalItem{Source: it.Source, Agent: it.Agent, Title: it.What, Detail: it.Why,
+			Commits: it.Commits, Href: it.Href, Since: it.Since, RunID: it.RunID, Kind: it.Kind, Step: it.Step,
+			Live: it.Live, Expired: it.Expired, Confidence: it.Confidence, Batch: it.Batch})
+	}
+	if memories > 0 {
+		items = append(items, approvalItem{Source: "memory", Agent: "memory",
+			Title:   fmt.Sprintf("Confirm or forget %d held %s", memories, map[bool]string{true: "memory", false: "memories"}[memories == 1]),
+			Detail:  "learnt after reading somebody else's words, and not recalled until a person confirms it",
+			Commits: "writes", Href: "/memory", Since: first})
+	}
 	for i := range items {
 		items[i].When = agoText(now.Sub(items[i].Since))
 	}
 	return items
 }
 
-// commitsOrder is what deciding commits to, most urgent first: a question
-// holds a run up, and paying, deleting and publishing cannot be taken back.
-var commitsOrder = []string{"answers", "installs", "pays", "deletes", "publishes", "sends", "writes", "acts", "reads"}
+// waitingSources are this server's own hooks as the places what waits is
+// kept, for a server not handed the command line's list. Every question
+// about who may decide is asked of the session, through allows.
+func (s *Server) waitingSources(p principal) waiting.Sources {
+	src := waiting.Sources{Name: p.Name, ReadOnly: p.Limits.ReadOnly,
+		May: func(act auth.Action, resource string) bool { return s.allows(p, act, resource) }}
+	if s.Agents != nil && s.Agents.Runs != nil {
+		declared := map[string]agent.Manifest{}
+		var installed agent.Integrations
+		src.Runs = func() ([]agent.Record, error) {
+			if s.Agents.Load != nil {
+				declared, _ = s.Agents.Load()
+			}
+			// Whether a tool's step writes is the integration's to say as
+			// well as the manifest's: the manifest's label defaults to off,
+			// and a write listed as a read was offered to approve with
+			// others like it.
+			if s.Integrations != nil && s.Integrations.Declared != nil {
+				installed, _ = s.Integrations.Declared()
+			}
+			return s.Agents.Runs("")
+		}
+		src.Writes = func(rec agent.Record, tool string) bool {
+			return installed.ToolWrites(declared[rec.Agent], tool)
+		}
+		src.MayDecide = func(rec agent.Record) bool {
+			if s.Agents.MayApprove == nil {
+				return s.allows(p, auth.ActApprove, auth.AreaAgents)
+			}
+			return s.Agents.MayApprove(rec, p.actor())
+		}
+	}
+	if s.Integrations != nil && s.Integrations.Held != nil {
+		src.Held = func() ([]waiting.Held, error) {
+			held, err := s.Integrations.Held()
+			var out []waiting.Held
+			for _, h := range held {
+				out = append(out, waiting.Held{ID: h.ID, Integration: h.Integration, Tool: h.Tool,
+					For: h.For, App: h.App, Asked: h.Asked})
+			}
+			return out, err
+		}
+	}
+	if s.Features != nil {
+		src.Pending = s.Features.Pending
+		if s.Features.Proposals != nil {
+			src.Proposals = func() ([]waiting.Proposal, error) {
+				list, err := s.Features.Proposals()
+				var out []waiting.Proposal
+				for _, pr := range list {
+					out = append(out, waiting.Proposal{ID: pr.ID, By: pr.By, Title: pr.Title, Version: pr.Version,
+						What: pr.What, For: pr.For, At: pr.At})
+				}
+				return out, err
+			}
+		}
+	}
+	if s.Store != nil && s.Approvals != nil && s.Approvals.Policy != nil && s.Approvals.Current != nil {
+		src.Review = func() (*waiting.Review, error) {
+			draft := s.Store.GetRef(site.RefDraft)
+			if draft == "" || draft == s.Store.GetRef(site.RefLive) {
+				return nil, nil
+			}
+			pol, err := s.Approvals.Policy()
+			if err != nil {
+				return nil, err
+			}
+			prop, err := s.Approvals.Current()
+			if err != nil || prop == nil || prop.Content != draft {
+				return nil, err
+			}
+			kindOf := collab.KindOf(s.Approvals.KindOf)
+			if kindOf == nil {
+				kindOf = func(string) string { return "human" }
+			}
+			return &waiting.Review{Policy: pol, Proposal: *prop, KindOf: kindOf}, nil
+		}
+	}
+	if s.Newsletter != nil {
+		src.Issues = s.Newsletter.Issues
+	}
+	if s.Memory != nil && s.Memory.Store != nil {
+		src.Memories = s.Memory.Store.List
+	}
+	return src
+}
+
+// commitsOrder is what deciding commits to, most urgent first
+// (waiting.CommitsOrder).
+var commitsOrder = waiting.CommitsOrder
 
 // approvalGroup is the waiting items of one agent or source.
 type approvalGroup struct {

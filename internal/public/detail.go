@@ -6,6 +6,7 @@ package public
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/spend"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -118,6 +120,17 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 	}
 
 	row, err := st.findRecord(d, key, firstOf(r.URL.Query()))
+	if err == errNoRecord {
+		// The record's Markdown copy, when KEY.md is not a record's own key:
+		// a page of its own has one, as every page does. Answered 404, an
+		// agent that followed a listing's link to the copy found nothing.
+		if slug, isCopy := strings.CutSuffix(key, ".md"); isCopy && slug != "" {
+			if row, err := st.findRecord(d, slug, firstOf(r.URL.Query())); err == nil {
+				st.recordMarkdown(w, base, slug, d, row)
+				return true
+			}
+		}
+	}
 	if err != nil {
 		if err == errNoRecord {
 			st.notFound(w, r)
@@ -125,8 +138,9 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 		}
 		// A declaration that cannot work is the operator's problem and is
 		// said out loud, because a misconfigured detail route that 404s looks
-		// exactly like a record that is not there.
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// exactly like a record that is not there. A value in the address
+		// the listing refuses is the visitor's: see unassembled.
+		unassembled(w, err, err.Error())
 		return true
 	}
 	st.renderDetail(w, r, base, body, row)
@@ -143,9 +157,9 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	name string, body any, row listing.Row) {
 
-	ctx, err := st.sources().For(name, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(name, body, firstOf(r.URL.Query()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unassembled(w, err, err.Error())
 		return
 	}
 	st.sources().WithRecord(ctx, map[string]any(row))
@@ -189,7 +203,17 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	// manifest link, the catalogue pointer and the provenance marking. A
 	// legal marking present on the shop page and missing from the product
 	// page is a marking that is missing where the product actually is.
-	out = st.injectHead(out, name, "", body)
+	//
+	// At the record's own address: its canonical link and its Markdown copy
+	// named the page it is drawn with, so every post said it was a copy of
+	// /post, and the copy offered an agent was /post.md, which is empty.
+	key, _ := row[d.Key].(string)
+	out = st.injectHeadAt(out, name, key, "", body)
+	// In the language of the page it is drawn with. Without links to other
+	// languages: those name the page, not this record.
+	lang := st.languageOf(name, name, nil)
+	lang.announce(w.Header())
+	out = lang.in(out)
 	// The structured data, injected like the rest of the head so it cannot be
 	// missing from the one template nobody checked.
 	ld := productLD(row, st.Name)
@@ -268,11 +292,19 @@ func productLD(row listing.Row, siteName string) string {
 	// The offer. Price is the number, not the written-out string: a consumer
 	// of structured data has to compare it, and "£24.00" is not a number in
 	// any locale's arithmetic.
-	if pence, ok := numberOf(row["price"]); ok {
+	//
+	// In the currency's own minor unit, and its code as the Buy button and
+	// the catalogue feed read it. Every price was divided by a hundred, so a
+	// yen product sold at ¥1500 told crawlers it cost 15.00 and a dinar
+	// price came out ten times too large, and "eur" went out as no ISO 4217
+	// code at all.
+	if minor, ok := numberOf(row["price"]); ok {
+		currency := strings.ToUpper(strings.TrimSpace(str("currency")))
+		places := spend.Decimals(currency)
 		offer := map[string]any{
 			"@type":         "Offer",
-			"price":         fmt.Sprintf("%.2f", pence/100),
-			"priceCurrency": str("currency"),
+			"price":         fmt.Sprintf("%.*f", places, minor/math.Pow10(places)),
+			"priceCurrency": currency,
 			"availability":  availabilityLD(str("availability")),
 		}
 		doc["offers"] = offer
@@ -314,6 +346,16 @@ func numberOf(v any) (float64, bool) {
 		return float64(t), true
 	}
 	return 0, false
+}
+
+// recordURL is the address of one record's page on this site, as the
+// sitemap lists it; "" when the site has no address.
+func (st *Site) recordURL(name, key string) string {
+	base := strings.TrimSuffix(st.BaseURL, "/")
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	return base + "/" + name + "/" + url.PathEscape(key)
 }
 
 // recordEntries is a sitemap entry for each record a page stands for, at

@@ -5,6 +5,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -118,5 +120,36 @@ func TestARefusedWriteRecordsNothing(t *testing.T) {
 	}
 	if len(st.Records) != 0 {
 		t.Errorf("a refused write left %d record(s)", len(st.Records))
+	}
+}
+
+// The help sends a newcomer to `quilzo type example > FILE.json` and then
+// `quilzo type add FILE.json`. When hero became a field every page owns, the
+// example still declared one, so the first step exited 1 and wrote an empty
+// file: the documented way in was the one thing that did not work, and no
+// test ran it. This runs both steps as the help describes them.
+func TestTypeExampleIsAcceptedByTypeAdd(t *testing.T) {
+	w = out.New(false)
+	dir := t.TempDir()
+
+	_, done := captureStdout(t)
+	err := cmdTypeExample(nil)
+	printed := done()
+	if err != nil {
+		t.Fatalf("type example failed: %v", err)
+	}
+	file := filepath.Join(dir, "article.json")
+	if err := os.WriteFile(file, []byte(printed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := typesAdd(dir, []string{file}); err != nil {
+		t.Fatalf("type add refused what type example printed: %v", err)
+	}
+	st, err := schema.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.Registry.Get("article"); !ok {
+		t.Error("the example type was not stored")
 	}
 }

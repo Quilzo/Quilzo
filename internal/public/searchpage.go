@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -88,10 +90,9 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cerr := st.sources().For(searchPageName, body, firstOf(r.URL.Query()))
+	ctx, cerr := st.sourcesFor(r).For(searchPageName, body, firstOf(r.URL.Query()))
 	if cerr != nil {
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, cerr, "this page could not be assembled")
 		return
 	}
 	data := st.searchData(query, pages, hashes)
@@ -182,7 +183,9 @@ func snippetFor(body any, fields []string, query string) string {
 	if !ok {
 		return ""
 	}
-	terms := strings.Fields(strings.ToLower(query))
+	// Folded as the search folds them (search.FoldLetters), which is how the
+	// page was found.
+	terms := strings.Fields(search.FoldLetters(query))
 	sort.Strings(fields)
 	for _, field := range fields {
 		// Every string in the field, however deep — through the same traversal
@@ -190,19 +193,87 @@ func snippetFor(body any, fields []string, query string) string {
 		// reading only the field's own top level found nothing to quote and
 		// every result on a real site came out with an empty snippet.
 		for _, text := range search.Strings(m[field]) {
-			lower := strings.ToLower(text)
 			for _, term := range terms {
-				at := strings.Index(lower, term)
+				at, end := indexFolded(text, term)
 				if at < 0 {
 					continue
 				}
-				return cutAround(text, at, len(term))
+				return cutAround(text, at, end-at)
 			}
 		}
 	}
 	// A match in a field with no readable text — a boolean, a number — is still
 	// a match, and an empty snippet is better than a misleading one.
 	return ""
+}
+
+// indexFolded is where term, already folded as the search folds a word
+// (search.FoldLetters), first appears in text folded the same way, as
+// offsets into text itself.
+//
+// Not strings.Index(strings.ToLower(text), term), which answers with an
+// offset into the lowered copy, and the copy is a different length wherever
+// a character's lower case is: İ is two bytes and lowers to i, one, so a
+// Turkish page's snippet was cut a byte early for every İ before the word and
+// sixty of them left the word out of it; Ⱥ lowers a byte longer, and enough
+// of them put the cut past the end of the text, where it panicked.
+//
+// And folded, not only lowered. The search finds "Hakkında" for HAKKINDA
+// and "çılbır" for cilbir, and lowered alone neither is in the text, so a
+// page found that way came with no line of context.
+func indexFolded(text, term string) (start, end int) {
+	for i := 0; i < len(text); {
+		if n, ok := foldedPrefix(text[i:], term); ok {
+			return i, i + n
+		}
+		_, size := utf8.DecodeRuneInString(text[i:])
+		i += size
+	}
+	return -1, -1
+}
+
+// foldedPrefix reports whether s begins with characters that fold to
+// folded, and how many bytes of s they take. A character may fold to more
+// than one letter (ß to ss), so a word may end inside one, and a mark
+// written as its own character folds to nothing and belongs to the letter
+// before it.
+func foldedPrefix(s, folded string) (int, bool) {
+	i := 0
+	for len(folded) > 0 {
+		if i >= len(s) {
+			return 0, false
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r < utf8.RuneSelf {
+			if byte(unicode.ToLower(r)) != folded[0] {
+				return 0, false
+			}
+			i, folded = i+size, folded[1:]
+			continue
+		}
+		f := search.FoldLetters(s[i : i+size])
+		switch {
+		case f == "" && i == 0:
+			// A match does not begin at a mark: it begins at its letter.
+			return 0, false
+		case strings.HasPrefix(folded, f):
+			folded = folded[len(f):]
+		case strings.HasPrefix(f, folded):
+			folded = ""
+		default:
+			return 0, false
+		}
+		i += size
+	}
+	// The marks on the last letter are part of it.
+	for i < len(s) {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !unicode.Is(unicode.Mn, r) {
+			break
+		}
+		i += size
+	}
+	return i, true
 }
 
 // cutAround takes about a line of text with the match inside it.

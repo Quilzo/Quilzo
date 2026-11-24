@@ -39,3 +39,20 @@ func TestARecordIsAPassageWithoutAnybodysDetails(t *testing.T) {
 		t.Error("a collection that is not one")
 	}
 }
+
+// A record's picture is a file in the media library, not something the
+// record says: a product's "image" was a passage line of 64 hexadecimal
+// characters, in whichever spelling the importer or the picker wrote it.
+func TestARecordsPicturesAreNotKnowledge(t *testing.T) {
+	id := strings.Repeat("c4", 32)
+	ps := ChunkRecords("games", []RecordText{{ID: "g1", Fields: map[string]any{
+		"name": "Nightglass", "image": id, "key_art": "/media/" + id,
+		"screens": []any{"media/" + id, "Three levels"}}}})
+	if len(ps) != 1 {
+		t.Fatalf("%+v", ps)
+	}
+	if strings.Contains(ps[0].Text, id) || strings.Contains(ps[0].Text, "key art") ||
+		!strings.Contains(ps[0].Text, "screens: Three levels") {
+		t.Errorf("%q", ps[0].Text)
+	}
+}

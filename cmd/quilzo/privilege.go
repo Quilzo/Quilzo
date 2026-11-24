@@ -8,6 +8,7 @@ import (
 	"fmt"
 	stdpath "path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -72,6 +73,16 @@ type need struct {
 	// refused `agent approve` for it, because the table asked about the
 	// agents.
 	orAnywhere bool
+	// alsoIn are areas where holding action itself also admits the caller,
+	// for a read of the site's whole store that is also what an area's
+	// screen shows. `logd status` and `anchor status` asked for view on
+	// "/", which the analyst, compliance and auditor jobs never hold, since
+	// they are granted areas and nothing else: they were refused how the
+	// log is protected and its anchors from a terminal while /logs and
+	// Integrity showed them the same, and any reader of the content ran
+	// them. Taking the area in addition, and not in place of "/", keeps
+	// every reader who ran them before.
+	alsoIn []string
 }
 
 // installing is the permission whose work the feature commands that read
@@ -179,7 +190,22 @@ var commandNeeds = map[string]need{
 	"integrations undelivered": {action: auth.ActView},
 	"integrations approve":     {action: auth.ActApprove},
 	"integrations decline":     {action: auth.ActApprove},
-	"integration":              {action: auth.ActView},
+	// The same command spelled singular, asked the same. It had this one
+	// row, view, and none of the narrowing ones above, so everything they
+	// guard fell through to it: a reader, and a token issued --read-only,
+	// pinned what another system's tools are with `quilzo integration pin`
+	// and added integrations with import and template. A bare command, of
+	// either spelling, is asked as the list it runs (bareRuns).
+	"integration":             {action: auth.ActGrant},
+	"integration list":        {action: auth.ActView},
+	"integration tools":       {action: auth.ActView},
+	"integration call":        {action: auth.ActPublish},
+	"integration pin":         {action: auth.ActGrant},
+	"integration gateway":     {action: auth.ActGrant},
+	"integration held":        {action: auth.ActApprove},
+	"integration undelivered": {action: auth.ActView},
+	"integration approve":     {action: auth.ActApprove},
+	"integration decline":     {action: auth.ActApprove},
 	// Each part of the list is filtered by what the caller may decide; the
 	// list itself needs only that they are somebody here, and the runs and
 	// features waiting on whoever holds approve or install-features alone
@@ -204,6 +230,10 @@ var commandNeeds = map[string]need{
 	"agent receipt":  {action: auth.ActView},
 	"agent backends": {action: auth.ActView, or: agentWork},
 	"agent could":    {action: auth.ActView, or: agentWork},
+	// Listing what an agent sends from runs nobody started is reading the
+	// agents; granting or taking one back is checked by the command as an
+	// administrator's, and a grant waits for a second one (agentsends.go).
+	"agent sends": {action: auth.ActView, or: agentWork},
 	// Drafting asks a model, which is spent and recorded under the person,
 	// and saves nothing; declaring saves, as agent new does.
 	"agent draft": {action: auth.ActUseModels},
@@ -220,9 +250,23 @@ var commandNeeds = map[string]need{
 	// administrative: the key is the credential that speaks for the whole site
 	// to everybody following it, and the follower list names people who read
 	// this site, which is not public information.
-	"fediverse":  {action: auth.ActGrant},
-	"provenance": {action: auth.ActView},
-	"prov":       {action: auth.ActView},
+	"fediverse": {action: auth.ActGrant},
+	// Saying where a page's bytes came from writes what its readers are
+	// told about it, and the provenance screen asks to edit the page for
+	// it. Both were view as a whole, so a reader, and a token issued
+	// --read-only, recorded a page as a person's work. Strict parents, so a
+	// subcommand added later arrives guarded; checking steps down, and a
+	// bare command is asked as the check it runs (bareRuns). A backfill
+	// steps down too and asks to edit inside the command, once its flags
+	// are read, because a dry run writes nothing and stays a read.
+	"provenance":          {action: auth.ActEditDraft},
+	"provenance check":    {action: auth.ActView},
+	"provenance status":   {action: auth.ActView},
+	"provenance backfill": {action: auth.ActView},
+	"prov":                {action: auth.ActEditDraft},
+	"prov check":          {action: auth.ActView},
+	"prov status":         {action: auth.ActView},
+	"prov backfill":       {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
@@ -234,15 +278,19 @@ var commandNeeds = map[string]need{
 	// so a subcommand added later arrives guarded; reading and exporting
 	// what is kept step down, and a bare command is asked as the read it
 	// runs (bareRuns).
+	//
+	// What is kept is read in the areas that show it as well (need.alsoIn):
+	// the anchors, of the log's heads among them, where the log is read and
+	// on Integrity, and the timestamps on Integrity.
 	"anchor":           {action: auth.ActGrant},
-	"anchor status":    {action: auth.ActView},
-	"anchor export":    {action: auth.ActView},
+	"anchor status":    {action: auth.ActView, alsoIn: []string{auth.AreaLog, auth.AreaCompliance}},
+	"anchor export":    {action: auth.ActView, alsoIn: []string{auth.AreaLog, auth.AreaCompliance}},
 	"timestamp":        {action: auth.ActGrant},
-	"timestamp list":   {action: auth.ActView},
-	"timestamp export": {action: auth.ActView},
+	"timestamp list":   {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
+	"timestamp export": {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
 	"stamp":            {action: auth.ActGrant},
-	"stamp list":       {action: auth.ActView},
-	"stamp export":     {action: auth.ActView},
+	"stamp list":       {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
+	"stamp export":     {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
 
 	// -- writing content
 	"add": {action: auth.ActEditDraft},
@@ -261,19 +309,54 @@ var commandNeeds = map[string]need{
 	"locales":             {action: auth.ActEditDraft},
 	"lock":                {action: auth.ActEditDraft},
 	"locks":               {action: auth.ActEditDraft},
-	"review":              {action: auth.ActEditDraft},
+	// How many approvals publishing needs, and whose count, is the
+	// four-eyes rule itself, and was an author's to set to zero when this
+	// row was edit-draft for the whole command. Grant, as `config set
+	// review.required_approvals` takes, and asking fewer people waits for
+	// a second administrator there too. What an author did here keeps its
+	// row: approving, which asks publish of its own, and reading, which
+	// narrows to view below and is what a bare `quilzo review` runs.
+	"review":         {action: auth.ActGrant},
+	"review approve": {action: auth.ActEditDraft},
+	"review require": {action: auth.ActGrant, hint: approvalCountHint},
 	// Writes content, types, listings, menus and forms, and publishes. That is
 	// the whole store, so it needs the permission that covers the whole store —
 	// and it refuses outright on a store that already has anything in it.
-	"demo":      {action: auth.ActPublish},
-	"template":  {action: auth.ActEditDraft},
-	"templates": {action: auth.ActEditDraft},
+	"demo": {action: auth.ActPublish},
+	// Writing a starter's layout is installing a design: page.html is what
+	// every page renders through, so replacing it changes every page at
+	// once, including pages the person may not edit. The Design screen's
+	// install asks a publisher for that, and `template use` asked an
+	// author, so the same person was refused one and granted the other.
+	//
+	// A strict parent, as `theme` is, so a subcommand added later arrives
+	// guarded. Adopting a layout from another system writes a file of the
+	// site's own and steps down to edit-draft; replacing one a page may
+	// already render through asks for publish inside the command
+	// (templateAdopt). The reads step down to view (below), and a bare
+	// `quilzo template` is asked as the list it runs (bareRuns).
+	"template":        {action: auth.ActPublish, hint: layoutHint},
+	"templates":       {action: auth.ActPublish, hint: layoutHint},
+	"template adopt":  {action: auth.ActEditDraft},
+	"templates adopt": {action: auth.ActEditDraft},
+	// The second spelling's layouts are read as the first's are, below:
+	// under the strict parent alone a reader was refused them.
+	"templates layouts": {action: auth.ActView},
 	// Declaring a chatbot is a publish: a public one is a new way for anybody
 	// on the internet to reach what the site says and what it offers to do.
-	"assistant":      {action: auth.ActPublish},
+	"assistant": {action: auth.ActPublish},
+	// Building one that is not public, what it is called and says and
+	// which pages it reads, is an author's, as over the agent interface;
+	// the command asks publish itself for the rest, and of a public one.
+	"assistant add":  {action: auth.ActEditDraft},
 	"assistant list": {action: auth.ActView},
 	"assistant ask":  {action: auth.ActView},
 	"assistant eval": {action: auth.ActView},
+	// What visitors could not get answered is their words, masked, for
+	// whoever may read the Inbox, as on the Chatbots screen and over the
+	// agent interface (list_chatbot_gaps). It took the row above, so an
+	// author was refused here what the browser let them read and close.
+	"assistant gaps": {action: auth.ActEditDraft},
 	// What a visitor said to a person is personal data, and answering it is
 	// speaking for the business. Edit-draft, like the chatbots themselves.
 	"inbox": {action: auth.ActEditDraft},
@@ -361,34 +444,11 @@ var commandNeeds = map[string]need{
 	"personalise list": {action: auth.ActView},
 	"personalise test": {action: auth.ActView},
 
-	// Saying something is an ordinary write. Taking down somebody else's
-	// words, or erasing under Article 17, is checked as a publish inside
-	// the command because the answer depends on whose message it is.
-	"room":         {action: auth.ActEditDraft},
-	"room list":    {action: auth.ActView},
-	"room read":    {action: auth.ActView},
-	"room history": {action: auth.ActView},
-
 	// Arithmetic over a synthetic frame. Reads nothing and writes nothing.
 	"screen": {action: auth.ActView},
 
 	// The same, with marks drawn on it. No store, so a view.
 	"annotate": {action: auth.ActView},
-
-	// Group key agreement, run against keys generated for the run and
-	// thrown away with it. Nothing reaches a store.
-	"call": {action: auth.ActView},
-
-	// The control plane of a call, demonstrated against those same
-	// throwaway keys.
-	"huddle": {action: auth.ActView},
-
-	// The note-taker's rules and a demonstration of them. Reads nothing.
-	"scribe": {action: auth.ActView},
-
-	// The assistant carrying out what a call agreed, against a manifest
-	// built for the run. Performs nothing outside itself.
-	"errand": {action: auth.ActView},
 
 	// A flow and a week of runs, both built for the run. Executes nothing.
 	"flow": {action: auth.ActView},
@@ -396,10 +456,6 @@ var commandNeeds = map[string]need{
 	// The register of situational authority. A table about this program's
 	// own design, which changes nothing.
 	"standing": {action: auth.ActView},
-
-	// Arithmetic and a self-check. It reads nothing, writes nothing and
-	// touches no store, so it is a view.
-	"sframe": {action: auth.ActView},
 
 	// Granting an outside firm access to this organisation's evidence is a
 	// commercial decision with a contract behind it, and issuing a package
@@ -433,7 +489,33 @@ var commandNeeds = map[string]need{
 	"assurance show":     {action: auth.ActView},
 	"assurance controls": {action: auth.ActView},
 
-	"theme": {action: auth.ActEditDraft},
+	// A typeface is the glyphs every page that names it is drawn with, and no
+	// gate reads a glyph: a face whose digits are drawn as other digits
+	// changes every price on the site at once. The Design screen asks a
+	// publisher for it, as it does for installing a layout, and so does this.
+	//
+	// A strict parent, so a subcommand added later arrives guarded: `theme
+	// font` was given publish under a parent that asked only an author's
+	// authority, which is the shape that lets the next one arrive with less.
+	// The changes an author makes to the theme today step down to edit-draft,
+	// the reads to view (below), and a bare `quilzo theme` is asked as the
+	// `show` it runs (bareRuns).
+	"theme": {action: auth.ActPublish,
+		hint: "adding or replacing a typeface changes how every page that names it is drawn"},
+	"theme font": {action: auth.ActPublish,
+		hint: "adding or replacing a typeface changes how every page that names it is drawn"},
+	"theme set":      {action: auth.ActEditDraft},
+	"theme unset":    {action: auth.ActEditDraft},
+	"theme apply":    {action: auth.ActEditDraft},
+	"theme generate": {action: auth.ActEditDraft},
+	"theme import":   {action: auth.ActEditDraft},
+	"theme styles":   {action: auth.ActEditDraft},
+	// The style layer at the authority it asked while `theme` asked an
+	// author's: showing it is the theme's own, and setting or taking it away
+	// asks for publish inside the command (themeLayer), with a refusal that
+	// says why. Under the strict parent alone an author who could read the
+	// layer could not.
+	"theme layer": {action: auth.ActEditDraft},
 	// Sections are content: adding, moving and removing one writes a draft
 	// commit, so it is the authority an author already has over a page.
 	"section":  {action: auth.ActEditDraft},
@@ -455,6 +537,13 @@ var commandNeeds = map[string]need{
 	"checked": {action: auth.ActEditDraft},
 	"note":    {action: auth.ActEditDraft},
 	"notes":   {action: auth.ActEditDraft},
+	// Reading them is reading about the draft, which a reader may: the
+	// machine interface's list_checked and list_notes answer a reader, and
+	// these refused the same token on the command line.
+	"checked list": {action: auth.ActView},
+	"checked due":  {action: auth.ActView},
+	"note list":    {action: auth.ActView},
+	"notes list":   {action: auth.ActView},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
@@ -529,7 +618,8 @@ var commandNeeds = map[string]need{
 	"webhook list":       {action: auth.ActView},
 	"webhooks list":      {action: auth.ActView},
 	"oidc check":         {action: auth.ActView},
-	"logd status":        {action: auth.ActView},
+	// How the log is protected, which /logs shows whoever reads the log.
+	"logd status": {action: auth.ActView, alsoIn: []string{auth.AreaLog}},
 
 	"auditlog verify":      {action: auth.ActView},
 	"auditlog show":        {action: auth.ActView},
@@ -561,6 +651,14 @@ var commandNeeds = map[string]need{
 	"token": {action: auth.ActToken},
 	"oidc":  {action: auth.ActGrant},
 	"saml":  {action: auth.ActGrant},
+
+	// Exchanging the token presented for a short session only narrows it
+	// (auth.TokenStore.Exchange: no wider role, path or scope, and never
+	// longer than the token), so it is whoever holds the token's, wherever
+	// their grant is, as POST /token/exchange has it. Under the parent's
+	// row, `quilzo token exchange`, the documented way to use a stored
+	// credential, refused everybody below an administrator.
+	"token exchange": {action: auth.ActView, or: []auth.Action{auth.ActView}, orAnywhere: true},
 	// The presets are built into the program, the same in every store:
 	// which consoles to set an identity provider up in, and what each says
 	// about a second factor. Nothing of the store's is read.
@@ -737,7 +835,12 @@ var commandNeeds = map[string]need{
 	// script on a writable origin. Deciding to open that at all is the
 	// operator act, so it is held to the same bar as opening the admin.
 	"studio": {action: auth.ActPublish},
-	"mcp":    {action: auth.ActEditDraft},
+	// Starting the machine interface, or listing what it offers, is a
+	// reader's, as the same token at /mcp is: every operation is authorised
+	// when it is called (buildMCP), and that is the control. Asked for
+	// edit-draft here, a reviewer's token could search and read the site
+	// over HTTP and not through `quilzo mcp`, nor list the operations.
+	"mcp": {action: auth.ActView},
 
 	// -- deliberately unauthenticated, each with the reason.
 	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
@@ -881,26 +984,28 @@ var pageArgs = map[string]int{
 
 	// Sections are parts of one page. `section item` puts the verb first, so
 	// the page is the second positional after it.
-	"section add":     0,
-	"section remove":  0,
-	"section rm":      0,
-	"section move":    0,
-	"section mv":      0,
-	"section fields":  0,
-	"section set":     0,
-	"section list":    0,
-	"section item":    1,
-	"section kinds":   wholeStore,
-	"sections add":    0,
-	"sections remove": 0,
-	"sections rm":     0,
-	"sections move":   0,
-	"sections mv":     0,
-	"sections fields": 0,
-	"sections set":    0,
-	"sections list":   0,
-	"sections item":   1,
-	"sections kinds":  wholeStore,
+	"section add":       0,
+	"section remove":    0,
+	"section rm":        0,
+	"section move":      0,
+	"section mv":        0,
+	"section fields":    0,
+	"section set":       0,
+	"section list":      0,
+	"section item":      1,
+	"section backdrop":  0,
+	"section kinds":     wholeStore,
+	"sections add":      0,
+	"sections remove":   0,
+	"sections rm":       0,
+	"sections move":     0,
+	"sections mv":       0,
+	"sections fields":   0,
+	"sections set":      0,
+	"sections list":     0,
+	"sections item":     1,
+	"sections backdrop": 0,
+	"sections kinds":    wholeStore,
 
 	// Binding a page to a content type, and saying where its bytes came from.
 	"type bind":      0,
@@ -994,13 +1099,81 @@ func commandResources(cmd string, args []string) []string {
 	if !ok {
 		return []string{"/"}
 	}
-	pos, _ := leadingArgs(rest, idx+1)
+	pos, more := leadingArgs(rest, idx+1)
 	if len(pos) <= idx {
 		// The argument is not there. The command will say so in its own words;
 		// until then the strict answer is the whole store rather than a guess.
-		return []string{"/"}
+		//
+		// Or it is there, after a flag. Then "/" alone is not the strict
+		// answer, because a deny below the root does not cover "/": `lock
+		// --note x legal/terms` was asked about the whole store, passed a
+		// deny on /legal, and locked the page. So every word the command may
+		// yet read as its page is asked about as well.
+		pages := []string{"/"}
+		for _, w := range wordsPastFlags(more) {
+			if r := pageResource(w); !slices.Contains(pages, r) {
+				pages = append(pages, r)
+			}
+		}
+		return pages
 	}
 	return resourcesFor([]string{pos[idx]})
+}
+
+// wordsPastFlags is every word of args a command may read as a name once
+// its flags are parsed: each one that is not a flag, and all of them after
+// "--".
+//
+// The gate finds the page, the collection or the agent a command is about by
+// where it stands before the flags. It has no flag set, so past a flag it
+// cannot tell `--note x`, a flag and its value, from `--off about`, a flag
+// and the page, and a second table of which flags take a value is the copy
+// that drifts (splitFlags). It does not guess: all of them are asked about.
+// A value that is not the name costs somebody with a deny a refusal they can
+// avoid by naming the page first, and that is the direction to be wrong in.
+func wordsPastFlags(args []string) []string {
+	var words []string
+	for i, a := range args {
+		if a == "--" {
+			return append(words, args[i+1:]...)
+		}
+		// A flag, as the flag package has it: a dash and something after.
+		if len(a) > 1 && a[0] == '-' {
+			continue
+		}
+		words = append(words, a)
+	}
+	return words
+}
+
+// namedPastFlags is the collections or the agents a command may be about
+// when a flag stands where commandArea looks for the name: every word after
+// it that could be one.
+//
+// `records add --id ID secret name=x` was asked about the records as a
+// whole and wrote to a collection its caller was denied, and `agent run --
+// bot` ran an agent its caller was denied, since the area is all a deny on
+// one of its members does not cover.
+func namedPastFlags(cmd string, args []string) []string {
+	if len(args) < 2 || !strings.HasPrefix(args[1], "-") {
+		return nil
+	}
+	var named []string
+	switch {
+	case cmd == "agent" && args[0] == "run":
+		for _, w := range wordsPastFlags(args[1:]) {
+			if reAgentArg.MatchString(w) {
+				named = append(named, auth.AgentResource(w))
+			}
+		}
+	case (cmd == "records" || cmd == "record") && recordVerbs[args[0]]:
+		for _, w := range wordsPastFlags(args[1:]) {
+			if collection.ValidName(w) == nil {
+				named = append(named, auth.DataResource(w))
+			}
+		}
+	}
+	return named
 }
 
 // pageArgOf finds the row for a command, resolved the way lookupNeed resolves
@@ -1069,47 +1242,106 @@ func pageResource(page string) string {
 // Suggestions come from the same table that decides privileges, so a command
 // that exists is always offered — there is no second list to fall behind.
 func unknownCommand(cmd string) error {
-	// The threshold is relative to the shorter word, not to a constant.
-	//
-	// A fixed two edits is most of a four-letter word and a rounding error in
-	// a twelve-letter one, which is how "prov" came back as the suggestion for
-	// "aprove". Requiring the distance to be under half the shorter word keeps
-	// short aliases from matching everything and still catches a transposition
-	// in a five-letter name.
-	var near []string
-	for known := range commandNeeds {
-		if strings.HasPrefix(known, cmd) || strings.HasPrefix(cmd, known) {
-			near = append(near, known)
-			continue
-		}
-		shorter := len(cmd)
-		if len(known) < shorter {
-			shorter = len(known)
-		}
-		if d := editDistance(cmd, known); d*2 < shorter {
-			near = append(near, known)
+	// Commands, not the table's rows for a command and a subcommand, which
+	// were offered as though they were commands: `quilzo schedul` was "Did
+	// you mean schedule, schedule list?".
+	var known []string
+	for k := range commandNeeds {
+		if !strings.Contains(k, " ") {
+			known = append(known, k)
 		}
 	}
-	sort.Strings(near)
+	near := nearestWords(cmd, known)
+	// A slip of a command that has left Quilzo is told that it left
+	// (movedout.go). Those names are not in the table the suggestions come
+	// from, so `quilzo calls`, which used to be answered "Did you mean
+	// call?", was answered with nothing, and `quilzo rooms` was steered to
+	// forms. The nearest one is named, on a line of its own, under whatever
+	// is suggested from the commands that are here.
+	var gone []string
+	for name := range movedOut {
+		gone = append(gone, name)
+	}
+	left := nearestWords(cmd, gone)
+	moved := ""
+	if len(left) > 0 {
+		moved = "\n  " + errMovedOut(left[0]).Error()
+	}
+	if len(near) > 0 {
+		return errMisused{fmt.Errorf("there is no %q command. Did you mean %s?%s\n"+
+			"  quilzo help — every command", cmd, strings.Join(near, ", "), moved)}
+	}
+	return errMisused{fmt.Errorf("there is no %q command.%s\n  quilzo help — every command",
+		cmd, moved)}
+}
+
+// nearestWords is what word was most likely meant, of the words known: the
+// nearest, at most four of them, in the alphabet's order. The one test of
+// nearness for every word on the command line, so a command, a subcommand,
+// a flag and a setting are all offered the same way (unknownCommand,
+// nearestSubcommand, flagRefusal, notASetting).
+//
+// The threshold is relative to the shorter word, not to a constant. A fixed
+// two edits is most of a four-letter word and a rounding error in a
+// twelve-letter one, which is how "prov" came back as the suggestion for
+// "aprove". Requiring the distance to be under half the shorter word keeps
+// short aliases from matching everything and still catches a transposition
+// in a five-letter name.
+func nearestWords(word string, known []string) []string {
+	var near []string
+	distance := map[string]int{}
+	for _, k := range known {
+		if k == word || k == "" {
+			continue
+		}
+		d := editDistance(word, k)
+		if strings.HasPrefix(k, word) || strings.HasPrefix(word, k) || d*2 < min(len(word), len(k)) {
+			near = append(near, k)
+			distance[k] = d
+		}
+	}
+	// Only those as near as the nearest. In the alphabet's order alone,
+	// cut at four, `site.nmae` was offered site.blog, site.feed, site.hsts
+	// and site.icon, each four letters away, and not site.name, one swap
+	// away.
+	sort.Slice(near, func(i, j int) bool {
+		if distance[near[i]] != distance[near[j]] {
+			return distance[near[i]] < distance[near[j]]
+		}
+		return near[i] < near[j]
+	})
+	for i := range near {
+		if distance[near[i]] > distance[near[0]] {
+			near = near[:i]
+			break
+		}
+	}
 	if len(near) > 4 {
 		near = near[:4]
 	}
-	if len(near) > 0 {
-		return fmt.Errorf("there is no %q command. Did you mean %s?\n"+
-			"  quilzo help — every command", cmd, strings.Join(near, ", "))
-	}
-	return fmt.Errorf("there is no %q command.\n  quilzo help — every command",
-		cmd)
+	return near
 }
 
-// editDistance is Levenshtein, bounded by the length of the shorter word.
+// editDistance is Levenshtein with a swap of two letters side by side
+// counted as one edit, bounded by the length of the shorter word.
 //
-// Two rows rather than a full matrix: the words are command names, so this is
-// never the expensive part, and the small version is easier to be sure of.
+// The swap, because it is the commonest slip there is and plain Levenshtein
+// counts it as two: `quilzo token lsit` was two edits from list, which is
+// not under half of four letters, and was offered nothing.
+//
+// Three rows rather than a full matrix: the words are command names, so
+// this is never the expensive part, and the small version is easier to be
+// sure of.
+//
+// Words up to sixty-four letters, which a setting's key is too: the bound
+// was twenty-four, for command names, so a mistyped
+// review.required_approvals, twenty-five, was near nothing and offered
+// nothing. Sixty-four squared is still nothing to compute.
 func editDistance(a, b string) int {
-	if len(a) > 24 || len(b) > 24 {
+	if len(a) > 64 || len(b) > 64 {
 		return 99
 	}
+	before := make([]int, len(b)+1)
 	prev := make([]int, len(b)+1)
 	curr := make([]int, len(b)+1)
 	for j := range prev {
@@ -1123,8 +1355,11 @@ func editDistance(a, b string) int {
 				cost = 0
 			}
 			curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				curr[j] = min(curr[j], before[j-2]+1)
+			}
 		}
-		prev, curr = curr, prev
+		before, prev, curr = prev, curr, before
 	}
 	return prev[len(b)]
 }
@@ -1172,6 +1407,9 @@ func authoriseCommand(root, cmd string, args []string) error {
 		// absent from the table is the developer's; anything else is a typo,
 		// and a test walks the source to guarantee the first case never
 		// reaches a user.
+		if movedOut[cmd] {
+			return errMovedOut(cmd)
+		}
 		return unknownCommand(cmd)
 	}
 	if n.action == "" {
@@ -1218,17 +1456,24 @@ func authoriseCommand(root, cmd string, args []string) error {
 		sub = cmd + " " + args[0]
 	}
 	resources := commandResources(cmd, args)
+	// Whether the name was looked for past a flag (wordsPastFlags), which a
+	// refusal then says: the whole site and every word were asked about, and
+	// somebody with a role on part of it reads "no role on /" of a command
+	// about their own page.
+	past := len(resources) > 1 && resources[0] == "/"
 	if area, ok := commandArea(cmd, args); ok {
-		resources = []string{area}
+		named := namedPastFlags(cmd, args)
+		resources, past = append([]string{area}, named...), len(named) > 0
 	}
 	// Every resource, not the first one. A command that writes two pages needs
 	// the authority for both, and stopping at the first would let a deny on
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
-		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) {
+		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) &&
+			!mayInArea(root, caller, n) {
 			var u *errUnverified
 			if errors.As(err, &u) {
-				err = u.named(sub)
+				err = errBlocked{u.named(sub)}
 			}
 			if help {
 				// Not a refusal on the record: nothing was attempted. The
@@ -1243,6 +1488,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 			}
 			if n.hint != "" {
 				return fmt.Errorf("%w\n%s", err, n.hint)
+			}
+			if past {
+				return fmt.Errorf("%w\nwith a flag before the name, every word after it is asked about; "+
+					"write the name first and the flags after it", err)
 			}
 			return err
 		}
@@ -1275,6 +1524,18 @@ func mayInstead(root string, c *Caller, n need, resource string) bool {
 			if authorise(root, c, a, at) == nil {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// mayInArea reports whether the caller holds a row's own action in one of
+// the areas it is also read in (need.alsoIn). The refusal, when there is
+// one, is still the one for the resource the row asks about.
+func mayInArea(root string, c *Caller, n need) bool {
+	for _, area := range n.alsoIn {
+		if authorise(root, c, n.action, area) == nil {
+			return true
 		}
 	}
 	return false
@@ -1324,6 +1585,14 @@ func bootstrapIssue(root, cmd string, args []string) bool {
 var commandAreas = map[string]string{
 	"siem":          auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
+
+	// Which networks sign-ins are counted as coming from the office or a
+	// VPN, which the sign-in rules treat differently: read where who signed
+	// in from where is (auth.AreaSecurity). Asked of the whole site, a
+	// reader of its pages read the ranges, which no screen shows them, and
+	// the security analyst was refused what their screen summarises.
+	"geo status": auth.AreaSecurity,
+
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,
@@ -1376,11 +1645,40 @@ func commandArea(cmd string, args []string) (string, bool) {
 // digest out stopped being a reader's act, and their bare forms, which show
 // the proofs and the stamps, would have gone with them: a reader running
 // `quilzo anchor` would have been refused what `quilzo anchor status` shows.
-var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+//
+// `integration` was view as a whole, and its bare form a reader's; strict
+// now, like `integrations`, it keeps that by listing, as `integrations` now
+// does too, since the list is what `integrations list` gives a reader.
+//
+// `checked`, `note` and `notes` list when run bare. Their lists were opened
+// to a reader and the bare commands still asked for authoring, so the same
+// list was refused a reader under its shortest spelling.
+//
+// `assistant` lists the chatbots when run bare, and took the row for
+// declaring one, a publisher's: a reader and an author were refused the
+// list that `assistant list`, list_assistants and the Chatbots screen give
+// them.
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
+	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
+	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
+	"template": "list", "templates": "list", "assistant": "list"}
+
+// layoutHint is said after a refusal to write a layout.
+const layoutHint = "a layout is the markup every page that names it renders through, " +
+	"so writing one asks whoever may publish, as installing a design on the Design screen does"
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
 		args = []string{sub}
+	}
+	// The most specific row first. `agent template save` and its two
+	// siblings had rows of three words that nothing asked, so listing a
+	// store's templates took the manage-agents permission their row said it
+	// did not.
+	if len(args) > 1 && !strings.HasPrefix(args[0], "-") && !strings.HasPrefix(args[1], "-") {
+		if n, ok := commandNeeds[cmd+" "+args[0]+" "+args[1]]; ok {
+			return n, true
+		}
 	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if n, ok := commandNeeds[cmd+" "+args[0]]; ok {

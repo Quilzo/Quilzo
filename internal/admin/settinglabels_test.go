@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/config"
 )
 
@@ -92,5 +93,30 @@ func TestASavedDurationIsSaidAsTheTableSaysIt(t *testing.T) {
 		if got := loc.Query().Get("m"); got != c.want {
 			t.Errorf("%v: Settings said %q, want %q", c.form, got, c.want)
 		}
+	}
+}
+
+// The settings screen says the count of approvals that applies beside a
+// setting that says less.
+//
+// The larger of the setting and approval.json applies, and approval.json
+// is written by `quilzo review require`, so the screen said two beside
+// review.required_approvals while five applied. A setting the file does not
+// ask more of is shown as it was.
+func TestTheSettingsScreenSaysTheApprovalCountThatApplies(t *testing.T) {
+	srv, token := setup(t)
+	withSettings(t, srv, map[string]string{"review.required_approvals": "2", "approval.required_humans": "3"})
+	srv.Approvals = &Approvals{
+		Policy:  func() (collab.Policy, error) { return collab.Policy{Required: 5, RequiredHumans: 3}, nil },
+		Current: func() (*collab.Proposal, error) { return nil, nil },
+		Save:    func(*collab.Proposal) error { return nil },
+		KindOf:  func(string) string { return "human" },
+	}
+	body := get(t, srv, "/settings", token).Body.String()
+	if !strings.Contains(body, "5 apply") {
+		t.Errorf("the settings screen does not say that five approvals apply beside a setting of two")
+	}
+	if strings.Contains(body, "3 apply") {
+		t.Errorf("the settings screen says the file asks more of a setting it does not")
 	}
 }

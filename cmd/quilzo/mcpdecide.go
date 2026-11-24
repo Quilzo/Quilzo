@@ -5,7 +5,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
@@ -23,7 +24,11 @@ import (
 func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 	srv.Register(mcp.Operation{
 		Name: "list_deciders", NeedsRole: "reader",
-		Summary:  "the site's typed questions, with their options and thresholds",
+		Summary: "the site's typed questions, with their options and thresholds",
+		// What a confidence means is a property of the model answering, so
+		// a client is told which model a decider was last measured on.
+		Detail: "Each decider with its questions, options and threshold, and, once " +
+			"evaluated, measured: when, by whom, and the model and route measured.",
 		Keywords: []string{"decide", "classify", "route", "score", "triage"},
 	}, func(map[string]any) (any, error) {
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -33,27 +38,54 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Deciders)
+		b, err := mcpJSON(listedDeciders(root, set))
 		return string(b), err
 	})
 
 	srv.Register(mcp.Operation{
 		Name: "decide", NeedsRole: "reader",
 		Summary: "answer a decider's typed questions about some state",
-		Detail: "Each answer comes with a confidence and escalate. Where " +
-			"escalate is true a person decides — do not act on that answer. " +
-			"Confidence is agreement across several asks, not the model's own " +
-			"estimate.",
+		// The sentence on confidence says what decide.Decide reports, which
+		// a test holds it to: it once said confidence was agreement alone,
+		// and a client reading that would take a steady model's low stated
+		// number for disagreement between asks.
+		Detail: "Each answer comes with a confidence, an agreement and escalate. " +
+			"Where escalate is true a person decides — do not act on that answer. " +
+			"The question is asked several times; agreement is how far the asks " +
+			"agreed (the share that gave the same answer, or for a score how " +
+			"close the numbers were), and confidence is the lower of that and " +
+			"the model's own stated confidence averaged over those asks, since " +
+			"a model that changes its answer between asks is not as sure as it says.",
 		Args: map[string]string{
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
 		},
-		Keywords: []string{"decide", "classify", "route", "score", "gate"},
+		Types: map[string]string{"state": "any"},
+		// The words somebody uses for a judgement they want made: an agent
+		// asking for "triage a support ticket" was sent to agent_activity.
+		Keywords: []string{"decide", "classify", "route", "score", "gate", "triage",
+			"ticket", "label", "judge", "categorise", "categorize"},
 	}, func(a map[string]any) (any, error) {
 		// A read. What it spends is bounded by the gateway's budget for
 		// "decider:NAME", which is where a cost limit belongs.
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		// A state that is missing or null is the agent's mistake, not
+		// nothing to decide about: an agent that misnamed the field was
+		// answered with confidence about nothing.
+		if a["state"] == nil {
+			given := make([]string, 0, len(a))
+			for k := range a {
+				given = append(given, k)
+			}
+			sort.Strings(given)
+			said := "none"
+			if len(given) > 0 {
+				said = strings.Join(given, ", ")
+			}
+			return nil, &mcp.Refusal{Reason: "no state given: decide answers its questions about state, " +
+				"any JSON value such as the ticket, the comment or the alert; the arguments given were " + said}
 		}
 		name, _ := a["name"].(string)
 		d, err := loadDecider(root, name)
@@ -67,7 +99,8 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		b, err := json.Marshal(res)
+		recordAsk(root, caller, res, a["state"])
+		b, err := mcpJSON(res)
 		return string(b), err
 	})
 }

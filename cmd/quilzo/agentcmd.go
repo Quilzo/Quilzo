@@ -28,7 +28,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	decidepkg "github.com/quilzo/quilzo/internal/decide"
-	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -50,6 +50,12 @@ type agentSet struct {
 	// Identities are who answers for each agent, and until when it may run.
 	// See internal/agent/identity.go.
 	Identities map[string]agent.Identity `json:"identities,omitempty"`
+	// Sends are the tools, and the hands' actions, each agent may send
+	// through from runs nobody started, as two administrators let it
+	// (agentsends.go). Kept beside
+	// the declarations and not in them, so nothing that writes a
+	// declaration grants one.
+	Sends map[string][]unattendedSend `json:"unattended_sends,omitempty"`
 }
 
 func loadAgents(root string) (*agentSet, error) {
@@ -130,10 +136,25 @@ func cmdAgent(root string, args []string) error {
 	}
 	switch args[0] {
 	case "templates":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentTemplates(root)
+	case "template":
+		// This store's own archetypes. Every `agent template` command fell
+		// through to the usage below, so the save the footer of `agent
+		// templates` and NEWS name could only be done by writing the file
+		// into the store by hand, past its grant check and its record.
+		return cmdAgentTemplate(root, args[1:])
 	case "capabilities":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentCapabilities(root)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentList(root)
 	case "show":
 		return agentShow(root, args[1:])
@@ -142,6 +163,9 @@ func cmdAgent(root string, args []string) error {
 	case "probe":
 		return agentProbe(args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentCheck(root)
 	case "run":
 		return agentCheckRun(root, args[1:])
@@ -171,9 +195,14 @@ func cmdAgent(root string, args []string) error {
 		return agentReplay(root, args[1:])
 	case "sponsor", "renew":
 		return agentIdentityCmd(root, args[0], args[1:])
+	case "sends":
+		return agentSendsCmd(root, args[1:])
 	case "trigger", "triggers":
 		return agentTriggerCmd(root, args[1:])
 	case "backends":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentBackends(root)
 	case "could":
 		return agentCould(root, args[1:])
@@ -186,6 +215,9 @@ func cmdAgent(root string, args []string) error {
 	case "export":
 		return agentExport(root, args[1:])
 	case "formats":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentFormats()
 	case "program":
 		return agentProgramCmd(root, args[1:])
@@ -199,9 +231,11 @@ func cmdAgent(root string, args []string) error {
 }
 
 func agentUsage() error {
-	return fmt.Errorf(`usage: quilzo agent <command>
+	return errMisused{fmt.Errorf(`usage: quilzo agent <command>
 
   templates              the archetypes, and when to reach for each
+  template list | save FILE | remove KIND
+                         archetypes of this store's own, which new --kind then knows
   new NAME --kind KIND   declare one from a template
   draft "WHAT IT IS FOR" a model drafts one; the checker says what it could do; nothing is saved
   declare FILE [--widen] save a declaration written out, checked again on the way in; an
@@ -213,6 +247,9 @@ func agentUsage() error {
   export NAME [--to F] [-o PATH]  the declaration in another platform's format
   formats                what import reads and export writes
   sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
+  sends NAME [grant TOOL --why REASON | revoke TOOL]
+                         the tools it sends through from runs nobody started without a person
+                         deciding each call; granting waits for a second administrator
   renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
   receipt RUN [-o FILE] [--bundle F]  what a run did, from the log, with proofs anybody can check;
                          --bundle writes one file that replays it: steps, pictures, proof
@@ -235,7 +272,7 @@ func agentUsage() error {
   resume RUN             continue a run that was interrupted
   replay RUN STEP        run it again from after that step, as a new run
 
-kinds: %s`, strings.Join(agent.KindNames(), ", "))
+kinds: %s`, strings.Join(agent.KindNames(), ", "))}
 }
 
 func agentTemplates(root string) error {
@@ -339,7 +376,7 @@ func agentNew(root string, args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo agent new NAME --kind KIND")
+		return errMisused{fmt.Errorf("usage: quilzo agent new NAME --kind KIND")}
 	}
 	name, kind := args[0], *kindFlag
 	if kind == "" {
@@ -391,15 +428,20 @@ func agentNew(root string, args []string) error {
 			"capabilities": strings.Join(m.Capabilities, " "),
 		}))
 
-	fmt.Printf("declared %s%s%s (%s)\n", bold, name, reset, m.Kind)
-	fmt.Printf("  %s%s%s\n", dim, m.Purpose, reset)
-	fmt.Printf("  capabilities  %s\n", strings.Join(m.Capabilities, ", "))
-	fmt.Printf("  autonomy      %s\n", m.Autonomy)
+	// The declaration under --json, as `agent show` answers it; this
+	// printed its prose whatever was asked for.
+	if w.JSON(m) {
+		return nil
+	}
+	w.Human("declared %s%s%s (%s)\n", bold, name, reset, m.Kind)
+	w.Human("  %s%s%s\n", dim, m.Purpose, reset)
+	w.Human("  capabilities  %s\n", strings.Join(m.Capabilities, ", "))
+	w.Human("  autonomy      %s\n", m.Autonomy)
 	if m.HumanApproval {
-		fmt.Printf("  %sa person approves before anything it did becomes public%s\n",
+		w.Human("  %sa person approves before anything it did becomes public%s\n",
 			dim, reset)
 	}
-	fmt.Printf("  %sedit %s to widen it; `quilzo agent check` re-validates%s\n",
+	w.Human("  %sedit %s to widen it; `quilzo agent check` re-validates%s\n",
 		dim, agentsPath(root), reset)
 	return nil
 }
@@ -447,8 +489,13 @@ func agentList(root string) error {
 }
 
 func agentShow(root string, args []string) error {
+	// One name. It was read as args[0] and nothing after it was looked at.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent show NAME")
+		return errMisused{fmt.Errorf("usage: quilzo agent show NAME")}
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -456,7 +503,7 @@ func agentShow(root string, args []string) error {
 	}
 	m, ok := set.Agents[args[0]]
 	if !ok {
-		return fmt.Errorf("no agent called %q", args[0])
+		return errNotFound{fmt.Errorf("no agent called %q", args[0])}
 	}
 	body, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -485,6 +532,33 @@ func agentCheck(root string) error {
 	sort.Strings(names)
 
 	customKinds := customKinds(root)
+	if w.Mode == out.JSON {
+		// The same verdicts as one document. This printed them whatever was
+		// asked for, so a pipeline asking whether every agent still
+		// validates was given sentences to parse, and exit 0 to go with
+		// them when they all did.
+		type verdict struct {
+			Name     string         `json:"name"`
+			Kind     agent.Kind     `json:"kind"`
+			Autonomy agent.Autonomy `json:"autonomy"`
+			Problem  string         `json:"problem,omitempty"`
+		}
+		verdicts, bad := make([]verdict, 0, len(names)), 0
+		for _, n := range names {
+			m := set.Agents[n]
+			v := verdict{Name: n, Kind: m.Kind, Autonomy: m.Autonomy}
+			if verr := m.ValidateWith(known, customKinds); verr != nil {
+				bad++
+				v.Problem = verr.Error()
+			}
+			verdicts = append(verdicts, v)
+		}
+		w.JSON(map[string]any{"agents": verdicts, "valid": len(names) - bad})
+		if bad > 0 {
+			return errBlocked{fmt.Errorf("%d agent(s) do not validate against this build", bad)}
+		}
+		return nil
+	}
 	bad := 0
 	for _, n := range names {
 		m := set.Agents[n]
@@ -538,12 +612,12 @@ func agentCheckRun(root string, args []string) error {
 		"let a model choose the actions, instead of walking the manifest")
 	program := fs.Bool("program", false,
 		"run the agent's own program, in its box, deciding the actions")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseOnce(fs, rest); err != nil {
 		return err
 	}
 	args = append(pos, fs.Args()...)
 	if len(args) == 0 {
-		return fmt.Errorf("usage: quilzo agent run NAME [--model | --program] [\"what it should do\"]")
+		return errMisused{fmt.Errorf("usage: quilzo agent run NAME [--model | --program] [\"what it should do\"]")}
 	}
 	if len(args) > 2 {
 		return fmt.Errorf("the goal is one argument, so quote it, and flags " +
@@ -923,6 +997,24 @@ type agentResume struct {
 	Since time.Time
 }
 
+// startedBy is who started the run this stretch carries on, as its record
+// names them: the run's own record when this continues it, and otherwise
+// the caller, whom a run starting now (a replay included) is kept as
+// started by.
+//
+// Not the caller alone. A run that waited for a person goes on as whoever
+// answered it, so dana's run, its write let through by sam, wrote as sam's,
+// and what it wrote was dana's to approve with a count of approvals set.
+func (f *agentResume) startedBy(caller *Caller) string {
+	if f.Prior != nil && f.Prior.ID != "" && f.Prior.ID == f.RunID && f.Prior.By != "" {
+		return f.Prior.By
+	}
+	if caller == nil {
+		return ""
+	}
+	return caller.Name
+}
+
 // narrowing is one thing that made a run's manifest narrower than its
 // declaration, and why: the caller, the agent's own standing, or its
 // evaluations.
@@ -932,6 +1024,17 @@ type narrowing struct {
 	Lost     []string
 	Autonomy string
 }
+
+// mayNotRun is an agent this program will not run at all, whoever asks:
+// paused by the shield, or with nobody left to answer for it. It says what
+// the reason says, so everything that prints it is unchanged; the type is
+// for a record that tells a refusal from a failure (a2atasks.go). Those
+// reasons came back as words alone, so a task sent over A2A for an agent
+// the shield had paused was on the record as a run that broke, and a
+// sender asking again and again for it read as an outage.
+type mayNotRun struct{ error }
+
+func (e mayNotRun) Unwrap() error { return e.error }
 
 // boundManifest is what a run of an agent may do: its declaration, bounded
 // by whoever starts it, by its own standing in the access policy, and, for
@@ -945,7 +1048,7 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	var trail []narrowing
 	m, ok := set.Agents[name]
 	if !ok {
-		return m, nil, fmt.Errorf("no agent called %q; `quilzo agent list`", name)
+		return m, nil, errNotFound{fmt.Errorf("no agent called %q; `quilzo agent list`", name)}
 	}
 	// Paused by the shield: an evaluation or a playbook found something
 	// steering it, and it does not run until a person lifts that. An
@@ -954,14 +1057,14 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// can be lifted.
 	if !eval {
 		if err := refuseIfPaused(root, name); err != nil {
-			return m, nil, err
+			return m, nil, mayNotRun{err}
 		}
 		// Somebody answers for it, and that person can still act here.
 		// Evaluations run regardless: they change nothing, and are how a
 		// new sponsor finds out what they are taking on.
 		if id := set.identityOf(name); id != nil {
 			if err := id.MayRun(hasStanding(root, id.Sponsor), time.Now()); err != nil {
-				return m, nil, fmt.Errorf("%s does not run: %w", name, err)
+				return m, nil, mayNotRun{fmt.Errorf("%s does not run: %w", name, err)}
 			}
 		}
 	}
@@ -983,6 +1086,11 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 				n.Lost = append(n.Lost, c)
 			}
 		}
+		for _, t := range before.Tools {
+			if toolHost(m, t.Name) == "" {
+				n.Lost = append(n.Lost, "tool:"+t.Name)
+			}
+		}
 		if m.Autonomy != before.Autonomy {
 			n.Autonomy = string(before.Autonomy) + " to " + string(m.Autonomy)
 		}
@@ -998,8 +1106,14 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// alternative — asking "may this caller do that?" at each step — is the
 	// arrangement that put the content-type gate in the CLI and not in the
 	// API. See agentnarrow.go.
+	//
+	// As far as the access policy lets them go now, and not only as far as
+	// their token says (Caller.carried): for a run, and for what `agent
+	// could` and the model door say of one, which build it here too.
+	caller = caller.carried(root)
 	before := m
 	m = narrowedBy(m, caller)
+	withheld := withholdWrites(root, &m, caller)
 	note("caller", fmt.Sprintf("%s holds %s on %s", caller.Name, caller.Role, nonEmpty(caller.Scope, "/")), before)
 	// And by its own standing, when the access policy gives it one: an
 	// agent granted reader on /docs reads /docs, whoever starts it.
@@ -1010,25 +1124,27 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 		m = narrowedBy(m, own)
 		note("standing", fmt.Sprintf("%s is granted %s on %s", own.Name, own.Role, own.Scope), before)
 	}
-	// A model drives it only as far as its evaluations have shown it can be
-	// trusted. An evaluation itself runs at the declared autonomy, because
-	// that is what it measures, and changes nothing either way.
+	// A model drives it only as far as its evaluations of that model have
+	// shown it can be trusted. An evaluation itself runs at the declared
+	// autonomy, because that is what it measures, and changes nothing
+	// either way.
 	earnedWhy := ""
 	if withModel && !eval && mustConfig(root).Bool("agents.earned_autonomy") {
-		var latest *evals.Report
-		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
-			latest = &reps[0]
-		}
-		earned, why := evals.Earned(latest, time.Now())
-		// Earned in evaluations, and lost in behaviour until evaluated again.
-		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
-			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
-		}
+		earned, why := evalsEarn(root, name, time.Now())
 		if !m.Autonomy.AtMost(earned) {
 			earnedWhy = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
 			before = m
 			m.Autonomy = earned
 			m.Capabilities = mayCall(m.Capabilities, earned)
+			// And it reads the desktop without working it, as a run its
+			// caller holds to proposing does (boundOf). The desktop's acts
+			// are no writes to this store, so they were left, and a model
+			// nobody had evaluated, its writes withheld and its browser
+			// only reading, went on typing into the desktop's apps and
+			// pressing what they showed.
+			if earned.AtMost(agent.AutonomyPropose) {
+				m.Capabilities = readsDesktop(m.Capabilities)
+			}
 			note("evaluations", earnedWhy, before)
 		}
 	}
@@ -1046,6 +1162,9 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			m.Shell = m.Shell.ReadOnlyCopy()
 		}
 	}
+	// Said after every narrowing, each of which builds a manifest of its
+	// own and keeps nothing a run alone holds.
+	m.Withheld = withheld
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {
 			return m, trail, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, earnedWhy, name)
@@ -1053,6 +1172,22 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 		return m, trail, fmt.Errorf(
 			"%s holds nothing once bounded by this token: the manifest and "+
 				"the token you are using have no capability in common", name)
+	}
+	// A tool writes when either declaration says so (ToolWrites), and the
+	// run is told: its own label defaults to off, and a tool on an
+	// integration declared as writing was a read to the session, so a
+	// propose-only run called it with nobody asked (agent.Session.AsksFirst).
+	if len(m.Tools) > 0 {
+		var installed agent.Integrations
+		if set, err := loadIntegrations(root); err == nil && set != nil {
+			installed = *set
+		}
+		m.Tools = append([]agent.Tool(nil), m.Tools...)
+		for i := range m.Tools {
+			if !m.Tools[i].Writes && installed.ToolWrites(m, m.Tools[i].Name) {
+				m.Tools[i].Writes = true
+			}
+		}
 	}
 	return m, trail, nil
 }
@@ -1070,6 +1205,29 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	var out agentOutcome
 	if from == nil {
 		from = &agentResume{}
+	}
+	// As far as the access policy lets whoever runs it go now, and not only
+	// as far as their token says (Caller.carried): before what bounded the
+	// run's starter is applied, so a taker the policy gives nothing in the
+	// starter's part of the site is refused rather than lent the token's.
+	caller = caller.carried(root)
+	// A run whoever started it could only read for goes on reading only,
+	// whoever takes it on (agent.Record's ReadOnly): letting one step go
+	// ahead decides that step, and lends the run nothing more.
+	if from.Prior != nil && from.Prior.ReadOnly && caller != nil && !caller.Limits.ReadOnly {
+		c := *caller
+		c.Limits.ReadOnly = true
+		caller = &c
+	}
+	// And it goes on no further than whoever started it reached, for the
+	// same reason (agent.Record's Bound): the role, the part of the site,
+	// the content types and the locales both of them hold.
+	if from.Prior != nil && caller != nil {
+		c, err := caller.within(from.Prior.Bound)
+		if err != nil {
+			return out, err
+		}
+		caller = c
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -1195,13 +1353,27 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					"  without one, the run walks the manifest and needs "+
 					"nothing", why)
 		}
+		// Through the route its evaluation measured and no other, when
+		// what it may do rests on one (measuredRoute).
+		held := measuredRoute(root, name, m, withModel, from.Eval)
+		if only := onlyThrough(root, held, "agent:"+name, payers...); only != nil {
+			model = only
+		} else {
+			held = ""
+		}
 		out.Model = model.Name()
 		// Handed to delegates as well. A supervisor deciding with a model
 		// and children walking their manifests would be a pipeline where the
 		// stages that do the work cannot choose anything.
 		delegateModel = model
 		tools, delegates := modelChoices(ctx, root, m, set)
-		playbook, playbookIDs := lessonsPlaybook(root, name, out.Model)
+		// Adopted for the model the route reaches, as a trial through the
+		// gateway names it, and so read by that model's runs: they were
+		// looked up by the gateway's caller alone, which such a trial does
+		// not name, and no run read a lesson adopted through the gateway.
+		// Lessons adopted before trials named the model are kept under the
+		// caller, and read as they were.
+		playbook, playbookIDs := lessonsPlaybook(root, name, servedBy(model).Model, out.Model)
 		if from.Eval != nil && from.Eval.Lesson != "" {
 			playbook = append(playbook, from.Eval.Lesson)
 		}
@@ -1228,6 +1400,19 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				return rb.pictures()
 			},
 		}.DecideResettable()
+		if held != "" {
+			// Said, so a run that stops where it used to go on with
+			// another model says why it did not.
+			chose := decide
+			decide = func(ctx context.Context, goal string, seen []agent.Observation) (agent.Action, error) {
+				a, err := chose(ctx, goal, seen)
+				if errors.Is(err, gateway.ErrNoRoute) {
+					err = fmt.Errorf("%w (held to the route %s: what %s may do was measured on its model and no other)",
+						err, held, name)
+				}
+				return a, err
+			}
+		}
 	}
 
 	// The reviewer, when this store names one (reviewedBy).
@@ -1259,12 +1444,21 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				// Attributed to the agent. A commit signed with whoever
 				// happened to start the run is a history that lies about who
 				// wrote it, and the review queue reads the author.
-				Author:  "agent/" + m.Name,
+				Author: "agent/" + m.Name,
+				// And written for whoever started the run, which the
+				// approval gate reads from the commit.
+				For:     from.startedBy(caller),
 				Gate:    pageGate(root),
 				Propose: proposeCommit(root, s, m.Name, caller),
 				Written: func(page string) {
 					markAgentWrite(root, s, page, m.Name, out.Model, goal,
 						caller, approvedWrite(from, page))
+				},
+				// Somebody else's claim on the page, as the agent interface
+				// says it. Not a claim of whoever the run is for: their own
+				// agent writing their page is what they asked for.
+				Claimed: func(page string) string {
+					return claimSaid(root, from.startedBy(caller), page)
 				},
 			},
 			// The tool surface, which had no executor at all.
@@ -1306,6 +1500,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Run: delegation{
 					root: root, store: s, model: delegateModel,
 					caller: caller, goal: goal, parent: m.Name,
+					startedBy: from.startedBy(caller),
 				},
 			},
 			// The deciders: a typed question with a confidence, asked by
@@ -1345,8 +1540,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 	// The rest of what the CMS offers (agentplatform.go): records, media,
 	// menus, newsletters, chatbots, research and the site crew, through the
-	// same agent interface an outside agent calls, as the run's caller.
-	runner.Perform = agentexec.WithPlatform(agentexec.Platform{Call: platformCall(root, s, caller, sess)}, sess, runner.Perform)
+	// same agent interface an outside agent calls, as the run's caller, and
+	// what it writes in the draft is written for whoever started the run.
+	runner.Perform = agentexec.WithPlatform(agentexec.Platform{Call: platformCall(root, s, caller, sess, from.startedBy(caller))}, sess, runner.Perform)
 
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
@@ -1382,7 +1578,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		runner.Decide, runner.Pause = prog.bridge.Decide, false
 		if from.Eval == nil {
 			runner.Hold = programHold(root, runID, prog.done, func(line string) {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteYellow, onOneLine(line), noteReset)
 			}, from.Answered, nil)
 		}
 	}
@@ -1396,8 +1592,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}
 	}
 	// A payment beyond the agent's mandates waits for a person as asking
-	// first does: the run pauses and is decided from anywhere.
-	runner.Asks = paymentAsks(root, m.Name)
+	// first does: the run pauses and is decided from anywhere. So does a
+	// write to another system from a run nobody started (agentsends.go).
+	runner.Asks = outwardAsks(root, m, unattendedRun(caller, from), paymentAsks(root, m.Name))
 	var weighs []func(agent.Action) string
 	if holdsBrowser(m) {
 		pictures := false
@@ -1477,14 +1674,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 
 	if len(weighs) > 0 {
-		runner.Weighs = func(a agent.Action) string {
+		runner.Weighs = unattendedWeighs(unattendedRun(caller, from), func(a agent.Action) string {
 			for _, w := range weighs {
 				if why := w(a); why != "" {
 					return why
 				}
 			}
 			return ""
-		}
+		})
 	}
 	// What its browser, its commands or its desktop ask a person waits in
 	// this process, where the page, the workspace and the cell are, as a
@@ -1499,7 +1696,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			hands = rb.personInput(root, m, from.RunID)
 		}
 		runner.Hold = programHold(root, from.RunID, nil, func(line string) {
-			fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+			fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteYellow, onOneLine(line), noteReset)
 		}, from.Answered, hands)
 	}
 	// What it remembers between runs, when it keeps any. Not for an
@@ -1536,7 +1733,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				r.Detail[k] = v
 			}
 			if err := recordE(root, r); err != nil {
-				fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+				fmt.Fprintf(os.Stderr, "%s%v%s\n", noteRed, err, noteReset)
 				if unrecorded == nil {
 					unrecorded = fmt.Errorf("step %d's record was not written (%v), so this run does nothing more", st.N, err)
 				}

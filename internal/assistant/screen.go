@@ -4,8 +4,9 @@
 package assistant
 
 import (
-	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/guardrail"
 )
 
 // Screening what a chatbot knows, as its index is built.
@@ -26,43 +27,15 @@ import (
 // (Assistant.KeepInstructions).
 
 // markupWhy is the reason for text imitating a prompt's markup.
-const markupWhy = "imitates a prompt's own markup"
-
-// screenRule is one shape of text addressed to an AI.
-type screenRule struct {
-	why string
-	re  *regexp.Regexp
-}
-
-var screenRules = []screenRule{
-	{"tells an AI to set its instructions aside",
-		regexp.MustCompile(`(?i)\b(ignore|disregard|forget|override|bypass)\b[^.!?\n]{0,30}\b(previous|prior|above|preceding|your|all|any|system)\b[^.!?\n]{0,20}\b(instructions|rules|prompts?|directives|guardrails)\b`)},
-	// Not "as an AI assistant": the businesses using this sell AI, and
-	// their pages say that about their products all day.
-	{"addresses an AI reading the page",
-		regexp.MustCompile(`(?i)\b(if you are|you are now|you're now) an? (ai|llm|large language model|language model|chatbot|ai assistant)\b|\b(note|message|instructions?) (to|for) (the |any )?(ai|llm|chatbot|language model)s?\b|\b(attention|dear|hey) (ai|llm|chatbot|language model)s?\b|\b(ai|llm|chatbot|language model)s? (reading|processing|summari[sz]ing|indexing) this\b`)},
-	{"asks to be kept from the reader",
-		regexp.MustCompile(`(?i)\b(do not|don't|never) (tell|inform|reveal to|mention (this )?to) (the )?(user|reader|visitor|human)s?\b|\bwithout (telling|informing|alerting) (the )?(user|reader|visitor)s?\b`)},
-	{markupWhy,
-		regexp.MustCompile(`(?i)<\|(im_start|im_end|system|endoftext)\|>|\[/?inst\]|<</?sys>>|<\s*/?\s*system\s*>|(^|\n)\s*#{2,}\s*(system|instruction)s?\s*(\n|$|:)|\bsystem prompt\s*:|\bbegin untrusted content\b|<<<passage>>>`)},
-	{"asks for something to be sent somewhere",
-		regexp.MustCompile(`(?i)\b(send|email|forward|post|upload|exfiltrate|leak)\b[^.!?\n]{0,40}\b(conversation|chat history|credentials?|password|api key|access token|system prompt)\b[^.!?\n]{0,40}\b(to|at)\b\s+(https?://|[a-z0-9._%+-]+@)`)},
-	// An image whose address waits to be filled in: how an answer is made
-	// to carry what it knows to somebody else's server.
-	{"asks the answer to carry a link or image",
-		regexp.MustCompile(`(?i)!\[[^\]]*\]\(\s*https?://[^)\s]*(\[|\{|<|%5b|%7b|%3c|\$)|\b(include|add|append|render|embed)\b[^.!?\n]{0,30}\b(this|the following)\b[^.!?\n]{0,15}\b(image|link|url)\b[^.!?\n]{0,30}\b(in|to|at the end of)\b[^.!?\n]{0,15}\b(every|each|your|all)\b[^.!?\n]{0,10}\b(answers?|responses?|repl(y|ies))\b`)},
-}
+const markupWhy = guardrail.MarkupWhy
 
 // Screen is why a passage reads as addressed to an AI, or nothing.
-func Screen(text string) []string {
-	var out []string
-	for _, r := range screenRules {
-		if r.re.MatchString(text) {
-			out = append(out, r.why)
-		}
-	}
-	return out
-}
+//
+// The rules are the knowledge view of the one table every surface reads
+// (internal/guardrail): this list and the public chatbot's and the meeting
+// scribe's were three, and the chatbot missed the commonest wording of an
+// attempt the other two caught.
+func Screen(text string) []string { return guardrail.Injection(guardrail.Knowledge, text) }
 
 // Held is a passage kept out of what a chatbot reads, and why.
 type Held struct {

@@ -225,6 +225,10 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// raceSlowdown is how many times its budget a timed test is given: once,
+// and ten times when it is built with the race detector (race_test.go).
+var raceSlowdown time.Duration = 1
+
 func TestManyOldRulesAreQuickToWorkOut(t *testing.T) {
 	var evs []string
 	for i := 0; i < 3000; i++ {
@@ -235,7 +239,7 @@ func TestManyOldRulesAreQuickToWorkOut(t *testing.T) {
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	start := time.Now()
 	got, notes := c.Occurrences(from, from.AddDate(1, 0, 0), 400)
-	if time.Since(start) > 5*time.Second {
+	if time.Since(start) > 5*time.Second*raceSlowdown {
 		t.Errorf("took %v", time.Since(start))
 	}
 	if len(got) == 0 || len(notes) == 0 {

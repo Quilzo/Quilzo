@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
@@ -62,6 +63,9 @@ func cmdSchedule(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return scheduleList(root)
 	case "add":
 		return scheduleAdd(root, args[1:])
@@ -70,8 +74,8 @@ func cmdSchedule(root string, args []string) error {
 	case "run":
 		return scheduleRun(root, args[1:])
 	default:
-		return fmt.Errorf("unknown schedule command %q; try list, add, cancel "+
-			"or run", args[0])
+		return errMisused{fmt.Errorf("unknown schedule command %q; try list, add, cancel "+
+			"or run", args[0])}
 	}
 }
 
@@ -79,16 +83,32 @@ func scheduleAdd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	note := fs.String("note", "", "why, for whoever finds this next week")
-	if err := fs.Parse(flags); err != nil {
+	forceUnmarked := fs.Bool("force-unmarked", false,
+		"publish pages that declare no provenance when it fires (needs --reason), as publish --force-unmarked")
+	reason := fs.String("reason", "", "why the waiver is justified, recorded with the publish")
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
+	// The waiver publish takes, taken the way publish takes it.
+	waiver := ""
+	switch {
+	case *forceUnmarked && strings.TrimSpace(*reason) == "":
+		return errBlocked{fmt.Errorf("--force-unmarked needs --reason: the waiver is " +
+			"recorded when it fires, and one with no reason records only that " +
+			"somebody wanted one")}
+	case *forceUnmarked:
+		waiver = *reason
+	case strings.TrimSpace(*reason) != "":
+		return fmt.Errorf("--reason is the reason for --force-unmarked, and is " +
+			"given with it")
+	}
 	if len(pos) != 1 {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"usage: quilzo schedule add <when>\n" +
-				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")
+				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")}
 	}
 
-	when, err := parseWhen(pos[0], time.Now())
+	when, err := schedule.ParseWhen(pos[0], time.Now())
 	if err != nil {
 		return err
 	}
@@ -107,13 +127,11 @@ func scheduleAdd(root string, args []string) error {
 	// file named, which is not always who was let in.
 	caller := resolveCaller(root, flagToken)
 	who := schedule.Who{Name: caller.Name, Kind: string(caller.Kind), Verified: caller.Verified}
-	var refused error
-	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
-		refused = sch.Add(draft, when, who, *note, time.Now())
-		return refused
-	}); err != nil {
-		if refused != nil {
-			return errBlocked{refused}
+	update := func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) }
+	if err := schedule.QueueWaiving(update, draft, when, who, *note, waiver, time.Now()); err != nil {
+		var refused *schedule.Refused
+		if errors.As(err, &refused) {
+			return errBlocked{refused.Err}
 		}
 		return err
 	}
@@ -121,59 +139,75 @@ func scheduleAdd(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "schedule.add", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"scheduled": draft, "at": when.UTC().Format(time.RFC3339),
-			"note": truncate(*note, 200),
-		},
+		Detail: schedule.DetailWaiving(draft, when, *note, caller.Name, waiver),
 	})
 	fireWebhooks(root, "scheduled", draft, nil)
 
+	// The pages the provenance gate will find with no record when it fires,
+	// said in the answer as in the prose: under --json the answer was all
+	// a script read, and it named neither them nor the reason they go out
+	// on. Left out of the answer when the check could not run, rather than
+	// answered as none.
+	unmarked, uerr := unmarkedAt(root, s, draft)
+	// The commit and when, under --json, which `schedule cancel` names; it
+	// answered nothing, exit 0.
+	answer := map[string]any{"commit": draft, "at": when.UTC(), "note": *note,
+		"unmarked_reason": waiver}
+	if uerr == nil {
+		answer["unmarked"] = unmarked
+	}
+	if w.JSON(answer) {
+		return nil
+	}
 	w.Human("%s will publish at %s%s%s\n", short(draft), bold,
 		when.UTC().Format("15:04 on 2 Jan 2006"), reset)
 	w.Human("  %sthis names that exact commit. Editing the draft afterwards does\n"+
 		"  not change what is scheduled — it makes the entry stale, and a stale\n"+
 		"  entry is reported rather than fired%s\n", dim, reset)
 	w.Human("  %severy gate runs at publication, not now%s\n", dim, reset)
+	sayUnmarkedScheduled(unmarked, waiver)
 	return nil
 }
 
-// parseWhen accepts a timestamp or a duration.
-//
-// Both, because "in 48h" is what somebody types for an embargo and an absolute
-// time is what they type for a launch, and forcing one into the other is how a
-// scheduled publish goes out at the wrong hour.
-func parseWhen(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
+// sayUnmarkedScheduled says, when something is scheduled, what the
+// provenance gate will make of it then: the one gate every hand-written
+// page fails, since a page saved in the browser or here has no record. It
+// was found out at nine, from a refusal on the Publishing screen.
+func sayUnmarkedScheduled(unmarked []string, waiver string) {
+	if len(unmarked) == 0 {
+		return
 	}
-	if d, err := time.ParseDuration(s); err == nil {
-		if d <= 0 {
-			return time.Time{}, fmt.Errorf("%q is not in the future", s)
-		}
-		return now.Add(d), nil
+	if waiver != "" {
+		w.Human("  %s%s with no provenance go out on your reason: %s%s\n",
+			dim, count(len(unmarked), "page"), strings.Join(unmarked, ", "), reset)
+		return
 	}
-	return time.Time{}, fmt.Errorf(
-		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h)", s)
+	w.Human("  %s%s with no provenance, so at its time this is refused: %s\n"+
+		"  say who or what wrote each (quilzo provenance set PAGE --source humanEdits), "+
+		"or schedule it with --force-unmarked --reason \"...\"%s\n",
+		yellow, count(len(unmarked), "page"), strings.Join(unmarked, ", "), reset)
 }
 
 func scheduleCancel(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo schedule cancel <commit>")
+		return errMisused{fmt.Errorf("usage: quilzo schedule cancel <commit>")}
 	}
-	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
-		if !sch.Cancel(args[0]) {
-			return fmt.Errorf("nothing pending matches %q", args[0])
+	update := func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) }
+	if err := schedule.Withdraw(update, args[0]); err != nil {
+		if errors.Is(err, schedule.ErrNothingPending) {
+			return errNotFound{fmt.Errorf("nothing pending matches %q", args[0])}
 		}
-		return nil
-	}); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)
 	record(root, audit.Record{
 		Action: "schedule.cancel", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{"cancelled": args[0]},
+		Detail: schedule.CancelDetail(args[0], caller.Name),
 	})
+	if w.JSON(map[string]any{"commit": args[0], "cancelled": true}) {
+		return nil
+	}
 	w.Human("cancelled\n")
 	return nil
 }
@@ -215,6 +249,10 @@ func scheduleList(root string) error {
 			w.Human(" — %s", st.Entry.Note)
 		}
 		w.Human("%s\n", reset)
+		if st.Entry.UnmarkedReason != "" {
+			w.Human("           %spublishes pages with no provenance, because: %s%s\n",
+				dim, st.Entry.UnmarkedReason, reset)
+		}
 		if st.Stale {
 			w.Human("           %sthe draft has moved to %s since this was "+
 				"scheduled,%s\n", yellow, short(st.Current), reset)
@@ -235,7 +273,7 @@ func scheduleRun(root string, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "report what would publish and change nothing")
 	tplDir := fs.String("templates", "templates", "where page.html lives, as for publish")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	fired, err := fireDue(root, resolveCaller(root, flagToken), time.Now,
@@ -303,6 +341,19 @@ func lateBy(d time.Duration) string {
 	default:
 		return "a minute"
 	}
+}
+
+// schedulerCannotPublish is why this server's scheduler may not publish, or
+// the empty string when it may. It fires as the identity quilzo serve was
+// started with (runScheduler's runner), so a server started with no token,
+// as the compose admin is, fired nothing and said why only on its own error
+// output, while the Publishing screen promised the launch and showed it
+// pending after its time.
+func schedulerCannotPublish(root string) string {
+	if err := authorise(root, resolveCaller(root, flagToken), auth.ActPublish, "/"); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 // errRunnerMayNotPublish is fireDue refusing to fire anything, and leaving
@@ -398,8 +449,11 @@ func fireDue(root string, runner *Caller, now func() time.Time, opts fireOptions
 	results := make([]firing, 0, len(claimed))
 	for _, e := range claimed {
 		f := firing{Commit: e.Commit, By: e.By, At: e.At}
+		// The waiver it was scheduled with, as publish takes it from its
+		// command line, and recorded by publish as that is.
 		perr := publishAs(root, []string{e.Commit}, scheduledBy(e, runner),
-			publishFlags{tplDir: opts.templates})
+			publishFlags{tplDir: opts.templates, forceUnmarked: e.UnmarkedReason != "",
+				reason: e.UnmarkedReason})
 		if late := now().Sub(time.Unix(e.At, 0)); late > time.Minute {
 			f.Late = late
 		}

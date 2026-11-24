@@ -41,6 +41,26 @@
 // better answer: a connection that waits a few milliseconds is a page that
 // loads, and a connection refused is a browser error page.
 //
+// # Why one source is held to a share of them
+//
+// A limit with nothing per source is a limit one client can reach alone. One
+// machine opened 2,100 connections to the public site and said nothing on
+// them, and every other visitor's connection waited in the kernel's queue
+// until the browser gave up; the admin was the same. The shield's limits per
+// address never saw it, because no request ever reached a handler.
+//
+// So one source — one IPv4 address or one IPv6 /64, the unit everything else
+// in this program counts by (internal/clientip) — may hold PerSource of the
+// connections and no more. This is the one place a connection is refused
+// rather than queued, because which source it is from is not known until it
+// has been accepted. A refused one costs a syscall in the accept loop and no
+// goroutine.
+//
+// A peer that is many visitors on one address — the proxy in front of the
+// site, this machine — is told apart by Limits.Shared and held to MaxConns
+// alone. Counted per source, it would be one share for everybody behind it,
+// which is the failure this exists to prevent, caused by it.
+//
 // # Why there is no WriteTimeout on the servers that serve media
 //
 // Because a WriteTimeout is a deadline on the whole response, and this
@@ -53,6 +73,29 @@
 // stalls, within its size-derived deadline. The connection limit is what
 // bounds that, and it is the reason the limit exists rather than being a
 // second opinion about the timeouts.
+//
+// # Why a server that receives files still bounds a form
+//
+// The same reasoning runs the other way for a server that receives files:
+// the admin takes a recording through its media screen, and a deadline on
+// the whole request would refuse it on the slow link that needs longest. So
+// Uploads has no Request deadline, and for a while that meant the whole
+// admin had none: a POST to /signin that sent its body a byte every few
+// seconds was held for as long as its sender liked, the hole this package
+// was written to close, reopened for the admin alone.
+//
+// So a server under Uploads gives each body a deadline of its own, as the
+// media routes give each response one. Every body starts with Body, what the
+// public site gives a whole request. A route that receives a file, named by
+// Limits.Files, has the time its size takes at the slowest rate worth
+// serving, from when its handler knows the sender may send it (Receive).
+//
+// Not before. The listener gave a file's time to every body on such a route
+// as it arrived, and the upload routes answer somebody signed out without
+// reading what they send; net/http then reads up to 256 KB of the rest, to
+// keep the connection, under whatever deadline is set. A sender with no
+// credential, declaring no length, was waited on for the eighteen hours a
+// quarter of a gigabyte is given.
 package listen
 
 import (
@@ -60,10 +103,13 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 // Limits is what a server in this program is allowed to hold open.
@@ -74,6 +120,16 @@ type Limits struct {
 	// included. Zero means unbounded, which is only right for a server whose
 	// job is receiving a large file.
 	Request time.Duration
+	// Body is how long a request's body may take to arrive, once its
+	// headers have, on a server whose Request is zero: set per request, so
+	// that the routes Files names can be given longer. Zero leaves bodies
+	// to Request.
+	Body time.Duration
+	// Files reports the most a request may send when its route is one that
+	// receives a file, and zero for any other. Such a body is given the
+	// time its size takes rather than Body, once its handler calls Receive.
+	// Nil means no route does.
+	Files func(*http.Request) int64
 	// Response is how long the whole response may take. Zero means the
 	// handler decides, which is right for a server that sends media.
 	Response time.Duration
@@ -84,6 +140,14 @@ type Limits struct {
 	MaxHeaderBytes int
 	// MaxConns bounds accepted connections. Zero means unbounded.
 	MaxConns int
+	// PerSource bounds the connections one source holds at once: one IPv4
+	// address or one IPv6 /64. Zero means unbounded. Well below MaxConns,
+	// so that no one address can be all of them.
+	PerSource int
+	// Shared reports whether a peer is one many clients arrive through, a
+	// proxy in front or this machine, which PerSource does not count. Nil
+	// means none is.
+	Shared func(netip.Addr) bool
 	// Drain is how long in-flight requests get after a shutdown signal.
 	Drain time.Duration
 }
@@ -99,7 +163,12 @@ func Default() Limits {
 		Idle:           90 * time.Second,
 		MaxHeaderBytes: 64 << 10,
 		MaxConns:       2048,
-		Drain:          15 * time.Second,
+		// A browser opens six to a host and keeps them for the idle
+		// deadline, so this is ten visitors behind one address at once —
+		// an office, a household — while it takes thirty-two addresses,
+		// not one, to fill MaxConns.
+		PerSource: 64,
+		Drain:     15 * time.Second,
 	}
 }
 
@@ -113,8 +182,12 @@ func Media() Limits {
 }
 
 // Uploads is for a server whose job is receiving a large file.
+//
+// Every other body on it still has what a request has on the public site,
+// Body; the routes that receive files are named by setting Files.
 func Uploads() Limits {
 	l := Media()
+	l.Body = l.Request
 	l.Request = 0
 	// A stalled upload still ends, because the idle deadline applies between
 	// requests and the connection limit bounds how many can be in progress.
@@ -151,6 +224,86 @@ func (l Limits) Apply(srv *http.Server) {
 	srv.WriteTimeout = l.Response
 	srv.IdleTimeout = l.Idle
 	srv.MaxHeaderBytes = l.MaxHeaderBytes
+	if l.Request == 0 && l.Body > 0 {
+		next := srv.Handler
+		if next == nil {
+			next = http.DefaultServeMux
+		}
+		srv.Handler = l.bodies(next)
+	}
+}
+
+// bodies gives each request's body a deadline of its own.
+//
+// From when the handler is reached, so a body has Body after the headers'
+// own deadline rather than sharing it. Before anything else sees the
+// request, because a handler that refuses without reading still has the
+// body read for it: net/http reads up to 256 KB of what is left before it
+// answers, so as to keep the connection, and with no deadline a sender that
+// dribbles is waited on there instead.
+//
+// The deadline ends with the body. Once a body is finished net/http reads
+// the connection in the background, to notice the client leaving, and it
+// lifts the read deadline when it starts; a read stopped by a deadline
+// would cancel the request as though the client had gone, and a long answer
+// (a model's reply, an agent's run, an export) with it. A request with no
+// body has that read started before the handler is reached, so it is given
+// no deadline at all: one set now would end that read, and the request.
+func (l Limits) bodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// A writer that cannot take one is not a connection (a test's
+		// recorder), and there is nothing to hold open.
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(l.Body))
+		if l.Files != nil {
+			if most := l.Files(r); most > 0 {
+				// Sized as a response to a file is (ResponseFor): the same
+				// grace and the same slowest rate, in the other direction.
+				// The declared length, or the most the route takes when the
+				// length is not declared or is more than it would read.
+				size := r.ContentLength
+				if size < 0 || size > most {
+					size = most
+				}
+				// Kept for the handler to give, with the controller of the
+				// connection itself: the writer a handler is handed has been
+				// wrapped by everything in between, and not every wrapper
+				// lets a controller through.
+				r = r.WithContext(context.WithValue(r.Context(), fileKey{},
+					fileBody{rc: rc, within: ResponseFor(size)}))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// fileKey is where a file's time waits for its handler (Receive).
+type fileKey struct{}
+
+// fileBody is the time a file's body is to have, and the connection to
+// give it to.
+type fileBody struct {
+	rc     *http.ResponseController
+	within time.Duration
+}
+
+// Receive gives a request's body the time a file of its size takes, from
+// now, when its route is one Limits.Files names; on any other it does
+// nothing. A handler calls it once it knows the sender may send the file,
+// signed in and allowed, and before it reads.
+//
+// Until then the body has a form's time, Body. That is what somebody
+// refused is held to while net/http reads what they sent: given the file's
+// time as the request arrived, a sender with no credential was waited on
+// for as long as the largest file the route takes would need.
+func Receive(r *http.Request) {
+	if f, ok := r.Context().Value(fileKey{}).(fileBody); ok {
+		_ = f.rc.SetReadDeadline(time.Now().Add(f.within))
+	}
 }
 
 // Serve runs a server under these limits until the process is asked to stop,
@@ -168,6 +321,11 @@ func (l Limits) Serve(srv *http.Server) error {
 	}
 	if l.MaxConns > 0 {
 		ln = Cap(ln, l.MaxConns)
+	}
+	if l.PerSource > 0 {
+		// Outside the cap, so a connection refused here gives back the
+		// slot the cap took for it at once.
+		ln = PerSource(ln, l.PerSource, l.Shared)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
@@ -236,6 +394,71 @@ func (c *capped) Accept() (net.Conn, error) {
 }
 
 func (c *capped) release() { <-c.slots }
+
+// PerSource returns a listener that lets one source hold at most n of its
+// connections at once and closes any more it is offered. A peer shared
+// reports true for is not counted; shared may be nil.
+func PerSource(ln net.Listener, n int, shared func(netip.Addr) bool) net.Listener {
+	return &perSource{Listener: ln, most: n, shared: shared, held: map[netip.Prefix]int{}}
+}
+
+type perSource struct {
+	net.Listener
+	most   int
+	shared func(netip.Addr) bool
+	// mu guards held, which has an entry only for a source holding one or
+	// more connections, so it is never larger than what is accepted.
+	mu   sync.Mutex
+	held map[netip.Prefix]int
+}
+
+func (p *perSource) Accept() (net.Conn, error) {
+	for {
+		conn, err := p.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		unit, counted := p.source(conn)
+		if !counted {
+			return conn, nil
+		}
+		p.mu.Lock()
+		over := p.held[unit] >= p.most
+		if !over {
+			p.held[unit]++
+		}
+		p.mu.Unlock()
+		if over {
+			// Closed rather than queued: there is no queue per source to
+			// leave it in, and the kernel's is shared with everybody this
+			// is protecting.
+			_ = conn.Close()
+			continue
+		}
+		return &slotConn{Conn: conn, release: func() { p.release(unit) }}, nil
+	}
+}
+
+// source is the unit a connection counts against, and whether it counts:
+// not when its peer is shared, nor when its address cannot be read (a unix
+// socket, say), since an address that cannot be told is not a source.
+func (p *perSource) source(conn net.Conn) (netip.Prefix, bool) {
+	a, ok := clientip.Parse(conn.RemoteAddr().String())
+	if !ok || (p.shared != nil && p.shared(a)) {
+		return netip.Prefix{}, false
+	}
+	return clientip.Unit(a), true
+}
+
+func (p *perSource) release(unit netip.Prefix) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.held[unit] <= 1 {
+		delete(p.held, unit)
+		return
+	}
+	p.held[unit]--
+}
 
 // slotConn gives its slot back exactly once.
 //

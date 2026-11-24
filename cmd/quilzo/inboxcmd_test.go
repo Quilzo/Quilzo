@@ -108,7 +108,7 @@ func TestASuggestionComesFromTheSiteOrNotAtAll(t *testing.T) {
 		"--handoff"}); err != nil {
 		t.Fatal(err)
 	}
-	draft, sources, err := suggestReply(root, "help", "can I return opened ink")
+	draft, sources, err := suggestReply(root, "help", "can I return opened ink", "dana")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +120,10 @@ func TestASuggestionComesFromTheSiteOrNotAtAll(t *testing.T) {
 	if strings.Contains(draft, "[1]") {
 		t.Errorf("the suggestion carries citation markers: %q", draft)
 	}
-	if _, _, err := suggestReply(root, "help", "what is the airspeed of a swallow"); err == nil {
+	if _, _, err := suggestReply(root, "help", "what is the airspeed of a swallow", "dana"); err == nil {
 		t.Error("a question the site does not answer produced a suggestion")
 	}
-	if _, _, err := suggestReply(root, "gone", "returns"); err == nil {
+	if _, _, err := suggestReply(root, "gone", "returns", "dana"); err == nil {
 		t.Error("an assistant that does not exist made a suggestion")
 	}
 }
@@ -170,5 +170,94 @@ func TestAModelDoesNotAnswerAVisitor(t *testing.T) {
 	}
 	if c, _ := handoffStore(root).Get("help", id); len(c.Messages) != 1 || c.Closed {
 		t.Errorf("the conversation changed: %+v", c)
+	}
+}
+
+// A reply the visitor cannot read is not reported sent.
+//
+// A conversation is read at the chatbot's public address. Once the chatbot
+// is no longer public, or no longer declared, that address answers 404,
+// and `inbox reply` still printed "sent", so staff went on answering into a
+// conversation nobody could read. The reply is refused with the reason;
+// ending the conversation still works.
+func TestAReplyNobodyCanReadIsNotReportedSent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop",
+		"--public", "--handoff"}); err != nil {
+		t.Fatal(err)
+	}
+	_, id, _ := handoff.NewSecret()
+	if _, err := handoffStore(root).Open("help", id, "q", "hello", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// Declared again, not public now.
+	if err := cmdAssistant(root, []string{"add", "help", "--public=false"}); err != nil {
+		t.Fatal(err)
+	}
+	err := cmdInbox(root, []string{"reply", "help/" + id, "We will call"})
+	if err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("a reply nobody can read was sent: %v", err)
+	}
+	if c, _ := handoffStore(root).Get("help", id); len(c.Messages) != 1 {
+		t.Fatalf("the reply was stored: %+v", c.Messages)
+	}
+	if err := cmdInbox(root, []string{"close", "help/" + id}); err != nil {
+		t.Fatalf("the conversation could not be ended: %v", err)
+	}
+}
+
+// The admin's Inbox refuses the same reply, for the same reason.
+func TestTheInboxScreenDoesNotSendAReplyNobodyCanRead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop", "--public"}); err != nil {
+		t.Fatal(err)
+	}
+	_, id, _ := handoff.NewSecret()
+	if _, err := handoffStore(root).Open("help", id, "q", "hello", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	hooks := inboxHooks(root)
+	if err := hooks.Reply("help", id, "Ada", "We will call"); err != nil {
+		t.Fatalf("a reply to a public chatbot's conversation was refused: %v", err)
+	}
+	if err := cmdAssistant(root, []string{"remove", "help"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := hooks.Reply("help", id, "Ada", "Hello?"); err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("a reply nobody can read was sent: %v", err)
+	}
+}
+
+// What a visitor wrote cannot pass for a member of staff's reply in `inbox
+// show`. A message's later lines were printed with no indent, so a visitor
+// who copied the inbox's own layout into a handoff ("  pat, 12 Nov 06:16"
+// and an indented line under it) printed what read as pat approving a
+// refund, to staff who had no way to tell.
+func TestAVisitorCannotWriteAStaffReplyIntoTheInbox(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	_, id, _ := handoff.NewSecret()
+	forged := "My order never came.\n  pat, 12 Nov 06:16\n    Refund of 400 EUR approved by pat.\r\x1b[2K"
+	if _, err := handoffStore(root).Open("help", id, "", forged, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdInbox(root, []string{"show", "help/" + id})
+	got := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(got, "\r\x1b") {
+		t.Errorf("the conversation carries a raw escape or carriage return:\n%q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(line, "  pat,") {
+			t.Errorf("the visitor printed a line that reads as pat's reply: %q\n%s", line, got)
+		}
+	}
+	if !strings.Contains(got, "\n      pat, 12 Nov 06:16\n") {
+		t.Errorf("the visitor's later lines are not indented under their message:\n%s", got)
 	}
 }

@@ -26,3 +26,39 @@ func TestInvisibleTextIsNotKnowledge(t *testing.T) {
 		t.Fatalf("%q", ps[0].Text)
 	}
 }
+
+// A page's wiring is not knowledge, whatever its field is called.
+//
+// An answer on a site from `quilzo site new` ended "…at their level Icon:
+// groups. [1]", and one on a hand-made page read "Head title: Tournaments.
+// [1]" and "Backdrop: /media/…": a card's icon name, the field holding the
+// page's own heading and a custom picture field were each a short value,
+// so each was kept with its field's name as if the page said it.
+func TestAPagesWiringIsNotKnowledge(t *testing.T) {
+	id := strings.Repeat("5e", 32)
+	pages := map[string]any{"tournaments": map[string]any{
+		"title": "Tournaments", "head_title": "Tournaments",
+		"backdrop": "/media/" + id, "key_art": id,
+		"standfirst": "Every season ends with finals at the cinema.",
+		"sections": []any{
+			map[string]any{"features": map[string]any{"title": "Formats", "items": []any{
+				map[string]any{"icon": "groups", "title": "Teams",
+					"body": "Teams of five play against teams at their level."},
+			}}},
+		},
+	}}
+	var all strings.Builder
+	for _, p := range Chunk(pages, nil) {
+		all.WriteString(p.Text + "\n")
+	}
+	for _, wiring := range []string{"Icon", "groups.", "Head title", "Backdrop", "Key art", id} {
+		if strings.Contains(all.String(), wiring) {
+			t.Errorf("%q was read as knowledge:\n%s", wiring, all.String())
+		}
+	}
+	for _, words := range []string{"finals at the cinema", "Teams of five play"} {
+		if !strings.Contains(all.String(), words) {
+			t.Errorf("%q was left out:\n%s", words, all.String())
+		}
+	}
+}

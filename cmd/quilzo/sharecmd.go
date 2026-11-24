@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -77,11 +78,10 @@ var reShareID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // shareIDFor is the id a link's secret is kept and named by.
 //
-// A digest, as handoffs and huddle invitations keep theirs. The secret was
-// kept in clear and was the id: anybody who read shares.json, or a backup
-// of it, could open every draft shared from the store, and the audit log
-// carried each one. The prefix keeps the digest from standing for a secret
-// of any other kind.
+// A digest, as handoffs keep theirs. The secret was kept in clear and was
+// the id: anybody who read shares.json, or a backup of it, could open every
+// draft shared from the store, and the audit log carried each one. The
+// prefix keeps the digest from standing for a secret of any other kind.
 func shareIDFor(secret string) string {
 	sum := sha256.Sum256([]byte("quilzo share\x00" + secret))
 	return hex.EncodeToString(sum[:16])
@@ -205,7 +205,7 @@ func revokeShare(root, page, id string, now time.Time) (share, error) {
 				return nil
 			}
 		}
-		return fmt.Errorf("no link %s", id)
+		return errNotFound{fmt.Errorf("no link %s", id)}
 	})
 	return out, err
 }
@@ -248,7 +248,7 @@ func renderShared(root string, design *Design, secret string, now time.Time) (st
 	if sh == nil || !sh.live(now) {
 		return "", false
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return "", false
 	}
@@ -265,6 +265,7 @@ func renderShared(root string, design *Design, secret string, now time.Time) (st
 	}
 	src := sourcesFor(root, s, sh.Commit, siteName(root), pages)
 	src.IconStyle = design.Theme.IconStyle()
+	src.Scheme = design.Theme.Scheme()
 	// The navigation around it is the published site's, so a link to one
 	// draft page does not show the names of every other one in its menus;
 	// the blocks the page reuses are the draft's it was shared with.
@@ -285,6 +286,12 @@ func renderShared(root string, design *Design, secret string, now time.Time) (st
 	if err != nil {
 		return "", false
 	}
+	// In the page's own language and direction, which the site sets on what
+	// it serves whatever the layout says: a shared Arabic draft was shown as
+	// English, left to right.
+	if locales, lerr := loadLocales(root); lerr == nil {
+		out = public.InLanguage(out, locales, sh.Page)
+	}
 	return out, true
 }
 
@@ -296,7 +303,7 @@ func sharesCapability(root string) *admin.Shares {
 	}
 	return &admin.Shares{
 		Create: func(page, by string, days int) (admin.ShareLink, error) {
-			s, err := store.Open(root)
+			s, err := openEncrypted(root)
 			if err != nil {
 				return admin.ShareLink{}, err
 			}
@@ -344,13 +351,16 @@ func (s share) endedAt() time.Time {
 func cmdShare(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	if len(args) == 0 {
-		return errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7] | list | revoke ID")}
 	}
 	if err := migrateShares(root); err != nil {
 		return err
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 			return err
 		}
@@ -376,7 +386,7 @@ func cmdShare(root string, args []string) error {
 		return nil
 	case "revoke":
 		if len(args) != 2 {
-			return errors.New("usage: quilzo share revoke ID")
+			return errMisused{errors.New("usage: quilzo share revoke ID")}
 		}
 		// Whoever may edit the page the link is to may end it.
 		f, err := loadShares(root)
@@ -406,18 +416,23 @@ func cmdShare(root string, args []string) error {
 	fs := flag.NewFlagSet("share", flag.ContinueOnError)
 	days := fs.Int("days", 7, "how many days the link lives, up to 30")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
-		return errors.New("usage: quilzo share PAGE [--days 7]")
+		return errMisused{errors.New("usage: quilzo share PAGE [--days 7]")}
 	}
 	// Sharing a draft shows it to somebody outside: whoever may publish the
 	// page may, since publishing shows it to everybody.
 	if err := authorise(root, caller, auth.ActPublish, "/"+rest[0]); err != nil {
 		return err
 	}
-	s, err := store.Open(root)
+	// Opened here rather than with open, and so refused here too when
+	// --root holds no store, rather than made.
+	if err := needStore(root); err != nil {
+		return err
+	}
+	s, err := openEncrypted(root)
 	if err != nil {
 		return err
 	}
@@ -430,8 +445,12 @@ func cmdShare(root string, args []string) error {
 	if w.JSON(map[string]any{"id": sh.ID, "url": shareURL(root, secret), "expires": sh.Expires}) {
 		return nil
 	}
-	w.Human("%s%s%s\n  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
+	// The address alone on stdout, since it holds the secret and is shown
+	// once, and what is said of it on stderr.
+	w.Human("%s%s%s\n", bold, shareURL(root, secret), reset)
+	n := w.Notes()
+	n.Human("  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
 		"quilzo share revoke %s ends it%s\n",
-		bold, shareURL(root, secret), reset, dim, sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, reset)
+		n.Dim(), sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, n.Reset())
 	return nil
 }

@@ -69,7 +69,11 @@ type Setting struct {
 	// direction on a number: a longer token life is weaker, a longer lockout
 	// is weaker in a different way (denial of service against real users), and
 	// turning a gate off is weaker regardless of type.
-	Weaker func(value string) (bool, string)
+	//
+	// Left out of JSON, which has no form for a function: encoding/json
+	// refuses the whole value for one, so `quilzo config list --json`,
+	// `config show` and `config explain` wrote nothing and exited 0.
+	Weaker func(value string) (bool, string) `json:"-"`
 	// Controls and OWASP tie the setting to the frameworks an enterprise is
 	// audited against, so a reviewer can find it from their side.
 	Controls []string
@@ -90,7 +94,8 @@ type Floor struct {
 	Param    string
 	Declared string
 	// Allows reports whether a value of this setting meets the declaration.
-	Allows func(value string) bool
+	// Left out of JSON, as Setting.Weaker is, for the same reason.
+	Allows func(value string) bool `json:"-"`
 	// Broken, when set, is why the policy could not be read: every change to
 	// the setting is refused until it can, because a floor nobody can read
 	// is not a floor anybody may step below.

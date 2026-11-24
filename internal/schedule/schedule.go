@@ -60,6 +60,14 @@ type Entry struct {
 	// written before this was recorded has neither (Verified nil).
 	Kind     string `json:"kind,omitempty"`
 	Verified *bool  `json:"verified,omitempty"`
+	// UnmarkedReason is the reason the person who scheduled it gave for
+	// publishing pages with no provenance, applied when it fires as `quilzo
+	// publish --force-unmarked --reason` applies it, and recorded with the
+	// publish. Empty is no waiver. Every page saved in the browser or on the
+	// command line has no provenance record, so without this a scheduled
+	// launch of hand-written edits was refused at its time, and the advice
+	// it gave could not be attached to a schedule.
+	UnmarkedReason string `json:"unmarked_reason,omitempty"`
 	// CreatedAt is when the decision was made, which is what makes "scheduled
 	// three months ago" visible.
 	CreatedAt int64 `json:"created_at"`

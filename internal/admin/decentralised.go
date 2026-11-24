@@ -223,7 +223,10 @@ func (s *Server) handleBundleDownload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.auditPub(p, "ipfs.bundle", "/", map[string]string{
+	// ipfs.write, with the detail `quilzo ipfs write` records for the same
+	// bundle written to a folder. This wrote ipfs.bundle, so the bundle
+	// taken from here was missed by whatever looked for the command line's.
+	s.auditPub(p, "ipfs.write", "/", map[string]string{
 		"cid": root.Block.CID, "files": fmt.Sprint(len(paths))})
 }
 
@@ -262,7 +265,9 @@ func (s *Server) bundle() (map[string][]byte, error) {
 				"what is in the draft — a draft made permanent is an " +
 				"unfinished page nobody can withdraw")
 	}
-	if s.Layouts.Len() == 0 {
+	// Read once, so the check above and the render below are of one design.
+	layouts := s.layouts()
+	if layouts.Len() == 0 {
 		return nil, fmt.Errorf(
 			"there is no page template, so the site cannot be rendered")
 	}
@@ -293,7 +298,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 	// used to come out with no navigation on any page.
 	src := s.sources(s.Store.GetRef(site.RefLive), pages)
 
-	out, berr := render.Bundle(src, s.Layouts, pages, tmpl.Render)
+	out, berr := render.Bundle(src, layouts, pages, tmpl.Render)
 	if berr != nil {
 		return nil, berr
 	}

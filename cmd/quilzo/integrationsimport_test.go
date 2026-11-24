@@ -131,6 +131,15 @@ func TestTheHintAfterDeclaringSaysHowItIsTurnedOn(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The aggregator is reached with a key rather than each person's
+	// account, so its hint is a sentence of its own, and was a third copy.
+	setConfigs(t, root, map[string]string{"site.base_url": "https://shop.example"})
+	if said["template social-aggregator"], err = humanOutput(t, func() error {
+		return integrationsTemplate(root, []string{"social-aggregator", "--endpoint", "posts.aggregator.example",
+			"--path", "/api/post"})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	for cmd, s := range said {
 		if strings.Contains(s, "Administration › Integrations") {
 			t.Errorf("integrations %s sends people to a screen with no switch:\n%s", cmd, s)

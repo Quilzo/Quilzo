@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 )
@@ -133,6 +134,14 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	// disagreed with the sections screen about what is on a page would be the
 	// more confusing of the two.
 	if placed := section.On(body); len(placed) > 0 {
+		// What each section still waits for, such as the video a video
+		// section has not been given, which the publish lists as well. Said
+		// here rather than in the page: the layout told every reader "No
+		// video chosen yet. Send one to the bot and pick it here".
+		waits := map[int][]string{}
+		for _, p := range section.Waiting(body) {
+			waits[p.At] = append(waits[p.At], p.Detail)
+		}
 		b.WriteString(`<p class="qz-what">Sections</p><ol class="qz-list">`)
 		for _, sec := range placed {
 			fmt.Fprintf(&b,
@@ -143,6 +152,9 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 					`knows, so it renders as nothing</span>`)
 			} else if sec.Label != "" {
 				fmt.Fprintf(&b, ` <span class="qz-peek">%s</span>`, esc(sec.Label))
+			}
+			for _, w := range waits[sec.Index] {
+				fmt.Fprintf(&b, ` <span class="qz-peek">%s</span>`, esc(w))
 			}
 			b.WriteString(`</li>`)
 		}
@@ -333,8 +345,12 @@ func injectBar(page, bar string) string {
 
 // insertAfterTag puts s just after the opening tag named by open, or returns
 // the input unchanged when there is none.
+//
+// The tag is found in the page itself rather than in strings.ToLower of it,
+// whose offsets are not the page's once a character lowers to a different
+// number of bytes: a Turkish title put the stylesheet before <head>.
 func insertAfterTag(doc, open, s string) string {
-	i := strings.Index(strings.ToLower(doc), open)
+	i := asciifold.Index(doc, open)
 	if i < 0 {
 		return doc
 	}

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // A ref moves by compare-and-swap, holding a lock that other processes see.
@@ -28,6 +30,14 @@ import (
 //
 // flock is released by the kernel when the descriptor closes, including when
 // the process dies, so a crash mid-write cannot leave the store wedged.
+//
+// The lock itself is atomicfile's, on Windows as well. The store used to
+// carry a copy of it, line for line, and a fix to one copy would not have
+// reached the other.
+
+func lockExclusive(f *os.File) error { return atomicfile.LockFile(f) }
+
+func unlockFile(f *os.File) { atomicfile.UnlockFile(f) }
 
 func (s *Store) lockFile() (*os.File, error) {
 	path := filepath.Join(s.root, "refs.lock")

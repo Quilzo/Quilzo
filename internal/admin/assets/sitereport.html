@@ -68,14 +68,14 @@
     <td>{{.RetentionDays}} days</td>
   </tr>{{end}}</tbody>
 </table></div>
-<p class="hint">Each form shows the person its purpose, basis and period beside its notice. Change them on <a href="/forms">Forms</a>.</p>
+<p class="hint">Each form shows the person its purpose, basis and period beside its notice. Change them on {{if $.OpensForms}}<a href="/forms">Forms</a>{{else}}Forms, which somebody who edits the site reads{{end}}.</p>
 {{else}}<p>This site has no forms.</p>{{end}}
 
 <h2 id="personal-data">Personal data on published pages</h2>
 {{if .PersonalData}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Page</th><th scope="col">What</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>{{range .PersonalData}}<tr>
-    <th scope="row"><a href="/page/{{.Page}}">{{.Page}}</a></th>
+    <th scope="row">{{if index $.OpensPage .Page}}<a href="/page/{{.Page}}">{{.Page}}</a>{{else}}{{.Page}}{{end}}</th>
     <td>{{.Detail}}</td>
     <td>{{if .Blocking}}<span class="wf-band as-written critical"><span class="wf-icon">{{icon "dangerous"}}</span>Remove</span>{{else}}<span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Look</span>{{end}}</td>
   </tr>{{end}}</tbody>

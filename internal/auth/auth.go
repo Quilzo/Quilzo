@@ -524,10 +524,9 @@ func (p *Policy) Highest(principal string) Role {
 		}
 	}
 	p.mu.RUnlock()
-	defining := map[Role]Action{RoleAdmin: ActGrant, RolePublisher: ActPublish, RoleAuthor: ActEditDraft, RoleReader: ActView}
 	best := RoleNone
 	for _, b := range held {
-		if b.Role.AtLeast(best) && b.Role != best && p.Evaluate(principal, defining[b.Role], b.Resource).Allowed {
+		if b.Role.AtLeast(best) && b.Role != best && p.Evaluate(principal, definingAction[b.Role], b.Resource).Allowed {
 			best = b.Role
 		}
 	}
@@ -738,6 +737,30 @@ type Token struct {
 	// that set a parent.
 	Session bool `json:"session,omitempty"`
 
+	// SignIn marks a session the admin exchanged from a token somebody
+	// signed in to it with, or a session somebody pasted there to sign in
+	// with: the admin's own door, as a passkey's or an identity provider's
+	// session is, and kept to its idle clock there (SignedIn). A session
+	// a program exchanged for itself with `quilzo token exchange`, and
+	// never signed in with, is not one, and is bounded by its own few
+	// minutes.
+	SignIn bool `json:"sign_in,omitempty"`
+
+	// Kind is whose hands the token is for, as whoever issued it said:
+	// KindPerson for somebody's own, which they use themselves, and
+	// KindProgram for a CI job's, an integration's or an agent's (see
+	// Person). A session carries the kind of the token it was exchanged
+	// from, and one a passkey or an identity provider signed somebody in to
+	// is a person's.
+	//
+	// It was guessed from the name. A token named "cli", or one with an @
+	// in it, was a person's and every other a program's, so the first
+	// administrator's token, issued as the install guide says ("first"),
+	// could not start an access review, and the posture scan called a
+	// token an agent's for having "mcp" in its name. Empty on a token
+	// issued before this was recorded.
+	Kind string `json:"kind,omitempty"`
+
 	// StepUp, when set, says why this session must prove its person before
 	// it may do anything else: an automation judged a sign-in, or something
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
@@ -793,6 +816,70 @@ type Token struct {
 	Methods []string `json:"methods,omitempty"`
 	AAL     int      `json:"aal,omitempty"`
 	AuthAt  int64    `json:"auth_at,omitempty"`
+}
+
+// Whose hands a token is for (Token's Kind).
+const (
+	// KindPerson is somebody's own token, which they use themselves: at a
+	// keyboard, on the command line or signing in to the admin.
+	KindPerson = "person"
+	// KindProgram is a program's: a CI job, an integration, an agent.
+	KindProgram = "program"
+)
+
+// Person reports whether the token is a person's own, as recorded when it
+// was issued (Kind), or as a session a passkey or an identity provider
+// signed somebody in to.
+//
+// A token issued before the kind was recorded says nothing, and is judged
+// as it was then, by its name: "cli", or an address, the way people named
+// their own. Judging it a program's instead would have taken from
+// everybody whose own token predates the record what it did the day
+// before (an access review, a connected account), and nobody re-issues a
+// working credential to keep what it already does. Every token issued
+// since says which it is, and is never judged by its name.
+func (t Token) Person() bool {
+	switch t.Kind {
+	case KindPerson:
+		return true
+	case KindProgram:
+		return false
+	}
+	if t.Session {
+		return true
+	}
+	return strings.EqualFold(t.Name, "cli") || strings.Contains(t.Name, "@")
+}
+
+// kindOf is the Kind a session exchanged from parent carries: the
+// parent's, or, for one issued before kinds were recorded, what Person
+// judges it, written down.
+//
+// The parent's Kind alone was nothing for such a token, and the session
+// was judged by its own name: "cli (session)" is not "cli", so the session
+// of somebody's own token was a program's, and could not decide the access
+// review its parent could.
+func kindOf(parent Token) string {
+	if parent.Kind == "" && parent.Person() {
+		return KindPerson
+	}
+	return parent.Kind
+}
+
+// RecordKind records whose hands a token is for (Token's Kind).
+func (ts *TokenStore) RecordKind(id, kind string) error {
+	if kind != KindPerson && kind != KindProgram {
+		return fmt.Errorf("a token is a %s's or a %s's, not a %q's", KindPerson, KindProgram, kind)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].Kind = kind
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
 }
 
 // How a session was signed in to.
@@ -863,6 +950,19 @@ func (t Token) Assurance() (life time.Duration, bound bool) {
 	return time.Unix(t.ExpiresAt, 0).Sub(time.Unix(t.CreatedAt, 0)), t.Key != ""
 }
 
+// LastsUnderADay reports whether the token was issued to last less than a
+// day, so that the day it ends on says too little and the hour it ends at
+// has to be shown as well.
+//
+// Every surface showed the day alone: a token issued for an hour read
+// "expires 2026-11-12" on the command line and "12 Nov 2026" on the People
+// screen, the same as one that lasts the month, and whoever issued it could
+// not tell it would end before lunch. The rule is here so that the two
+// surfaces cannot draw the line in different places.
+func (t Token) LastsUnderADay() bool {
+	return t.ExpiresAt-t.CreatedAt < int64(24*time.Hour/time.Second)
+}
+
 // BindSession records where a session was issued to.
 func (ts *TokenStore) BindSession(id, bound string) error {
 	ts.mu.Lock()
@@ -880,6 +980,36 @@ func (ts *TokenStore) BindSession(id, bound string) error {
 // than somebody's own long-lived token: exchanged from one, or minted for a
 // sign-in an identity provider or passkey vouched for.
 func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
+
+// SignedIn reports whether this is a session somebody signed in to the
+// admin with, by passkey, identity provider or token: what the admin
+// signs out once nobody has used it for session.idle. That clock is kept
+// in the admin's process, so a server elsewhere that keeps none refuses
+// these, and takes tokens: a sign-in session copied into a header worked
+// at the public site's content API, and pasted into the studio, for the
+// whole of session.max after the admin would have signed it out.
+func (t *Token) SignedIn() bool { return t.Session || t.SignIn }
+
+// MarkSignIn marks a session as one somebody signed in to the admin with
+// (Token's SignIn): the one the admin exchanges from a pasted token, and a
+// session pasted there, which it uses as it is.
+func (ts *TokenStore) MarkSignIn(id string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].SignIn = true
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
+}
+
+// SignInElsewhere is what a server that keeps no idle clock says to a
+// sign-in session it refuses, and what to send instead.
+const SignInElsewhere = "a session somebody signed in to the admin with is taken by the admin alone, " +
+	"which signs it out once it is left unused; send a token: quilzo token issue, or a session " +
+	"exchanged from one with quilzo token exchange"
 
 // MaxSessionTTL caps an exchanged credential. A session that can outlive a
 // working day is not doing the job a session exists for.
@@ -1029,13 +1159,20 @@ func (ts *TokenStore) IssueSession(name, principal string, role Role,
 	}
 	secret, t, err = ts.issue(name, principal, role, resource, ttl, issuerRole, Scope{},
 		true)
-	if err != nil || len(methods) == 0 {
+	if err != nil {
 		return secret, t, err
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == t.ID {
+			// Somebody a passkey or an identity provider vouched for: a
+			// person, signed in.
+			ts.Tokens[i].Kind = KindPerson
+			t = ts.Tokens[i]
+			if len(methods) == 0 {
+				continue
+			}
 			ts.Tokens[i].Methods = append([]string(nil), methods...)
 			ts.Tokens[i].AAL = LevelOf(methods)
 			ts.Tokens[i].AuthAt = time.Now().Unix()
@@ -1253,6 +1390,9 @@ func (ts *TokenStore) ExchangeProved(parentSecret string, role Role, resource st
 		// about which one wins.
 		Scope: parent.Scope.Narrow(Scope{}),
 		Key:   thumbprint,
+		// Whose hands it is in is whose the token it came from is: a
+		// person's own token exchanged for a session is still theirs.
+		Kind: kindOf(*parent),
 		// A token is one factor, and a session made from one is too, until
 		// its person proves themselves another way (see Level).
 		Methods: []string{MethodToken}, AAL: 1, AuthAt: now.Unix(),
@@ -1400,6 +1540,11 @@ func (ts *TokenStore) IssueFederated(name, principal string, role Role, resource
 	for i := range ts.Tokens {
 		if ts.Tokens[i].ID == t.ID {
 			ts.Tokens[i].ExpiresAt, ts.Tokens[i].Key = now.Add(ttl).Unix(), thumbprint
+			// A program's, as recorded: with no kind it was judged by its
+			// name, which carries the run's id or the assertion's jti as
+			// the other issuer wrote it, and one with an @ in it made a CI
+			// job's token a person's.
+			ts.Tokens[i].Kind = KindProgram
 			t = ts.Tokens[i]
 		}
 	}
@@ -1544,6 +1689,12 @@ func (ts *TokenStore) authenticate(secret string, now time.Time) (*Token, error)
 	return &out, nil
 }
 
+// ErrNoToken is an id that names no token in the store, for errors.Is: the
+// command line exits 4 for it, "not found", as the help documents. `quilzo
+// token revoke` of an id nobody issued exited 1, as a revocation that broke
+// does, so a script could not tell a typo from a store it could not write.
+var ErrNoToken = errors.New("no token")
+
 // Revoke marks a token unusable, along with every session minted from it.
 //
 // The cascade is the point. Revoking a long-lived token while its sessions keep
@@ -1569,7 +1720,7 @@ func (ts *TokenStore) Revoke(id string) (int, error) {
 		}
 	}
 	if !found {
-		return 0, fmt.Errorf("no token %s", id)
+		return 0, fmt.Errorf("%w %s", ErrNoToken, id)
 	}
 
 	sessions := 0
@@ -1678,6 +1829,147 @@ func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
 	return out
 }
 
+// StrongestRole is the highest role a principal holds on a path, ignoring
+// denials — which Evaluate applies at decision time and which do not change
+// what a credential should be able to attempt. A grant that has ended is
+// no longer held: it counted, so a token was issued at, and by default
+// took, a role its holder had only until yesterday.
+func (p *Policy) StrongestRole(principal, resource string) Role {
+	return p.strongest(principal, resource, false)
+}
+
+// StrongestWithin is the highest role a principal holds on a path or on
+// anything inside it: what a credential over the path could be used as
+// somewhere it reaches. Over the whole site that is the highest they hold
+// anywhere, an area included, as Highest is for a session.
+func (p *Policy) StrongestWithin(principal, resource string) Role {
+	return p.strongest(principal, resource, true)
+}
+
+func (p *Policy) strongest(principal, resource string, inside bool) Role {
+	best := RoleNone
+	now := time.Now()
+	for _, b := range p.Snapshot() {
+		if b.Principal != principal || b.Deny || !b.Live(now) {
+			continue
+		}
+		if !covers(b.Resource, resource) && !(inside && covers(resource, b.Resource)) {
+			continue
+		}
+		if b.Role.AtLeast(best) {
+			best = b.Role
+		}
+	}
+	return best
+}
+
+// Carries is the role a token naming role, for principal on resource, can
+// be used at: its own, or what its holder holds within it when that is
+// less (StrongestWithin). A token is a ceiling and never a grant, so one
+// listed as publisher for an author was shown carrying a role every
+// request it made was refused. One for somebody who holds no role at all
+// keeps its own, which is shown with a line of its own where it is issued.
+//
+// Within it, and not only on the path it names. Held to the role on its
+// own path, a publisher's token over the whole site was shown as an
+// author's for somebody who publishes /blog, and an analyst's session as
+// a reader's though it administers /@security: a list of credentials that
+// said less than they could do.
+func (p *Policy) Carries(principal string, role Role, resource string) Role {
+	held := p.StrongestWithin(principal, resource)
+	if held != RoleNone && !held.AtLeast(role) {
+		return held
+	}
+	return role
+}
+
+// PartWithin is the part of resource a principal's roles there are granted
+// on: resource itself when a role is granted on it or above it, and
+// otherwise the narrowest path holding every role granted inside it. It is
+// empty when they are granted roles only outside resource, so hold nothing
+// in it, and resource when they are granted no role at all, where no part
+// is narrower than another: what they hold there is HeldThroughout's to say.
+//
+// What a run is bounded to is one part of the site (agent.Bound), and a
+// token's path is no more than a ceiling over it. A run read its part from
+// the token alone, so a token over the whole site, for an author whose
+// grants were all on /about, ran an agent that wrote the returns page.
+//
+// Roles and not permissions, as an agent's own standing is read: a
+// permission is something its holder may do besides their role, and not
+// where it reaches. Counted, an author of /about who may run agents by the
+// permission on /@agents was bounded at the whole site, the narrowest path
+// holding both. Denials and grants that have ended count as they do in
+// StrongestWithin.
+func (p *Policy) PartWithin(principal, resource string) string {
+	resource = normalise(resource)
+	now := time.Now()
+	granted := false
+	var inside []string
+	for _, b := range p.Snapshot() {
+		if b.Principal != principal || b.Deny || b.Role == RoleNone || !b.Live(now) {
+			continue
+		}
+		granted = true
+		switch {
+		case covers(b.Resource, resource):
+			return resource
+		case covers(resource, b.Resource):
+			inside = append(inside, normalise(b.Resource))
+		}
+	}
+	switch {
+	case !granted:
+		return resource
+	case len(inside) == 0:
+		return ""
+	}
+	part := inside[0]
+	for _, r := range inside[1:] {
+		for !covers(part, r) {
+			if i := strings.LastIndex(part, "/"); i > 0 {
+				part = part[:i]
+			} else {
+				part = "/"
+			}
+		}
+	}
+	return part
+}
+
+// HeldThroughout is the highest role a principal may use everywhere in
+// resource: the highest granted on it or above it, and below any role or
+// permission denied there that it, or one under it, is asked by, as
+// Evaluate decides. A role granted only inside it is held on part of it,
+// and does not count.
+//
+// What a run is bounded at is one role over one part of the site
+// (agent.Bound), and nothing asks the policy again of each page it writes,
+// so the role has to hold on every page of that part. Bounded at the
+// highest role held anywhere in it (Carries, StrongestWithin), a run dana
+// started as a reader of the site and an author of /about wrote the
+// returns page as an author, and so did one started by an author of /about
+// and of /blog, the narrowest part holding both being the whole site. An
+// administrator denied author over the site wrote it as an administrator.
+// A role denied only somewhere inside the part is not one a single bound
+// can leave out, and this does not.
+func (p *Policy) HeldThroughout(principal, resource string) Role {
+	granted := p.StrongestRole(principal, resource)
+	held := RoleNone
+	for _, r := range Roles {
+		if !granted.AtLeast(r) || !p.Evaluate(principal, definingAction[r], resource).Allowed {
+			break
+		}
+		held = r
+	}
+	return held
+}
+
+// definingAction is the action that holding each role is asked by: the
+// one it is the lowest role to be allowed.
+var definingAction = map[Role]Action{RoleAdmin: ActGrant, RolePublisher: ActPublish,
+	RoleAuthor: ActEditDraft, RoleReader: ActView}
+
 // Snapshot returns a copy of the bindings.
 //
 // A copy, because both of these types are now mutex-guarded and handing out
@@ -1717,9 +2009,25 @@ func (ts *TokenStore) Snapshot() []Token {
 // once at startup means a credential revoked in one process keeps working in
 // every other one until it restarts, which makes "revoked" a claim about a
 // file rather than a fact about a credential.
+//
+// Everything is taken from tokens but a token's last use, which is the later
+// of the two, as MergeInto keeps it. Authenticate notes a use in this copy
+// alone, so taking the file whole lost every use since the copy was last
+// saved: the admin replaced its copy whenever the file changed, and People
+// said of somebody signed in with a passkey and working that minute that
+// they had never used a credential.
 func (ts *TokenStore) Replace(tokens []Token) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	used := make(map[string]int64, len(ts.Tokens))
+	for _, t := range ts.Tokens {
+		used[t.ID] = t.LastUsed
+	}
+	for i := range tokens {
+		if at := used[tokens[i].ID]; at > tokens[i].LastUsed {
+			tokens[i].LastUsed = at
+		}
+	}
 	ts.Tokens = tokens
 }
 
@@ -1753,10 +2061,13 @@ func mergeStepUp(m *Token, s Token) {
 // The store's own rules make a union safe. A token is only ever added, a
 // revocation only ever sets a flag, and only sessions that ended long ago
 // are removed, by a sweep that runs again here. So a token either copy has
-// is kept, a token revoked in either stays revoked, a key bound in either
-// stays bound, the last use is the later one, and a step-up is the later of
-// being asked for and being passed (mergeStepUp); for everything else ts,
-// the copy being written, says what was meant.
+// is kept, a token revoked in either stays revoked, a session marked in
+// either as signed in to the admin with stays marked (a copy read before
+// the admin marked a pasted session wrote it back unmarked, and a server
+// with no idle clock took it again), a key bound in either stays bound,
+// the last use is the later one, and a step-up is the later of being asked
+// for and being passed (mergeStepUp); for everything else ts, the copy
+// being written, says what was meant.
 func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 	ts.mu.Lock()
 	mine := append([]Token(nil), ts.Tokens...)
@@ -1777,8 +2088,12 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		}
 		s := stored.Tokens[i]
 		m.Revoked = m.Revoked || s.Revoked
+		m.SignIn = m.SignIn || s.SignIn
 		if m.Bound == "" {
 			m.Bound = s.Bound
+		}
+		if m.Kind == "" {
+			m.Kind = s.Kind
 		}
 		if s.LastUsed > m.LastUsed {
 			m.LastUsed = s.LastUsed

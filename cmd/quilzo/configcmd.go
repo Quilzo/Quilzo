@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -97,8 +99,14 @@ func cmdConfig(root string, args []string) error {
 	}
 	switch args[0] {
 	case "show":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return configShow(root)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return configList()
 	case "explain":
 		return configExplain(args[1:])
@@ -107,8 +115,8 @@ func cmdConfig(root string, args []string) error {
 	case "unset":
 		return configUnset(root, args[1:])
 	default:
-		return fmt.Errorf("unknown config command %q; try show, list, "+
-			"explain, set or unset", args[0])
+		return errMisused{fmt.Errorf("unknown config command %q; try show, list, "+
+			"explain, set or unset", args[0])}
 	}
 }
 
@@ -178,9 +186,23 @@ func configList() error {
 	if w.JSON(all) {
 		return nil
 	}
-	group := ""
+	// Section by section, in the order each first appears. A heading was
+	// printed whenever the section changed from the setting before, and the
+	// settings are not declared section by section, so "agents" was headed
+	// twice and "admin" four times, and somebody looking for the agents'
+	// settings found half of them.
+	section := func(s config.Setting) string { g, _, _ := strings.Cut(s.Key, "."); return g }
+	order := map[string]int{}
 	for _, s := range all {
-		if g, _, _ := strings.Cut(s.Key, "."); g != group {
+		if _, ok := order[section(s)]; !ok {
+			order[section(s)] = len(order)
+		}
+	}
+	sorted := append([]config.Setting(nil), all...)
+	sort.SliceStable(sorted, func(i, j int) bool { return order[section(sorted[i])] < order[section(sorted[j])] })
+	group := ""
+	for _, s := range sorted {
+		if g := section(s); g != group {
 			group = g
 			w.Human("\n%s%s%s\n", bold, group, reset)
 		}
@@ -199,12 +221,11 @@ func configList() error {
 
 func configExplain(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config explain <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config explain <key>")}
 	}
 	s, ok := config.Lookup(args[0])
 	if !ok {
-		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
-			"every one", args[0])
+		return notASetting(args[0])
 	}
 	if w.JSON(s) {
 		return nil
@@ -226,6 +247,22 @@ func configExplain(args []string) error {
 	return nil
 }
 
+// notASetting refuses a key no setting has, with the nearest that one
+// does (nearestWords). `config set site.nmae Hello` was told to look
+// through `config list`, which is a hundred and twenty-nine settings, for
+// the one transposition.
+func notASetting(key string) error {
+	var keys []string
+	for _, s := range config.All() {
+		keys = append(keys, s.Key)
+	}
+	if near := nearestWords(key, keys); len(near) > 0 {
+		return fmt.Errorf("%q is not a setting; did you mean %s? `quilzo config list` "+
+			"shows every one", key, strings.Join(near, ", or "))
+	}
+	return fmt.Errorf("%q is not a setting; `quilzo config list` shows every one", key)
+}
+
 func configSet(root string, args []string) error {
 	var key, value, reason string
 	var rest []string
@@ -241,10 +278,13 @@ func configSet(root string, args []string) error {
 		}
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo config set <key> <value> " +
-			"[--accept-risk \"reason\"]")
+		return errMisused{fmt.Errorf("usage: quilzo config set <key> <value> " +
+			"[--accept-risk \"reason\"]")}
 	}
 	key, value = rest[0], rest[1]
+	if _, ok := config.Lookup(key); !ok {
+		return notASetting(key)
+	}
 
 	c, err := loadConfig(root)
 	if err != nil {
@@ -256,7 +296,7 @@ func configSet(root string, args []string) error {
 		return err
 	}
 
-	if err := c.Set(key, value, reason, caller.Name); err != nil {
+	if err := c.Set(key, value, reason, caller.accepter()); err != nil {
 		var need *config.ErrNeedsAcceptance
 		if errorsAs(err, &need) {
 			// A gate refusing, not the command breaking. The caller is being
@@ -288,7 +328,13 @@ func configSet(root string, args []string) error {
 	// why the field is called "setting".
 	record(root, caller.auditRecord("config.set", "/", outcome, detail))
 
+	// The setting under --json, as it was and as it is; it answered
+	// nothing, exit 0.
+	if w.JSON(map[string]any{"key": key, "from": before, "to": value, "accepted_risk": reason}) {
+		return nil
+	}
 	w.Human("%s = %s\n", key, value)
+	approvalApplies(root, key)
 	if reason != "" {
 		w.Human("  %srisk accepted for %d days: %q%s\n", yellow,
 			int(config.MaxAcceptance.Hours()/24), reason, reset)
@@ -300,7 +346,10 @@ func configSet(root string, args []string) error {
 
 func configUnset(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: quilzo config unset <key>")
+		return errMisused{fmt.Errorf("usage: quilzo config unset <key>")}
+	}
+	if _, ok := config.Lookup(args[0]); !ok {
+		return notASetting(args[0])
 	}
 	c, err := loadConfig(root)
 	if err != nil {
@@ -329,8 +378,33 @@ func configUnset(root string, args []string) error {
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))
 	// As show, list and explain say the default, not as the file holds it.
+	if w.JSON(map[string]any{"key": args[0], "from": before, "to": c.Shown(args[0]), "default": true}) {
+		return nil
+	}
 	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
+	approvalApplies(root, args[0])
 	return nil
+}
+
+// approvalApplies says, after an approval setting is set, the count that
+// applies when approval.json asks more (dual.AppliesAbove): the larger of
+// the two applies, and "= 2" alone was read as two. Any other setting is
+// not asked about, so setting it does not read approval.json.
+func approvalApplies(root, key string) {
+	if !slices.Contains(dual.Lowering, key) {
+		return
+	}
+	c, err := loadConfig(root)
+	if err != nil {
+		return
+	}
+	pol, err := loadApprovalPolicy(root)
+	if err != nil {
+		return
+	}
+	if note, ok := dual.AppliesAbove(c, pol.Required, pol.RequiredHumans)[key]; ok {
+		w.Human("  %s%s%s\n", dim, note, reset)
+	}
 }
 
 func shortDate(rfc string) string {

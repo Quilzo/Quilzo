@@ -109,7 +109,7 @@ func agentIdentityCmd(root, verb string, args []string) error {
 // agentIdentityCmdAs is agentIdentityCmd for a caller already known.
 func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
-	lifetime := fs.Duration("for", agent.DefaultLifetime, "how long until somebody has to renew it again")
+	lifetime := flagDuration(fs, "for", agent.DefaultLifetime, "how long until somebody has to renew it again")
 	want := 1
 	if verb == "sponsor" {
 		want = 2
@@ -121,9 +121,9 @@ func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error 
 	}
 	if len(args) != want {
 		if verb == "sponsor" {
-			return errors.New("quilzo agent sponsor NAME PERSON [--for 2160h]")
+			return errMisused{errors.New("quilzo agent sponsor NAME PERSON [--for 2160h]")}
 		}
-		return errors.New("quilzo agent renew NAME [--for 2160h]")
+		return errMisused{errors.New("quilzo agent renew NAME [--for 2160h]")}
 	}
 	name := args[0]
 	if caller.Kind == audit.KindAI {
@@ -134,7 +134,7 @@ func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error 
 		return err
 	}
 	if _, ok := set.Agents[name]; !ok {
-		return fmt.Errorf("no agent called %s is declared", name)
+		return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 	}
 	now := time.Now()
 	cur := set.identityOf(name)
@@ -175,7 +175,7 @@ func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error 
 	}
 	if err := updateAgents(root, func(set *agentSet) error {
 		if _, ok := set.Agents[name]; !ok {
-			return fmt.Errorf("no agent called %s is declared", name)
+			return errNotFound{fmt.Errorf("no agent called %s is declared", name)}
 		}
 		set.Identities[name] = id
 		return nil

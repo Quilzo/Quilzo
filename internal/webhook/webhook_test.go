@@ -441,3 +441,80 @@ type senderFunc func(string, []byte, map[string]string) (int, error)
 func (f senderFunc) Post(url string, body []byte, h map[string]string) (int, error) {
 	return f(url, body, h)
 }
+
+// The log's form of an address keeps its host and drops what can be a
+// credential: a password, the path of an incoming-webhook address and a
+// ?token=.
+func TestTheLogsFormOfAnAddressIsItsHost(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://hooks.slack.example/services/T0/B0/XXXX": "https://hooks.slack.example/…",
+		"https://receiver.example/hook?token=abc123":      "https://receiver.example/…",
+		"https://receiver.example/?token=abc123":          "https://receiver.example/…",
+		"https://user:pass@receiver.example":              "https://receiver.example",
+		"https://receiver.example:8443/":                  "https://receiver.example:8443",
+		"  https://receiver.example  ":                    "https://receiver.example",
+		"https://receiver.example/%zz":                    "(not an address)",
+		"receiver.example/hook":                           "(not an address)",
+	} {
+		if got := LogForm(raw); got != want {
+			t.Errorf("LogForm(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// One endpoint has one reference, two on one host have two, and the
+// reference depends on the endpoint's key, so it is not a digest anybody
+// can match a guessed address against.
+func TestAnEndpointsReferenceIsItsOwn(t *testing.T) {
+	a := Endpoint{URL: "https://receiver.example/hook?token=abc123", Secret: "k1"}
+	if Ref(a) != Ref(a) || len(Ref(a)) != 16 {
+		t.Fatalf("Ref is %q", Ref(a))
+	}
+	b := a
+	b.URL = "https://receiver.example/hook?token=abc124"
+	if Ref(a) == Ref(b) {
+		t.Error("two endpoints on one host have one reference")
+	}
+	c := a
+	c.Secret = "k2"
+	if Ref(a) == Ref(c) {
+		t.Error("the reference does not depend on the endpoint's key")
+	}
+}
+
+// What Check refuses: an address that does not parse, without repeating any
+// of it, plain http, a password, an address inside the network, and an
+// event that is never sent.
+//
+// An address whose password has a "/" or a "#" in it does not parse, and
+// the parser's error quoted what it took for the port, the password up to
+// that character, into the refusal, which the Integrations screen sends in
+// a redirect.
+func TestCheckRefusesWhatCannotBeDeliveredTo(t *testing.T) {
+	for _, c := range []struct {
+		url   string
+		types []string
+	}{
+		{"https://hooks.example.org/%zzSECRET", nil},
+		{"https://hookuser:SECRETpa55/word@hooks.example.org/x", nil},
+		{"https://hookuser:SECRETpa55#word@hooks.example.org/x", nil},
+		{"https://hooks.example.org:SECRET/x", nil},
+		{"http://hooks.example.org/x", nil},
+		{"https://user:pass@hooks.example.org/x", nil},
+		{"https://10.0.0.5/x", nil},
+		{"https://127.0.0.1/x", nil},
+		{"https://hooks.example.org/x", []string{"publish"}},
+	} {
+		err := Check(c.url, c.types)
+		if err == nil {
+			t.Errorf("Check(%q, %v) accepted it", c.url, c.types)
+			continue
+		}
+		if strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), "pass") {
+			t.Errorf("Check(%q) repeated it: %v", c.url, err)
+		}
+	}
+	if err := Check("https://hooks.example.org/x", []string{"published", "submitted"}); err != nil {
+		t.Errorf("a usable endpoint was refused: %v", err)
+	}
+}

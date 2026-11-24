@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The construct-by-construct translation.
@@ -610,9 +612,5 @@ func fieldsRead(src string) []string {
 
 // excerpt shortens a construct for a message, on one line.
 func excerpt(s string) string {
-	flat := strings.Join(strings.Fields(s), " ")
-	if len(flat) > 90 {
-		flat = flat[:90] + "…"
-	}
-	return "`" + flat + "`"
+	return "`" + plaintext.Clip(strings.Join(strings.Fields(s), " "), 90, "…") + "`"
 }

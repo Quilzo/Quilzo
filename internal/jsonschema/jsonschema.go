@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // maxDepth bounds how far into a value, or a schema, a check goes.
@@ -31,7 +33,12 @@ const maxDepth = 32
 // Check reports the first way v does not fit schema, or nil. v is a value
 // as encoding/json decodes into any: maps, slices, strings, float64,
 // bool and nil.
-func Check(schema json.RawMessage, v any) error {
+func Check(schema json.RawMessage, v any) error { return CheckNamed(schema, v, "body") }
+
+// CheckNamed is Check, with the value called name in what it says: a
+// request's body is "body", and an MCP tool's arguments are "arguments",
+// which is the field a client sent them in.
+func CheckNamed(schema json.RawMessage, v any, name string) error {
 	if len(schema) == 0 {
 		return nil
 	}
@@ -48,7 +55,7 @@ func Check(schema json.RawMessage, v any) error {
 	if err := json.Unmarshal(b, &norm); err != nil {
 		return err
 	}
-	return check(s, norm, "body", 0)
+	return check(s, norm, name, 0)
 }
 
 func check(schema any, v any, at string, depth int) error {
@@ -179,7 +186,7 @@ func checkObject(s map[string]any, x map[string]any, at string, depth int) error
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		where := at + "." + k
+		where := at + "." + named(k)
 		if p, ok := props[k]; ok {
 			if err := check(p, x[k], where, depth+1); err != nil {
 				return err
@@ -197,6 +204,16 @@ func checkObject(s map[string]any, x map[string]any, at string, depth int) error
 	}
 	return nil
 }
+
+// named is a property's name as an answer says it: enough to say which,
+// and no more.
+//
+// The name is the value's own. For a tool's arguments that is whatever a
+// caller of the agent interface sent, up to the whole body of the request,
+// and an answer that named it whole was as long: a megabyte sent back for
+// one argument nobody takes, where a tool or an operation nobody has is
+// quoted in eighty bytes (internal/mcp's quoteName).
+func named(k string) string { return plaintext.Clip(k, 80, "…") }
 
 func checkType(t any, v any, at string) error {
 	var types []string

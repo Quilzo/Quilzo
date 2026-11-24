@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Declaring the outside systems this install may reach, and reaching them.
@@ -58,7 +59,10 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 			"integrations.json could not be read, so this install does not "+
 				"know what it may reach: %w", err)
 	}
-	if err := set.Validate(); err != nil {
+	// As it was written: a paying call's fixed currency stored when three
+	// capital letters were one (=ETH) is read, and refused when it is
+	// written again, rather than taking every integration down with it.
+	if err := set.ValidateStored(); err != nil {
 		return nil, fmt.Errorf("integrations.json: %w", err)
 	}
 	return set, nil
@@ -66,10 +70,13 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 
 func cmdIntegrations(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["integrations"]}
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsList(root)
 	case "tools":
 		return integrationsTools(root, args[1:])
@@ -80,6 +87,9 @@ func cmdIntegrations(root string, args []string) error {
 	case "gateway":
 		return integrationsGateway(root, args[1:])
 	case "held":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsHeld(root)
 	case "import":
 		return integrationsImport(root, args[1:])
@@ -89,7 +99,7 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsTemplate(root, args[1:])
 	case "approve", "decline":
 		if len(args) != 2 {
-			return fmt.Errorf("quilzo integrations %s ID", args[0])
+			return errMisused{fmt.Errorf("quilzo integrations %s ID", args[0])}
 		}
 		if err := gatewayDecide(root, args[1], args[0] == "approve", resolveCaller(root, flagToken), time.Now()); err != nil {
 			return err
@@ -97,8 +107,8 @@ func cmdIntegrations(root string, args []string) error {
 		fmt.Printf("%sd %s\n", args[0], args[1])
 		return nil
 	default:
-		return fmt.Errorf(
-			"unknown integrations command %q; try list, import, template, tools, pin, call, gateway, held, approve or decline", args[0])
+		return errMisused{fmt.Errorf(
+			"unknown integrations command %q; try list, import, template, tools, pin, call, gateway, held, approve or decline", args[0])}
 	}
 }
 
@@ -155,7 +165,7 @@ func integrationsList(root string) error {
 // reviewed, which is the live risk in this ecosystem.
 func integrationsTools(root string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("quilzo integrations tools NAME")
+		return errMisused{fmt.Errorf("quilzo integrations tools NAME")}
 	}
 	in, err := oneIntegration(root, args[0])
 	if err != nil {
@@ -200,13 +210,13 @@ func integrationsTools(root string, args []string) error {
 
 func integrationsCall(root string, args []string) error {
 	fs := flag.NewFlagSet("integrations call", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	rest := fs.Args()
 	if len(rest) < 2 {
-		return fmt.Errorf(
-			"quilzo integrations call NAME TOOL [key=value ...]")
+		return errMisused{fmt.Errorf(
+			"quilzo integrations call NAME TOOL [key=value ...]")}
 	}
 	name, tool := rest[0], rest[1]
 
@@ -224,19 +234,33 @@ func integrationsCall(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	argv := map[string]any{}
+	given := map[string]string{}
 	for _, kv := range rest[2:] {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
 			return fmt.Errorf("%q is not key=value", kv)
 		}
-		argv[k] = typed(v)
+		given[k] = v
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	out, cerr := newMCPClientFor(root, actingFor(caller)).CallStrict(ctx, in, tool, argv)
+	// A value is given the type it looks like, and where the tool was
+	// pinned, the type its schema takes: the call is held to that schema,
+	// and an order id written 42, which the tool takes as text, was
+	// refused as a number with no way to write it as anything else.
+	mc := newMCPClientFor(root, actingFor(caller))
+	approved, pinned := mc.Approved(ctx, in, tool)
+	argv := map[string]any{}
+	for k, v := range given {
+		argv[k] = typed(v)
+		if pinned {
+			argv[k] = approved.Typed(k, v, argv[k])
+		}
+	}
+
+	out, cerr := mc.CallStrict(ctx, in, tool, argv)
 	if cerr != nil {
 		// Denied is for what this install refused. A call the far side
 		// failed — the tool said so, the server answered with an error, or
@@ -277,8 +301,8 @@ func oneIntegration(root, name string) (agent.Integration, error) {
 			return in, nil
 		}
 	}
-	return agent.Integration{}, fmt.Errorf(
-		"no integration called %q; `quilzo integrations list`", name)
+	return agent.Integration{}, errNotFound{fmt.Errorf(
+		"no integration called %q; `quilzo integrations list`", name)}
 }
 
 // mcpTransport stands in for the network in tests; nil is the network,
@@ -324,7 +348,7 @@ func newMCPClientFor(root, person string) *mcpclient.Client {
 // every tool the install uses, or the ones named.
 func integrationsPin(root string, args []string) error {
 	if len(args) < 1 {
-		return errors.New("quilzo integrations pin NAME [TOOL...]")
+		return errMisused{errors.New("quilzo integrations pin NAME [TOOL...]")}
 	}
 	set, err := loadIntegrations(root)
 	if err != nil {
@@ -337,7 +361,7 @@ func integrationsPin(root string, args []string) error {
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("no integration called %q; `quilzo integrations list`", args[0])
+		return errNotFound{fmt.Errorf("no integration called %q; `quilzo integrations list`", args[0])}
 	}
 	in := set.Declared[idx]
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -403,12 +427,7 @@ func integrationsPin(root string, args []string) error {
 	return nil
 }
 
-func clampString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clampString(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // readSecret resolves a credential name to its value, from the environment.
 //
@@ -474,14 +493,14 @@ func secretEnvName(name string) string {
 // [--daily N] [--ask TOOL,...]`, or `--off`: offering a company's MCP
 // server to other systems' agents through Quilzo, or not.
 func integrationsGateway(root string, args []string) error {
-	usage := errors.New("quilzo integrations gateway NAME --role reader|author|publisher [--daily N] [--ask TOOL,...] | --off")
+	usage := errMisused{errors.New("quilzo integrations gateway NAME --role reader|author|publisher [--daily N] [--ask TOOL,...] | --off")}
 	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("integrations gateway", flag.ContinueOnError)
 	role := fs.String("role", "", "the least role a caller needs")
 	daily := fs.Int("daily", 0, "calls one caller may make a day")
 	ask := fs.String("ask", "", "tools a person approves call by call, separated by commas")
 	off := fs.Bool("off", false, "offer it no longer")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseFlags(fs, rest, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || (*off == (*role != "")) {
@@ -502,7 +521,7 @@ func integrationsGateway(root string, args []string) error {
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("no integration called %q; quilzo integrations list", pos[0])
+		return errNotFound{fmt.Errorf("no integration called %q; quilzo integrations list", pos[0])}
 	}
 	in := &set.Declared[idx]
 	detail := map[string]string{"integration": in.Name}
@@ -565,6 +584,9 @@ func integrationsHeld(root string) error {
 		}
 		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, h.Tool, h.Integration, by,
 			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), clip(h.Args, 300))
+		if h.Why != "" {
+			w.Human("    %s%s%s\n", yellow, h.Why, reset)
+		}
 	}
 	w.Human("  %squilzo integrations approve ID, or decline ID%s\n", dim, reset)
 	return nil

@@ -45,15 +45,18 @@ package importer
 
 import (
 	"encoding/json"
-	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"io"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/webimport"
 )
 
 // Source is a format that can be imported.
@@ -73,7 +76,7 @@ const (
 const MaxBytes = 256 << 20
 
 // MaxPages bounds how many pages one import may create.
-const MaxPages = 20000
+const MaxPages = export.MaxPages
 
 // Page is one imported page, in quilzo's own shape.
 type Page struct {
@@ -144,57 +147,17 @@ func Import(src Source, r io.Reader, now time.Time) (*Report, error) {
 	return nil, fmt.Errorf("unknown source %q; try wordpress, markdown or json", src)
 }
 
-// jsonCollection reads the shape the JSON exporter writes for a collection.
+// jsonCollection reads the shape the JSON exporter writes for a collection,
+// and false for anything else.
 //
-// Returns false rather than an error for anything else, so the page shapes
-// below still get their turn. It only claims a document that has both keys and
-// an array of objects carrying ids — a document with a stray "collection"
-// field is not one of these.
+// The export reads its own files now (export.ReadCollection), so this is a
+// wrapper over it, kept for whatever in this package reaches for it.
 func jsonCollection(body []byte) (*Report, bool) {
-	var doc struct {
-		Collection string `json:"collection"`
-		Records    []struct {
-			ID      string         `json:"id"`
-			Fields  map[string]any `json:"fields"`
-			Created int64          `json:"created"`
-			Updated int64          `json:"updated"`
-		} `json:"records"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
+	c, ok := export.ReadCollection(body)
+	if !ok {
 		return nil, false
 	}
-	if doc.Collection == "" || doc.Records == nil {
-		return nil, false
-	}
-
-	rep := &Report{Source: JSON, Collection: doc.Collection}
-	for i, r := range doc.Records {
-		if len(rep.Records) >= MaxPages {
-			rep.Skipped = append(rep.Skipped, "stopped at the record limit")
-			break
-		}
-		if r.ID == "" {
-			// Refused rather than given a fresh id. A record whose identity
-			// was invented on import is no longer the record anything else
-			// links to, and the broken relation is found by a reader.
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"record %d has no id, so nothing that links to it would still "+
-					"find it", i+1))
-			continue
-		}
-		if r.Fields == nil {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"record %q has no fields", r.ID))
-			continue
-		}
-		rep.Records = append(rep.Records, Record{
-			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
-		})
-	}
-	sort.Slice(rep.Records, func(i, j int) bool {
-		return rep.Records[i].ID < rep.Records[j].ID
-	})
-	return rep, true
+	return jsonReport(c), true
 }
 
 // Detect guesses the format from the bytes, so the common case needs no flag.
@@ -218,59 +181,24 @@ func Detect(body []byte) (Source, bool) {
 
 // -- WordPress ---------------------------------------------------------------
 
-type wxr struct {
-	Channel struct {
-		Title string    `xml:"title"`
-		Items []wxrItem `xml:"item"`
-	} `xml:"channel"`
-}
-
-type wxrItem struct {
-	Title    string `xml:"title"`
-	Link     string `xml:"link"`
-	PostName string `xml:"post_name"`
-	PostType string `xml:"post_type"`
-	Status   string `xml:"status"`
-	PostDate string `xml:"post_date"`
-	Creator  string `xml:"creator"`
-	// Namespaced explicitly. WXR has both content:encoded and excerpt:encoded,
-	// and an unqualified `encoded` tag matches whichever appears first — which
-	// silently imports excerpts as bodies on exports that order them the other
-	// way.
-	Content    string `xml:"http://purl.org/rss/1.0/modules/content/ encoded"`
-	Excerpt    string `xml:"http://wordpress.org/export/1.2/excerpt/ encoded"`
-	AttachURL  string `xml:"attachment_url"`
-	Categories []struct {
-		Domain string `xml:"domain,attr"`
-		Value  string `xml:",chardata"`
-	} `xml:"category"`
-}
-
+// importWXR makes pages of a WordPress export, read as `quilzo site import`
+// reads it (webimport.ReadWordPress) and each named as it names it
+// (webimport.WordPressItem.PageName). This had a parser of its own, which
+// named a page from its slug or its title while site import named it from its
+// link: one file came in as qa-night through one and qa through the other.
+// Reading the content by its namespace (WordPressItem.Content) keeps an
+// excerpt from being imported as a body on an export that orders the two the
+// other way.
 func importWXR(body []byte, now time.Time) (*Report, error) {
 	rep := &Report{Source: WordPress}
 
-	var doc wxr
-	dec := xml.NewDecoder(strings.NewReader(string(body)))
-	// Strict is the default and stays on. It is what makes an undeclared entity
-	// an error rather than something passed through as literal text — and a
-	// parser that passes &xxe; through is a parser handing the payload to
-	// whatever reads its output next.
-	dec.Strict = true
-	if err := dec.Decode(&doc); err != nil {
-		if strings.Contains(err.Error(), "invalid character entity") {
-			return nil, fmt.Errorf("the export declares XML entities, which are "+
-				"not resolved here. If this file is a legitimate export, the "+
-				"entities are being used for text and can be replaced; if it is "+
-				"not, this is the attack that has hit WordPress twice: %w", err)
-		}
-		return nil, fmt.Errorf("this does not parse as a WordPress export: %w", err)
+	doc, err := webimport.ReadWordPress(body)
+	if err != nil {
+		return nil, err
 	}
 
-	seen := map[string]bool{}
-	// next is, for a name taken, the number to try first: every one below
-	// it is taken (as webimport's postSlugs keeps it).
-	next := map[string]int{}
-	unchanged := 0
+	named := export.NewNames()
+	unchanged, held, unaddressed := 0, 0, 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
@@ -279,45 +207,41 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		}
 		// Attachments are references, not pages. Their URLs are collected so
 		// the operator can decide whether to pull them down.
-		if item.PostType == "attachment" {
+		if item.Type == "attachment" {
 			if item.AttachURL != "" {
 				rep.Media = append(rep.Media, item.AttachURL)
 			}
 			continue
 		}
-		switch item.PostType {
+		switch item.Type {
 		case "nav_menu_item", "revision", "custom_css", "customize_changeset",
 			"wp_global_styles", "wp_template", "wp_template_part", "wp_block":
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q (%s) — a WordPress internal, not content", item.Title, item.PostType))
+				"%q (%s) — a WordPress internal, not content", item.Title, item.Type))
 			continue
 		}
-		if item.Status == "trash" {
+		// What WordPress kept from the public is left out, and named. What an
+		// import brings is published with the rest of the draft, and there is
+		// no page here that is held while the others go out: each of these was
+		// brought as an ordinary page with a field, status: draft, that
+		// nothing reads, and the owner who published as the import said to
+		// put a private post's words on the site and in its sitemap.
+		if why := item.Held(); why != "" {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q — in the trash", item.Title))
+				"%q — %s in WordPress, and an import does not make it public",
+				item.Title, why))
+			held++
 			continue
 		}
 
-		name := slug(item.PostName)
-		if name == "" {
-			name = slug(item.Title)
-		}
+		name := item.PageName()
 		if name == "" {
 			rep.Skipped = append(rep.Skipped, "an item with no title or slug")
 			continue
 		}
-		// Numbered from the name the items share. Each was numbered from
-		// the name the one before it was given, so the thousandth "same" was
-		// same-2-3-4-…-1000, found by building every name before it: 10,000
-		// same-titled items took seven minutes of CPU to import.
-		base := name
-		for n := max(2, next[base]); seen[name]; n++ {
-			name = fmt.Sprintf("%s-%d", base, n)
-			next[base] = n + 1
-		}
-		seen[name] = true
+		name = named.Claim(name)
 
-		text, links, images, dropped := flattenHTML(item.Content)
+		text, links, images, dropped := flattenHTML(item.Content())
 		rep.Media = append(rep.Media, images...)
 
 		fields := map[string]any{
@@ -325,7 +249,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			"body":  text,
 			"slug":  name,
 		}
-		if d := wpDate(item.PostDate); d != "" {
+		if d := wpDate(item.Date); d != "" {
 			fields["published"] = d
 		}
 		if item.Creator != "" {
@@ -343,9 +267,6 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		if len(tags) > 0 {
 			fields["tags"] = tags
 		}
-		if item.Status != "publish" {
-			fields["status"] = "draft"
-		}
 
 		rep.Pages = append(rep.Pages, Page{Name: name, Fields: fields, Dropped: dropped})
 
@@ -359,23 +280,49 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		// real import produce a map full of self-references, and NewMap refuses
 		// those — correctly, since a page redirecting to itself is a loop. The
 		// first version did exactly that and generated no redirects at all.
+		//
+		// And only from an address that is the item's own. WordPress links
+		// what it has not published, and everything on a site with plain
+		// links, by its number: /?p=5. A redirect's source is a path, so only
+		// the path of that link was read, and it is the home page's: the
+		// import wrote a permanent redirect from / to the post, and the new
+		// site's front door answered 308 to it. Two such links contradicted
+		// each other, and the import dropped every redirect it had. The front
+		// page's own link is the same address, and is not redirected either:
+		// redirects are served before pages, so the home page would be gone.
 		if item.Link != "" {
 			if from, err := seo.SourcePath(item.Link); err == nil {
-				if from != "/"+name {
+				switch {
+				case from == "/" || notAPath(item.Link):
+					unaddressed++
+				case from != "/"+name:
 					rep.Redirects = append(rep.Redirects, seo.Redirect{
 						From: item.Link, To: "/" + name, Permanent: true,
 						Note: "imported from WordPress",
 					})
-				} else {
+				default:
 					unchanged++
 				}
 			}
 		}
 	}
 
+	if held > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%d item(s) WordPress kept from the public were not imported "+
+				"(listed above): what an import brings is published with the "+
+				"rest of the site. To bring one, publish it in WordPress and "+
+				"export again.", held))
+	}
 	if unchanged > 0 {
 		rep.Notes = append(rep.Notes, fmt.Sprintf(
 			"%d page(s) kept the same path, so they need no redirect.", unchanged))
+	}
+	if unaddressed > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%d page(s) had no address of their own to redirect from: the "+
+				"export links them at the home page, or by a number after it "+
+				"(/?p=5), which no redirect can match.", unaddressed))
 	}
 
 	// Validated here rather than at write time, so a contradictory or looping
@@ -410,10 +357,24 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			len(rep.Media)))
 	}
 	if len(rep.Pages) == 0 {
+		if held > 0 {
+			return nil, fmt.Errorf("no importable content found; %d items were "+
+				"skipped, %d of them because WordPress kept them from the public "+
+				"(drafts, private, waiting for review, scheduled, in the trash "+
+				"or behind a password), and an import does not make them public",
+				len(rep.Skipped), held)
+		}
 		return nil, fmt.Errorf("no importable content found; %d items were skipped",
 			len(rep.Skipped))
 	}
 	return rep, nil
+}
+
+// notAPath says whether an item's link names it by a query or a fragment
+// rather than by a path: /?p=5, as WordPress links what has no address yet.
+func notAPath(link string) bool {
+	u, err := url.Parse(strings.TrimSpace(link))
+	return err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != ""
 }
 
 func wpDate(s string) string {
@@ -497,6 +458,19 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 		}
 	}
 
+	// A file its front matter holds back is not imported. What is imported is
+	// published with the rest of the draft, and draft: true was read as a
+	// field like any other, which nothing reads: `quilzo publish` put a
+	// launch plan marked "not for the public yet" on the site, while `quilzo
+	// site import` of the folder holding the same file left it out. Refused
+	// naming the line, so somebody who does mean to publish it knows what to
+	// take out.
+	if why := webimport.HeldBack(fields); why != "" {
+		return nil, fmt.Errorf("the file's front matter holds it back (%s), and "+
+			"an import does not make public what its source did not; take that "+
+			"line out to import it", why)
+	}
+
 	if fields["title"] == nil {
 		// The first heading, if the front matter had none.
 		for _, line := range strings.Split(rest, "\n") {
@@ -523,118 +497,126 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 
 // -- JSON --------------------------------------------------------------------
 
+// importJSON reads a JSON array or object of pages, or a collection's file.
+//
+// What the JSON export writes is read by the export itself (export.Read), so
+// the format and its reader are one package's promise; this reads it through
+// that, and the shapes a headless system writes go the same way.
 func importJSON(body []byte, now time.Time) (*Report, error) {
-	rep := &Report{Source: JSON}
-
-	// A collections file first, because it is unambiguous: nothing else this
-	// importer reads has a top-level "collection" name beside a "records"
-	// array. Checked before the page shapes so a catalogue is never imported
-	// as a set of pages named "collection" and "records".
-	if rec, ok := jsonCollection(body); ok {
-		return rec, nil
-	}
-
-	var asArray []map[string]any
-	if err := json.Unmarshal(body, &asArray); err == nil {
-		for i, item := range asArray {
-			if len(rep.Pages) >= MaxPages {
-				rep.Skipped = append(rep.Skipped, "stopped at the page limit")
-				break
-			}
-			// An array carries no names, so "page-3" is a last resort and a
-			// title is a better guess than a position.
-			p, err := jsonPage(item, fmt.Sprintf("page-%d", i+1), false)
-			if err != nil {
-				rep.Skipped = append(rep.Skipped, fmt.Sprintf("item %d: %v", i+1, err))
-				continue
-			}
-			rep.Pages = append(rep.Pages, p)
-		}
-		if len(rep.Pages) == 0 {
-			return nil, fmt.Errorf("the array contained no importable pages")
-		}
-		return rep, nil
-	}
-
-	var asMap map[string]any
-	if err := json.Unmarshal(body, &asMap); err != nil {
-		return nil, fmt.Errorf("this is not JSON: %w", err)
-	}
-	// A map of name -> page is the other common shape.
-	for name, v := range asMap {
-		item, ok := v.(map[string]any)
-		if !ok {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q is a %T, not a page object", name, v))
-			continue
-		}
-		// A map's key is the page's identity, not a fallback.
-		//
-		// This is what makes an export re-importable. The exporter writes
-		// {"index": {"title": "Home"}}, and preferring the title over the key
-		// imported it as "home" — so a round trip renamed every page whose
-		// title was not its name, and the front page in particular became
-		// unreachable because / serves whatever is called "index".
-		//
-		// "there is no lock-in here, and this is how it is proved" is a claim
-		// this tool makes in its own help text. It has to survive the round
-		// trip exactly, or it is not proved.
-		p, err := jsonPage(item, name, true)
+	c, err := export.Read(export.JSON, body)
+	// A Ghost export is JSON too, so it came here and was refused with "no
+	// importable pages found", while the site import reads the same file into
+	// a site with its posts. Said once this reader has found nothing, so a
+	// page that happens to be called "posts" is still read as one; or when
+	// the file is Ghost's by its own shape, because the shape with no "db"
+	// around it gave this reader two pages, "data" and "meta", which were
+	// written into the draft without a word.
+	if (err != nil && webimport.Detect(body) == webimport.KindGhost) || ghostWithoutDB(body) {
+		hint := "this is a Ghost export, not pages this reads: bring it as a " +
+			"site, with `quilzo site import FILE` or \"Or the file it exported\" " +
+			"on the Make screen, which read its posts and pages"
 		if err != nil {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf("%q: %v", name, err))
-			continue
+			return nil, fmt.Errorf("%s (%w)", hint, err)
 		}
-		rep.Pages = append(rep.Pages, p)
+		return nil, errors.New(hint)
 	}
-	sort.Slice(rep.Pages, func(i, j int) bool {
-		return rep.Pages[i].Name < rep.Pages[j].Name
-	})
-	if len(rep.Pages) == 0 {
-		return nil, fmt.Errorf("no importable pages found")
+	if err != nil {
+		return nil, err
+	}
+	rep := jsonReport(c)
+	if strings.HasPrefix(strings.TrimSpace(string(body)), "[") {
+		if err := leaveOutHeld(rep); err != nil {
+			return nil, err
+		}
 	}
 	return rep, nil
+}
+
+// leaveOutHeld takes out of a list of pages the ones their source marks as
+// not published, and says which.
+//
+// A list is what a headless system writes, each page with its own state
+// beside its words: "status": "draft", "draft": true, "published": false.
+// Those were fields like any other, which nothing reads, so a draft was
+// imported as a page and published with the rest, as a WordPress draft and
+// a Markdown one were. They are the marks a Markdown file's front matter is
+// read for (webimport.HeldBack).
+//
+// A map of names to pages is not asked: it is what this program exports,
+// its pages are held by the fields this program honours (starts,
+// members_only), and reading one back must not lose a page for what a
+// field of its own happens to be called.
+func leaveOutHeld(rep *Report) error {
+	kept := rep.Pages[:0]
+	held, why := 0, ""
+	for _, p := range rep.Pages {
+		mark := webimport.HeldBack(p.Fields)
+		if mark == "" {
+			kept = append(kept, p)
+			continue
+		}
+		title := str(p.Fields["title"])
+		if title == "" {
+			title = p.Name
+		}
+		rep.Skipped = append(rep.Skipped, fmt.Sprintf(
+			"%q — held back by its source (%s), and an import does not make it public",
+			title, mark))
+		held, why = held+1, mark
+	}
+	rep.Pages = kept
+	if held == 0 {
+		return nil
+	}
+	if len(rep.Pages) == 0 {
+		return fmt.Errorf("no importable pages found: all %d are held back by "+
+			"their source (the last by %s), and an import does not make public "+
+			"what its source did not", held, why)
+	}
+	rep.Notes = append(rep.Notes, fmt.Sprintf(
+		"%d page(s) their source held back were not imported (listed above): "+
+			"what an import brings is published with the rest of the site. To "+
+			"bring one, take the mark that holds it back out of the file.", held))
+	return nil
+}
+
+// ghostWithoutDB says whether body is a Ghost export written with no "db"
+// around it: {"meta": {"exported_on": ...}, "data": {...}}. Ghost writes that
+// key in the meta of every export it makes; pages that are only called data
+// and meta, without it, are still pages.
+func ghostWithoutDB(body []byte) bool {
+	var doc struct {
+		Meta map[string]json.RawMessage `json:"meta"`
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(body, &doc) != nil || doc.Data == nil {
+		return false
+	}
+	_, ok := doc.Meta["exported_on"]
+	return ok
+}
+
+// jsonReport is what the export read, as this package reports it.
+func jsonReport(c *export.Content) *Report {
+	rep := &Report{Source: JSON, Collection: c.Collection, Skipped: c.Skipped}
+	for _, p := range c.Pages {
+		rep.Pages = append(rep.Pages, Page(p))
+	}
+	for _, r := range c.Records {
+		rep.Records = append(rep.Records, Record(r))
+	}
+	return rep
 }
 
 // jsonPage converts one object. authoritative says whether the given name is
 // the page's identity — true when it came from a map key, false when it is a
 // positional placeholder for an array element.
+//
+// A wrapper over export.ReadPage, which the export's reader names its pages
+// with, kept for whatever in this package reaches for it.
 func jsonPage(item map[string]any, given string, authoritative bool) (Page, error) {
-	fields := map[string]any{}
-	var dropped []string
-	for k, v := range item {
-		switch v.(type) {
-		case string, float64, bool, nil:
-			fields[k] = v
-		case []any:
-			fields[k] = v
-		default:
-			// A nested object has nowhere to go: content types are flat, which
-			// is what keeps validation bounded. Reported rather than flattened
-			// into keys nobody declared.
-			dropped = append(dropped, k+" (nested object)")
-		}
-	}
-	name := ""
-	if authoritative {
-		name = slug(given)
-	}
-	if name == "" {
-		name = slug(str(fields["slug"]))
-	}
-	if name == "" {
-		name = slug(str(fields["name"]))
-	}
-	if name == "" {
-		name = slug(str(fields["title"]))
-	}
-	if name == "" {
-		name = slug(given)
-	}
-	if name == "" {
-		return Page{}, fmt.Errorf("no usable name")
-	}
-	sort.Strings(dropped)
-	return Page{Name: name, Fields: fields, Dropped: dropped}, nil
+	p, err := export.ReadPage(item, given, authoritative)
+	return Page(p), err
 }
 
 // -- shared ------------------------------------------------------------------
@@ -816,28 +798,8 @@ func collapse(s string) string {
 }
 
 // slug produces a name that is safe as a page name and readable as a URL.
-func slug(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	lastDash := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastDash = false
-		case r == '-' || r == ' ' || r == '_' || r == '/' || r == '.':
-			if !lastDash && b.Len() > 0 {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if len(out) > 80 {
-		out = strings.Trim(out[:80], "-")
-	}
-	return out
-}
+// It is export.Slug, the one rule every page an import names is held to.
+func slug(s string) string { return export.Slug(s) }
 
 func str(v any) string {
 	s, _ := v.(string)

@@ -4,9 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/out"
@@ -130,5 +134,59 @@ func TestAFileTooLargeToBeAnExportIsRefused(t *testing.T) {
 	}
 	if _, err := readTokenFile(path); err == nil {
 		t.Fatal("a file far past any published export was read into memory")
+	}
+}
+
+// An export says what it wrote. It said "96 token(s) written ... as Design
+// Tokens Format Module" over a file holding 86, the style, motion, icons,
+// corner and scheme being choices rather than tokens and left out without a
+// word, and it said the same over a Tailwind stylesheet. The count is what
+// the file holds, the format is the one written, and the choices that are
+// not in it are named, with the command that sets them on another site.
+func TestAThemeExportSaysWhatItWrote(t *testing.T) {
+	root, tpl := designStore(t)
+	if err := cmdTheme(root, []string{"set", "style", "neon", "scheme", "dark", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	old := w
+	t.Cleanup(func() { w = old })
+	export := func(args ...string) (said, file string) {
+		t.Helper()
+		var buf bytes.Buffer
+		w = out.New(false)
+		w.Out = &buf
+		path := filepath.Join(t.TempDir(), "export")
+		if err := cmdTheme(root, append([]string{"export", "--dir", tpl, "--out", path}, args...)); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return buf.String(), string(b)
+	}
+	counted := regexp.MustCompile(`(\d+) token\(s\) written`)
+
+	said, file := export()
+	m := counted.FindStringSubmatch(said)
+	if want := strings.Count(file, `"$value"`); m == nil || m[1] != fmt.Sprint(want) {
+		t.Errorf("the export says %v of a file holding %d tokens", m, want)
+	}
+	if !strings.Contains(said, "Design Tokens Format Module") {
+		t.Errorf("the export does not name its format: %s", said)
+	}
+	for _, want := range []string{"style neon", "scheme dark", "quilzo theme set style neon"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the export does not say %q: %s", want, said)
+		}
+	}
+
+	said, file = export("--tailwind")
+	m = counted.FindStringSubmatch(said)
+	if want := len(regexp.MustCompile(`(?m)^\s*--[a-z0-9-]+:`).FindAllString(file, -1)); m == nil || m[1] != fmt.Sprint(want) {
+		t.Errorf("the Tailwind export says %v of a file holding %d properties", m, want)
+	}
+	if strings.Contains(said, "Design Tokens Format Module") || !strings.Contains(said, "Tailwind CSS v4 @theme stylesheet") {
+		t.Errorf("the Tailwind export names the wrong format: %s", said)
 	}
 }

@@ -28,6 +28,11 @@ ExecStart=/usr/local/bin/quilzo --root /srv/quilzo/.quilzo site \
   --addr 127.0.0.1:8081 \
   --base-url https://example.com
 
+# `systemctl reload quilzo-site` reads the design and the settings again
+# without dropping a connection. The site also takes the design with each
+# publish and its settings when they change; see docs/cms.md.
+ExecReload=/bin/kill -HUP $MAINPID
+
 Restart=on-failure
 RestartSec=5s
 

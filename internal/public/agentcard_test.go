@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/a2a"
@@ -73,5 +74,41 @@ func TestAnInvalidAgentCardIsNotServedAndDoesNotStopACopy(t *testing.T) {
 	st.AgentCard = func() (a2a.Card, error) { return a2a.Card{}, errors.New("the agents could not be read") }
 	if rec := get(); rec.Code != http.StatusInternalServerError {
 		t.Errorf("a card that could not be built answered %d", rec.Code)
+	}
+}
+
+// The card is a document, not an endpoint. It answered every method, so a
+// caller that read it and sent a task to the address it names (with tasks
+// off, its own) was answered 200 with the card, which looks like an answer.
+// Anything but a read is now 405, which a caller can act on.
+func TestTheAgentCardTakesNoTasks(t *testing.T) {
+	st := bundleSite(t)
+	card := a2a.From(nil, nil, a2a.Options{SiteName: st.Name, BaseURL: st.BaseURL})
+	st.AgentCard = func() (a2a.Card, error) { return card, nil }
+	send := `{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user",` +
+		`"parts":[{"kind":"text","text":"hi"}],"messageId":"m1"}}}`
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		req := httptest.NewRequest(m, "/.well-known/agent-card.json", strings.NewReader(send))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" ||
+			strings.Contains(rec.Body.String(), "protocolVersion") {
+			t.Errorf("%s answered %d, Allow %q: %s", m, rec.Code, rec.Header().Get("Allow"), rec.Body)
+		}
+	}
+	for _, m := range []string{http.MethodGet, http.MethodHead} {
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, httptest.NewRequest(m, "/.well-known/agent-card.json", nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s answered %d", m, rec.Code)
+		}
+	}
+	// No card, no address: a 404 whatever the method, as before.
+	st.AgentCard = nil
+	rec := httptest.NewRecorder()
+	st.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/.well-known/agent-card.json", strings.NewReader(send)))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("with no card a POST answered %d", rec.Code)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -109,7 +111,7 @@ func plainNumber(s string) bool {
 
 func clip(s string) string {
 	if len(s) > 40 {
-		return s[:37] + "…"
+		return plaintext.Clip(s, 37, "…")
 	}
 	return s
 }
@@ -126,7 +128,10 @@ func reSlug(s string) bool {
 	return true
 }
 
-// Slug is a page link made from words: lower case, hyphens between.
+// Slug is a page link made from words: lower case, hyphens between. A
+// letter outside ASCII is spelled in ASCII (asciifold.Spell), so Ürünler is
+// urunler and Σχετικά schetika; it was a break between words, and Ürünler
+// was r-nler.
 func Slug(s string) string {
 	var b strings.Builder
 	dash := false
@@ -136,6 +141,7 @@ func Slug(s string) string {
 			b.WriteRune(r)
 			dash = false
 		case r == '\'' || r == '’':
+		case spelledInASCII(r, &b, &dash):
 		case !dash && b.Len() > 0:
 			b.WriteByte('-')
 			dash = true
@@ -465,4 +471,18 @@ func clock(s string) (string, bool) {
 		}
 	}
 	return fmt.Sprintf("%02d:%02d", h, m), true
+}
+
+// spelledInASCII writes r as asciifold.Spell spells it, and says whether it
+// had a spelling. A mark spelled as nothing joins the letters beside it.
+func spelledInASCII(r rune, b *strings.Builder, dash *bool) bool {
+	spelled, ok := asciifold.Spell(r)
+	if !ok {
+		return false
+	}
+	if spelled != "" {
+		b.WriteString(spelled)
+		*dash = false
+	}
+	return true
 }

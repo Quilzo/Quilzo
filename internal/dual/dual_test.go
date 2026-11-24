@@ -5,9 +5,12 @@ package dual
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // One administrator proposes and another approves; nobody approves their
@@ -179,5 +182,196 @@ func TestARemovedAdministratorStartsADaysWait(t *testing.T) {
 	}
 	if rm := settling(at.Add(3 * time.Hour)); rm == nil {
 		t.Fatal("writing a request lost the removal")
+	}
+}
+
+// Whoever asked is not the second administrator for their own request
+// under another spelling of their name: another case, spaces around it, or
+// a mailto: in front.
+func TestTheProposerIsNotTheirOwnSecondAdministratorWhateverTheSpelling(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	r, err := s.Propose(Grant, "make pat an administrator", map[string]string{"who": "pat"}, "on call", "Dana", false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{"dana", " DANA ", "mailto:dana"} {
+		if got, err := s.Decide(r.ID, by, true, false, now); err == nil {
+			t.Fatalf("%q approved Dana's request as somebody else: %+v", by, got)
+		}
+	}
+	got, err := s.Decide(r.ID, "mailto:dana", true, true, now)
+	if err != nil || !got.Alone {
+		t.Fatalf("the only administrator approving their own request: %+v %v", got, err)
+	}
+}
+
+// An administrator holds a way in when a token of theirs works, or when
+// one made since they became an administrator was used or was a sign-in:
+// revoking it, or its running out, does not make their next one their
+// first. One that stopped working unused, or from before they were an
+// administrator, was never an administrator's way in.
+func TestAWayInIsOneThatWorksOrWasAnAdministratorsToUse(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	granted := now.Add(-24 * time.Hour)
+	pol := &auth.Policy{}
+	for _, who := range []string{"ada", "theo"} {
+		if err := pol.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/", GrantedAt: granted.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := func(made, ends, used time.Time, change func(*auth.Token)) []auth.Token {
+		t := auth.Token{Principal: "Theo", Role: auth.RoleAdmin, Resource: "/", CreatedAt: made.Unix(), ExpiresAt: ends.Unix()}
+		if !used.IsZero() {
+			t.LastUsed = used.Unix()
+		}
+		if change != nil {
+			change(&t)
+		}
+		return []auth.Token{t}
+	}
+	hour := time.Hour
+	for name, c := range map[string]struct {
+		tokens []auth.Token
+		want   bool
+	}{
+		"nothing":                        {nil, false},
+		"somebody else's":                {[]auth.Token{{Principal: "ada", CreatedAt: now.Unix(), ExpiresAt: now.Add(hour).Unix()}}, false},
+		"one that works, unused":         {tok(now.Add(-hour), now.Add(hour), time.Time{}, nil), true},
+		"used, then revoked":             {tok(now.Add(-hour), now.Add(hour), now, func(t *auth.Token) { t.Revoked = true }), true},
+		"used, then run out":             {tok(now.Add(-2*hour), now.Add(-hour), now.Add(-90*time.Minute), nil), true},
+		"a sign-in that ended":           {tok(now.Add(-2*hour), now.Add(-hour), time.Time{}, func(t *auth.Token) { t.Session = true }), true},
+		"run out unused":                 {tok(now.Add(-2*hour), now.Add(-hour), time.Time{}, nil), false},
+		"revoked unused":                 {tok(now.Add(-hour), now.Add(hour), time.Time{}, func(t *auth.Token) { t.Revoked = true }), false},
+		"used before they were made one": {tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), false},
+		// An analyst's, who administered an area and was then made an
+		// administrator of the site: it is the one they have acted with
+		// since, and revoking it did not make their next one their first.
+		"from before, used since, then revoked": {tok(granted.Add(-2*hour), now.Add(hour), now.Add(-hour), func(t *auth.Token) { t.Revoked = true }), true},
+		"from before, used since, then run out": {tok(granted.Add(-2*hour), now.Add(-time.Minute), now.Add(-hour), nil), true},
+		"a sign-in from before, ended":          {tok(granted.Add(-2*hour), granted.Add(-hour), time.Time{}, func(t *auth.Token) { t.Session = true }), false},
+	} {
+		if got := WayIn(pol, c.tokens, "theo", now); got != c.want {
+			t.Errorf("%s: a way in is %v, want %v", name, got, c.want)
+		}
+	}
+	// With no day on the grant, everything they ever used counts.
+	undated := &auth.Policy{Bindings: []auth.Binding{{Principal: "theo", Role: auth.RoleAdmin, Resource: "/"}}}
+	if !WayIn(undated, tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), "theo", now) {
+		t.Error("a grant with no day on it let an old token go uncounted")
+	}
+}
+
+// A way in is a credential its holder could approve a request with. A
+// token is a ceiling, so one that carries less than an administrator's
+// role, reaches only part of the site or refuses every write never made
+// its holder a second administrator, however alive it is and however much
+// it has been used.
+//
+// Any token of theirs counted. Theo, an author with a token for the command
+// line, was made an administrator, and the link that would add his passkey
+// then waited for a second administrator: the only other one was Theo,
+// whose token is refused "this credential carries author and grant needs
+// admin". So did a token narrower than his role, issued after the grant.
+func TestAWayInIsOneAnAdministratorCouldApproveWith(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	pol := &auth.Policy{}
+	for _, who := range []string{"ada", "theo"} {
+		if err := pol.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/",
+			GrantedAt: now.Add(-24 * time.Hour).Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(change func(*auth.Token)) []auth.Token {
+		// Made since the grant, used, and still working.
+		t := auth.Token{Principal: "theo", Role: auth.RoleAdmin, Resource: "/", CreatedAt: now.Add(-time.Hour).Unix(),
+			ExpiresAt: now.Add(time.Hour).Unix(), LastUsed: now.Add(-time.Minute).Unix()}
+		change(&t)
+		return []auth.Token{t}
+	}
+	for name, c := range map[string]struct {
+		change func(*auth.Token)
+		want   bool
+	}{
+		"an administrator's over the whole site": {func(*auth.Token) {}, true},
+		"an administrator's with no path on it":  {func(t *auth.Token) { t.Resource = "" }, true},
+		"an author's":                            {func(t *auth.Token) { t.Role = auth.RoleAuthor }, false},
+		"a publisher's sign-in exchanged from it": {func(t *auth.Token) {
+			t.Role, t.Parent = auth.RolePublisher, "parent"
+		}, false},
+		"an administrator's over /blog alone":    {func(t *auth.Token) { t.Resource = "/blog" }, false},
+		"an administrator's that refuses writes": {func(t *auth.Token) { t.Scope = auth.Scope{ReadOnly: true} }, false},
+	} {
+		if got := WayIn(pol, held(c.change), "theo", now); got != c.want {
+			t.Errorf("%s: a way in is %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// What stands in the way of somebody's first way in is the asker's
+// requests they would decide, and not a way in for them: an enrolment link
+// for them or a token as them, which gives the asker nothing the first way
+// in does not. Counted, each ask refused alone was left waiting in the way
+// of the next.
+func TestAWayInForTheSubjectIsNotARequestTheyWouldDecide(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	for _, r := range []struct {
+		kind    string
+		payload any
+		by      string
+	}{
+		{Enrol, EnrolChange{Principal: "Theo"}, "ada"},
+		{Token, TokenChange{Args: []string{"theo-cli", "--principal", "theo", "--role", "admin"}}, "ada"},
+		{Token, TokenChange{Args: []string{"lee-cli", "--principal=lee", "--role", "admin"}}, "ada"},
+		{Grant, GrantChange{Bindings: []auth.Binding{{Principal: "theo", Role: auth.RoleAdmin, Resource: "/blog"}}}, "ada"},
+		{Setting, nil, "theo"},
+	} {
+		if _, err := s.Propose(r.kind, "x", r.payload, "", r.by, false, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open, err := s.OpenBy("Ada", "theo", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, r := range open {
+		kinds = append(kinds, r.Kind+" "+r.About()["for"]+r.About()["subject"])
+	}
+	if want := []string{Token + " lee", Grant + " theo"}; !slices.Equal(kinds, want) {
+		t.Errorf("ada's requests theo would decide are %v, want %v", kinds, want)
+	}
+	if late, _ := s.OpenBy("ada", "theo", now.Add(Wait+time.Minute)); len(late) != 0 {
+		t.Errorf("requests that are over still stand in the way: %+v", late)
+	}
+}
+
+// Single sign-on could sign somebody in when their name is one it takes:
+// an address in its domains, any address when it has none, and any name at
+// all when it names people by something that is not an address.
+func TestWhoSingleSignOnCouldSignIn(t *testing.T) {
+	for _, c := range []struct {
+		sso  SingleSignOn
+		name string
+		want bool
+	}{
+		{SAML([]string{"northwind.example"}), "lee@northwind.example", true},
+		{SAML([]string{"northwind.example"}), "Lee@Northwind.Example", true},
+		{SAML([]string{"northwind.example"}), "lee@elsewhere.example", false},
+		{SAML([]string{"northwind.example"}), "lee", false},
+		{SAML(nil), "lee", true},
+		{SAML(nil), "lee@anywhere.example", true},
+		{OpenIDConnect("email", []string{"northwind.example"}), "lee@elsewhere.example", true},
+		{OpenIDConnect("email", nil), "lee", false},
+		{OpenIDConnect("", nil), "lee@northwind.example", true},
+		{OpenIDConnect("preferred_username", []string{"northwind.example"}), "lee@northwind.example", true},
+		{OpenIDConnect("preferred_username", []string{"northwind.example"}), "lee@elsewhere.example", false},
+		{OpenIDConnect("sub", []string{"northwind.example"}), "248289761001", true},
+		{OpenIDConnect("sub", nil), "lee@elsewhere.example", true},
+	} {
+		if got := c.sso.Covers(c.name); got != c.want {
+			t.Errorf("%+v could sign %q in: %v, want %v", c.sso, c.name, got, c.want)
+		}
 	}
 }

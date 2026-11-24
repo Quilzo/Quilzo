@@ -59,6 +59,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Format is the package format this program reads and writes.
@@ -157,10 +158,12 @@ type Signature struct {
 var (
 	reName    = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 	reVersion = regexp.MustCompile(`^[0-9]{1,6}(\.[0-9]{1,6}){0,2}$`)
-	// rePage is a page's name as the store has it: lower-case words joined
-	// by hyphens, in folders.
-	rePage = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$`)
 )
+
+// validPage is a page's name as the store has it, by the store's own rule.
+// This said the same and was lower-case words joined by hyphens, so a site
+// with About_Us or docs/v1.2, which the store holds, could not be shipped.
+func validPage(name string) bool { return store.ValidPath(name) }
 
 // Decode reads a package strictly: unknown fields are refused, because a
 // key this program does not know is a permission somebody believes they
@@ -271,7 +274,7 @@ func (p *Package) Validate(c Checks) error {
 	pages := map[string]any{}
 	for _, pg := range p.Pages {
 		unique("page", pg.Name)
-		if !rePage.MatchString(pg.Name) || len(pg.Name) > 128 {
+		if !validPage(pg.Name) || len(pg.Name) > 128 {
 			bad("page name %q is not usable", pg.Name)
 		}
 		if pg.Body == nil {

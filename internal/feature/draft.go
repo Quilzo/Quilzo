@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -183,9 +184,4 @@ func readDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 	return p, notes, nil
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "") }

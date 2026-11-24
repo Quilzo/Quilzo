@@ -57,6 +57,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/jsonschema"
 )
 
 // MaxResult bounds what one tool call returns.
@@ -88,7 +89,8 @@ type Client struct {
 	// such an integration is refused rather than called anonymously.
 	Connection func(ctx context.Context, provider, host string) (string, error)
 
-	// Now is a clock for the definitions' cache.
+	// Now is a clock for the definitions' cache, and for when a far side
+	// that answered Retry-After with a date asked to be tried again.
 	Now func() time.Time
 
 	// Do performs one POST; nil is Fetch's, with every address check. A
@@ -100,7 +102,7 @@ type Client struct {
 	DoMethod func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
 	// Wait is how long to wait before trying a call again; nil waits as
-	// RetryAfter says (rest.go). A test waits for nothing.
+	// RetryAfter says (rest.go), by Now. A test waits for nothing.
 	Wait func(attempt int, retryAfter string) time.Duration
 
 	id atomic.Int64
@@ -167,6 +169,60 @@ type Tool struct {
 	// pin records; Pinned is the pin, when there is one.
 	Definition string `json:"definition"`
 	Pinned     string `json:"pinned,omitempty"`
+	// Annotations are what the server says the tool does. Kept so the
+	// gateway can pass on a tool the server calls destructive as one: it
+	// offered every tool by the integration's one "writes" mark instead,
+	// and a destructive tool on an integration declared without it went to
+	// other systems' agents as read-only. Hints, not promises, and outside
+	// the pinned definition, so a server can change them after a person
+	// approved the tool: whoever reads them may only take them as making a
+	// tool more dangerous than it was said to be.
+	Annotations *Hints `json:"annotations,omitempty"`
+}
+
+// Hints are the four booleans of MCP's tool annotations, and nothing else
+// of them: the title is the far side's words, which a model is never shown
+// from here.
+type Hints struct {
+	ReadOnly    *bool `json:"readOnlyHint,omitempty"`
+	Destructive *bool `json:"destructiveHint,omitempty"`
+	Idempotent  *bool `json:"idempotentHint,omitempty"`
+	OpenWorld   *bool `json:"openWorldHint,omitempty"`
+}
+
+// UnmarshalJSON reads the hints a server gives as booleans, and takes one it
+// gives as anything else, or annotations that are not an object, as saying
+// nothing. Read as typed fields, one server writing "readOnlyHint": "false"
+// made its whole answer to tools/list unreadable, and every agent and caller
+// of that integration lost every tool, where the field had been ignored.
+func (h *Hints) UnmarshalJSON(b []byte) error {
+	var raw map[string]json.RawMessage
+	*h = Hints{}
+	if json.Unmarshal(b, &raw) != nil {
+		return nil
+	}
+	flag := func(name string) *bool {
+		var v *bool
+		if json.Unmarshal(raw[name], &v) != nil {
+			return nil
+		}
+		return v
+	}
+	*h = Hints{ReadOnly: flag("readOnlyHint"), Destructive: flag("destructiveHint"),
+		Idempotent: flag("idempotentHint"), OpenWorld: flag("openWorldHint")}
+	return nil
+}
+
+// MayChange reports whether the server says the tool changes something:
+// it says it is not read-only, or that it is destructive.
+func (h *Hints) MayChange() bool {
+	return h != nil && ((h.ReadOnly != nil && !*h.ReadOnly) || (h.Destructive != nil && *h.Destructive))
+}
+
+// SaysDestructive reports whether the server says the tool may destroy
+// what is there.
+func (h *Hints) SaysDestructive() bool {
+	return h != nil && h.Destructive != nil && *h.Destructive
 }
 
 // Matches reports whether a pinned tool is still the tool that was pinned.
@@ -253,8 +309,20 @@ func (c *Client) CallStrict(ctx context.Context, in agent.Integration, tool stri
 		return "", err
 	}
 	if pin := in.Pins[tool]; pin != "" {
-		if err := c.checkPin(ctx, in, tool, pin); err != nil {
+		approved, err := c.checkPin(ctx, in, tool, pin)
+		if err != nil {
 			return "", err
+		}
+		// And what it is sent fits the input schema that was approved with
+		// it. The schema was pinned and never read, so a model's arguments,
+		// which are what something it read may have steered, went out as
+		// given: a string for a number, an id the tool does not name, a
+		// destructive tool's required confirm left out. The REST path holds
+		// a body to its declaration for the same reason (rest.go).
+		if in.Kind == agent.IntegrationMCP {
+			if err := approved.takes(args); err != nil {
+				return "", refuse(fmt.Errorf("%s on %s: %w", tool, in.Name, err))
+			}
 		}
 	}
 	if in.Kind == agent.IntegrationHTTP {
@@ -262,6 +330,10 @@ func (c *Client) CallStrict(ctx context.Context, in agent.Integration, tool stri
 	}
 	if in.Kind == agent.IntegrationA2A {
 		return c.a2aCall(ctx, in, tool, args)
+	}
+	if args == nil {
+		// An object, as tools/call has it, and not null.
+		args = map[string]any{}
 	}
 	raw, err := c.send(ctx, in, "tools/call", map[string]any{
 		"name": tool, "arguments": args,
@@ -327,28 +399,85 @@ func guarded(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "refusing to")
 }
 
-// checkPin refuses a tool whose definition is not the one approved.
-func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) error {
+// checkPin refuses a tool whose definition is not the one approved, and
+// returns the one that is.
+func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) (Tool, error) {
 	tools, err := c.Definitions(ctx, in)
 	if err != nil {
-		return err
+		return Tool{}, err
 	}
 	for _, t := range tools {
 		if t.Name != tool {
 			continue
 		}
 		if t.Definition == pin {
-			return nil
+			return t, nil
 		}
 		if c.Changed != nil {
 			c.Changed(in, tool, pin, t.Definition)
 		}
-		return &Refused{Reason: fmt.Sprintf("%s has changed what %q is since a person approved it "+
+		return Tool{}, &Refused{Reason: fmt.Sprintf("%s has changed what %q is since a person approved it "+
 			"(approved %s, now %s). Nothing is called until somebody looks: "+
 			"quilzo integrations tools %s, then quilzo integrations pin %s",
 			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)}
 	}
-	return refuse(fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool))
+	return Tool{}, refuse(fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool))
+}
+
+// takes checks arguments against the tool's input schema, by
+// internal/jsonschema's rules: a schema that lists its properties takes
+// only those unless it says otherwise.
+func (t Tool) takes(args map[string]any) error {
+	if args == nil {
+		args = map[string]any{}
+	}
+	return jsonschema.CheckNamed(t.InputSchema, args, "arguments")
+}
+
+// Approved is a pinned tool as its server defines it, when this install
+// may call it and it is still what a person approved; CallStrict holds the
+// tool's arguments to its input schema. For a caller that has an argument
+// as text and needs to know what the tool takes it as (Tool.Typed). It
+// asks the server nothing CallStrict would not ask, and says nothing of a
+// tool that changed: the call that follows refuses that, and reports it.
+func (c *Client) Approved(ctx context.Context, in agent.Integration, tool string) (Tool, bool) {
+	pin := in.Pins[tool]
+	if in.Kind != agent.IntegrationMCP || pin == "" || c.permits(in, tool) != nil {
+		return Tool{}, false
+	}
+	tools, err := c.Definitions(ctx, in)
+	if err != nil {
+		return Tool{}, false
+	}
+	for _, t := range tools {
+		if t.Name == tool && t.Definition == pin {
+			return t, true
+		}
+	}
+	return Tool{}, false
+}
+
+// Typed is an argument a person gave as text, as the tool's input schema
+// takes it: guessed, which is the type the text looks like, where the
+// schema takes that or says nothing of the argument, and the text itself
+// where it takes text and not the guess.
+//
+// A command line has only text, and reads order_id=42 as a number. Sent as
+// one it went out as it was until arguments were held to the schema; then
+// an order id, a postcode or a version that the tool takes as text was
+// refused as a number, and nothing a person could type made it text.
+func (t Tool) Typed(name, text string, guessed any) any {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if json.Unmarshal(t.InputSchema, &schema) != nil {
+		return guessed
+	}
+	p, ok := schema.Properties[name]
+	if !ok || jsonschema.Check(p, guessed) == nil || jsonschema.Check(p, text) != nil {
+		return guessed
+	}
+	return text
 }
 
 // Definitions are a server's tools with their definitions' digests and

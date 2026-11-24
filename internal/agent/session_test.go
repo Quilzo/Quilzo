@@ -188,6 +188,31 @@ func TestTheToolBudgetIsSeparate(t *testing.T) {
 	}
 }
 
+// A tool withheld from a run is refused saying why it was withheld, and not
+// as a tool nobody declared: whoever reads the refusal learns it was the
+// run's caller who may only read, not the declaration that left it out.
+// The editing of the manifest it was built from changes nothing either.
+func TestAWithheldToolIsRefusedSayingWhy(t *testing.T) {
+	m := Manifest{
+		Name: "poster", Kind: KindTask, Purpose: "posts",
+		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
+		Tools:    []Tool{{Name: "lookup", Host: "a.example.com", Purpose: "p"}},
+		Withheld: map[string]string{"post_update": "post_update writes to social.example, and this run only reads"},
+		Budget:   Budget{Steps: 10, Tools: 2, Duration: Duration(time.Hour)},
+	}
+	s := NewSession(m, nil)
+	delete(m.Withheld, "post_update")
+	if err := s.MayCallTool(" Post_Update ", ""); err == nil || !strings.Contains(err.Error(), "only reads") {
+		t.Fatalf("a withheld tool: %v", err)
+	}
+	if !s.Withholds("post_update") || s.Withholds("lookup") {
+		t.Error("which tools are withheld is not what the manifest said")
+	}
+	if err := s.MayCallTool("lookup", ""); err != nil {
+		t.Errorf("a tool the run holds was refused: %v", err)
+	}
+}
+
 // A retrieval agent cannot be asked for the draft.
 func TestARetrievalAgentCannotReadTheDraft(t *testing.T) {
 	s := testSession(t, KindRetrieval)

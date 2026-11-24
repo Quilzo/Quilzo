@@ -30,10 +30,13 @@
 package out
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"reflect"
+	"strings"
 )
 
 // Mode is how output should be rendered.
@@ -50,31 +53,65 @@ const (
 type Writer struct {
 	Mode   Mode
 	Colour bool
-	Out    io.Writer
-	Err    io.Writer
+	// ErrColour is Colour for what is written to Err, decided by Err. It
+	// was decided by stdout, so an error written to a log file behind
+	// `quilzo publish >/dev/null 2>>publish.log` was written in escape
+	// codes, which is the failure the rule below is there to prevent.
+	ErrColour bool
+	Out       io.Writer
+	Err       io.Writer
+
+	// failed is whether a document could not be written (Failed).
+	failed bool
 }
 
 // New builds a Writer for the process.
 //
-// Colour is enabled only when writing to a character device and NO_COLOR is
-// unset. Guessing wrongly in this direction is what puts escape codes into a
-// log file, a pipe, or an agent's transcript.
+// Colour is enabled only when writing to a terminal and NO_COLOR is unset,
+// and stdout and stderr are each asked for themselves. Guessing wrongly in
+// this direction is what puts escape codes into a log file, a pipe, or an
+// agent's transcript.
 func New(jsonMode bool) *Writer {
 	w := &Writer{Out: os.Stdout, Err: os.Stderr}
 	if jsonMode {
 		w.Mode = JSON
 		return w // never coloured; JSON is for a parser
 	}
-	w.Colour = isTerminal(os.Stdout) && os.Getenv("NO_COLOR") == ""
+	plain := os.Getenv("NO_COLOR") != ""
+	w.Colour = isTerminal(os.Stdout) && !plain
+	w.ErrColour = isTerminal(os.Stderr) && !plain
 	return w
 }
 
+// isTerminal is whether f is a terminal a person reads.
+//
+// A character device is not enough: /dev/null is one, so `quilzo agent show
+// nope >/dev/null 2>err.txt` decided that stdout was a terminal and wrote its
+// error in escape codes. The terminal itself is asked (isTTY).
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
-	if err != nil {
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
 		return false
 	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return isTTY(f)
+}
+
+// IsTerminal is isTerminal for a command that asks whether a person is at
+// the keyboard, standard input being a terminal: the one question, asked
+// one way, so the answer for input is the answer for output.
+func IsTerminal(f *os.File) bool { return isTerminal(f) }
+
+// Notes is a Writer for what is said about an answer rather than the answer
+// itself: prose to stderr, coloured only when stderr is a terminal, and
+// nothing under --json, as Human writes nothing there.
+//
+// For a command whose answer is a secret shown once. `token issue` wrote the
+// token between a notice and three lines of prose, so `quilzo token issue
+// ... > ci.tok` and `$(quilzo token issue ...)` captured something no
+// command would take, and the token is not shown again. Its stdout holds the
+// token alone now, and everything said about it is here.
+func (w *Writer) Notes() *Writer {
+	return &Writer{Mode: w.Mode, Colour: w.ErrColour, ErrColour: w.ErrColour, Out: w.Err, Err: w.Err}
 }
 
 // Colour codes. Empty strings when colour is off, so call sites stay unchanged
@@ -116,12 +153,185 @@ func (w *Writer) JSON(v any) bool {
 	if w.Mode != JSON {
 		return false
 	}
+	// A list with nothing in it is [], not null. A nil slice is how Go
+	// spells an empty list and encoding/json writes it as null, so thirteen
+	// listings answered `null` on a store with nothing in them, and a script
+	// iterating the answer failed where it had no work to do. Here rather
+	// than at each of them, so the next listing cannot forget. An untyped
+	// nil is left as null: that is a command saying there is no such thing.
+	v = EmptyLists(v)
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(w.Err, "cannot encode output: %v\n", err)
+		// Said as an error document, as any failure is in JSON mode, and
+		// remembered, so the process fails with it (Failed).
+		w.failed = true
+		w.Error(fmt.Errorf("cannot encode output: %w", err))
 	}
 	return true
+}
+
+// Failed reports whether a document could not be written: the encoder
+// refused it, or stdout would not take it.
+//
+// JSON still reports that it answered, since there is no prose to fall back
+// on, so the command returns nil; the process has to fail instead. It did not,
+// and `config list` and `posture rules`, whose documents held a function, and
+// any command whose stdout was a full disk, exited 0 with nothing written, so
+// a script read the empty output as its answer.
+func (w *Writer) Failed() bool { return w.failed }
+
+// EmptyLists is v as JSON writes it here: with every nil slice and map in
+// it empty, so an empty list is [] and not null (emptyLists).
+//
+// For a document written somewhere other than a Writer. The machine
+// interface answers an agent with JSON it encodes for itself, and went on
+// answering null for an empty list after the command line had stopped:
+// shield_status on a store with nothing in force said "active": null.
+func EmptyLists(v any) any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return v
+	}
+	return emptyLists(rv, map[onPath]bool{}).Interface()
+}
+
+var (
+	jsonMarshaler = reflect.TypeFor[json.Marshaler]()
+	textMarshaler = reflect.TypeFor[encoding.TextMarshaler]()
+)
+
+// emptyLists is v with every nil slice in it an empty one, and every nil
+// map, for JSON.
+//
+// Through the whole document, not only its top, because most listings answer
+// one, {"boards": [...]}, and the list inside it went on being null on an
+// empty store after the bare lists were []: `board list`, `booking list`,
+// `lock list`, `menu list`, `spend list`, `trust list` and more, some built
+// as a map and some as a struct. A map is Go's empty collection in the same
+// way, so `type list` answered "broken": null for no broken types.
+//
+// What stays null is what a command means as null: an untyped nil, and a nil
+// pointer, which is how a status says there is no such thing. A []byte is
+// left alone, being a string in JSON rather than a list, and so is a value
+// that writes itself, such as json.RawMessage or net.IP, because its nil means
+// what its MarshalJSON or MarshalText makes of it. So is a field tagged
+// omitzero: an empty list is not a zero one, so emptying the lists in a zero
+// struct would write what the field asks to leave out. Nothing is changed in
+// place, since a command may go on to use its document after writing it.
+//
+// A pointer, map or slice already on the way down is not followed again, so a
+// value that holds itself fails in the encoder, as it did, rather than here.
+// Watching only pointers was not enough: a map holding itself was followed
+// until the stack ran out, which ends the process, not the command.
+func emptyLists(v reflect.Value, above map[onPath]bool) reflect.Value {
+	t := v.Type()
+	for _, m := range []reflect.Type{jsonMarshaler, textMarshaler} {
+		if t.Implements(m) || reflect.PointerTo(t).Implements(m) {
+			return v
+		}
+	}
+	switch v.Kind() {
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		return emptyLists(v.Elem(), above)
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		at := onPath{v.Pointer(), 0, t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.New(t.Elem())
+		c.Elem().Set(emptyLists(v.Elem(), above))
+		return c
+	case reflect.Struct:
+		c := reflect.New(t).Elem()
+		c.Set(v)
+		for i := range c.NumField() {
+			// An unexported field is not written, and cannot be set.
+			if f := c.Field(i); f.CanSet() && !omitsZero(t.Field(i)) {
+				f.Set(emptyLists(v.Field(i), above))
+			}
+		}
+		return c
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return v
+		}
+		if v.IsNil() {
+			return reflect.MakeSlice(t, 0, 0)
+		}
+		if !mayHoldNil(t.Elem().Kind()) {
+			return v
+		}
+		// Two slices can start at one element, so the length is part of
+		// where it is.
+		at := onPath{v.Pointer(), v.Len(), t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.MakeSlice(t, v.Len(), v.Len())
+		for i := range v.Len() {
+			c.Index(i).Set(emptyLists(v.Index(i), above))
+		}
+		return c
+	case reflect.Map:
+		if v.IsNil() {
+			return reflect.MakeMap(t)
+		}
+		if !mayHoldNil(t.Elem().Kind()) {
+			return v
+		}
+		at := onPath{v.Pointer(), 0, t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.MakeMapWithSize(t, v.Len())
+		for it := v.MapRange(); it.Next(); {
+			c.SetMapIndex(it.Key(), emptyLists(it.Value(), above))
+		}
+		return c
+	}
+	return v
+}
+
+// onPath is a pointer, map or slice on the way down through a document: where
+// it points, a slice's length, and its type.
+type onPath struct {
+	at  uintptr
+	len int
+	t   reflect.Type
+}
+
+// omitsZero is whether a field's tag asks for it to be left out when zero.
+func omitsZero(f reflect.StructField) bool {
+	_, opts, _ := strings.Cut(f.Tag.Get("json"), ",")
+	for _, o := range strings.Split(opts, ",") {
+		if o == "omitzero" {
+			return true
+		}
+	}
+	return false
+}
+
+// mayHoldNil is whether a value of this kind can be or hold a nil slice or
+// map, so a list of strings or numbers is not copied for nothing.
+func mayHoldNil(k reflect.Kind) bool {
+	switch k {
+	case reflect.Interface, reflect.Pointer, reflect.Struct, reflect.Slice, reflect.Map:
+		return true
+	}
+	return false
 }
 
 // Error reports a failure in whichever form the caller can read.
@@ -140,7 +350,9 @@ func (w *Writer) Error(err error) {
 		_ = enc.Encode(map[string]string{"error": err.Error()})
 		return
 	}
-	fmt.Fprintf(w.Err, "%s%v%s\n", w.Red(), err, w.Reset())
+	// Coloured as stderr is, which is where it goes.
+	n := w.Notes()
+	fmt.Fprintf(w.Err, "%s%v%s\n", n.Red(), err, n.Reset())
 }
 
 // Exit codes, fixed and documented.

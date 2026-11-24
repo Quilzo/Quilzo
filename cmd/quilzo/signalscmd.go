@@ -265,15 +265,15 @@ func samlNamed(root, name string) (*saml.Config, error) {
 			return &all[i], nil
 		}
 	}
-	return nil, fmt.Errorf("there is no SAML provider %q (quilzo saml list)", name)
+	return nil, errNotFound{fmt.Errorf("there is no SAML provider %q (quilzo saml list)", name)}
 }
 
 // signalsUsage names one of --client-id and --jwks as needed, which the
 // brackets of the first spelling hid: both looked optional, and connecting
 // with neither was refused.
 func signalsUsage() error {
-	return errors.New("usage: quilzo signals connect --provider oidc|saml:NAME (--client-id ID | --jwks URL) " +
-		"[--issuer URL] [--audience A] | status | off")
+	return errMisused{errors.New("usage: quilzo signals connect --provider oidc|saml:NAME (--client-id ID | --jwks URL) " +
+		"[--issuer URL] [--audience A] | status | off")}
 }
 
 func cmdSignals(root string, args []string) error {
@@ -284,8 +284,14 @@ func cmdSignals(root string, args []string) error {
 	case "connect":
 		return signalsConnect(root, args[1:])
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return signalsStatus(root)
 	case "off":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return signalsOff(root)
 	}
 	return signalsUsage()
@@ -298,7 +304,7 @@ func signalsConnect(root string, args []string) error {
 	audience := fs.String("audience", "", "this receiver as the transmitter names it; the push address by default")
 	clientID := fs.String("client-id", "", "the client the transmitter issued for its stream API; the secret is read from "+signalsSecretEnv)
 	jwks := fs.String("jwks", "", "the transmitter's key set, for a stream made in its own console")
-	if err := fs.Parse(args); err != nil {
+	if err := parseOnce(fs, args); err != nil {
 		return err
 	}
 	// A word left over is a flag mistyped or a value given its own place,
@@ -450,7 +456,7 @@ func signalsConnect(root string, args []string) error {
 	if verr != nil {
 		doc["verification_error"] = cfg.AskFailed
 		fmt.Fprintf(w.Err, "  %sverification was not asked for: %s; the server asks again within a day, with the "+
-			"client secret in %s in its own environment%s\n", yellow, cfg.AskFailed, signalsSecretEnv, reset)
+			"client secret in %s in its own environment%s\n", noteYellow, cfg.AskFailed, signalsSecretEnv, noteReset)
 	}
 	if w.JSON(doc) {
 		return nil
@@ -647,7 +653,7 @@ func signalsOff(root string) error {
 	// that turned the stream off read nothing at all, not even whether the
 	// provider still had it.
 	if warn != "" {
-		fmt.Fprintf(w.Err, "  %s%s%s\n", yellow, warn, reset)
+		fmt.Fprintf(w.Err, "  %s%s%s\n", noteYellow, warn, noteReset)
 	}
 	doc := map[string]any{"connected": false, "was_connected": true, "issuer": issuer,
 		"deleted_at_provider": deleted}

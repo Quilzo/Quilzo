@@ -302,3 +302,41 @@ func TestOnlyAProvidersSpendCapOrKeyIsTrouble(t *testing.T) {
 		t.Fatal("no error is trouble")
 	}
 }
+
+// A binding says which route it asks first and the model that route names,
+// passing over what a call passes over. Name is who is charged, and stays
+// the same whatever the route reaches, so it cannot say what an evaluation
+// measured.
+func TestABindingSaysWhichModelServesIt(t *testing.T) {
+	hosted, local := &fake{name: "hosted", fail: true}, &fake{name: "local"}
+	g, c, _ := rig(t, two, map[string]*fake{"hosted": hosted, "local": local})
+	serves := func(m Model) string {
+		route, model := m.(interface{ Serves() (string, string) }).Serves()
+		return route + "/" + model
+	}
+	m := g.For("agent:tidy")
+	if got := serves(m); got != "hosted/big" {
+		t.Errorf("For serves %s", got)
+	}
+	if got := serves(g.ForModel("small", "agent:tidy")); got != "local/small" {
+		t.Errorf("ForModel serves %s", got)
+	}
+	if got := serves(g.ForRoute("local", "chatbot:help")); got != "local/small" {
+		t.Errorf("ForRoute serves %s", got)
+	}
+	if got := serves(g.ForRoute("gone", "chatbot:help")); got != "/" {
+		t.Errorf("a route that is not declared serves %s", got)
+	}
+	// Resting after failures, the first route is not the one asked.
+	for i := 0; i < FailuresBeforeCooldown; i++ {
+		m.Complete(context.Background(), "s", "u")
+	}
+	if got := serves(m); got != "local/small" {
+		t.Errorf("with the first route resting, it serves %s", got)
+	}
+	c.t = c.t.Add(Cooldown + time.Second)
+	g.Cut = func(route string) bool { return route == "hosted" }
+	if got := serves(m); got != "local/small" {
+		t.Errorf("with the first route cut, it serves %s", got)
+	}
+}
