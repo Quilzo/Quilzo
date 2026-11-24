@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -287,6 +288,116 @@ func TestABusyReceiverIsTriedAgainLater(t *testing.T) {
 		if got := len(Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)); got != 1 {
 			t.Errorf("a %d was attempted %d times", wrong, got)
 		}
+	}
+}
+
+// asking is a receiver that answers status, with a Retry-After of retry,
+// to its first request and 200 to the rest. It answers through PostHeaders,
+// as the program's own sender does, and keeps the waits it was given.
+type asking struct {
+	status int
+	retry  string
+	waits  []time.Duration
+	stamps []string
+}
+
+func (a *asking) PostHeaders(_ string, _ []byte, headers map[string]string) (int, http.Header, error) {
+	a.stamps = append(a.stamps, headers["X-Quilzo-Timestamp"])
+	if len(a.stamps) == 1 {
+		return a.status, http.Header{"Retry-After": {a.retry}}, nil
+	}
+	return 200, nil, nil
+}
+
+// Post is the same answer without its headers, which was all Send read.
+func (a *asking) Post(url string, body []byte, headers map[string]string) (int, error) {
+	status, _, err := a.PostHeaders(url, body, headers)
+	return status, err
+}
+
+func (a *asking) Wait(d time.Duration) { a.waits = append(a.waits, d) }
+
+// A receiver that says when to come back is come back to then.
+//
+// Send read only the status, so a 429 with Retry-After: 3 was tried again
+// after one second, while the receiver was still refusing, and a second
+// time after four more: the event spent its attempts on the moment it had
+// been asked to keep clear of. Both forms RFC 9110 gives are read, seconds
+// and a date, and the retry is signed for the moment it goes.
+func TestARetryAfterIsWaitedForAsAsked(t *testing.T) {
+	for _, c := range []struct {
+		form, header string
+		want         time.Duration
+	}{
+		{"seconds", "3", 3 * time.Second},
+		{"a date", now.Add(5 * time.Second).Format(http.TimeFormat), 5 * time.Second},
+	} {
+		a := &asking{status: 429, retry: c.header}
+		deliveries := Send(a, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		if len(deliveries) != 2 || !deliveries[1].Succeeded {
+			t.Errorf("Retry-After as %s: got %+v", c.form, deliveries)
+			continue
+		}
+		if len(a.waits) != 1 || a.waits[0] != c.want {
+			t.Errorf("Retry-After as %s (%q) asked for %s; Send waited %v",
+				c.form, c.header, c.want, a.waits)
+		}
+		if want := strconv.FormatInt(now.Add(c.want).Unix(), 10); a.stamps[1] != want {
+			t.Errorf("Retry-After as %s: the retry was signed for %s, not %s", c.form, a.stamps[1], want)
+		}
+	}
+}
+
+// A receiver asking for longer than Send waits is not tried again sooner
+// than it asked: that is another refusal, and one more request to a
+// receiver that has said it is taking fewer. The delivery says why it
+// stopped, since a 429 tried once looks like one Send forgot to retry.
+func TestARetryAfterPastTheCapStopsTheDelivery(t *testing.T) {
+	for _, header := range []string{"3600", now.Add(time.Hour).Format(http.TimeFormat),
+		"99999999999999999999"} {
+		a := &asking{status: 503, retry: header}
+		deliveries := Send(a, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		if len(deliveries) != 1 || len(a.waits) != 0 {
+			t.Errorf("Retry-After %q: %d attempts after waits of %v", header, len(deliveries), a.waits)
+			continue
+		}
+		if d := deliveries[0]; d.Succeeded || d.Status != 503 || !strings.Contains(d.Error, "Retry-After") {
+			t.Errorf("Retry-After %q: the delivery does not say why it stopped: %+v", header, d)
+		}
+	}
+	// What is not a delay, or is one already over, leaves Send's own
+	// schedule as it was.
+	for _, header := range []string{"soon", "-1", "+3", "1.5", "0",
+		now.Add(-time.Minute).Format(http.TimeFormat)} {
+		a := &asking{status: 429, retry: header}
+		deliveries := Send(a, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		if len(deliveries) != 2 || len(a.waits) != 1 ||
+			a.waits[0] < retryAfter[0] || a.waits[0] >= retryAfter[0]*3/2 {
+			t.Errorf("Retry-After %q: %d attempts after waits of %v", header, len(deliveries), a.waits)
+		}
+	}
+}
+
+// Deliveries one receiver turned away together do not come back together.
+//
+// Every delivery waited exactly one second and then four, so a burst a
+// receiver refused at once arrived again at once, and was refused again.
+// Each wait is now Send's schedule plus up to half again: never sooner
+// than the schedule, which is what a receiver restarting needs.
+func TestRetriesAreSpreadOut(t *testing.T) {
+	first := map[time.Duration]bool{}
+	for range 20 {
+		down := &restarting{back: time.Hour}
+		Send(down, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		for i, least := range retryAfter {
+			if gap := down.at[i+1] - down.at[i]; gap < least || gap >= least*3/2 {
+				t.Fatalf("wait %d was %s, outside [%s, %s)", i+1, gap, least, least*3/2)
+			}
+		}
+		first[down.at[1]] = true
+	}
+	if len(first) < 2 {
+		t.Errorf("twenty deliveries refused together all came back after %v", first)
 	}
 }
 
