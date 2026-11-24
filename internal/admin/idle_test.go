@@ -378,3 +378,144 @@ func TestASessionAtTheInterfaceIsTimedByTheRulesAsTheyAreStored(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// asStored rewrites one session's fields, in seconds, in the credentials as
+// they are stored, and has srv read them back as an admin started afresh
+// reads the file.
+func asStored(t *testing.T, srv *Server, id string, set map[string]int64) {
+	t.Helper()
+	b, err := json.Marshal(srv.Tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, x := range raw["tokens"].([]any) {
+		if m := x.(map[string]any); m["id"] == id {
+			found = true
+			for k, v := range set {
+				m[k] = v
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no stored session %s", id)
+	}
+	if b, err = json.Marshal(raw); err != nil {
+		t.Fatal(err)
+	}
+	fresh := &auth.TokenStore{}
+	if err := json.Unmarshal(b, fresh); err != nil {
+		t.Fatal(err)
+	}
+	srv.Tokens = fresh
+}
+
+func sessionID(t *testing.T, srv *Server, secret string) string {
+	t.Helper()
+	tok, err := srv.Tokens.Authenticate(secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok.ID
+}
+
+// A session's idle period starts when its person signed in, not when the
+// admin first sees a request with it.
+//
+// The clock began a session it had not seen at that session's first
+// request, so a session signed in to and then left -- the tab closed on
+// the redirect, or the cookie copied on its way -- was nobody's for as long
+// as anybody liked, and its first request, hours later, started a fresh
+// period. Pasting such a session into the sign-in form did the same.
+func TestASessionIsIdleFromItsSignInNotItsFirstRequest(t *testing.T) {
+	srv, token := tokenSignIn(t)
+	withSettings(t, srv, map[string]string{"session.idle": "10m"})
+	person := map[string]string{"Sec-Fetch-Mode": "navigate", "Sec-Fetch-User": "?1"}
+	ago := time.Now().Add(-11 * time.Minute).Unix()
+
+	c := sessionCookie(t, srv, token)
+	asStored(t, srv, sessionID(t, srv, c.Value), map[string]int64{"created_at": ago, "active": ago})
+	w := browse(srv, http.MethodGet, "/", c, person)
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "e=idle") {
+		t.Errorf("a session signed in to eleven minutes ago and not used since was let in "+
+			"at its first request: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	// Pasted into the form, it is the same session, and as idle.
+	c = sessionCookie(t, srv, token)
+	asStored(t, srv, sessionID(t, srv, c.Value), map[string]int64{"created_at": ago, "active": ago})
+	pasted := sessionCookie(t, srv, c.Value)
+	w = browse(srv, http.MethodGet, "/", pasted, person)
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "e=idle") {
+		t.Errorf("an idle session pasted into the sign-in form was let in as new: %d %s",
+			w.Code, w.Header().Get("Location"))
+	}
+}
+
+// The idle clock holds across a restart of the admin: a session nobody
+// used for session.idle before it is ended at its next request after, and
+// somebody working until it is not signed out for its sake.
+//
+// The clock was kept in the admin's memory alone, so a restart -- a deploy,
+// a crash, the nightly upgrade -- gave every session a fresh period, and a
+// session left signed in at the end of the day worked again after it.
+func TestTheIdleClockHoldsAcrossARestart(t *testing.T) {
+	srv, token := tokenSignIn(t)
+	withSettings(t, srv, map[string]string{"session.idle": "10m"})
+	person := map[string]string{"Sec-Fetch-Mode": "navigate", "Sec-Fetch-User": "?1"}
+	restart := func() {
+		srv.idle.mu.Lock()
+		srv.idle.last = nil
+		srv.idle.mu.Unlock()
+	}
+	earlier := func(d time.Duration) int64 { return time.Now().Add(-d).Unix() }
+
+	// A person's use is written down where a restarted admin reads it.
+	var stored []byte
+	srv.SaveTokens = func(ts *auth.TokenStore) error {
+		b, err := json.Marshal(ts)
+		stored = b
+		return err
+	}
+	c := sessionCookie(t, srv, token)
+	id := sessionID(t, srv, c.Value)
+	asStored(t, srv, id, map[string]int64{"created_at": earlier(2 * time.Hour), "active": earlier(5 * time.Minute)})
+	if w := browse(srv, http.MethodGet, "/", c, person); w.Code != http.StatusOK {
+		t.Fatalf("a session used five minutes ago: %d", w.Code)
+	}
+	var file struct {
+		Tokens []map[string]any `json:"tokens"`
+	}
+	if err := json.Unmarshal(stored, &file); err != nil {
+		t.Fatalf("the use was not written down: %v", err)
+	}
+	for _, m := range file.Tokens {
+		if m["id"] == id {
+			if at, _ := m["active"].(float64); time.Since(time.Unix(int64(at), 0)) > time.Minute {
+				t.Errorf("the person's use is recorded as %v, not now", m["active"])
+			}
+		}
+	}
+
+	// Left eleven minutes, then the admin restarts.
+	asStored(t, srv, id, map[string]int64{"created_at": earlier(2 * time.Hour), "active": earlier(11 * time.Minute)})
+	restart()
+	if w := browse(srv, http.MethodGet, "/", c, person); w.Code != http.StatusSeeOther ||
+		!strings.Contains(w.Header().Get("Location"), "e=idle") {
+		t.Errorf("a session nobody used for eleven minutes was let in after a restart: %d %s",
+			w.Code, w.Header().Get("Location"))
+	}
+
+	// Used two minutes before the restart: still signed in after it.
+	c = sessionCookie(t, srv, token)
+	asStored(t, srv, sessionID(t, srv, c.Value), map[string]int64{"created_at": earlier(2 * time.Hour), "active": earlier(2 * time.Minute)})
+	restart()
+	if w := browse(srv, http.MethodGet, "/", c, person); w.Code != http.StatusOK {
+		t.Errorf("somebody working until the restart was signed out by it: %d %s",
+			w.Code, w.Header().Get("Location"))
+	}
+}
