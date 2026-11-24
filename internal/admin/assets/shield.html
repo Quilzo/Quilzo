@@ -12,7 +12,7 @@
 {{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
 {{else if .Broken}}<div class="notice bad" role="alert">
   <p><strong>The shield's record cannot be read:</strong> {{.Broken}}.</p>
-  <p>A server that was running when it stopped reading keeps what it last read, until each protection ends. A server started since has nothing to go by: there, no block, slowing, lockdown, suspended token or feature turned off is in force. Until the record is repaired nothing can be applied or lifted, and publishing and agents are refused.</p>
+  <p>A server that was running when it stopped reading keeps what it last read, until each protection ends. A server started since has nothing to go by: there, no block, slowing, lockdown, suspended token or feature turned off is in force. Until the record is repaired nothing can be applied or lifted, publishing and agents are refused, and enrolment links wait as during a lockdown.</p>
   <p>On the machine, <code>quilzo shield repair</code> sets it aside and keeps the trusted networks, vouched sources and decoys it can still read. Then apply again what still matters.</p>
 </div>
 {{else}}

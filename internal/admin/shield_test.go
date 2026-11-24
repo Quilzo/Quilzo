@@ -392,7 +392,10 @@ func TestTrustingANetworkOnTheScreenIsBoundedToldAndRemovedForReal(t *testing.T)
 // that was running when the record stopped reading, which keeps what it
 // last read; a server started since has read nothing, and no block,
 // lockdown or feature shield is in force there. Somebody reading the old
-// sentence restarted the server to be safe and lifted the lockdown.
+// sentence restarted the server to be safe and lifted the lockdown. What
+// reads the record for itself is refused instead, as though it held
+// everything: publishing, agents, and enrolment links, which say the admin
+// is locked down.
 func TestTheShieldScreenSaysWhatAnUnreadableRecordMeans(t *testing.T) {
 	srv, token := setup(t)
 	root, _ := wireShield(t, srv)
@@ -408,7 +411,7 @@ func TestTheShieldScreenSaysWhatAnUnreadableRecordMeans(t *testing.T) {
 	}
 	for _, want := range []string{"record cannot be read", "keeps what it last read", "A server started since",
 		"no block, slowing, lockdown, suspended token or feature turned off is in force",
-		"nothing can be applied or lifted", "quilzo shield repair"} {
+		"nothing can be applied or lifted", "enrolment links wait", "quilzo shield repair"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the screen lacks %q", want)
 		}

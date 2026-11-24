@@ -780,8 +780,8 @@ var rules = []Rule{
 			"running when the record stopped reading keeps what it last read. " +
 			"One started since has nothing to go by and enforces none of it, " +
 			"so a restart quietly ends a containment; and until the record is " +
-			"repaired nothing can be applied or lifted, and publishing and " +
-			"agents are refused.",
+			"repaired nothing can be applied or lifted, publishing and agents " +
+			"are refused, and enrolment links wait as during a lockdown.",
 		Check: func(s State) []Finding {
 			if !s.Shield.Checked || s.Shield.Unreadable == "" {
 				return nil
