@@ -746,6 +746,17 @@ type Token struct {
 	// minutes.
 	SignIn bool `json:"sign_in,omitempty"`
 
+	// Active is when a person last used this session as the admin's idle
+	// clock saw it (session.idle), in seconds: at the sign-in that made it,
+	// then at most once a minute (NoteActive). Zero when nothing recorded a
+	// use. The clock lived only in the admin's memory, and began a session
+	// it had not seen at that session's first request: every session after
+	// a restart, and one first used after the limit, so a session left
+	// signed in at the end of the day worked again after a restart, or
+	// whenever its cookie was first sent. A session the clock has not seen
+	// starts its idle period here instead.
+	Active int64 `json:"active,omitempty"`
+
 	// Kind is whose hands the token is for, as whoever issued it said:
 	// KindPerson for somebody's own, which they use themselves, and
 	// KindProgram for a CI job's, an integration's or an agent's (see
@@ -1807,6 +1818,26 @@ func (ts *TokenStore) NoteUsed(id string, at time.Time) bool {
 	return false
 }
 
+// NoteActive records that a person used the session id at at, when the use
+// already recorded is at least every earlier, and reports whether it did
+// (Token's Active). The admin writes it down so that its idle clock
+// survives the process, and only every so often so that the file every
+// other process reloads is not rewritten on every page a person opens.
+func (ts *TokenStore) NoteActive(id string, at time.Time, every time.Duration) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if at.Unix()-ts.Tokens[i].Active < int64(every/time.Second) {
+				return false
+			}
+			ts.Tokens[i].Active = at.Unix()
+			return true
+		}
+	}
+	return false
+}
+
 // Stale lists tokens that have never been used or have not been used recently.
 // Unused credentials are the ones nobody notices are still valid.
 func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
@@ -2016,16 +2047,25 @@ func (ts *TokenStore) Snapshot() []Token {
 // saved: the admin replaced its copy whenever the file changed, and People
 // said of somebody signed in with a passkey and working that minute that
 // they had never used a credential.
+//
+// A person's last use of a session (Active) is kept the same way, or a
+// reload would put back an earlier one and the idle clock would start a
+// session it had not seen from there.
 func (ts *TokenStore) Replace(tokens []Token) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	used := make(map[string]int64, len(ts.Tokens))
+	active := make(map[string]int64, len(ts.Tokens))
 	for _, t := range ts.Tokens {
 		used[t.ID] = t.LastUsed
+		active[t.ID] = t.Active
 	}
 	for i := range tokens {
 		if at := used[tokens[i].ID]; at > tokens[i].LastUsed {
 			tokens[i].LastUsed = at
+		}
+		if at := active[tokens[i].ID]; at > tokens[i].Active {
+			tokens[i].Active = at
 		}
 	}
 	ts.Tokens = tokens
@@ -2065,9 +2105,10 @@ func mergeStepUp(m *Token, s Token) {
 // either as signed in to the admin with stays marked (a copy read before
 // the admin marked a pasted session wrote it back unmarked, and a server
 // with no idle clock took it again), a key bound in either stays bound,
-// the last use is the later one, and a step-up is the later of being asked
-// for and being passed (mergeStepUp); for everything else ts, the copy
-// being written, says what was meant.
+// the last use is the later one, and so is a person's last use of a
+// session (Active), and a step-up is the later of being asked for and
+// being passed (mergeStepUp); for everything else ts, the copy being
+// written, says what was meant.
 func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 	ts.mu.Lock()
 	mine := append([]Token(nil), ts.Tokens...)
@@ -2097,6 +2138,9 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		}
 		if s.LastUsed > m.LastUsed {
 			m.LastUsed = s.LastUsed
+		}
+		if s.Active > m.Active {
+			m.Active = s.Active
 		}
 		mergeStepUp(&m, s)
 		stored.Tokens[i] = m

@@ -121,21 +121,28 @@ func (s *Server) signInRisk(r *http.Request, name, sessionID, how string, verify
 	return true, nil
 }
 
-// signInDone binds a new session, whatever the check decided.
-func (s *Server) signInDone(r *http.Request, sessionID string) { s.bindSession(r, sessionID) }
+// signInDone binds a session this sign-in minted, whatever the check
+// decided, and records the sign-in as its person's use of it, where its
+// idle period starts (idle.go). The period began at the session's first
+// request instead, so a session signed in to and then left, or copied on
+// its way to the browser, was not idle until somebody sent it, however
+// long after that was.
+func (s *Server) signInDone(r *http.Request, sessionID string) {
+	s.Tokens.NoteActive(sessionID, time.Now(), 0)
+	s.bindSession(r, sessionID)
+}
 
 // bindSession records where a new session was issued to, so a copy of it
-// used elsewhere can be noticed. Best effort: a session not bound is one
-// that is not watched for moving, never one that is refused.
+// used elsewhere can be noticed, and stores the session as signing in
+// left it. Best effort: a session not bound is one that is not watched for
+// moving, never one that is refused.
 func (s *Server) bindSession(r *http.Request, sessionID string) {
-	if s.SessionPlace == nil {
-		return
+	if s.SessionPlace != nil {
+		if c := s.SessionPlace(s.clientAddr(r), r.UserAgent()); c.Device != "" {
+			_ = s.Tokens.BindSession(sessionID, c.String())
+		}
 	}
-	c := s.SessionPlace(s.clientAddr(r), r.UserAgent())
-	if c.Device == "" {
-		return
-	}
-	if err := s.Tokens.BindSession(sessionID, c.String()); err == nil && s.SaveTokens != nil {
+	if s.SaveTokens != nil {
 		_ = s.SaveTokens(s.Tokens)
 	}
 }

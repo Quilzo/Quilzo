@@ -898,7 +898,13 @@ func tokenIssue(root string, args []string) error { return tokenIssueAs(root, ar
 func tokenIssueAs(root string, args []string, approved bool) error {
 	fs := flag.NewFlagSet("issue", flag.ContinueOnError)
 	principal := fs.String("principal", "", "who the token acts as")
-	role := fs.String("role", string(auth.RoleReader), "role the token carries")
+	// No default in the flag itself: what a token carries without --role is
+	// decided below, and the flag's default was printed as the answer. The
+	// help said `(default "reader")` of a token that carries what its
+	// principal holds, so an administrator who issued one for a script,
+	// expecting it only to read, gave it everything they can do.
+	role := fs.String("role", "", "role the token carries (without it, what the principal holds on --on, "+
+		"which for an administrator is admin; reader for somebody who holds nothing)")
 	on := fs.String("on", "/", "resource path the token is scoped to")
 	ttl := flagDuration(fs, "ttl", 0, "how long it lasts (default from config)")
 	as := fs.String("as", string(auth.RoleAdmin), "role of whoever is issuing")
@@ -984,6 +990,9 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 				*role = string(held)
 				fromPolicy = true
 			}
+		}
+		if *role == "" {
+			*role = string(auth.RoleReader)
 		}
 	}
 

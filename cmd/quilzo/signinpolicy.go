@@ -224,10 +224,11 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 		return admin.SignInVerdict{StepUp: true, Reason: detail}
 	}
 	// The person themselves is the best detector there is: a sign-in they
-	// say was not them ends every session they hold, and the security
-	// contact is told.
+	// say was not them ends every session they are signed in to here, and
+	// the token that sign-in was made with, and the security contact is
+	// told (endSessionsOf).
 	reported := func(principal, session string) {
-		ended, err := endSessionsOf(root, principal)
+		ended, err := endSessionsOf(root, principal, session)
 		detail := map[string]string{"subject": principal, "session": session, "ended": strconv.Itoa(ended)}
 		outcome := audit.Success
 		if err != nil {
@@ -235,7 +236,8 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 		}
 		record(root, audit.Record{Action: "signin.reported-ended", Resource: "/", Outcome: outcome,
 			Principal: signinBy, Kind: audit.KindService, Verified: true, Detail: detail})
-		tellAboutSignIn(root, principal, "they said a sign-in was not them, so every session they held was ended", "")
+		tellAboutSignIn(root, principal, "they said a sign-in was not them, so every session they were "+
+			"signed in to here was ended, and the token that sign-in was made with, if it was, revoked", "")
 	}
 	// Somebody guessing codes, or an account tried from places it is not
 	// used from: the person is not locked out, and the security contact
@@ -251,15 +253,34 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 	return place, moved, reported, signal
 }
 
-// endSessionsOf revokes every session and token a person holds here.
-func endSessionsOf(root, principal string) (int, error) {
+// endSessionsOf ends what a sign-in reported as not its person's reached:
+// every session they signed in to the admin with, and the token the
+// reported session was exchanged from, which revoking takes whatever else
+// was exchanged from it along.
+//
+// It revoked every token they held, long-lived ones and programs' among
+// them, while the page said only that the session would end. Whoever held
+// a session stepped up for not looking like its person could press "This
+// wasn't me", and every integration that person had issued a token for
+// stopped. A token the reported sign-in was not made with says nothing
+// about it, and is the security contact's to decide about, who is told.
+func endSessionsOf(root, principal, session string) (int, error) {
 	ts, err := loadTokens(root)
 	if err != nil {
 		return 0, err
 	}
+	parent := ""
+	for _, t := range ts.Snapshot() {
+		if t.ID == session {
+			parent = t.Parent
+		}
+	}
 	ended := 0
 	for _, t := range ts.Snapshot() {
-		if strings.EqualFold(t.Principal, principal) && !t.Revoked {
+		if !strings.EqualFold(t.Principal, principal) || t.Revoked {
+			continue
+		}
+		if t.ID == session || (parent != "" && t.ID == parent) || t.SignedIn() {
 			if _, err := ts.Revoke(t.ID); err == nil {
 				ended++
 			}

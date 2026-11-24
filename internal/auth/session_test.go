@@ -201,3 +201,52 @@ func TestASessionFromATokenWithNoKindIsJudgedAsItsParent(t *testing.T) {
 		t.Errorf("the session of a program's token is a person's: %q, kind %q", sess.Name, sess.Kind)
 	}
 }
+
+// A person's last use of a session, which the admin's idle clock starts a
+// session it has not seen from, is written down at most every so often,
+// and neither re-reading the store nor writing another copy over it puts
+// back an earlier one: either would give a session idle since then a fresh
+// period after the admin restarts.
+func TestAPersonsUseOfASessionIsKeptWhereverTheStoreGoes(t *testing.T) {
+	ts := &TokenStore{}
+	_, tok, err := ts.IssueSession("passkey:dana", "dana", RoleAuthor, "/", 8*time.Hour, RoleAdmin, MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	if !ts.NoteActive(tok.ID, at, time.Minute) {
+		t.Fatal("the first use was not written down")
+	}
+	if ts.NoteActive(tok.ID, at.Add(30*time.Second), time.Minute) {
+		t.Error("a use thirty seconds later was written down again, so every page rewrites the file")
+	}
+	if !ts.NoteActive(tok.ID, at.Add(time.Minute), time.Minute) {
+		t.Error("a use a minute later was not written down")
+	}
+	latest := at.Add(time.Minute).Unix()
+	active := func(s *TokenStore) int64 {
+		for _, k := range s.Snapshot() {
+			if k.ID == tok.ID {
+				return k.Active
+			}
+		}
+		return -1
+	}
+
+	// The file as it was before the last use.
+	onDisk := ts.Snapshot()
+	for i := range onDisk {
+		onDisk[i].Active = at.Unix()
+	}
+	ts.Replace(append([]Token(nil), onDisk...))
+	if got := active(ts); got != latest {
+		t.Errorf("re-reading the store put the person's use back to %d, not %d", got, latest)
+	}
+
+	// A copy read before the last use, written over the store.
+	stale := &TokenStore{Tokens: onDisk}
+	stale.MergeInto(ts, time.Now())
+	if got := active(ts); got != latest {
+		t.Errorf("writing an older copy put the person's use back to %d, not %d", got, latest)
+	}
+}

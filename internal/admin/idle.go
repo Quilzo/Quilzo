@@ -31,10 +31,24 @@ import (
 // keeps it alive by using it, as a person does, since a request with no
 // fetch metadata counts as use.
 //
-// Kept in this process, not in the credential store: the store is reloaded
-// from disk whenever another process writes it, and the last use of every
-// session would go with it. After a restart every session starts a fresh
-// idle period rather than being signed out for the restart's sake.
+// Kept in this process, and written down in the credential store as well
+// (auth.Token's Active): at the sign-in, then at most once a minute while a
+// person uses the session. The clock lived only here, and began a session
+// it had not seen at that session's first request, so every session started
+// a fresh idle period after a restart, and so did one first sent after the
+// limit: a session left signed in at the end of the day worked again the
+// morning after a deploy, or whenever its copied cookie was first sent. A
+// session this process has not seen starts where the store says a person
+// last used it. Somebody working when the admin restarts is not signed out
+// for the restart's sake: what is written down is at most a minute old. A
+// session nothing recorded a use of, such as a program's own exchanged
+// one, starts its period at its first request, as before.
+
+// activeWrittenEvery is how often a person's use of one session is written
+// down. Often enough that a restart costs nobody more than a minute of
+// their idle period; seldom enough that the file every other process
+// reloads is not rewritten on every page.
+const activeWrittenEvery = time.Minute
 
 type idleClock struct {
 	mu   sync.Mutex
@@ -49,17 +63,23 @@ func (s *Server) idleOver(w http.ResponseWriter, r *http.Request, p principal) b
 		return false
 	}
 	idle := s.idleFor(p.Name)
-	if !s.idleSpent(r, p.TokenID, idle) {
-		return false
+	spent, used := s.idleSpent(r, p.TokenID, p.Active, idle)
+	if spent {
+		s.endIdle(w, r, p, idle)
+		return true
 	}
-	s.endIdle(w, r, p, idle)
-	return true
+	if used && s.Tokens.NoteActive(p.TokenID, time.Now(), activeWrittenEvery) {
+		_ = s.save()
+	}
+	return false
 }
 
 // idleSpent is the clock: whether the session id has gone unused for
-// longer than idle, what its person may leave it. A request a person made
-// is noted as use; a session not seen before starts its idle period now.
-func (s *Server) idleSpent(r *http.Request, id string, idle time.Duration) bool {
+// longer than idle, what its person may leave it, and whether a person
+// made this request, which is noted as use. A session not seen before
+// starts its idle period where the store says a person last used it
+// (active, in seconds), or now when nothing recorded a use.
+func (s *Server) idleSpent(r *http.Request, id string, active int64, idle time.Duration) (spent, used bool) {
 	now := time.Now()
 	s.idle.mu.Lock()
 	defer s.idle.mu.Unlock()
@@ -67,17 +87,23 @@ func (s *Server) idleSpent(r *http.Request, id string, idle time.Duration) bool 
 		s.idle.last = map[string]time.Time{}
 	}
 	last, seen := s.idle.last[id]
-	switch {
-	case !seen:
-		s.idle.last[id] = now
+	if !seen {
+		last = now
+		if active != 0 {
+			last = time.Unix(active, 0)
+		}
+		s.idle.last[id] = last
 		s.idle.sweep(now, s.sessionMax())
-	case now.Sub(last) > idle:
-		delete(s.idle.last, id)
-		return true
-	case personMade(r):
-		s.idle.last[id] = now
 	}
-	return false
+	if now.Sub(last) > idle {
+		delete(s.idle.last, id)
+		return true, false
+	}
+	if personMade(r) {
+		s.idle.last[id] = now
+		return false, true
+	}
+	return false, false
 }
 
 // IdleEnded is the same clock for a door that does not answer with the
@@ -105,7 +131,12 @@ func (s *Server) IdleEnded(r *http.Request, t *auth.Token) bool {
 	// what another process had changed since.
 	pol, toks := s.storedRules()
 	idle := s.idleUnder(pol, t.Principal)
-	if !s.idleSpent(r, t.ID, idle) {
+	spent, used := s.idleSpent(r, t.ID, t.Active, idle)
+	if !spent {
+		if used && toks != nil && toks.NoteActive(t.ID, time.Now(), activeWrittenEvery) &&
+			s.SaveTokens != nil {
+			_ = s.SaveTokens(toks)
+		}
 		return false
 	}
 	if toks != nil {

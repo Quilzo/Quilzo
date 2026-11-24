@@ -184,6 +184,66 @@ func TestASignOutThePersonDidNotAskForAsksFirst(t *testing.T) {
 	}
 }
 
+// A link or a script redirect on another site is not the person asking
+// either, though the browser sends no cookie with it to show whose it is.
+//
+// The cookie is SameSite=Strict, so a navigation from another site arrives
+// without it, and a request with no credential went straight to clearing
+// the cookie: the browser takes a cookie set or cleared in answer to a
+// navigation, from wherever it started, so any site signed a person out of
+// the admin with a link, without the question, and the session itself was
+// never revoked, because nothing in the request named it. Such a request is
+// asked like any other, and the question's own form, posted from this
+// origin, carries the cookie and ends the session.
+func TestASignOutFromAnotherSiteAsksFirst(t *testing.T) {
+	srv, _ := setup(t)
+	session, _, err := srv.Tokens.IssueSession("passkey:editor", "editor",
+		auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"a link on another site", map[string]string{
+			"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Fetch-User": "?1"}},
+		{"a script redirect on another site", map[string]string{
+			"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document"}},
+	} {
+		// No cookie: a browser does not send a strict one across sites.
+		req := httptest.NewRequest(http.MethodGet, "/signout", nil)
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		for _, sc := range w.Result().Cookies() {
+			if sc.Name == "quilzo_token" && sc.MaxAge < 0 {
+				t.Errorf("%s cleared the cookie, which signs the person out "+
+					"in this browser without asking, and leaves the session going", c.name)
+			}
+		}
+		if body := w.Body.String(); w.Code != http.StatusOK ||
+			!strings.Contains(body, `method="post"`) || !strings.Contains(body, `action="/signout"`) {
+			t.Errorf("%s was not asked to confirm: %d %q", c.name, w.Code, w.Header().Get("Location"))
+		}
+	}
+
+	// The question's form, posted from this origin, has the cookie, and
+	// ends the session.
+	req := httptest.NewRequest(http.MethodPost, "/signout", nil)
+	req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: session})
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if _, err := srv.Tokens.Authenticate(session, time.Now()); err == nil || w.Code != http.StatusSeeOther {
+		t.Errorf("answering the question did not end the session: %d", w.Code)
+	}
+}
+
 // And a page the browser loads ahead, in case the person opens it, is not
 // the person opening it.
 //

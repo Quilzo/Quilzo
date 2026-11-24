@@ -370,6 +370,26 @@ func TestACounterThatDoesNotAdvanceIsRefused(t *testing.T) {
 	}
 }
 
+// A key that has counted before and now reports zero has not stopped keeping
+// a counter: zero is what a copy reports when it was made from a key that
+// never counted, or what a forged authenticator sends to slip past the check.
+// It was accepted, the stored counter was set back to zero with it, and from
+// then on every use of either copy passed as a key that keeps no counter, so
+// the clone was never recorded as one.
+func TestACounterThatFallsToZeroIsRefused(t *testing.T) {
+	a, cred := registered(t)
+	cred.SignCount = 5
+	a.count = 0
+	ch, _ := webauthn.NewChallenge()
+
+	used, err := party().Verify(cred, ch, a.assert(t, ch))
+	if !errors.Is(err, webauthn.ErrCounterWentBack) {
+		t.Fatalf("a counter that went from 5 to 0 came back %v (stored counter "+
+			"now %d), want ErrCounterWentBack, so a copied key that reports "+
+			"zero signs in and turns the clone check off", err, used.SignCount)
+	}
+}
+
 // Authenticators that keep no counter report zero forever, and refusing those
 // would refuse most phones.
 func TestAnAuthenticatorWithNoCounterStillWorks(t *testing.T) {

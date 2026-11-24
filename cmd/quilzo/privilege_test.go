@@ -583,6 +583,39 @@ func TestATokenDefaultsToWhatItsPrincipalHolds(t *testing.T) {
 	}
 }
 
+// `token issue --help` says what a token issued without --role carries:
+// what its principal holds, which for an administrator is everything.
+//
+// The flag's default was still reader, so the help said `(default
+// "reader")`, and an administrator who issued a token for a script on the
+// strength of it, expecting one that could only read, was given one that
+// could do anything they can. Somebody the policy has never heard of still
+// gets reader.
+func TestTokenIssueHelpSaysWhatTheRoleDefaultsTo(t *testing.T) {
+	o, e, code := cliRun(t, "", "", "token", "issue", "--help")
+	help := o + e
+	if code != 0 {
+		t.Fatalf("token issue --help exited %d:\n%s", code, help)
+	}
+	if strings.Contains(help, `(default "reader")`) {
+		t.Errorf("the help says the role defaults to reader, and a token without "+
+			"--role carries its principal's whole role:\n%s", help)
+	}
+	if !strings.Contains(help, "what the principal holds") {
+		t.Errorf("the help does not say a token without --role carries what its "+
+			"principal holds:\n%s", help)
+	}
+
+	root, token := accessStore(t)
+	out, said, code := cliRun(t, root, token, "token", "issue", "ci", "--principal", "nobody", "--json")
+	if code != 0 {
+		t.Fatalf("token issue for somebody with no role: %s", said)
+	}
+	if !strings.Contains(out, `"role":"reader"`) && !strings.Contains(out, `"role": "reader"`) {
+		t.Errorf("a token for somebody who holds nothing no longer reads: %s", out)
+	}
+}
+
 // storeWithTokenFor makes a store with each grant in it, and a token for
 // each grant's principal as wide as the grant, and returns the tokens by
 // principal.

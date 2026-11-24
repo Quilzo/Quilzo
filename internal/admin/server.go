@@ -786,6 +786,10 @@ type principal struct {
 	Methods []string
 	Bearer  bool
 	Grace   string
+	// Active is when a person last used the session as the credential store
+	// records it (auth.Token's Active), where the idle clock starts a
+	// session this process has not seen (idle.go).
+	Active int64
 }
 
 // firstFactorOnly is what a session signed in with a token alone is told:
@@ -845,7 +849,8 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 	p := principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
 		Limits: tok.Scope, TokenID: tok.ID, Session: tok.IsSession(), StepUp: tok.StepUp,
-		Bound: tok.Bound, Level: tok.Level(), Methods: tok.Methods, Bearer: bearer}
+		Bound: tok.Bound, Level: tok.Level(), Methods: tok.Methods, Bearer: bearer,
+		Active: tok.Active}
 	// Two factors on every request a person makes (SP 800-63B-4 AAL2), not
 	// only at the sign-in form: a token pasted into the form, or sent in a
 	// header, is one, and the session it makes waits for a passkey as a
@@ -1978,7 +1983,22 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		signInAgain(w, r, "unchecked")
 		return
 	}
-	s.signInDone(r, cookieTok.ID)
+	// A pasted session that is already bound keeps its binding: it was
+	// issued where it was bound, and this is the same session moved, which
+	// the next request puts to the rules (sessionMoved). It was bound again
+	// here, to wherever the form was used, so a passkey session copied off
+	// one machine and pasted on another became the copier's, with the
+	// passkey's two factors, and was never seen to have moved.
+	//
+	// Nor is pasting a session a use of it, for the idle clock: one
+	// nobody had used for session.idle would be new again for whoever
+	// pasted it. Only the session exchanged here is signed in to now.
+	switch {
+	case !tok.IsSession():
+		s.signInDone(r, cookieTok.ID)
+	case cookieTok.Bound == "":
+		s.bindSession(r, cookieTok.ID)
+	}
 
 	// Secure over TLS, or where the deployment says something in front of it
 	// is terminating TLS. Not unconditionally: a Secure cookie is refused on a
@@ -2195,7 +2215,14 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	if err == nil && p.Session {
 		via = s.sessionVia(p.TokenID)
 	}
-	if err == nil && !signOutAsked(r, p) {
+	// Asked whether or not the request names a session. A link or a script
+	// redirect on another site arrives without the cookie, which is
+	// SameSite=Strict, and was let through to clearing it: the browser takes
+	// a cookie cleared in answer to a navigation from anywhere, so any site
+	// signed a person out with a link, without the question, and left the
+	// session itself going, since nothing in the request named it to revoke.
+	// The question's form posts from this origin, with the cookie.
+	if !signOutAsked(r, p) {
 		data := map[string]any{"Title": "Sign out", "Who": p.Name}
 		if via != "" {
 			data["IdP"] = s.idpName(via)
