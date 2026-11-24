@@ -1089,13 +1089,19 @@ func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
 // may do this somewhere in the site's content, through this session, for
 // deciding what a screen offers before it names a page.
 //
-// The content and not the areas (auth.Policy.Anywhere), so an analyst's
-// grant on /@security does not open the Pages list. The credential's own
-// limits still apply. Its role cap and its read-only and type dimensions are
-// site-wide by nature — a read-only token is read-only everywhere — so they
-// are asked here in full. Only its path dimension is asked about itself
+// The content and not the areas, as auth.Policy.Anywhere reads it, so an
+// analyst's grant on /@security does not open the Pages list. The credential's
+// own limits still apply. Its role cap and its read-only and type dimensions
+// are site-wide by nature — a read-only token is read-only everywhere — so
+// they are asked here in full. Only its path dimension is asked about itself
 // rather than about "/", because a token scoped to /blog failing to cover
 // "/" is the same wrong question this function exists to stop asking.
+//
+// Each place is asked as can asks, the decision there capped by the
+// credential (auth.CheckGranted), so a permission granted on its own is
+// capped by the credential's path and limits rather than its role. Asked of
+// the role, a reader granted use-models, signed in with a reader's session,
+// was refused the question box the grant is for.
 func (s *Server) allowsAnywhere(p principal, act auth.Action) bool {
 	if s.Policy == nil {
 		return s.allows(p, act, "/")
@@ -1104,8 +1110,16 @@ func (s *Server) allowsAnywhere(p principal, act auth.Action) bool {
 	if within == "" {
 		within = "/"
 	}
-	return s.Policy.Anywhere(p.Name, act) &&
-		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil
+	for _, b := range s.Policy.Snapshot() {
+		if b.Principal != p.Name || b.Deny || auth.IsArea(b.Resource) {
+			continue
+		}
+		d := s.Policy.Evaluate(p.Name, act, b.Resource)
+		if d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, within) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // pageResource is the resource path for a page name.

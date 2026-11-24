@@ -275,3 +275,39 @@ func TestOnlyThoseWhoMayUseTheModelsOnContentAreOfferedAsking(t *testing.T) {
 		t.Errorf("an administrator's session capped at reader asked: %d", w.Code)
 	}
 }
+
+// Somebody granted use-models on its own asks through their own session,
+// whose role is the rung they hold, as they use the writing assistant.
+//
+// A permission granted on its own is capped by the credential's path and
+// limits and not by its role (auth.CheckGranted), and the question box
+// asked the credential's role instead: a reader given use-models, signed in
+// with a reader's session, was offered the writing assistant and not the
+// box, though the permission is granted for both.
+func TestUseModelsGrantedOnItsOwnAsks(t *testing.T) {
+	srv, _ := setup(t)
+	labData(t, srv)
+	withAsk(srv, `{"title":"x","cards":[]}`)
+	for _, b := range []auth.Binding{
+		{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		{Principal: "rae", Permission: auth.ActUseModels, Resource: "/"},
+		{Principal: "pat", Role: auth.RoleReader, Resource: "/blog"},
+		{Principal: "pat", Permission: auth.ActUseModels, Resource: "/blog"},
+	} {
+		if err := srv.Policy.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, who := range []string{"rae", "pat"} {
+		tok, _, err := srv.Tokens.IssueSession(who, who, auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(get(t, srv, "/today", tok).Body.String(), `id="ask"`) {
+			t.Errorf("%s, granted use-models, is not offered asking", who)
+		}
+		if w := postForm(t, srv, "/today/ask", tok, "question=how+many"); w.Code != http.StatusSeeOther {
+			t.Errorf("%s, granted use-models, may not ask: %d", who, w.Code)
+		}
+	}
+}
