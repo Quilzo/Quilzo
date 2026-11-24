@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/register"
@@ -105,6 +106,44 @@ func openRegister(root string) (*register.Register, error) {
 	return register.Open(s), nil
 }
 
+// registerWriter is the register of the store at root, wired to write,
+// and the caller as the register names a writer.
+//
+// Its audit entries go to this store's audit log, and it writes nothing
+// while that log cannot take an entry (auditReady); its policy gate is
+// authorise, the caller's own check with their credential's limits, as
+// every command asks. A module's command writes the register through this
+// and register.Put, and nothing else: the register's own invariants, the
+// receipt and the one commit for a batch come with it.
+func registerWriter(root string, c *Caller) (*register.Register, register.Actor, error) {
+	s, err := open(root)
+	if err != nil {
+		return nil, register.Actor{}, err
+	}
+	r := register.Open(s)
+	r.Audit = func(rec audit.Record) error { return recordE(root, rec) }
+	r.Ready = func() error { return auditReady(root) }
+	by := register.Actor{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model,
+		May: func(act auth.Action, resource string) error { return authorise(root, c, act, resource) }}
+	return r, by, nil
+}
+
+// registerError is an error of the register as the command line answers
+// it: a refusal by the access policy, or a model's write, exits 3 as every
+// refusal by a gate does; a record that is not there exits 4; the rest are
+// a command that ran and failed.
+func registerError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, register.ErrRefused), errors.Is(err, register.ErrModel):
+		return errBlocked{err}
+	case errors.Is(err, register.ErrNotFound):
+		return errNotFound{err}
+	}
+	return err
+}
+
 func registerKinds(root string) error {
 	r, err := openRegister(root)
 	if err != nil {
@@ -174,11 +213,8 @@ func registerShow(root, id string) error {
 		return err
 	}
 	e, err := r.Get(register.ID(id))
-	if errors.Is(err, register.ErrNotFound) {
-		return errNotFound{err}
-	}
 	if err != nil {
-		return err
+		return registerError(err)
 	}
 	if w.JSON(e) {
 		return nil

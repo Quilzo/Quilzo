@@ -5,6 +5,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -177,5 +179,68 @@ func TestProposalShowsInWaiting(t *testing.T) {
 	o, _, _ = cliRun(t, root, token, "register", "list", "Control", "--json")
 	if strings.Contains(o, string(id)) {
 		t.Errorf("the proposal is listed in the register: %s", firstLines(o, 4))
+	}
+}
+
+// A module's command writes through registerWriter and register.Put: the
+// write is asked of the policy as the caller, lands as one commit, and its
+// entry is in this store's audit log with the receipt's digest; a caller
+// the policy refuses writes nothing and is recorded refused.
+func TestTheRegisterWriterAsksThePolicyAndRecordsTheWrite(t *testing.T) {
+	root, _ := accessStore(t)
+	owner := &Caller{Name: "owner", Role: auth.RoleAdmin, Scope: "/", Kind: audit.KindHuman, Verified: true}
+	r, by, err := registerWriter(root, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, err := r.Put(by, "a control, by hand",
+		register.Control{Ref: "AC-01", Title: "Second factor for every account", Domain: "identity", Owner: testOwner})
+	if err != nil || rc.Commit == "" {
+		t.Fatalf("the owner's write: %v %+v", err, rc)
+	}
+	reader := &Caller{Name: "rita", Role: auth.RoleReader, Scope: "/", Kind: audit.KindHuman, Verified: true}
+	r2, by2, err := registerWriter(root, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r2.Put(by2, "a control, by a reader",
+		register.Control{Ref: "AC-02", Title: "Encrypted disks", Domain: "endpoints", Owner: testOwner}); !errors.Is(err, register.ErrRefused) {
+		t.Fatalf("a reader's write: %v", err)
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ok, refused bool
+	for _, e := range events {
+		if e.Action != register.AuditAction {
+			continue
+		}
+		switch {
+		// The log names a principal by a pseudonym of its own, so each
+		// entry is known by what it says.
+		case e.Outcome == audit.Success && e.Detail["receipt"] == string(rc.Digest) && e.Detail["commit"] == rc.Commit:
+			ok = true
+		case e.Outcome == audit.Denied && e.Detail["kind"] == "sec_control":
+			refused = true
+		}
+	}
+	if !ok || !refused {
+		t.Errorf("the audit log holds the write %v and the refusal %v", ok, refused)
+	}
+}
+
+// A module's command answers the register's errors with the exits the help
+// documents: a refusal 3, what is not there 4.
+func TestTheRegistersErrorsExitAsTheHelpSays(t *testing.T) {
+	for err, want := range map[error]int{
+		fmt.Errorf("%w: no role", register.ErrRefused):                    3,
+		fmt.Errorf("%w (register.Propose)", register.ErrModel):            3,
+		fmt.Errorf("%w: AC-9", register.ErrNotFound):                      4,
+		fmt.Errorf("%w: control: \"ref\" is needed", register.ErrInvalid): 1,
+	} {
+		if got := exitCode(registerError(err)); got != want {
+			t.Errorf("%v exits %d, not %d", err, got, want)
+		}
 	}
 }
