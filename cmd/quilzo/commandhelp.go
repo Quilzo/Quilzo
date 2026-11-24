@@ -520,8 +520,9 @@ func commandHelp(cmd string, args []string) {
 	fmt.Printf("\n  %severy command, and the exit codes: quilzo help%s\n", dim, reset)
 }
 
-// helpFor is the entries of the help (fullHelp) about the command: each line that
-// names it, with the lines indented under it that go on to describe it.
+// helpFor is the entries of the help (fullHelp) about the command: each
+// line that names it, with the lines indented under it that go on to
+// describe it.
 func helpFor(cmd string, args []string) string {
 	if primary, ok := helpAliases[cmd]; ok {
 		cmd = primary
