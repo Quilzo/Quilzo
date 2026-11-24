@@ -1164,6 +1164,9 @@ func postureFrameworks(root string, args []string) error {
 		}
 		fmt.Printf("  %-14s %s%-11s%s %s\n", st.Ref.ID, colour, st.State, reset,
 			strings.Join(st.Rules, ", "))
+		if st.Title != "" {
+			fmt.Printf("                 %s%s%s\n", dim, st.Title, reset)
+		}
 		for _, f := range st.Findings {
 			fmt.Printf("                 %s%s%s\n", dim, onOneLine(f.Detail), reset)
 			if who := holders[f.Resource]; who != "" && f.Resource != "" {

@@ -303,7 +303,7 @@ var settings = []Setting{
 		Key: "publish.require_types", Kind: Bool, Default: "true",
 		Summary:  "content must satisfy its bound type before it is stored",
 		Controls: []string{"SI-10"},
-		OWASP:    "A03:2025 Injection",
+		OWASP:    "A05:2025 Injection",
 		Why: "The store is immutable, so an invalid page that lands in it is " +
 			"in the history for good.",
 		Weaker: offIsWeaker("unvalidated content is stored permanently"),
@@ -454,7 +454,7 @@ var settings = []Setting{
 		Key: "site.csp.mode", Kind: Text, Default: "enforce",
 		Summary:  "enforce | report-only | off",
 		Controls: []string{"SC-18"},
-		OWASP:    "A03:2025 Injection",
+		OWASP:    "A05:2025 Injection",
 		Why: "A Content-Security-Policy is the control that turns a content " +
 			"injection into a blocked request instead of script execution. " +
 			"report-only is for the week you are working out what your " +
@@ -1542,7 +1542,7 @@ var settings = []Setting{
 		Key: "ext.require_pinned", Kind: Bool, Default: "true",
 		Summary:  "extensions must match a recorded hash",
 		Controls: []string{"SI-7", "CM-14"},
-		OWASP:    "A08:2025 Software and Data Integrity Failures",
+		OWASP:    "A08:2025 Software or Data Integrity Failures",
 		Why: "The binary that runs is the binary that was reviewed. Without " +
 			"this, replacing the file on disk replaces the code with no " +
 			"record and no signal.",

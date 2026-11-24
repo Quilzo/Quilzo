@@ -1,0 +1,20 @@
+{
+  "list": "NIS2 Directive, Article 21(2)",
+  "edition": "Directive (EU) 2022/2555",
+  "published": "2022-12-27",
+  "source": "https://eur-lex.europa.eu/eli/dir/2022/2555/oj",
+  "copied": "2026-11-24",
+  "note": "The ten measures of Article 21(2), points (a) to (j), in the words of the Official Journal (OJ L 333, 27.12.2022, p. 80). Recheck against EUR-Lex when this is next edited: the text was transcribed, and its ten points checked against a second copy, where EUR-Lex itself could not be read.",
+  "entries": [
+    {"id": "Art. 21(2)(a)", "title": "policies on risk analysis and information system security"},
+    {"id": "Art. 21(2)(b)", "title": "incident handling"},
+    {"id": "Art. 21(2)(c)", "title": "business continuity, such as backup management and disaster recovery, and crisis management"},
+    {"id": "Art. 21(2)(d)", "title": "supply chain security, including security-related aspects concerning the relationships between each entity and its direct suppliers or service providers"},
+    {"id": "Art. 21(2)(e)", "title": "security in network and information systems acquisition, development and maintenance, including vulnerability handling and disclosure"},
+    {"id": "Art. 21(2)(f)", "title": "policies and procedures to assess the effectiveness of cybersecurity risk-management measures"},
+    {"id": "Art. 21(2)(g)", "title": "basic cyber hygiene practices and cybersecurity training"},
+    {"id": "Art. 21(2)(h)", "title": "policies and procedures regarding the use of cryptography and, where appropriate, encryption"},
+    {"id": "Art. 21(2)(i)", "title": "human resources security, access control policies and asset management"},
+    {"id": "Art. 21(2)(j)", "title": "the use of multi-factor authentication or continuous authentication solutions, secured voice, video and text communications and secured emergency communication systems within the entity, where appropriate"}
+  ]
+}

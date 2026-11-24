@@ -1,0 +1,20 @@
+{
+  "list": "OWASP Top 10 for Agentic Applications",
+  "edition": "2026",
+  "published": "2025-12-09",
+  "source": "https://github.com/GenAI-Security-Project/GenAI-LLM-Top10/blob/main/2026/final/Appendix_A_Related_Framework_Mappings.md",
+  "copied": "2026-11-24",
+  "note": "The ten entries as the OWASP GenAI Security Project's own crosswalk names them, in its section on the Top 10 for Agentic Applications (2026, announced 9 December 2025). The project's publication page is https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/.",
+  "entries": [
+    {"id": "ASI01", "title": "Agent Goal Hijack"},
+    {"id": "ASI02", "title": "Tool Misuse & Exploitation"},
+    {"id": "ASI03", "title": "Identity & Privilege Abuse"},
+    {"id": "ASI04", "title": "Agentic Supply Chain Vulnerabilities"},
+    {"id": "ASI05", "title": "Unexpected Code Execution (RCE)"},
+    {"id": "ASI06", "title": "Memory & Context Poisoning"},
+    {"id": "ASI07", "title": "Insecure Inter-Agent Communication"},
+    {"id": "ASI08", "title": "Cascading Failures"},
+    {"id": "ASI09", "title": "Human-Agent Trust Exploitation"},
+    {"id": "ASI10", "title": "Rogue Agents"}
+  ]
+}

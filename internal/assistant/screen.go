@@ -15,7 +15,7 @@ import (
 // the AI reading it instead ("ignore your previous instructions", "if you
 // are an AI assistant", a fake system prompt, "do not tell the user") is
 // the shape of a planted instruction: indirect prompt injection, or a
-// poisoned document (OWASP LLM08). The fence and the citation check already
+// poisoned document (OWASP LLM09:2026). The fence and the citation check already
 // stop such text from becoming an action or an unsupported sentence; this
 // stops it reaching the model at all, before anybody has asked anything.
 // Lakera, now Check Point's AI Guardrails, recommends the same: screen a

@@ -8,9 +8,10 @@
 // NIST SP 800-53, because that catalogue is the most granular and the one
 // the others are most often mapped to. This package carries the rest: the
 // FedRAMP baselines, ISO/IEC 27001, SOC 2, the NIST Cybersecurity
-// Framework, the HIPAA Security Rule, and — for what 800-53 does not
-// describe — GDPR, the EU AI Act, the NIST AI RMF, ISO/IEC 42001, the
-// CCPA and OWASP's list for applications built on language models.
+// Framework, the HIPAA Security Rule, the NIS2 Directive's Article 21(2),
+// and — for what 800-53 does not describe — GDPR, the EU AI Act, the NIST
+// AI RMF, ISO/IEC 42001, the CCPA and OWASP's two lists, for applications
+// built on language models and for agentic applications.
 //
 // # What a mapping here is, and is not
 //
@@ -102,10 +103,18 @@ var Catalogue = []Framework{
 		About: "The international standard for an AI management system, " +
 			"certifiable like ISO 27001.",
 		URL: "https://www.iso.org/standard/42001"},
-	{ID: "owasp-llm", Name: "OWASP Top 10 for LLM Applications", Version: "2025", Kind: AI,
+	{ID: "owasp-llm", Name: "OWASP Top 10 for LLM Applications", Version: "2026", Kind: AI,
 		About: "The most common ways applications built on language models " +
-			"are attacked.",
-		URL: "https://genai.owasp.org/llm-top-10/"},
+			"are attacked. The 2026 edition renumbered the list.",
+		URL: "https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/"},
+	{ID: "owasp-asi", Name: "OWASP Top 10 for Agentic Applications", Version: "2026", Kind: AI,
+		About: "The most common ways agents that plan, use tools and keep " +
+			"memory are attacked, ASI01 to ASI10.",
+		URL: "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/"},
+	{ID: "nis2", Name: "NIS2 Directive", Version: "Directive (EU) 2022/2555, Article 21(2)", Kind: Security,
+		About: "The EU's law on the cybersecurity of essential and important " +
+			"entities; Article 21(2) lists the ten measures each must take.",
+		URL: "https://eur-lex.europa.eu/eli/dir/2022/2555/oj"},
 }
 
 // Get finds a framework by its id.
@@ -197,57 +206,88 @@ var fromControl = map[string][]Ref{
 	"CA-7": {{"soc2", "CC4.1"}},
 }
 
+// toNIS2 is which of the ten measures in NIS2's Article 21(2) each 800-53
+// base control's evidence bears on, by the point's letter.
+//
+// The Article names the measures and leaves what each holds to the Member
+// States and to the Commission's implementing rules. Those rules, for the
+// digital providers they cover (Implementing Regulation (EU) 2024/2690),
+// put monitoring and logging under incident handling, point (b), and
+// configuration, change, network security and patching under acquisition,
+// development and maintenance, point (e), and identification,
+// authentication and asset inventory under point (i); that reading is
+// followed here. Multi-factor authentication, point (j), is cited by the
+// one check that looks for it, not by every control about signing in. A
+// control whose bearing would be argued is left out.
+var toNIS2 = map[string]byte{
+	"AC-2": 'i', "AC-3": 'i', "AC-5": 'i', "AC-6": 'i', "AC-17": 'i',
+	"IA-2": 'i', "IA-5": 'i', "CM-8": 'i',
+	"AU-2": 'b', "AU-3": 'b', "AU-4": 'b', "AU-5": 'b', "AU-8": 'b',
+	"AU-9": 'b', "AU-10": 'b', "AU-11": 'b', "AU-12": 'b', "IR-4": 'b', "SI-4": 'b',
+	"CP-2": 'c',
+	"SA-9": 'd', "PM-30": 'd', "SR-4": 'd',
+	"CM-3": 'e', "CM-5": 'e', "CM-6": 'e', "CM-7": 'e', "SC-7": 'e',
+	"SI-2": 'e', "SI-7": 'e', "SI-10": 'e', "RA-5": 'e',
+	"CA-7": 'f',
+	"SC-8": 'h', "SC-12": 'h',
+}
+
 // fromRule is what a check bears on that 800-53 does not describe: the
 // privacy laws and the AI frameworks, by the check's own id.
 var fromRule = map[string][]Ref{
 	// Security of processing is what every control on access, credentials,
 	// logging and exposure is evidence for, under both privacy laws.
-	"access.no-policy":              {{"gdpr", "Art. 32"}},
-	"access.no-deny-anywhere":       {{"gdpr", "Art. 32"}},
-	"access.too-many-admins":        {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
-	"token.long-lived":              {{"gdpr", "Art. 32"}},
-	"token.admin-role":              {{"gdpr", "Art. 32"}},
-	"sso.cert-expiring":             {{"gdpr", "Art. 32"}},
-	"sso.unusable":                  {{"gdpr", "Art. 32"}},
-	"sso.unverified-addresses":      {{"gdpr", "Art. 32"}},
-	"token.stale":                   {{"gdpr", "Art. 32"}},
-	"token.expired-not-revoked":     {{"gdpr", "Art. 32"}},
-	"audit.chain-broken":            {{"gdpr", "Art. 32(1)(b)"}, {"gdpr", "Art. 5(2)"}},
-	"audit.empty":                   {{"gdpr", "Art. 5(2)"}},
-	"audit.unverified-identities":   {{"gdpr", "Art. 5(2)"}},
-	"expose.cleartext":              {{"gdpr", "Art. 32(1)(a)"}, {"ccpa", "§ 1798.100(e)"}},
-	"expose.admin-public":           {{"gdpr", "Art. 32"}},
-	"config.weakened":               {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
-	"policy.unmet":                  {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
-	"policy.unreadable":             {{"gdpr", "Art. 32"}},
-	"content.retention-unenforced":  {{"gdpr", "Art. 5(1)(e)"}, {"ccpa", "§ 1798.100(a)(3)"}},
-	"privacy.form-basis-missing":    {{"gdpr", "Art. 6"}, {"gdpr", "Art. 13"}, {"gdpr", "Art. 5(1)(b)"}, {"ccpa", "§ 1798.100(b)"}},
-	"content.unmarked-ai":           {{"eu-ai-act", "Art. 50(2)"}, {"iso-42001", "A.8.2"}},
-	"content.raw-template":          {{"owasp-llm", "LLM05"}},
-	"agent.write-without-role":      {{"owasp-llm", "LLM06"}, {"iso-42001", "A.9.2"}},
-	"agent.shared-human-credential": {{"owasp-llm", "LLM06"}, {"iso-42001", "A.9.2"}},
+	"access.no-policy":             {{"gdpr", "Art. 32"}},
+	"access.no-deny-anywhere":      {{"gdpr", "Art. 32"}},
+	"access.too-many-admins":       {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
+	"token.long-lived":             {{"gdpr", "Art. 32"}},
+	"token.admin-role":             {{"gdpr", "Art. 32"}},
+	"sso.cert-expiring":            {{"gdpr", "Art. 32"}},
+	"sso.unusable":                 {{"gdpr", "Art. 32"}},
+	"sso.unverified-addresses":     {{"gdpr", "Art. 32"}},
+	"token.stale":                  {{"gdpr", "Art. 32"}},
+	"token.expired-not-revoked":    {{"gdpr", "Art. 32"}},
+	"audit.chain-broken":           {{"gdpr", "Art. 32(1)(b)"}, {"gdpr", "Art. 5(2)"}},
+	"audit.empty":                  {{"gdpr", "Art. 5(2)"}},
+	"audit.unverified-identities":  {{"gdpr", "Art. 5(2)"}},
+	"expose.cleartext":             {{"gdpr", "Art. 32(1)(a)"}, {"ccpa", "§ 1798.100(e)"}},
+	"expose.admin-public":          {{"gdpr", "Art. 32"}},
+	"config.weakened":              {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
+	"policy.unmet":                 {{"gdpr", "Art. 32"}, {"gdpr", "Art. 25"}},
+	"policy.unreadable":            {{"gdpr", "Art. 32"}},
+	"content.retention-unenforced": {{"gdpr", "Art. 5(1)(e)"}, {"ccpa", "§ 1798.100(a)(3)"}},
+	"privacy.form-basis-missing":   {{"gdpr", "Art. 6"}, {"gdpr", "Art. 13"}, {"gdpr", "Art. 5(1)(b)"}, {"ccpa", "§ 1798.100(b)"}},
+	"content.unmarked-ai":          {{"eu-ai-act", "Art. 50(2)"}, {"iso-42001", "A.8.2"}},
+	// OWASP's lists are cited by their 2026 numbers. The tests pin each
+	// citation to the title it means, since the 2026 edition of the list
+	// for language models renumbered it.
+	"content.raw-template": {{"owasp-llm", "LLM10"}},
+	"agent.write-without-role": {{"owasp-llm", "LLM03"}, {"owasp-asi", "ASI03"},
+		{"iso-42001", "A.9.2"}},
+	"agent.shared-human-credential": {{"owasp-llm", "LLM03"}, {"owasp-asi", "ASI03"},
+		{"iso-42001", "A.9.2"}},
 	// The checks written for this package's frameworks in the first place.
 	"ai.chatbot-undisclosed": {{"eu-ai-act", "Art. 50(1)"}, {"iso-42001", "A.8.2"}},
 	"ai.chatbot-unevaluated": {{"nist-ai-rmf", "MEASURE 2.5"}, {"iso-42001", "A.6.2.4"},
-		{"owasp-llm", "LLM09"}},
-	"ai.agent-followed-plant": {{"owasp-llm", "LLM01"}, {"nist-ai-rmf", "MEASURE 2.7"},
-		{"iso-42001", "A.6.2.4"}, {"eu-ai-act", "Art. 15"}},
+		{"owasp-llm", "LLM07"}},
+	"ai.agent-followed-plant": {{"owasp-llm", "LLM01"}, {"owasp-asi", "ASI01"},
+		{"nist-ai-rmf", "MEASURE 2.7"}, {"iso-42001", "A.6.2.4"}, {"eu-ai-act", "Art. 15"}},
 	"ai.agent-unevaluated": {{"nist-ai-rmf", "MEASURE 2.5"}, {"iso-42001", "A.6.2.4"}},
 	"ai.agent-flagged": {{"nist-ai-rmf", "MANAGE 4.1"}, {"iso-42001", "A.6.2.6"},
-		{"owasp-llm", "LLM06"}},
+		{"owasp-llm", "LLM03"}, {"owasp-asi", "ASI10"}},
 	// The agent control plane's checks.
 	"agent.no-sponsor":           {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
 	"approval.alone":             {{"iso-42001", "A.3.2"}, {"nist-ai-rmf", "GOVERN 2.1"}},
 	"agent.reviewer-not-second":  {{"iso-42001", "A.6.2.4"}, {"nist-ai-rmf", "MANAGE 2.2"}},
 	"scim.token-expiring":        {{"iso-27001", "A.5.18"}, {"soc2", "CC6.2"}},
 	"access.review-due":          {{"iso-27001", "A.5.18"}, {"soc2", "CC6.2"}},
-	"mfa.no-second-factor":       {{"iso-27001", "A.8.5"}, {"soc2", "CC6.1"}},
+	"mfa.no-second-factor":       {{"iso-27001", "A.8.5"}, {"soc2", "CC6.1"}, {"nis2", "Art. 21(2)(j)"}},
 	"siem.stream-failing":        {{"iso-27001", "A.8.15"}, {"soc2", "CC7.2"}},
 	"agent.sponsor-gone":         {{"iso-42001", "A.3.2"}, {"eu-ai-act", "Art. 26(2)"}, {"nist-ai-rmf", "GOVERN 2.1"}},
-	"agent.memory-held":          {{"iso-42001", "A.7.4"}, {"owasp-llm", "LLM04"}},
+	"agent.memory-held":          {{"iso-42001", "A.7.4"}, {"owasp-llm", "LLM05"}, {"owasp-asi", "ASI06"}},
 	"model.personal-data-leaves": {{"iso-42001", "A.10.3"}, {"gdpr", "Art. 28"}},
-	"integration.unpinned":       {{"iso-42001", "A.4.4"}, {"owasp-llm", "LLM03"}},
-	"integration.tool-changed":   {{"iso-42001", "A.10.3"}, {"owasp-llm", "LLM03"}},
+	"integration.unpinned":       {{"iso-42001", "A.4.4"}, {"owasp-llm", "LLM04"}, {"owasp-asi", "ASI04"}},
+	"integration.tool-changed":   {{"iso-42001", "A.10.3"}, {"owasp-llm", "LLM04"}, {"owasp-asi", "ASI04"}},
 	"ai.shadow-use":              {{"iso-42001", "A.10.3"}, {"iso-42001", "A.4.4"}, {"nist-ai-rmf", "GOVERN 6.1"}},
 	"fleet.card-changed":         {{"iso-42001", "A.10.3"}, {"nist-ai-rmf", "GOVERN 6.1"}},
 	"privacy.model-egress": {{"gdpr", "Art. 28"}, {"gdpr", "Art. 44"},
@@ -283,6 +323,9 @@ func Refs(rule string, controls []string) []Ref {
 		}
 		for _, r := range fromControl[base(c)] {
 			add(r)
+		}
+		if point, ok := toNIS2[base(c)]; ok {
+			add(Ref{"nis2", "Art. 21(2)(" + string(point) + ")"})
 		}
 	}
 	for _, r := range fromRule[rule] {

@@ -1,0 +1,19 @@
+{
+  "list": "OWASP Top 10",
+  "edition": "2025",
+  "source": "https://github.com/OWASP/Top10/blob/master/2025/docs/en/index.md",
+  "copied": "2026-11-24",
+  "note": "The web application list each posture rule's OWASP category names, as the project's source repository publishes it.",
+  "entries": [
+    {"id": "A01", "title": "Broken Access Control"},
+    {"id": "A02", "title": "Security Misconfiguration"},
+    {"id": "A03", "title": "Software Supply Chain Failures"},
+    {"id": "A04", "title": "Cryptographic Failures"},
+    {"id": "A05", "title": "Injection"},
+    {"id": "A06", "title": "Insecure Design"},
+    {"id": "A07", "title": "Authentication Failures"},
+    {"id": "A08", "title": "Software or Data Integrity Failures"},
+    {"id": "A09", "title": "Security Logging and Alerting Failures"},
+    {"id": "A10", "title": "Mishandling of Exceptional Conditions"}
+  ]
+}

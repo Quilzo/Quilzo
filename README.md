@@ -305,7 +305,7 @@ access to every other system belongs with the tool that reviews those.
 | Feature | What it does | How |
 |---|---|---|
 | **Posture** | Continuous checks of how the installation is set up, each with why it matters and the fix; suppressions that end. | Security screen; `quilzo posture scan\|explain` |
-| **Frameworks** | The same checks read as FedRAMP, NIST 800-53, ISO 27001, SOC 2, NIST CSF 2.0, HIPAA, GDPR, CCPA, the EU AI Act, NIST AI RMF, ISO/IEC 42001 and OWASP's LLM Top 10. | Frameworks screen; `quilzo posture frameworks` |
+| **Frameworks** | The same checks read as FedRAMP, NIST 800-53, ISO 27001, SOC 2, NIST CSF 2.0, HIPAA, GDPR, CCPA, NIS2 Article 21(2), the EU AI Act, NIST AI RMF, ISO/IEC 42001, and OWASP's Top 10 for LLM Applications (2026) and for Agentic Applications. | Frameworks screen; `quilzo posture frameworks` |
 | **AI evidence** | The EU AI Act's deployer duties, ISO/IEC 42001 Annex A as a statement of applicability, and an AI bill of materials (CycloneDX 1.6), each read from what the agents, chatbots and models did. | Frameworks → AI evidence; `quilzo compliance ai-act\|iso42001\|aibom` |
 | **Quilzo's own controls** | How Quilzo implements each NIST control and who does the rest, as OSCAL; a draft system security plan; FedRAMP 20x indicators; a position on each goal of CISA's Secure by Design pledge. | `quilzo compliance implementation\|component\|ssp\|ksi\|pledge` |
 | **Organisation policy** | The organisation's NIST parameters (session limits and the like) declared, changed by two administrators and enforced as floors. | `quilzo policy show\|propose\|approve` |

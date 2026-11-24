@@ -2640,6 +2640,15 @@ than for one that has to be described.
   world-readable key file and an input nobody supplied on one scale, and it
   is the figure that gets argued about instead of the findings. `--json`
   keeps the 0-100 `score` beside the same counts, for scripts that read it.
+- **`quilzo posture frameworks`** and the Frameworks screen read the same
+  scan against each framework, among them NIS2's Article 21(2), points (a)
+  to (j), OWASP's Top 10 for LLM Applications in its renumbered 2026
+  edition, and OWASP's Top 10 for Agentic Applications, ASI01 to ASI10.
+  Those three lists are carried whole, so each requirement is named as well
+  as numbered, and each is pinned in the tests to a copy of the published
+  list, with each check's citation pinned to the title it means: a list
+  renumbered under a citation fails the build instead of quietly pointing a
+  reader at another risk.
 - **OSCAL 1.2.3 assessment results**, generated from that scan. Not a claim of
   compliance — the output of an assessment, which is what the format is for and
   what an assessor can ingest.

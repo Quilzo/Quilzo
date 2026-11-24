@@ -1,0 +1,36 @@
+{
+  "list": "OWASP Top 10 for LLM Applications",
+  "edition": "2026",
+  "published": "2026-08-04",
+  "source": "https://github.com/GenAI-Security-Project/GenAI-LLM-Top10/blob/main/2026/README.md",
+  "copied": "2026-11-24",
+  "note": "The final list of the 2026 release, as its canonical source repository publishes it. The 2025 list it replaces is kept under retired, so a mapping still reading an entry by its 2025 number is found.",
+  "entries": [
+    {"id": "LLM01", "title": "Prompt Injection"},
+    {"id": "LLM02", "title": "Sensitive Information Disclosure"},
+    {"id": "LLM03", "title": "Excessive Agency"},
+    {"id": "LLM04", "title": "Supply Chain"},
+    {"id": "LLM05", "title": "Data and Model Poisoning"},
+    {"id": "LLM06", "title": "Unbounded Consumption"},
+    {"id": "LLM07", "title": "Misinformation"},
+    {"id": "LLM08", "title": "Hidden Context Exposure"},
+    {"id": "LLM09", "title": "Vector and Embedding Weaknesses"},
+    {"id": "LLM10", "title": "Improper Output Handling"}
+  ],
+  "retired": {
+    "edition": "2025",
+    "source": "https://github.com/OWASP/www-project-top-10-for-large-language-model-applications/tree/main/2_0_vulns",
+    "entries": [
+      {"id": "LLM01", "title": "Prompt Injection"},
+      {"id": "LLM02", "title": "Sensitive Information Disclosure"},
+      {"id": "LLM03", "title": "Supply Chain"},
+      {"id": "LLM04", "title": "Data and Model Poisoning"},
+      {"id": "LLM05", "title": "Improper Output Handling"},
+      {"id": "LLM06", "title": "Excessive Agency"},
+      {"id": "LLM07", "title": "System Prompt Leakage"},
+      {"id": "LLM08", "title": "Vector and Embedding Weaknesses"},
+      {"id": "LLM09", "title": "Misinformation"},
+      {"id": "LLM10", "title": "Unbounded Consumption"}
+    ]
+  }
+}

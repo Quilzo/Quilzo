@@ -16,7 +16,8 @@ import (
 // The rules, grouped by the control family they belong to.
 //
 // Each carries the NIST SP 800-53 identifiers it maps to and the OWASP
-// Top 10:2025 category. That mapping is not decoration: it is what lets a
+// Top 10:2025 category, or for a check on how a language model is used the
+// category in OWASP's Top 10 for LLM Applications 2026. That mapping is not decoration: it is what lets a
 // finding be handed to an assessor as evidence rather than as an opinion, and
 // it is what makes "we monitor continuously" a claim with a list behind it.
 var rules = []Rule{
@@ -92,7 +93,7 @@ var rules = []Rule{
 		Title:    "An agent followed an instruction planted in what it read",
 		Severity: High,
 		Controls: []string{"SI-10", "CA-7"},
-		OWASP:    "LLM01:2025 Prompt Injection",
+		OWASP:    "LLM01:2026 Prompt Injection",
 		Why: "Its last evaluation planted instructions in pages and results it " +
 			"read, and on at least one case it did what they said. Anybody who " +
 			"can put text where it reads can steer it the same way, within " +
@@ -688,7 +689,7 @@ var rules = []Rule{
 		Title:    "The audit log is not reaching the SIEM",
 		Severity: Medium,
 		Controls: []string{"AU-4(1)", "AU-5", "AU-9(2)"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "The stream keeps the audit log where Quilzo cannot reach it. While " +
 			"it fails, records pile up here, and a person who takes the store " +
 			"over in that time can take the record of it too.",
@@ -711,7 +712,7 @@ var rules = []Rule{
 		Title:    "Security alerts reach nobody",
 		Severity: High,
 		Controls: []string{"IR-4", "SI-4"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "Every alert Quilzo sends is a mail to the mailto: address in " +
 			"security.contact, through the relay in mail.json: a decoy touched, " +
 			"a risky sign-in, a call waiting for a person, a check that starts " +
@@ -1115,7 +1116,7 @@ var rules = []Rule{
 		Title:    "The audit chain does not verify",
 		Severity: Critical,
 		Controls: []string{"AU-9", "AU-9(3)", "SI-7"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "The chain is the only reason to believe the log. If it does not " +
 			"verify, every record in it is an assertion rather than evidence — " +
 			"including the records about whoever broke it.",
@@ -1145,7 +1146,7 @@ var rules = []Rule{
 		Title:    "Nothing has been logged",
 		Severity: High,
 		Controls: []string{"AU-2", "AU-12"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "An empty log after the site has been published means logging is " +
 			"not wired up. Every control that depends on being able to say what " +
 			"happened is inoperative, and nobody will find out until they need it.",
@@ -1167,7 +1168,7 @@ var rules = []Rule{
 		Title:    "Most logged actions have unproven identities",
 		Severity: Medium,
 		Controls: []string{"AU-3", "IA-2"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "An unverified principal was taken from the environment, not " +
 			"proved. The chain shows nobody edited the record afterwards; it " +
 			"says nothing about whether the name in it was true when written. " +
@@ -1204,7 +1205,7 @@ var rules = []Rule{
 		Title:    "A template disables escaping",
 		Severity: High,
 		Controls: []string{"SI-10", "SC-18"},
-		OWASP:    "A03:2025 Injection",
+		OWASP:    "A05:2025 Injection",
 		Why: "`raw` is the one construct in the template language that emits " +
 			"content without escaping it. Every use is a decision to trust the " +
 			"content, and content is the thing users supply.",
@@ -1272,7 +1273,7 @@ var rules = []Rule{
 		Title:    "Published pages have no content type",
 		Severity: Low,
 		Controls: []string{"SI-10"},
-		OWASP:    "A04:2025 Insecure Design",
+		OWASP:    "A06:2025 Insecure Design",
 		Why: "An untyped page accepts any field with any value. That is the " +
 			"default and it is not wrong, but it means the validation this tool " +
 			"performs is not being applied to those pages.",
@@ -1308,7 +1309,7 @@ var rules = []Rule{
 		Title:    "Submissions are kept past the period their form declares",
 		Severity: High,
 		Controls: []string{"SI-12", "AU-11"},
-		OWASP:    "A02:2025 Cryptographic Failures",
+		OWASP:    "A04:2025 Cryptographic Failures",
 		Why: "A declared retention period that nothing enforces is worse " +
 			"than none: the declaration is what a data protection authority " +
 			"reads, and what the person filling in the form was told. Both " +
@@ -1473,7 +1474,7 @@ var rules = []Rule{
 		Title:    "Extensions run with the filesystem access of this account",
 		Severity: High,
 		Controls: []string{"AC-6", "SC-39", "CM-7"},
-		OWASP:    "A08:2025 Software and Data Integrity Failures",
+		OWASP:    "A08:2025 Software or Data Integrity Failures",
 		Why: "An extension is third-party code in a subprocess. It gets an " +
 			"empty environment and a timeout, and neither of those stops it " +
 			"reading a file. Without a kernel sandbox it runs as this account " +
@@ -1731,7 +1732,7 @@ var rules = []Rule{
 		Title:    "An agent authenticates as a person",
 		Severity: High,
 		Controls: []string{"AC-2", "AU-3", "IA-2"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "When a model uses a person's token, the audit log records a " +
 			"human doing things a human did not do. Attribution is the thing " +
 			"the log exists for, and this destroys it silently.",
@@ -1822,7 +1823,7 @@ var rules = []Rule{
 		Title:    "The CMS writes its own audit log",
 		Severity: Medium,
 		Controls: []string{"AU-9", "AU-9(4)", "AC-5"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "When the process that publishes content is the process that " +
 			"writes the record of it, anything that can execute code as the CMS " +
 			"can rewrite what it did — a template bug, a dependency, a mistake " +
@@ -1861,7 +1862,7 @@ var rules = []Rule{
 		Title:    "The audit log has never been committed to anywhere else",
 		Severity: High,
 		Controls: []string{"AU-9", "AU-9(2)", "AU-10"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "A hash chain proves nobody edited the log without also editing " +
 			"every entry after it. It does not stop somebody who can edit the " +
 			"whole file, which on this machine is anybody with root — including " +
@@ -1898,7 +1899,7 @@ var rules = []Rule{
 		Title:    "The published log head is far behind",
 		Severity: Medium,
 		Controls: []string{"AU-9", "AU-10"},
-		OWASP:    "A09:2025 Logging and Alerting Failures",
+		OWASP:    "A09:2025 Security Logging and Alerting Failures",
 		Why: "A published head only fixes the history behind it. Everything " +
 			"since is protected by the chain alone, which is to say by nothing " +
 			"an administrator could not undo. The gap between the last published " +

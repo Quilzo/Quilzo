@@ -107,7 +107,9 @@ type Finding struct {
 	// Controls are the NIST SP 800-53 identifiers this maps to, which is what
 	// turns a finding into evidence for an assessor rather than an opinion.
 	Controls []string `json:"controls,omitempty"`
-	// OWASP is the Top 10:2025 category.
+	// OWASP is the category in OWASP's Top 10:2025, or for a check on how a
+	// language model is used, in its Top 10 for LLM Applications 2026. Both
+	// are pinned to the published lists in internal/frameworks' tests.
 	OWASP string `json:"owasp,omitempty"`
 	// Refs is every framework requirement the finding bears on: FedRAMP,
 	// ISO 27001, SOC 2, GDPR, the EU AI Act and the rest. See
@@ -908,6 +910,10 @@ func supplied(s State, input string) bool {
 // RefStatus is one framework requirement as the last scan saw it.
 type RefStatus struct {
 	Ref frameworks.Ref `json:"ref"`
+	// Title is what the requirement is called, where Quilzo carries the
+	// framework's list whole: a number alone sends the reader to look up
+	// what it means.
+	Title string `json:"title,omitempty"`
 	// State is "failing", "passing" or "not checked".
 	State string `json:"state"`
 	// Rules are the checks that bear on it, and Findings what they found.
@@ -935,7 +941,7 @@ func ByFramework(rep Report, framework string) []RefStatus {
 			}
 			st, ok := byRef[ref]
 			if !ok {
-				st = &RefStatus{Ref: ref}
+				st = &RefStatus{Ref: ref, Title: frameworks.Title(ref.Framework, ref.ID)}
 				byRef[ref] = st
 				order = append(order, ref)
 			}
