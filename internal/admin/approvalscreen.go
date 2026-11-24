@@ -829,7 +829,7 @@ func (s *Server) handleApprovalReview(w http.ResponseWriter, r *http.Request) {
 			"Header": seckit.Header{Title: "Review " + label, Lead: "This decision was made alone, by the only person " +
 				"eligible. Its review is yours to make if you are somebody else: look at exactly what was approved, and " +
 				"say whether it stands."},
-			"Held": h, "Hash": string(h.Approval.Surface), "Short": seckit.Short(string(h.Approval.Surface)),
+			"Held": h, "ID": string(id), "Hash": string(h.Approval.Surface), "Short": seckit.Short(string(h.Approval.Surface)),
 			"Action": base + "/approve", "Record": "/register/record/" + string(id),
 			"Ceremony": map[string]any{"Nonce": n, "Challenge": base + "/challenge", "Approve": base + "/approve"}}
 		if h.Review != nil {

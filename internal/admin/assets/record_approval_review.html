@@ -16,5 +16,5 @@
 </form>
 </section>{{end}}
 {{with .Ceremony}}{{template "approval-ceremony" .}}{{end}}
-<p class="hint">At the store's console: <code>quilzo approval review ID upheld --surface {{.Hash}}</code></p>
+<p class="hint">At the store's console: <code>quilzo approval review {{.ID}} upheld --surface {{.Hash}}</code></p>
 {{template "foot" .}}
