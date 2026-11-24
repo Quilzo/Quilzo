@@ -8,6 +8,7 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"hash/crc32"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,33 @@ func png(w, h int, withPixels bool) []byte {
 func pdf(extra string) []byte {
 	return []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog " + extra +
 		" >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")
+}
+
+// pdfObjects builds a PDF that keeps an object in an object stream, as
+// qpdf --object-streams=generate, Acrobat and pdfTeX write them, with
+// dict the start of the stream's own dictionary. The stream is compressed
+// when compress is true, and then the object is nowhere in the file as
+// written: a stream this short would be stored rather than compressed, so
+// the ordinary objects after it give the compressor something to do.
+func pdfObjects(t *testing.T, dict, object string, compress bool) []byte {
+	t.Helper()
+	header := "2 0 "
+	data := []byte(header + object + "\n" +
+		strings.Repeat("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n", 20))
+	if compress {
+		var z bytes.Buffer
+		zw := zlib.NewWriter(&z)
+		_, _ = zw.Write(data)
+		_ = zw.Close()
+		data = z.Bytes()
+		if bytes.Contains(data, []byte(object)) {
+			t.Fatalf("the fixture's object is in the file as written: %q", data)
+		}
+	}
+	return []byte("%PDF-1.7\n5 0 obj\n<< " + dict + " /N 1 /First " +
+		strconv.Itoa(len(header)) + " /Length " + strconv.Itoa(len(data)) +
+		" >>\nstream\n" + string(data) + "\nendstream\nendobj\n" +
+		"trailer\n<< /Root 2 0 R >>\n%%EOF\n")
 }
 
 // -- the happy path ----------------------------------------------------------
@@ -244,6 +272,126 @@ func TestAPDFThatActsIsRefused(t *testing.T) {
 	}
 	if _, err := Accept("report.pdf", pdf("/Pages 2 0 R"), now); err != nil {
 		t.Errorf("an ordinary PDF was refused: %v", err)
+	}
+}
+
+// A name is the same name however it is spelled. PDF lets any character
+// of one be written as # and two hex digits, and every viewer reads
+// /J#61vaScript as /JavaScript. The check was a byte search for the plain
+// spelling, so each construct it refuses went through written that way.
+func TestAPDFThatActsIsRefusedHoweverItsNamesAreSpelled(t *testing.T) {
+	for _, construct := range []string{
+		"/J#61vaScript (app.alert\\(1\\))",
+		"/#4a#53 (x)",
+		"/Open#41ction 3 0 R",
+		"/L#61unch << /F (calc.exe) >>",
+		"/Embedded#46ile 2 0 R",
+		"/#41#41 << /O 3 0 R >>",
+		"/XF#41 3 0 R",
+		"/RichMedi#61 3 0 R",
+	} {
+		if _, err := Accept("report.pdf", pdf(construct), now); err == nil {
+			t.Errorf("a PDF containing %s was accepted", construct)
+		}
+	}
+	// Control: an ordinary name spelled the same way is an ordinary name.
+	if _, err := Accept("report.pdf", pdf("/Pages 2 0 R /#50age#4Cayout /SinglePage"), now); err != nil {
+		t.Errorf("an ordinary PDF with an escaped name was refused: %v", err)
+	}
+}
+
+// A name is refused as itself, not as the start of a longer one, and a
+// document that opens at a page does nothing by it. ReportLab names a
+// font's subset AAAAAA+, which is not /AA, and LibreOffice and hyperref
+// give the page a document opens at as an /OpenAction destination, which
+// runs nothing. The byte search refused
+// both; once object streams are read as well, it would have refused every
+// document written with them that did either.
+func TestAPDFIsRefusedForWhatItDoesNotForTheLettersOfAName(t *testing.T) {
+	for _, ordinary := range []string{
+		"/OpenAction [2 0 R /XYZ null null 0]",
+		"/OpenAction[2 0 R/Fit]",
+		"/Font << /F1 << /BaseFont /AAAAAA+DejaVuSans >> >>",
+		"/Names << /JSX 3 0 R >>",
+	} {
+		if _, err := Accept("report.pdf", pdf(ordinary), now); err != nil {
+			t.Errorf("a PDF containing %s was refused: %v", ordinary, err)
+		}
+		if _, err := Accept("report.pdf", pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog "+ordinary+" >>", true), now); err != nil {
+			t.Errorf("a PDF containing %s in an object stream was refused: %v", ordinary, err)
+		}
+	}
+	// What each of those is not.
+	for _, acts := range []string{
+		"/OpenAction 3 0 R",
+		"/OpenAction<</S/GoToR/F(x.pdf)>>",
+		"/AA<</O 3 0 R>>",
+		"/Names << /EmbeddedFiles 3 0 R >>",
+		"/S /RichMediaExecute",
+	} {
+		if _, err := Accept("report.pdf", pdf(acts), now); err == nil {
+			t.Errorf("a PDF containing %s was accepted", acts)
+		}
+	}
+}
+
+// What a viewer finds inside an object stream it obeys as it would
+// anywhere else, and a PDF written since version 1.5 may keep all its
+// dictionaries in one, compressed. The byte search saw only the compressed
+// bytes, so a catalog with an /OpenAction, or a JavaScript action, went
+// through as soon as it was written the way qpdf, Acrobat and pdfTeX write
+// objects.
+//
+// One that cannot be read is refused rather than taken on trust: what it
+// holds cannot be checked, and a stream encoded some other way, or with
+// decoding parameters, or encrypted, is how the next file would hide it.
+func TestAPDFThatActsInsideAnObjectStreamIsRefused(t *testing.T) {
+	for name, f := range map[string][]byte{
+		"an action when opened": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog /OpenAction 3 0 R >>", true),
+		"JavaScript": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /S /JavaScript /JS (app.alert\\(1\\)) >>", true),
+		"its dictionary's names escaped": pdfObjects(t, "/Type /Obj#53tm /Filter /Fl#61teDecode",
+			"<< /S /Launch /F (calc.exe) >>", true),
+		"no type, as a viewer that reads /First takes it": pdfObjects(t, "/Filter [ /Fl ]",
+			"<< /Names << /EmbeddedFiles 3 0 R >> >>", true),
+		"the name inside escaped": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Catalog /Open#41ction 3 0 R >>", true),
+		"uncompressed": pdfObjects(t, "/Type /ObjStm",
+			"<< /Type /Catalog /OpenAction 3 0 R >>", false),
+	} {
+		if _, err := Accept("report.pdf", f, now); err == nil {
+			t.Errorf("a PDF with %s in an object stream was accepted", name)
+		}
+	}
+	for name, f := range map[string][]byte{
+		"another encoding": pdfObjects(t, "/Type /ObjStm /Filter /ASCIIHexDecode",
+			"<< /Type /Pages /Kids [] /Count 0 >>", false),
+		"decoding parameters": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 4 >>",
+			"<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"its filter elsewhere": pdfObjects(t, "/Type /ObjStm /Filter 7 0 R",
+			"<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"damaged or encrypted data": pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode",
+			"<< /Type /Pages /Kids [] /Count 0 >>", false),
+	} {
+		if _, err := Accept("report.pdf", f, now); err == nil {
+			t.Errorf("a PDF with an object stream in %s, which cannot be read, was accepted", name)
+		}
+	}
+
+	// Control: an ordinary document written with object streams is taken,
+	// and so is an image whose stream is encoded in a way this does not
+	// read, since it holds no objects.
+	for name, f := range map[string][]byte{
+		"compressed":          pdfObjects(t, "/Type /ObjStm /Filter /FlateDecode", "<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"in a filter list":    pdfObjects(t, "/Type /ObjStm /Filter [/FlateDecode]", "<< /Type /Pages /Kids [] /Count 0 >>", true),
+		"uncompressed":        pdfObjects(t, "/Type /ObjStm", "<< /Type /Pages /Kids [] /Count 0 >>", false),
+		"beside a JPEG image": []byte("%PDF-1.7\n4 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /Filter /DCTDecode /Length 4 >>\nstream\n\xff\xd8\xff\xd9\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"),
+	} {
+		if _, err := Accept("report.pdf", f, now); err != nil {
+			t.Errorf("an ordinary PDF %s was refused: %v", name, err)
+		}
 	}
 }
 

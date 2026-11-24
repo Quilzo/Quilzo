@@ -46,6 +46,7 @@ package media
 
 import (
 	"bytes"
+	"compress/zlib"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -53,6 +54,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -926,6 +928,31 @@ func verifyWAV(b []byte) error {
 // features with no legitimate place in a document being published on a website:
 // embedded JavaScript, automatic actions, launch actions, and embedded files.
 // A PDF that needs those is not a document, it is a program.
+//
+// They are looked for as a viewer reads them, which a search for their
+// bytes is not, in two ways. A name may have any of its characters written
+// as # and two hex digits, and /J#61vaScript is /JavaScript to every
+// viewer, so the names are read before they are searched (pdfNames). And
+// since PDF 1.5 a file may keep its dictionaries inside an object stream,
+// compressed, as qpdf, Acrobat and pdfTeX keep them; the search saw only
+// the compressed bytes, so a catalog with an /OpenAction went through as
+// soon as it was written that way. Every object stream is read, and one
+// that cannot be is refused, because what it holds cannot be checked
+// (pdfObjectStreams).
+//
+// A name is refused as a whole name, not as the start of a longer one,
+// and an /OpenAction that is a destination is not refused. The byte search
+// found /AA in the font AAAAAA+DejaVuSans, which is how ReportLab names a
+// font's subset, and /OpenAction in the page a LibreOffice export opens
+// at, which does nothing. Refused in a file's own bytes they were refused
+// already, and once the search could see inside object streams it would
+// have refused the same in every document written with them, a LaTeX
+// paper that hyperref makes open at its first page among them.
+//
+// Still not a parser. A file built to defeat a scan this simple can hide a
+// dictionary from it, which is why a PDF is served as a download and never
+// in the site's own pages; this refuses the documents that act as the
+// tools people use write them, however their names are spelled.
 func verifyPDF(b []byte) error {
 	if !bytes.HasPrefix(b, []byte("%PDF-")) {
 		return fmt.Errorf("no PDF header")
@@ -939,23 +966,260 @@ func verifyPDF(b []byte) error {
 	if !bytes.Contains(tail, []byte("%%EOF")) {
 		return fmt.Errorf("no end-of-file marker; it is truncated or crafted")
 	}
+	if err := pdfActs(b); err != nil {
+		return err
+	}
+	return pdfObjectStreams(b)
+}
 
-	for _, danger := range []struct{ token, why string }{
-		{"/JavaScript", "it contains JavaScript"},
-		{"/JS", "it contains JavaScript"},
-		{"/Launch", "it contains a launch action, which starts a program"},
-		{"/OpenAction", "it runs an action when opened"},
-		{"/AA", "it runs an action on an event"},
-		{"/EmbeddedFile", "it has another file embedded in it"},
-		{"/RichMedia", "it embeds media with its own runtime"},
-		{"/XFA", "it is an XFA form, which is XML with a scripting engine"},
-	} {
-		if bytes.Contains(b, []byte(danger.token)) {
+// pdfDangers are the names verifyPDF refuses, each with why. One that
+// begins a family is refused as the start of a longer name too: the
+// /EmbeddedFiles a document lists its attachments in, and the
+// /RichMediaExecute action.
+var pdfDangers = []struct {
+	token, why string
+	family     bool
+}{
+	{"/JavaScript", "it contains JavaScript", false},
+	{"/JS", "it contains JavaScript", false},
+	{"/Launch", "it contains a launch action, which starts a program", false},
+	{"/OpenAction", "it runs an action when opened", false},
+	{"/AA", "it runs an action on an event", false},
+	{"/EmbeddedFile", "it has another file embedded in it", true},
+	{"/RichMedia", "it embeds media with its own runtime", true},
+	{"/XFA", "it is an XFA form, which is XML with a scripting engine", false},
+}
+
+// pdfActs refuses PDF text, a whole file or what an object stream holds,
+// that names one of pdfDangers, spelled any way a viewer reads it.
+func pdfActs(b []byte) error {
+	names := pdfNames(b)
+	for _, danger := range pdfDangers {
+		for at := 0; ; {
+			i := bytes.Index(names[at:], []byte(danger.token))
+			if i < 0 {
+				break
+			}
+			end := at + i + len(danger.token)
+			at = end
+			if !danger.family && end < len(names) && !pdfDelimiter(names[end]) {
+				continue // a longer name, such as the font AAAAAA+DejaVuSans
+			}
+			if danger.token == "/OpenAction" &&
+				bytes.HasPrefix(bytes.TrimLeft(names[end:], pdfSpace), []byte("[")) {
+				continue // a destination: the page it opens at, and nothing run
+			}
 			return fmt.Errorf("%s (%s). A document being published should not "+
 				"do anything when opened", danger.why, danger.token)
 		}
 	}
 	return nil
+}
+
+// pdfSpace is the white space of PDF.
+const pdfSpace = "\x00\t\n\f\r "
+
+// pdfNames is PDF text with every name in it written plainly: each # and
+// two hex digits inside a name replaced by the character they stand for,
+// as a viewer reads it. Everything else is left as it is, so what was
+// refused before is refused still.
+func pdfNames(b []byte) []byte {
+	if bytes.IndexByte(b, '#') < 0 {
+		return b
+	}
+	out := make([]byte, 0, len(b))
+	inName := false
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		switch {
+		case c == '/':
+			inName = true
+		case pdfDelimiter(c):
+			inName = false
+		case inName && c == '#' && i+2 < len(b) && isHex(b[i+1]) && isHex(b[i+2]):
+			out = append(out, unhex(b[i+1])<<4|unhex(b[i+2]))
+			i += 2
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// pdfDelimiter reports whether c ends a name: white space, or one of the
+// characters PDF reserves for its syntax.
+func pdfDelimiter(c byte) bool {
+	switch c {
+	case 0, '\t', '\n', '\f', '\r', ' ', '(', ')', '<', '>', '[', ']', '{', '}', '/', '%':
+		return true
+	}
+	return false
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	}
+	return c - 'a' + 10
+}
+
+// maxObjectStreams is what the object streams of one PDF may inflate to
+// between them. They hold dictionaries, not pages or pictures, and the
+// largest document's come to a few megabytes; a file whose come to more is
+// a decompression bomb aimed at this check.
+const maxObjectStreams = maxDocument
+
+// pdfObjectStreams refuses a PDF whose object streams name one of
+// pdfDangers, or that has one this cannot read.
+//
+// A stream is one whose dictionary says it holds objects: its /Type is
+// /ObjStm, or it has the /First that a viewer reads one by, since not
+// every viewer asks for the type. Its dictionary is what comes before the keyword stream,
+// back to the obj that began it, and never further back than the stream
+// before, so a file of nothing but the keyword costs one pass. One that is
+// not compressed was searched with the rest of the file; one compressed
+// with Flate, as every writer compresses them, is inflated and searched;
+// and any other is refused, encoded another way, with decoding parameters,
+// with its filter named elsewhere, or damaged or encrypted, since then what
+// it holds cannot be checked.
+func pdfObjectStreams(b []byte) error {
+	budget := maxObjectStreams
+	from := 0
+	for at := 0; ; {
+		i := bytes.Index(b[at:], []byte("stream"))
+		if i < 0 {
+			return nil
+		}
+		i += at
+		at = i + len("stream")
+		if at >= len(b) || (b[at] != '\r' && b[at] != '\n') ||
+			(i >= 3 && bytes.Equal(b[i-3:i], []byte("end"))) {
+			continue
+		}
+		dict := b[max(from, i-4096):i]
+		from = at
+		if o := bytes.LastIndex(dict, []byte("obj")); o >= 0 {
+			dict = dict[o:]
+		}
+		dict = pdfNames(dict)
+		if !pdfHasName(dict, "ObjStm") && !pdfHasName(dict, "First") {
+			continue
+		}
+		data := b[at:]
+		data = bytes.TrimPrefix(data, []byte("\r"))
+		data = bytes.TrimPrefix(data, []byte("\n"))
+		if end := bytes.Index(data, []byte("endstream")); end >= 0 {
+			data = data[:end]
+		}
+		objects, err := pdfInflate(dict, data, budget)
+		if err != nil {
+			return fmt.Errorf("it keeps objects in a stream that cannot be read "+
+				"here, %v, so what they would do cannot be checked. Exported "+
+				"again without a password, it can be", err)
+		}
+		budget -= len(objects)
+		if err := pdfActs(objects); err != nil {
+			return err
+		}
+	}
+}
+
+// pdfInflate is what an object stream holds, inflated, or nil when it is
+// not compressed and was searched with the rest of the file.
+func pdfInflate(dict, data []byte, budget int) ([]byte, error) {
+	if pdfHasName(dict, "DecodeParms") || pdfHasName(dict, "DP") {
+		return nil, fmt.Errorf("because it has decoding parameters")
+	}
+	filters, err := pdfFilters(dict)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case len(filters) == 0:
+		return nil, nil
+	case len(filters) > 1 || (filters[0] != "FlateDecode" && filters[0] != "Fl"):
+		return nil, fmt.Errorf("because it is encoded with %s",
+			strings.Join(filters, " and "))
+	}
+	zr, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("because it is damaged or encrypted")
+	}
+	defer zr.Close()
+	objects, err := io.ReadAll(io.LimitReader(zr, int64(budget)+1))
+	if len(objects) > budget {
+		return nil, fmt.Errorf("because its object streams come to more than "+
+			"%d MiB, which no document's do", maxObjectStreams>>20)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("because it is damaged or encrypted")
+	}
+	return objects, nil
+}
+
+// pdfFilters are the filters a stream's dictionary names, in order: none,
+// one, or a list of them. Named any other way, as a reference to another
+// object say, they cannot be known from the dictionary.
+func pdfFilters(dict []byte) ([]string, error) {
+	at := pdfNameAt(dict, "Filter")
+	if at < 0 {
+		return nil, nil
+	}
+	if pdfNameAt(dict[at+1:], "Filter") >= 0 {
+		return nil, fmt.Errorf("because its dictionary names two filters")
+	}
+	rest := bytes.TrimLeft(dict[at+len("/Filter"):], pdfSpace)
+	list := len(rest) > 0 && rest[0] == '['
+	if list {
+		rest = rest[1:]
+	}
+	var filters []string
+	for {
+		rest = bytes.TrimLeft(rest, pdfSpace)
+		if len(rest) == 0 || rest[0] != '/' {
+			break
+		}
+		n := 1
+		for n < len(rest) && !pdfDelimiter(rest[n]) {
+			n++
+		}
+		filters = append(filters, string(rest[1:n]))
+		rest = rest[n:]
+		if !list {
+			break
+		}
+	}
+	if len(filters) == 0 || (list && (len(rest) == 0 || rest[0] != ']')) {
+		return nil, fmt.Errorf("because its filter is not named in its dictionary")
+	}
+	return filters, nil
+}
+
+// pdfHasName reports whether PDF text, its names written plainly, has the
+// name in it, as a whole name rather than the start of a longer one.
+func pdfHasName(b []byte, name string) bool { return pdfNameAt(b, name) >= 0 }
+
+// pdfNameAt is where the name is in PDF text, or -1.
+func pdfNameAt(b []byte, name string) int {
+	token := []byte("/" + name)
+	for at := 0; ; {
+		i := bytes.Index(b[at:], token)
+		if i < 0 {
+			return -1
+		}
+		i += at
+		if end := i + len(token); end == len(b) || pdfDelimiter(b[end]) {
+			return i
+		}
+		at = i + 1
+	}
 }
 
 // verifyISOBMFF checks the MP4 box structure.
