@@ -1319,21 +1319,23 @@ func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	closed, ok := s.closedAt(w, idx)
+	pages, closed, ok := s.closedAt(w, idx)
 	if !ok {
 		return
 	}
 	v, ok := idx.Vectors[name]
-	if !ok || closed[name] {
+	visible, _ := s.visibleTo(tokenFrom(r), name, pages[name])
+	if !ok || closed[name] || !visible {
 		// Not indexed and not found answer alike, because distinguishing them
 		// tells a caller which pages exist but hold no text — which is a
 		// question about the store, not about similarity. A page outside its
-		// publish window is not found either, as it is everywhere else.
+		// publish window is not found either, as it is everywhere else, nor
+		// one out of a token's types or languages, as get answers it.
 		writeError(w, http.StatusNotFound, Error{
 			Error: "no such page, or it has no text to compare"})
 		return
 	}
-	s.answerNeighbours(w, r, idx, v, name, closed)
+	s.answerNeighbours(w, r, idx, v, name, pages, closed)
 }
 
 // vectorSearch returns the pages nearest to a query.
@@ -1365,11 +1367,11 @@ func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	closed, ok := s.closedAt(w, idx)
+	pages, closed, ok := s.closedAt(w, idx)
 	if !ok {
 		return
 	}
-	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "", closed)
+	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "", pages, closed)
 }
 
 func (s *Server) index(w http.ResponseWriter) *vector.Index {
@@ -1401,23 +1403,26 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 // the words it shared, before its window opened. Asked here, at the time
 // of asking, because the index is built once a commit and the windows
 // open and close without one.
-func (s *Server) closedAt(w http.ResponseWriter, idx *vector.Index) (map[string]bool, bool) {
+//
+// And the pages whose windows are open, whose fields give each one's
+// language (visibleTo).
+func (s *Server) closedAt(w http.ResponseWriter, idx *vector.Index) (map[string]any, map[string]bool, bool) {
 	pages, err := site.PagesAt(s.Store, idx.Commit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the index could not be queried", Detail: err.Error()})
-		return nil, false
+		return nil, nil, false
 	}
 	closed := map[string]bool{}
 	for _, name := range s.withhold(pages) {
 		closed[name] = true
 	}
-	return closed, true
+	return pages, closed, true
 }
 
 // answerNeighbours writes a result set, filtered by what the caller may see.
 func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
-	idx *vector.Index, q vector.Vector, exclude string, closed map[string]bool) {
+	idx *vector.Index, q vector.Vector, exclude string, pages map[string]any, closed map[string]bool) {
 
 	// Bounded by api.page.max, as every listing is. Similar pages and a
 	// search by meaning answered up to the compiled-in hundred whatever it
@@ -1455,7 +1460,10 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 		if err := s.may(r, auth.ActView, "/"+n.Page); err != nil {
 			continue
 		}
-		if visible, _ := s.visibleTo(tok, n.Page, nil); !visible {
+		// With its fields, which give its language. Asked of none, which
+		// give no language, a token issued `--locales fr` was named the
+		// English pages, with the words each shared with what it asked.
+		if visible, _ := s.visibleTo(tok, n.Page, pages[n.Page]); !visible {
 			continue
 		}
 		out = append(out, n)

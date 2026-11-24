@@ -138,3 +138,59 @@ func TestPartOfTheSiteIsListedOverTheAPI(t *testing.T) {
 		t.Errorf("somebody with nothing in the content was listed: %d", w.Code)
 	}
 }
+
+// A token limited to some languages is answered only pages in them by the
+// search by meaning and by similar pages, as by the listing and a read.
+//
+// Both asked each neighbour's language of no fields at all, which gives no
+// language, so a token issued `--locales fr` was named the English pages,
+// with the words each shared with what it asked; and similar pages did not
+// ask about the page it was given.
+func TestATokenLimitedToALanguageFindsOnlyPagesInIt(t *testing.T) {
+	s, _, _ := setup(t)
+	pages := map[string]any{
+		"index":   map[string]any{"title": "Home", "body": "hello copper kettle", "locale": "en"},
+		"about":   map[string]any{"title": "About", "body": "hello copper kettle", "locale": "en"},
+		"pricing": map[string]any{"title": "Tarifs", "body": "hello copper kettle", "locale": "fr"},
+		"faq":     map[string]any{"title": "Questions", "body": "hello copper kettle", "locale": "fr"},
+	}
+	if _, err := site.SaveDraft(s.Store, pages, "languages", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	idx := vector.Build(s.Store.GetRef(site.RefLive), pages, strings.Fields)
+	s.Vectors = func() *vector.Index { return idx }
+	s.Tokenise = strings.Fields
+	secret, _, err := s.Tokens.IssueScoped("fr", "reader", auth.RoleReader, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{Locales: []string{"fr"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/search/vector?q=copper+kettle", "/api/v1/similar/pricing"} {
+		w := req(t, s, "GET", path, secret, nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s answered %d %s", path, w.Code, w.Body)
+		}
+		var got struct {
+			Results []vector.Neighbour `json:"results"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Results) == 0 {
+			t.Errorf("%s answered a token limited to French no page at all", path)
+		}
+		for _, n := range got.Results {
+			if l, _ := pages[n.Page].(map[string]any)["locale"].(string); l != "fr" {
+				t.Errorf("%s answered a token limited to French %s, which is in %q", path, n.Page, l)
+			}
+		}
+	}
+	// And a page in English is not there to be compared with, as get
+	// answers it.
+	if w := req(t, s, "GET", "/api/v1/similar/about", secret, nil, nil); w.Code != http.StatusNotFound {
+		t.Errorf("a token limited to French was answered %d for the pages like an English one", w.Code)
+	}
+}
