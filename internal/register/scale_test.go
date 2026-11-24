@@ -119,8 +119,9 @@ func TestProbeGeneratorDeterministic(t *testing.T) {
 		t.Fatal("two runs of the generator made two registers")
 	}
 	// Held to a known digest too, so a run next year, on another machine,
-	// measures the register this one measured.
-	const want = "a761782d0db6acd070ef146b48ec58d4ea90e51d1aaf630eb940ffa55b160066"
+	// measures the register this one measured. It moved once, when each
+	// test's approval came to be bound to that test (SurfaceOf).
+	const want = "0dcfe4b8f86f0a96b8525843f8dc1b95127d4de28daf8427d49969087b8acf34"
 	if one != want {
 		t.Errorf("the small probe is %s; it has always been %s", one, want)
 	}
