@@ -29,7 +29,8 @@
   ],
   "compress/zlib": [
    "*",
-   "chatbots"
+   "chatbots",
+   "uploads"
   ],
   "container/heap": [
    "*"
