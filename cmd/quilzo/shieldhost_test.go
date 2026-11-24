@@ -68,6 +68,79 @@ func TestADecoyPresentedShutsItsHolderOutAndSaysWhereItWasPlanted(t *testing.T) 
 	}
 }
 
+// A decoy presented to the command line is a decoy touched: recorded with
+// where it was planted and who ran the command, once however often the
+// command asks who is running it, and told to the shield, which tells the
+// security contact and opens a case. Nothing is blocked: it came from this
+// machine, which the shield never blocks, and the command line is the way
+// out of anything the shield does. It is refused as any unknown token is.
+//
+// It was only "no such token": no record, no response, nobody told, so the
+// one place a decoy planted in a laptop's configuration is most likely to
+// be tried was the one place trying it went unheard.
+func TestADecoyPresentedToTheCommandLineIsTold(t *testing.T) {
+	t.Setenv("USER", "mallory")
+	root := shieldRoot(t)
+	secret, d, err := shield.AddDecoy(root, "the old laptop's quilzo token file", "dana", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if c := resolveCaller(root, secret); c.Verified || !strings.Contains(c.Why, "no such token") {
+			t.Fatalf("a decoy was taken as somebody, or said as something else: %+v", c)
+		}
+	}
+	finishBackground(10 * time.Second)
+	recs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := os.ReadFile(auditKeyPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	touched := 0
+	for _, r := range recs {
+		if r.Action == "shield.decoy-touched" {
+			touched++
+			// The account that ran it, under the log's handle for it.
+			if r.Detail["decoy"] != d.ID || r.Detail["planted"] != d.Note || r.Principal != audit.Pseudonym(key, "mallory") ||
+				r.Detail["surface"] != "command line" || r.Detail["from"] != "--token" {
+				t.Errorf("the record does not say what was touched, where, or by whom: %+v", r)
+			}
+		}
+	}
+	if touched != 1 {
+		t.Fatalf("%d shield.decoy-touched records for one command", touched)
+	}
+	st, _ := shield.Load(root)
+	var resp *shield.Response
+	for i := range st.Responses {
+		if st.Responses[i].Playbook == "decoy-touched" {
+			resp = &st.Responses[i]
+		}
+	}
+	if resp == nil {
+		t.Fatalf("the shield did not respond: %+v", st.Responses)
+	}
+	did := strings.Join(resp.Did, "; ")
+	if !strings.Contains(did, "told the security contact") || !strings.Contains(did, "opened a case") ||
+		!strings.Contains(did, "this machine") || len(resp.Applied) != 0 {
+		t.Fatalf("the response: %+v", resp)
+	}
+	// The dry run sees it as the engine did: from this machine, which no
+	// playbook blocks, so not as a source it would have blocked.
+	sigs, err := history(root, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sigs {
+		if s.Name == "decoy" && s.Handle != "" {
+			t.Fatalf("the dry run counts the command line as a source to block: %+v", s)
+		}
+	}
+}
+
 func TestANamedProxysOwnRequestIsCountedAndBlocked(t *testing.T) {
 	// Being named as a proxy is being believed about the people it
 	// forwards. A request it makes itself, with nobody forwarded, is its

@@ -766,7 +766,7 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 		}
 		n, _ := strconv.Atoi(e.Detail["count"])
 		distinct, _ := strconv.Atoi(e.Detail["distinct"])
-		name, where := "", shield.Site
+		name, where, handle := "", shield.Site, e.Principal
 		switch e.Action {
 		case "site.admin-hunt", "site.conversation-guess", "site.chatbot-injection", "site.form-spam", "site.foreign-probe":
 			name = strings.TrimPrefix(e.Action, "site.")
@@ -778,6 +778,12 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 			}
 		case "shield.decoy-touched":
 			name, n = "decoy", 1
+			// Presented to the command line, which runs on this machine:
+			// no source a playbook blocks, and its record names the
+			// account that ran it, which is not one either.
+			if e.Detail["surface"] == "command line" {
+				handle = ""
+			}
 		case "agent.evaluated":
 			if h, _ := strconv.Atoi(e.Detail["hijacked"]); h > 0 {
 				out = append(out, shield.Signal{Name: "agent-hijacked", Subject: e.Detail["agent"], At: at})
@@ -805,7 +811,7 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 			if wdw.subject < distinct {
 				wdw.subject++
 			}
-			out = append(out, shield.Signal{Name: name, Handle: e.Principal, Subject: subject, At: at, Where: where})
+			out = append(out, shield.Signal{Name: name, Handle: handle, Subject: subject, At: at, Where: where})
 		}
 		wdw.count = n
 	}

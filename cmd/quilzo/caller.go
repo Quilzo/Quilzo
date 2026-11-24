@@ -202,6 +202,10 @@ func resolveCaller(root, explicitToken string) *Caller {
 		// environment, so somebody who set QUILZO_TOKEN and still has an old
 		// file is told which one was tried, instead of hunting for why a
 		// token they just issued is "no such token".
+		//
+		// A decoy is told to the shield first (decoyAtCommandLine), and
+		// refused in the same words as any token never issued.
+		decoyAtCommandLine(root, secret, from)
 		why := fmt.Sprintf("the token from %s was rejected: %v", from, err)
 		if from == tokenFile() && strings.TrimSpace(os.Getenv("QUILZO_TOKEN")) != "" {
 			why += "; QUILZO_TOKEN is set too, and the file is read first"
