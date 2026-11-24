@@ -288,3 +288,73 @@ func TestABatchInTheAdminWaitsForItsSample(t *testing.T) {
 		}
 	}
 }
+
+// A team of one approves alone, every screen that shows the decision says
+// so in words, and the review it owes has a page of its own; each passes
+// the accessibility checks.
+func TestADecisionMadeAloneShowsItAndOffersItsReview(t *testing.T) {
+	srv, token := setup(t)
+	srv.Passkeys = &Passkeys{}
+	key := newFake(t, "editor-key")
+	key.register(t, srv, token)
+	reg := register.Open(srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	editor, err := approval.PeopleAt(srv.Store.Root()).Pseudonym("editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	risk := register.Risk{Ref: "R-23", Title: "Single office network", Owner: editor, Raised: editor, Likelihood: 2, Impact: 2, Status: "accepted"}
+	if _, err := reg.Propose(register.Actor{Name: "editor", Subject: editor, Kind: audit.KindHuman,
+		May: func(auth.Action, string) error { return nil }}, "raised by the only administrator", risk); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := register.IDOf(risk)
+	page := get(t, srv, "/register/approvals/item/"+string(id), token).Body.String()
+	if !strings.Contains(page, "You are the only person eligible") {
+		t.Fatalf("the page does not say the approval will be made alone\n%s", firstLines(page, 60))
+	}
+	start := decodeBody(t, postJSON(t, srv, "/register/approvals/item/"+string(id)+"/challenge", token, nil))
+	challenge, _ := start["challenge"].(string)
+	if w := postJSON(t, srv, "/register/approvals/item/"+string(id)+"/approve", token, key.assert(t, challenge)); w.Code != http.StatusOK {
+		t.Fatalf("approving alone answered %d: %s", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/register/approvals", "/register/approvals/held/" + string(id), "/register/approvals/review/" + string(id)} {
+		w := get(t, srv, path, token)
+		body := w.Body.String()
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s answered %d", path, w.Code)
+		}
+		if path != "/register/approvals/review/"+string(id) && !strings.Contains(body, "Approved alone") {
+			t.Errorf("%s does not say the decision was approved alone\n%s", path, firstLines(body, 60))
+		}
+		for _, f := range a11y.Check(path, body).Findings {
+			if f.Severity == a11y.Blocking {
+				t.Errorf("%s: %s", path, f)
+			}
+		}
+	}
+	if review := get(t, srv, "/register/approvals/review/"+string(id), token).Body.String(); !strings.Contains(review, `name="outcome"`) {
+		t.Errorf("the review page offers no review\n%s", firstLines(review, 60))
+	}
+}
+
+// What an agent wrote about a decision it proposed is shown fenced and
+// labelled as an agent's, never as the record's own words.
+func TestModelTextFencedOnApprovalSurface(t *testing.T) {
+	b := newApprovalBench(t)
+	reg := register.Open(b.srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	risk := register.Risk{Ref: "R-24", Title: "Expired supplier report", Owner: dana, Raised: dana, Likelihood: 2, Impact: 3, Status: "accepted"}
+	if _, err := reg.Propose(register.Actor{Name: "risk-clerk", Kind: audit.KindAI, May: func(auth.Action, string) error { return nil }},
+		"drafted from the supplier review", risk); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := register.IDOf(risk)
+	page := get(t, b.srv, "/register/approvals/item/"+string(id), b.token).Body.String()
+	at := strings.Index(page, `<figure class="kit-fenced">`)
+	if at < 0 || !strings.Contains(page[at:], "Written by the agent risk-clerk") ||
+		!strings.Contains(page[at:], "drafted from the supplier review") || strings.Index(page, "drafted from the supplier review") < at {
+		t.Fatalf("the agent's words are not fenced and labelled\n%s", firstLines(page, 60))
+	}
+}
