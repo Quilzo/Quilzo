@@ -417,7 +417,7 @@ func TestASlowReaderKeepsItsTunnel(t *testing.T) {
 	}
 	out := make(chan result, 1)
 	go func() {
-		s, g, silent := splice(farProxy, boxProxy, boxProxy, 100*time.Millisecond)
+		s, g, silent := splice(farProxy, boxProxy, boxProxy, 400*time.Millisecond)
 		out <- result{s, g, silent}
 	}()
 	const size = 64 << 10
@@ -425,8 +425,12 @@ func TestASlowReaderKeepsItsTunnel(t *testing.T) {
 		_, _ = farClient.Write(make([]byte, size))
 		farClient.Close()
 	}()
-	// 1 KiB every 5ms: 320ms for all of it, and 160ms for each 32 KiB
-	// write the copy makes, longer than the tunnel may be silent.
+	// 1 KiB every 20ms: 1.3s for all of it, and 640ms for each 32 KiB
+	// write the copy makes, longer than the tunnel may be silent. The
+	// silence allowed is twenty of the reader's pauses, not one tenth of a
+	// second: at that, a machine running every package's tests at once
+	// held the reader off the processor for longer than the tunnel waited,
+	// and the test failed for the machine's silence and not the tunnel's.
 	read := 0
 	buf := make([]byte, 1<<10)
 	for {
@@ -435,7 +439,7 @@ func TestASlowReaderKeepsItsTunnel(t *testing.T) {
 		if err != nil {
 			break
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	boxClient.Close()
 	r := <-out
