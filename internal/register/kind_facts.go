@@ -135,15 +135,10 @@ func (s Source) Check() error {
 	if s.Type == "connector" && len(s.Hosts) == 0 {
 		return fmt.Errorf("a connector names the hosts it may connect to; with none it can reach nothing")
 	}
-	if s.Type == "connector" && s.Recipe == "" {
-		return fmt.Errorf("a connector names the recipe it runs")
-	}
-	if s.Type == "ci" && (s.Repository == "" || s.Workflow == "") {
-		return fmt.Errorf("a pipeline's source names the repository and the workflow whose jobs may push to it")
-	}
-	if s.Grade == GradeConnector && s.Type != "connector" || s.Grade == GradeCI && s.Type != "ci" {
-		return fmt.Errorf("a source's facts are graded by how they arrive: a connector's are pulled, a pipeline's pushed")
-	}
+	// A connector's recipe and a pipeline's repository and workflow are
+	// held where they are used: a connector with no recipe does not run,
+	// and a push matches no pipeline whose repository or workflow is
+	// empty (internal/sources, internal/evidence's PushAllowed).
 	return nil
 }
 func (s Source) index(r *Row) {
