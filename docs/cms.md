@@ -2095,8 +2095,9 @@ endpoint: OpenAI, Mistral, Gemini, Ollama and most others serve one) and
 chatbots that answer with a model find passages by meaning too:
 
 ```
+quilzo gateway currency USD             # what a route's prices are in, once
 quilzo gateway route add vectors --provider openai --model MODEL --embeds --price-in 0.02
-quilzo config set chatbot.embeddings vectors --reason "find passages by meaning"
+quilzo config set chatbot.embeddings vectors --accept-risk "find passages by meaning"
 quilzo assistant embed                  # now; after each publish it is automatic
 ```
 
@@ -2168,6 +2169,7 @@ and `quilzo media film` asks it:
 
 ```
 quilzo secret set gemini < key.txt
+quilzo gateway currency USD             # what a route's prices are in, once
 quilzo gateway route add veo --provider google-veo --model veo-3.1-generate-preview --films --price-video 0.75
 quilzo media film "a slow pan over a bakery at dawn, steam rising" --aspect 9:16 --author dana
 ```
