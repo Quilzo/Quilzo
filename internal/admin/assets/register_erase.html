@@ -11,8 +11,9 @@
 <div class="field"><label for="erase-basis">Basis {{template "req"}}</label>
 {{template "kit-field-error" (index .Form.ByField "erase-basis")}}
 <select id="erase-basis" name="basis" required{{if (index .Form.ByField "erase-basis").Message}} aria-describedby="erase-basis-error" aria-invalid="true"{{end}}><option value="">Choose the ground</option>{{$b := .Form.Basis}}{{range .Bases}}<option value="{{.Value}}"{{if eq .Value $b}} selected{{end}}>{{.Words}}</option>{{end}}</select></div>
-<fieldset class="field"><legend>Who asked for it</legend>
-<p><label><input type="radio" name="requested" value="subject"{{if eq .Form.Requested "subject"}} checked{{end}}> The person themselves</label></p>
+<fieldset class="field"{{if (index .Form.ByField "erase-requested").Message}} aria-describedby="erase-requested-error"{{end}}><legend>Who asked for it</legend>
+{{template "kit-field-error" (index .Form.ByField "erase-requested")}}
+<p><label><input id="erase-requested" type="radio" name="requested" value="subject"{{if eq .Form.Requested "subject"}} checked{{end}}> The person themselves</label></p>
 <p><label><input type="radio" name="requested" value=""{{if ne .Form.Requested "subject"}} checked{{end}}> Nobody: I decide it, on the basis above</label></p>
 </fieldset>
 <div class="field">{{template "kit-field-error" (index .Form.ByField "erase-confirm")}}

@@ -305,6 +305,14 @@ func registerEraseCmd(root string, args []string) error {
 	}
 	rc, err := r.Erase(by, register.ErasureRequest{Subject: id, Basis: register.ErasureBasis(*basis),
 		RequestedBy: asked, Eligible: eligible, Evidence: consoleEvidence(c)})
+	if errors.Is(err, register.ErrInvalid) && asked == "" && eligible > 1 {
+		// With anybody else eligible, the person who raises a decision is
+		// not the one who makes it, and an erasure nobody else asked for is
+		// raised by its decider: the line lacks who asked.
+		return errMisused{fmt.Errorf("%v\n  %d people may decide an erasure, so one you raise yourself is decided by "+
+			"another of them: say who asked for it with --requested-by subject (the person themselves) or "+
+			"--requested-by PSEUDONYM, or ask somebody else who may decide it", err, eligible)}
+	}
 	if err != nil {
 		return registerError(err)
 	}

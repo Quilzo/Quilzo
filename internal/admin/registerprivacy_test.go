@@ -273,3 +273,40 @@ func TestAnErasureHereIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
 		t.Errorf("the evidence of a decision in the admin is %q", ev)
 	}
 }
+
+// An erasure nobody else asked for is decided by somebody other than the
+// person raising it when anybody else may decide one, as every approval
+// is. Asked for so, it is refused, and the form says why beside the
+// question of who asked and at the top, with nothing erased. It was
+// answered with the page for a register that cannot be read, which said
+// nothing of the form and gave a 503 for a refusal.
+func TestAnErasureRaisedByItsDeciderIsSaidBesideWhoAsked(t *testing.T) {
+	srv, token := setup(t)
+	srv.Audit = func(string, string, map[string]string) {}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := writerOn(t, srv)
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"no-longer-needed"},
+		"requested": {""}, "confirm": {"yes"}}.Encode())
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `class="kit-errors"`) ||
+		!strings.Contains(body, `id="erase-requested-error"`) || !strings.Contains(body, `href="#erase-requested"`) ||
+		!strings.Contains(body, `id="erase-requested"`) {
+		t.Fatalf("an erasure raised by its decider with another eligible answered %d\n%s", w.Code, firstLines(body, 60))
+	}
+	accessible(t, "/register/erase (raised by its decider)", body)
+	if r.SubjectState(ada).State != register.SubjectHeld {
+		t.Error("the refused erasure erased the person")
+	}
+	// Asked for by the person, it is decided.
+	w = postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"request"},
+		"requested": {"subject"}, "confirm": {"yes"}}.Encode())
+	if w.Code != http.StatusOK || r.SubjectState(ada).State != register.SubjectErased {
+		t.Errorf("the erasure the person asked for answered %d", w.Code)
+	}
+}

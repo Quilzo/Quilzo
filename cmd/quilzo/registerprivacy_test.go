@@ -472,3 +472,31 @@ func TestTheSweepIsRecordedAsWhoeverRanIt(t *testing.T) {
 		t.Error("the sweep is not in the audit log")
 	}
 }
+
+// An erasure nobody else asked for is decided by somebody other than the
+// person raising it when anybody else may decide one, as every approval
+// is. Asked for so at the command line, it is a line misused, exit 2,
+// that says what to add, and nothing is erased; it was a failure, exit 1,
+// that named the rule and not the flag.
+func TestAnErasureRaisedByItsDeciderSaysWhoMustAsk(t *testing.T) {
+	root, token := accessStore(t)
+	if _, e, code := cliRun(t, root, token, "auth", "grant", "lee", "admin"); code != 0 {
+		t.Fatalf("auth grant: %s", e)
+	}
+	r := registerOn(t, root)
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "no-longer-needed", "--yes")
+	if code != 2 || !strings.Contains(e, "--requested-by") {
+		t.Errorf("an erasure raised by its decider with another eligible exited %d: %s", code, firstLines(e, 4))
+	}
+	if r.SubjectState(ada).State != register.SubjectHeld {
+		t.Fatal("the refused erasure erased the person")
+	}
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request",
+		"--requested-by", "subject", "--yes"); code != 0 {
+		t.Errorf("the erasure the person asked for exited %d: %s", code, firstLines(e, 4))
+	}
+}

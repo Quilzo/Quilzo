@@ -232,6 +232,12 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 	if form.Requested == "subject" {
 		asked = id
 	}
+	if id == by.Subject {
+		form.problem("erase-subject", "Person", "You do not decide your own erasure: somebody else who may decide one does")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "register_erase.html", data)
+		return
+	}
 	about, err := writer.Side().About(string(id))
 	if err != nil {
 		s.registerUnreadable(w, r, p, err)
@@ -253,6 +259,17 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, register.ErrRefused), errors.Is(err, register.ErrModel):
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Not permitted",
 			"Principal": p, "Heading": "You cannot erase that person here", "Body": err.Error()})
+		return
+	case errors.Is(err, register.ErrInvalid):
+		// Every field was checked above, so what is left is the approval:
+		// with anybody else eligible, the person who raises a decision is
+		// not the one who makes it. It is the question of who asked, and
+		// is said there, with nothing erased.
+		form.problem("erase-requested", "Who asked for it", "Somebody else may decide an erasure too, and the "+
+			"person who raises a decision does not make it: choose who asked for it, or ask somebody else who "+
+			"may decide it to erase them")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.render(w, r, "register_erase.html", data)
 		return
 	case err != nil && !errors.Is(err, register.ErrUnrecorded):
 		s.registerUnreadable(w, r, p, err)
