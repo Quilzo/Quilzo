@@ -175,6 +175,14 @@ func (r *Register) prepare(ref string, by Actor, why string, recs []Record) ([]i
 	var items []item
 	for _, rec := range recs {
 		spec := kinds[rec.Kind()]
+		// A decision proposed waits for a person's approval, so it is held
+		// without one: whatever approval a proposer sends is not kept,
+		// because nobody approves their own proposal, and the person who
+		// accepts gives theirs (Accept). It is checked against a stand-in
+		// for the approval it waits on (awaitingApproval), never stored.
+		if ref == ProposalsRef && spec.Signed {
+			rec = withApproval(rec, nil)
+		}
 		if err := validate(awaitingApproval(ref, rec)); err != nil {
 			return nil, err
 		}

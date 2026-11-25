@@ -209,8 +209,9 @@ func CheckApprovalsWith(make func(*Register) func(rec Record, id ID, a *Approval
 // approval; refusing it for not having one left no way to ask for one. The
 // stand-in is what the kind's own rules ask of an approval, raised by
 // whoever the record says raised it and agreed by somebody else, and it is
-// never stored: the proposal is kept as it was sent, and the person who
-// accepts it gives the approval it is written with.
+// never stored: the proposal is kept without an approval (Register.prepare
+// drops any a proposer sends), and the person who accepts it gives the
+// approval it is written with.
 func awaitingApproval(ref string, rec Record) Record {
 	if ref != ProposalsRef || approvalOf(rec) != nil || !holdsApproval(rec) {
 		return rec
@@ -223,8 +224,11 @@ func awaitingApproval(ref string, rec Record) Record {
 	if other == raised {
 		other = "00000000000000000000000000000003"
 	}
+	// The stand-in is over the record as it waits, as the approval it will
+	// be given must be: a kind whose Check holds its approval to the
+	// record's surface (SurfaceOf) is held to it while waiting too.
 	none := Digest("sha256:" + strings.Repeat("0", 64))
-	return withApproval(rec, &Approval{Atom: "awaiting", Rule: "awaiting", Needed: 1, Of: 2, Surface: none, Raised: raised,
+	return withApproval(rec, &Approval{Atom: "awaiting", Rule: "awaiting", Needed: 1, Of: 2, Surface: SurfaceOf(rec), Raised: raised,
 		Signers: []Signer{{Subject: other, At: 1, Assertion: none}}})
 }
 

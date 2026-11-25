@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Tiles}}{{template "kit-tiles" .}}{{end}}
+{{range .Sections}}<section>
+<h2>{{.Heading}}</h2>
+{{with .Lead}}<p>{{.}}</p>{{end}}
+{{with .Lines}}<ul>{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{with .Table}}{{template "kit-table" .}}{{end}}
+{{with .Empty}}{{template "kit-empty" .}}{{end}}
+{{range .Approvals}}{{template "kit-approval" .}}{{end}}
+{{with .Command}}<p class="hint">From a terminal: <code>{{.}}</code></p>{{end}}
+</section>{{end}}
+{{with .Links}}<nav aria-label="Related screens"><ul>{{range .}}<li><a href="{{.Href}}">{{.Text}}</a></li>{{end}}</ul></nav>{{end}}
+{{template "foot" .}}

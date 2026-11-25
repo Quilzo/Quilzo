@@ -256,17 +256,6 @@ type ErasureRequest struct {
 	ReviewDue Time
 }
 
-// SurfaceOf is the hash of a record as a person deciding it is shown it:
-// SHA-256 over its kind and its fields, domain-separated, so an approval of
-// one record is not an approval of another.
-func SurfaceOf(rec Record) Digest {
-	fields, _ := canonicalFields(rec)
-	h := sha256.New()
-	h.Write([]byte("quilzo/register/surface/v1\x00" + string(rec.Kind()) + "\x00"))
-	h.Write(fields)
-	return Digest("sha256:" + hex.EncodeToString(h.Sum(nil)))
-}
-
 // assertionOf is the digest of a decider's authentication evidence bound
 // to the surface they decided.
 func assertionOf(surface Digest, by ID, evidence []byte) Digest {

@@ -436,18 +436,20 @@ func TestAnApprovalIsHandedToItsVerifier(t *testing.T) {
 	var seen []ID
 	b.Approvals = func(rec Record, id ID, a *Approval) error {
 		seen = append(seen, id)
-		if a.Surface == digest(99) {
+		if a.Signers[0].Assertion == digest(99) {
 			return errors.New("the assertion is for another surface")
 		}
 		return nil
 	}
-	scope := Scope{Name: "group", Title: "The group", Domains: []Domain{"identity"}, Approval: signedBy(owner, "a0000000000000000000000000000009")}
+	scope := Scope{Name: "group", Title: "The group", Domains: []Domain{"identity"}}
+	scope.Approval = signedBy(owner, "a0000000000000000000000000000009")
+	scope.Approval.Surface = SurfaceOf(scope)
 	mustPut(t, b, dana, scope)
 	if len(seen) != 1 || seen[0] != mustID(t, scope) {
 		t.Fatalf("the verifier was asked about %v", seen)
 	}
 	bad := *scope.Approval
-	bad.Surface = digest(99)
+	bad.Signers = []Signer{{Subject: bad.Signers[0].Subject, At: bad.Signers[0].At, Assertion: digest(99)}}
 	scope.Approval = &bad
 	if _, err := b.Put(dana, "a test's write", scope); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "another surface") {
 		t.Errorf("an approval its verifier refused was answered %v", err)

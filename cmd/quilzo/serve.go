@@ -1473,6 +1473,8 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	// And the identity provider's security event stream asked, once a
 	// day, to prove it still reaches here.
 	jobs = append(jobs, signalsJob(root))
+	// And the control tests a person approved, each when it is due.
+	jobs = append(jobs, controlTestsJob(root))
 	// And what agents remember, past its time.
 	jobs = append(jobs, memoryJob(root))
 	// And what the security modules registered, each from its own file

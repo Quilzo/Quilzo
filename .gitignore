@@ -29,6 +29,11 @@ bin/
 /templates/
 /export/
 *.log
+# A test's fixture is source whatever its name. osquery writes its results
+# as a .log file, and the evidence tests read one: unexcepted, the line above
+# kept it out of every commit, and the tests passed only in the checkout
+# that wrote it.
+!**/testdata/**
 
 # Python packaging left over from an earlier life. Named rather than covered by
 # a pattern, because the file that got committed declared a different licence

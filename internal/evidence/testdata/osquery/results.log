@@ -1,0 +1,5 @@
+{"name": "pack_posture_disk_encryption", "hostIdentifier": "mac-01.example.internal", "calendarTime": "Sun Nov 24 10:00:00 2026 UTC", "unixTime": 1795514400, "epoch": 0, "counter": 0, "numerics": false, "columns": {"encrypted": "1", "type": "APFS"}, "action": "added"}
+{"name": "pack_posture_disk_encryption", "hostIdentifier": "mac-02.example.internal", "unixTime": 1795514400, "columns": {"encrypted": "0", "type": "APFS"}, "action": "added"}
+{"name": "pack_posture_firewall", "hostIdentifier": "mac-01.example.internal", "unixTime": 1795514400, "snapshot": [{"global_state": "1"}], "action": "snapshot"}
+{"name": "pack_inventory_apps", "hostIdentifier": "mac-01.example.internal", "unixTime": 1795514400, "snapshot": [{"name": "Slack"}, {"name": "Zoom"}, {"name": "1Password"}], "action": "snapshot"}
+{"name": "pack_posture_disk_encryption", "hostIdentifier": "mac-03.example.internal", "unixTime": 1795514400, "columns": {"encrypted": "1", "type": "APFS"}, "action": "removed"}

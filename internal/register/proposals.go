@@ -168,6 +168,19 @@ func (r *Register) decider(by Actor, p Proposal, alone bool) error {
 // approval of a record that is a decision; it replaces whatever the
 // proposal carried, because a proposer cannot approve its own proposal.
 func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) {
+	return r.AcceptWith(by, id, approval)
+}
+
+// AcceptWith is Accept, with the records that follow from the decision
+// written in the same commit: a framework's requirements, which a starter's
+// installation brings and which are its content, not decisions of their
+// own. The decision and what it brings are one commit, so the register
+// never holds one without the other.
+//
+// The records that follow are written with the accepter's own permissions:
+// approving the decision is what lets them write the proposed record, and
+// nothing else.
+func (r *Register) AcceptWith(by Actor, id ID, approval *Approval, follows ...Record) (Receipt, error) {
 	p, err := r.proposal(id)
 	if err != nil {
 		return Receipt{}, err
@@ -185,15 +198,37 @@ func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) 
 		}
 		return by.May(act, res)
 	}
-	rc, err := r.Put(accepter, acceptedWhy(p.Why), rec)
+	rc, err := r.Put(accepter, acceptedWhy(p.Why), append([]Record{rec}, follows...)...)
 	if err != nil {
 		return rc, err
 	}
 	if err := r.drop(p, "accepted"); err != nil {
 		return rc, err
 	}
+	// A record that follows and was itself waiting, as it was proposed, is
+	// accepted with the decision: a control test's query waits beside the
+	// test, and is in the register once the test is approved.
+	for _, f := range follows {
+		fid, err := IDOf(f)
+		if err != nil {
+			continue
+		}
+		if q, err := r.proposal(fid); err == nil && sameFields(q.Record, f) {
+			if err := r.drop(q, "accepted"); err != nil {
+				return rc, err
+			}
+		}
+	}
 	return rc, r.audit2(by, audit.Success, map[string]string{"decision": "accepted", "id": string(id),
 		"kind": kinds[p.Kind].Collection, "commit": rc.Commit})
+}
+
+// sameFields reports whether two records are the same record, field for
+// field.
+func sameFields(a, b Record) bool {
+	x, errA := canonicalFields(a)
+	y, errB := canonicalFields(b)
+	return errA == nil && errB == nil && string(x) == string(y)
 }
 
 // Reject takes a waiting record off the proposals ref and writes nothing to
