@@ -163,6 +163,14 @@ func (a *Ask) AloneFor(subject register.ID) bool {
 // the decision, and so may not approve it unless they approve it alone.
 func (a *Ask) Raisers(subject register.ID) bool { return a.raisers[subject] }
 
+// Eligible reports whether a person, by name, is among those who may
+// approve the decision: they hold the rule's atom, or the separation policy
+// names them as its second. It says nothing of whether they raised it.
+func (a *Ask) Eligible(name string) bool {
+	key := auth.PersonKey(name)
+	return a.eligible[key] || a.seconds[key] != ""
+}
+
 // Signed is one signature given to a request.
 type Signed struct {
 	Subject  register.ID     `json:"subject"`

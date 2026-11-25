@@ -358,3 +358,98 @@ func TestModelTextFencedOnApprovalSurface(t *testing.T) {
 		t.Fatalf("the agent's words are not fenced and labelled\n%s", firstLines(page, 60))
 	}
 }
+
+// sessionFor is a passkey session, and a registered passkey, for somebody
+// the test names.
+func sessionFor(t *testing.T, srv *Server, who string) (string, *fakeAuthenticator) {
+	t.Helper()
+	secret, _, err := srv.Tokens.IssueSession("test", who, auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := newFake(t, who+"-key")
+	key.register(t, srv, secret)
+	return secret, key
+}
+
+// approveIn is one person approving a decision through the admin's routes
+// with their passkey.
+func approveIn(t *testing.T, srv *Server, token string, key *fakeAuthenticator, id register.ID) map[string]any {
+	t.Helper()
+	start := decodeBody(t, postJSON(t, srv, "/register/approvals/item/"+string(id)+"/challenge", token, nil))
+	challenge, _ := start["challenge"].(string)
+	w := postJSON(t, srv, "/register/approvals/item/"+string(id)+"/approve", token, key.assert(t, challenge))
+	if w.Code != http.StatusOK {
+		t.Fatalf("approving %s answered %d: %s", id, w.Code, w.Body.String())
+	}
+	return decodeBody(t, w)
+}
+
+// A second approver need hold no role here. The head of risk, named in the
+// separation policy and granted nothing, and a risk manager granted
+// accept-risk alone, each open the decisions that are theirs to approve and
+// no others; the head of risk's passkey completes one that takes two
+// people; and somebody who is neither is refused the approvals.
+func TestASecondApproverWithNoRoleApprovesInTheAdmin(t *testing.T) {
+	b := newApprovalBench(t)
+	pol := approval.Default()
+	pol.Seconds = []approval.Second{{Principal: "head-of-risk", As: "risk"}}
+	if err := approval.SavePolicy(b.srv.Store.Root(), pol); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.srv.Policy.Grant(auth.Binding{Principal: "rm", Permission: auth.ActAcceptRisk, Resource: register.Area}); err != nil {
+		t.Fatal(err)
+	}
+	reg := register.Open(b.srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman,
+		May: func(auth.Action, string) error { return nil }}, "raised at the risk review",
+		register.Risk{Ref: "R-25", Title: "Data centre flood", Owner: dana, Raised: dana, Likelihood: 2, Impact: 4, Status: "accepted"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := rc.Written[0].ID
+
+	head, headKey := sessionFor(t, b.srv, "head-of-risk")
+	list := get(t, b.srv, "/register/approvals", head)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "/register/approvals/item/"+string(big)) {
+		t.Fatalf("the head of risk cannot see what is theirs to approve: %d\n%s", list.Code, firstLines(list.Body.String(), 40))
+	}
+	if strings.Contains(list.Body.String(), "/register/approvals/item/"+string(b.risk)) {
+		t.Error("the head of risk is shown a decision that takes no second approver")
+	}
+	if w := get(t, b.srv, "/register/approvals/item/"+string(b.risk), head); w.Code != http.StatusNotFound {
+		t.Errorf("the head of risk opened a decision that is not theirs to approve: %d", w.Code)
+	}
+	if w := get(t, b.srv, "/register/approvals/item/"+string(big), head); w.Code != http.StatusOK {
+		t.Fatalf("the head of risk cannot open what is theirs to approve: %d", w.Code)
+	}
+
+	rm, _ := sessionFor(t, b.srv, "rm")
+	if body := get(t, b.srv, "/register/approvals", rm).Body.String(); !strings.Contains(body, "/register/approvals/item/"+string(big)) ||
+		!strings.Contains(body, "/register/approvals/item/"+string(b.risk)) {
+		t.Errorf("somebody granted accept-risk alone does not see the risks they may accept\n%s", firstLines(body, 40))
+	}
+	nobody, _ := sessionFor(t, b.srv, "nobody")
+	if w := get(t, b.srv, "/register/approvals", nobody); w.Code != http.StatusForbidden {
+		t.Errorf("somebody who may approve nothing was shown the approvals: %d", w.Code)
+	}
+
+	if out := approveIn(t, b.srv, b.token, b.key, big); out["done"] == true {
+		t.Fatal("one approval of two wrote the decision")
+	}
+	if out := approveIn(t, b.srv, head, headKey, big); out["done"] != true {
+		t.Fatalf("the head of risk's approval did not complete it: %v", out)
+	}
+	e, err := reg.Get(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ap := register.ApprovalOf(e.Record); len(ap.Signers) != 2 {
+		t.Errorf("the decision holds %d approvers", len(ap.Signers))
+	}
+	if w := get(t, b.srv, "/register/approvals/held/"+string(big), head); w.Code != http.StatusOK {
+		t.Errorf("the head of risk cannot see the decision they approved: %d", w.Code)
+	}
+}

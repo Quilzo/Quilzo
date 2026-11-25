@@ -278,6 +278,24 @@ func (p *Policy) seconds(r Rule) []Second {
 	return out
 }
 
+// SecondAs is what a person is to the organisation when the policy names
+// them as a possible second approver, or "" when it does not.
+func (p *Policy) SecondAs(name string) string { return p.functionOf(name) }
+
+// Atoms are the permissions the policy's rules make people eligible by, in
+// the order of the rules, each once.
+func (p *Policy) Atoms() []auth.Action {
+	var out []auth.Action
+	seen := map[auth.Action]bool{}
+	for _, r := range p.Rules {
+		if !seen[r.Atom] {
+			seen[r.Atom] = true
+			out = append(out, r.Atom)
+		}
+	}
+	return out
+}
+
 // functionOf is what a person named as a second is to the organisation, or
 // "" when the policy does not name them.
 func (p *Policy) functionOf(name string) string {

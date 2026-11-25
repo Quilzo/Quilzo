@@ -135,17 +135,87 @@ func (s *Server) approver(p principal) approval.Person {
 		}}
 }
 
-// approvalsReady is a signed-in person who may read the register, and its
-// approvals.
+// approvalsReady is a signed-in person who may read the register, or who
+// may decide something in it, and its approvals.
+//
+// A second approver need hold no role here: the head of risk granted
+// accept-risk alone, or an outside adviser the separation policy names and
+// the access policy does not. Asked only for a view of the register, they
+// could not open the page their passkey is to sign, and the second pair of
+// eyes the policy promises would exist on paper. So whoever may decide
+// something is let in, and shown what is theirs to decide and nothing else
+// (seesAll).
 func (s *Server) approvalsReady(w http.ResponseWriter, r *http.Request) (principal, *approval.Approvals, bool) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
 		return p, nil, false
 	}
+	if s.seesAll(p) || s.decidesHere(p) {
+		return p, s.approvalsFor(), true
+	}
 	if !s.can(w, r, p, auth.ActView, register.Area) {
 		return p, nil, false
 	}
 	return p, s.approvalsFor(), true
+}
+
+// seesAll reports whether a person reads the whole register, and so every
+// decision waiting in it and held by it.
+func (s *Server) seesAll(p principal) bool { return s.allows(p, auth.ActView, register.Area) }
+
+// decidesHere reports whether a person may decide something in the
+// register without reading it: they hold one of the atoms the separation
+// policy's rules make people eligible by, there or on one kind of record in
+// it, or the policy names them as a second approver.
+func (s *Server) decidesHere(p principal) bool {
+	if s.Store == nil {
+		return false
+	}
+	pol, _, err := approval.LoadPolicy(s.Store.Root())
+	if err != nil {
+		return false
+	}
+	if pol.SecondAs(p.Name) != "" {
+		return true
+	}
+	if s.Policy == nil {
+		return false
+	}
+	for _, a := range pol.Atoms() {
+		if s.Policy.AnywhereUnder(p.Name, a, register.Area) {
+			return true
+		}
+	}
+	return false
+}
+
+// theirsToDecide reports whether a person who does not read the whole
+// register may see a waiting decision: it is one they are eligible for.
+func (s *Server) theirsToDecide(p principal, a *approval.Ask) bool {
+	return s.seesAll(p) || a.Eligible(p.Name)
+}
+
+// theirsHeld reports whether a person who does not read the whole register
+// may see a decision it holds: they approved it, or it was made alone and
+// its review could be theirs.
+func (s *Server) theirsHeld(p principal, h approval.Held) bool {
+	if s.seesAll(p) {
+		return true
+	}
+	if me, ok := approval.PeopleAt(s.Store.Root()).Known(p.Name); ok {
+		for _, sg := range h.Approval.Signers {
+			if sg.Subject == me {
+				return true
+			}
+		}
+	}
+	if !h.Approval.Alone {
+		return false
+	}
+	if pol, _, err := approval.LoadPolicy(s.Store.Root()); err == nil && pol.SecondAs(p.Name) != "" {
+		return true
+	}
+	return s.allows(p, auth.Action(h.Approval.Atom), kindResource(h.Kind))
 }
 
 // approvalRow is one waiting decision as the list shows it.
@@ -183,6 +253,9 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
 	var rows []approvalRow
 	for _, a := range waiting {
+		if !s.theirsToDecide(p, a) {
+			continue
+		}
 		row := approvalRow{ID: string(a.Proposal.ID), Kind: string(a.Proposal.Kind), Label: labelOf(a.Proposal.Record, a.Proposal.ID),
 			Rule: a.Rule.Name, Over: strings.Join(a.Over, "; "), Href: "/register/approvals/item/" + string(a.Proposal.ID),
 			Signed: len(a.Signed), Needed: a.Needed, Of: a.Of, Hash: seckit.HashCell(string(a.Hash))}
@@ -198,6 +271,9 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 	}
 	var heldRows []seckit.Row
 	for _, h := range held {
+		if !s.theirsHeld(p, h) {
+			continue
+		}
 		status := seckit.MustBadge(seckit.Good, "Approved")
 		switch {
 		case h.Lapsed:
@@ -423,7 +499,7 @@ func (s *Server) handleApprovalItem(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "":
 		a, err := m.Ask(id)
-		if errors.Is(err, register.ErrNotFound) || errors.Is(err, approval.ErrRefused) {
+		if errors.Is(err, register.ErrNotFound) || errors.Is(err, approval.ErrRefused) || err == nil && !s.theirsToDecide(p, a) {
 			http.NotFound(w, r)
 			return
 		}
@@ -434,6 +510,9 @@ func (s *Server) handleApprovalItem(w http.ResponseWriter, r *http.Request) {
 		s.renderAsk(w, r, p, a, "", "")
 	case "challenge":
 		a, err := m.Ask(id)
+		if err == nil && !s.theirsToDecide(p, a) {
+			err = fmt.Errorf("%w: nothing with the identifier %s waits for you to approve it", register.ErrNotFound, id)
+		}
 		if err != nil {
 			approvalError(w, err)
 			return
@@ -731,7 +810,7 @@ func (s *Server) handleApprovalHeld(w http.ResponseWriter, r *http.Request) {
 	}
 	id := register.ID(strings.TrimPrefix(r.URL.Path, "/register/approvals/held/"))
 	h, err := s.heldOne(m, id)
-	if err != nil {
+	if err != nil || !s.theirsHeld(p, h) {
 		http.NotFound(w, r)
 		return
 	}
@@ -816,7 +895,7 @@ func (s *Server) handleApprovalReview(w http.ResponseWriter, r *http.Request) {
 	idPart, action, _ := strings.Cut(rest, "/")
 	id := register.ID(idPart)
 	h, err := s.heldOne(m, id)
-	if err != nil || !h.Approval.Alone {
+	if err != nil || !h.Approval.Alone || !s.theirsHeld(p, h) {
 		http.NotFound(w, r)
 		return
 	}
