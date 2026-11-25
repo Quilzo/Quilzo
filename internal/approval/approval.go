@@ -368,7 +368,7 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 	}
 	now := m.now()
 	a.Expires = expiry(rule, p.Record, now)
-	if r, ok, err := m.request(p, a.Hash, now); err != nil {
+	if r, ok, err := m.request(p, a.Hash, pol.WaitDays, now); err != nil {
 		return nil, err
 	} else if ok {
 		a.Signed, a.Until = r.Signers, r.Until
@@ -494,7 +494,7 @@ func (m *Approvals) Sign(by Person, id register.ID, proof Proof) (*Outcome, erro
 func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, s Signed, now time.Time) (*Outcome, error) {
 	var signers []Signed
 	err := atomicfile.Update(m.requestsPath(), func(f *requestsFile) error {
-		f.prune(now)
+		f.prune(now, pol.WaitDays)
 		r := f.find(a.Proposal.ID)
 		if r == nil || r.Object != a.Proposal.Object || r.Surface != a.Hash {
 			f.drop(a.Proposal.ID)
@@ -818,11 +818,16 @@ func (f *requestsFile) drop(id register.ID) {
 
 // prune lets requests whose wait is over lapse, with their signatures:
 // approvals expire while they are being gathered too, so a signature given
-// months ago does not complete a decision today.
-func (f *requestsFile) prune(now time.Time) {
+// months ago does not complete a decision today. The wait is the one the
+// request was opened under, or the policy's days as they are now if that
+// is sooner: a wait shortened since lapses the requests older than it, as
+// the register, which holds every signature to the policy's days as they
+// are when the decision is written, would refuse them (verify.go).
+func (f *requestsFile) prune(now time.Time, waitDays int) {
+	oldest := register.TimeOf(now.Add(-time.Duration(waitDays) * 24 * time.Hour))
 	kept := f.Requests[:0]
 	for _, r := range f.Requests {
-		if register.TimeOf(now) < r.Until {
+		if register.TimeOf(now) < r.Until && r.Opened >= oldest {
 			kept = append(kept, r)
 		}
 	}
@@ -830,11 +835,11 @@ func (f *requestsFile) prune(now time.Time) {
 }
 
 // request is the open request for a proposal as it stands, if there is one.
-func (m *Approvals) request(p register.Proposal, surface register.Digest, now time.Time) (request, bool, error) {
+func (m *Approvals) request(p register.Proposal, surface register.Digest, waitDays int, now time.Time) (request, bool, error) {
 	var out request
 	var ok bool
 	err := atomicfile.Update(m.requestsPath(), func(f *requestsFile) error {
-		f.prune(now)
+		f.prune(now, waitDays)
 		if r := f.find(p.ID); r != nil && r.Object == p.Object && r.Surface == surface {
 			out, ok = *r, true
 		}

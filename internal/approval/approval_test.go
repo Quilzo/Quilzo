@@ -781,3 +781,33 @@ func TestAnApprovedRecordWrittenAgainUnchangedWritesNothing(t *testing.T) {
 		t.Fatalf("a changed record was written under the approval of what it was: %v", err)
 	}
 }
+
+// A signature counts for the days the policy says a request waits, as the
+// policy says them now: one given before the wait was shortened, and older
+// than the new wait, has lapsed. It is not counted towards the approval,
+// so the signature that would have completed it is the first of a request
+// still waiting, rather than one the register refuses for counting a
+// signature that had lapsed.
+func TestASignatureLapsesWhenTheWaitIsShortened(t *testing.T) {
+	b := newBench(t, holds("ciso", auth.ActAcceptRisk), holds("cfo", auth.ActAcceptRisk))
+	id := b.propose("dana", b.risk("R-45", "dana", 4))
+	if out, err := b.sign("ciso", id); err != nil || out.Done {
+		t.Fatalf("one approver of two: %+v %v", out, err)
+	}
+	b.clock = b.clock.Add(10 * 24 * time.Hour)
+	pol := Default()
+	pol.WaitDays = 7
+	if err := SavePolicy(b.root, pol); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := b.m.Ask(id); len(a.Signed) != 0 {
+		t.Fatalf("a signature ten days old counts under a wait of seven: %+v", a.Signed)
+	}
+	out, err := b.sign("cfo", id)
+	if err != nil || out.Done || out.Signed != 1 {
+		t.Fatalf("the second signature, after the first lapsed: %+v %v", out, err)
+	}
+	if out, err := b.sign("ciso", id); err != nil || !out.Done {
+		t.Fatalf("two signatures within the wait did not approve it: %+v %v", out, err)
+	}
+}
