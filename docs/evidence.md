@@ -59,7 +59,7 @@ against a key that came with the file or with the request.
 
 | Grade | When |
 |---|---|
-| signed | A DSSE envelope whose signature checks against a key a person pinned |
+| signed | A DSSE envelope whose signature checks against a key pinned with the approval of somebody other than whoever asked for it |
 | imported | A table read through a column map that names the tool whose export it is, or any file a service brought |
 | uploaded | Any other file a person brought: a scanner's output, a bill of materials, a table of their own |
 
@@ -110,11 +110,18 @@ never acted, or a figure nothing computed, for good.
   refused them as every write to the register refuses one.
 - The content API reads: `/api/v1/evidence/formats`, `/files`,
   `/files/{id}` and `/verify`.
-- Column maps and pinned keys are confirmed and pinned by a person, on the
-  command line or the Evidence screens. The agent interface and the content
-  API read them as the register records they are (`register_list` with the
-  kind `ColumnMap` or `PinnedKey`, and `/api/v1/register/...`), and have no
-  operation that confirms a map or pins a key.
+- Column maps are confirmed by a person, on the command line or the
+  Evidence screens. A key is asked to be pinned the same way, and pinning it
+  is a decision: it waits, and is approved through the approvals module by
+  somebody other than whoever asked for it, on Sign-off with a passkey or at
+  the console with `quilzo approval approve ID --surface HASH`, unless they
+  are the only person who may, who then approves it alone, marked so. Nobody
+  pins their own key and has their own envelopes graded as signed by a third
+  party. A key pinned before a pin was a decision verifies nothing until it
+  is pinned again. The agent interface and the content API read them as the
+  register records they are (`register_list` with the kind `ColumnMap` or
+  `PinnedKey`, and `/api/v1/register/...`), and have no operation that
+  confirms a map or pins a key.
 
 ## What is and is not verified here
 

@@ -65,8 +65,9 @@ func init() {
 			"  quilzo evidence draft-map FORMAT FILE --kind KIND [--name NAME] [--sheet NAME]  draft a column map\n" +
 			"                                            from a table's headings, with the rows it would read\n" +
 			"  quilzo evidence confirm-map MAPFILE      confirm a column map as yours, having looked at what it reads\n" +
-			"  quilzo evidence pin NAME KEYFILE [--keyid ID] [--title TEXT]  pin a third party's public key, which\n" +
-			"                                            signed files are verified against\n",
+			"  quilzo evidence pin NAME KEYFILE [--keyid ID] [--title TEXT]  ask for a third party's public key to be\n" +
+			"                                            pinned, which signed files are verified against once somebody\n" +
+			"                                            else approves it (quilzo approval approve)\n",
 		run: cmdEvidence,
 		// The command asks for the most any of its lines needs, and the
 		// lines that read narrow it, so a line added later and named nowhere
@@ -517,7 +518,7 @@ func evidenceRecords(root string, kind register.Kind) error {
 	}
 	if total == 0 {
 		if kind == register.KindPinnedKey {
-			fmt.Println("  no key has been pinned; `quilzo evidence pin NAME KEYFILE` pins one")
+			fmt.Println("  no key has been pinned; `quilzo evidence pin NAME KEYFILE` asks for one to be")
 		} else {
 			fmt.Println("  no column map has been confirmed; `quilzo evidence draft-map` drafts one")
 		}

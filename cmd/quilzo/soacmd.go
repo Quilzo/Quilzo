@@ -30,7 +30,8 @@ func init() {
 		help: "  quilzo soa scopes                        the scopes the programme is decided for\n" +
 			"  quilzo soa scope NAME --title T --domains D,D [--frameworks F,F]  decide what the programme covers\n" +
 			"  quilzo soa decide SCOPE FRAMEWORK REF --applies|--excluded --why TEXT  decide one line, and why\n" +
-			"  quilzo soa approve ID                    approve a scope or a line that waits for you\n" +
+			"  quilzo soa approve ID --surface HASH     approve a scope or a line that waits for you, typing back the\n" +
+			"                                            hash `quilzo approval show ID` gives\n" +
 			"  quilzo soa show SCOPE [--csv]            the statement: every requirement, decided or not, and its evidence\n",
 		run: cmdSoa,
 		needs: map[string]need{

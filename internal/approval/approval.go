@@ -15,6 +15,15 @@
 // record through the register's one write path, which checks the evidence
 // again before anything is committed (verify.go).
 //
+// It is the one way any decision in the register is approved, whichever
+// surface it is decided on: a risk accepted, a starter taken into the
+// programme, a scope, a line of the statement of applicability, a control
+// test, a person's erasure, a third party's key pinned. Its surface is the
+// one the register holds every approval to (register.SurfaceWith); it names
+// people by the register's own subject map, which every surface names its
+// writers by (people.go); and a module that owns a kind says what a
+// decision of it brings with it (FollowWith).
+//
 // The rules that are not the policy's to relax are kept here, in code:
 // whoever raised or drafted a record does not approve it; no agent approves
 // anything, so no agent approves an agent's work; each person counts once;

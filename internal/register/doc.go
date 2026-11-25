@@ -88,9 +88,15 @@
 //
 // Put is the one write path (put.go), in one order: the policy gate for
 // each kind in the batch, the kind's field rules and its Check, the
-// approval where the kind is a decision (Register.Approvals verifies its
-// authentication evidence), unchanged records skipped, one commit for the
-// batch, an audit entry and a Receipt whose digest is in that entry. A
+// approval where the kind is a decision (held to Register.Surface, the one
+// hash of what its approvers were shown, and Register.Approvals verifies
+// its authentication evidence), unchanged records skipped, one commit for
+// the batch, an audit entry and a Receipt whose digest is in that entry.
+// What an approver is shown is the approvals module's surface, the record,
+// the evidence it cites and its change, which the module installs at start
+// (SurfaceWith); the screen, the command line, the passkey's challenge, the
+// receipt, the audit entry and every check read that one hash, and the
+// record's own hash stands in only in a program without the module. A
 // model never writes: an Actor of kind audit.KindAI is refused (ErrModel),
 // as is one that is neither a person nor a service, and a statement about a
 // control is a person's. An approval made alone is a team of one's: with
@@ -105,8 +111,14 @@
 // caller in the record by their pseudonym from the subject map (Actor
 // .Subject, minted the first time they write), so a person's proposal is
 // decided by somebody the register can tell apart from them. The admin's
-// writer (Server.registerWriter, internal/admin/registerprivacy.go) does
-// the same for a person signed in there. why is a line code writes. The errors are ErrRefused, ErrModel, ErrInvalid,
+// writers (Server.registerWriter, internal/admin/registerprivacy.go, and
+// Server.evidenceWriter) do the same for a person signed in there, and the
+// approvals module names its signers from the same map, so one person is
+// one pseudonym on every surface. A decision is approved through that
+// module whichever surface it is decided on: it holds the separation
+// policy and the rules beneath it, and a module that owns a kind says what
+// a decision of it brings with it (approval.FollowWith). why is a line
+// code writes. The errors are ErrRefused, ErrModel, ErrInvalid,
 // ErrImmutable, ErrNotFound and ErrUnrecorded (written, and not recorded);
 // registerError answers them with the command line's exits, 3 for a
 // refusal and 4 for what is not there, and the API answers 403 and 404. A
@@ -195,9 +207,13 @@
 //	PutText(by, kind, words, about...)   words a person wrote, kept as the Text a record holds
 //	PutRaw(by, kind, media, file, about...) a raw file, kept as the Digest a record holds (a field called raw)
 //	TextOf, RawOf, SubjectState         what the side store holds under a digest or a pseudonym
-//	Erase(by, ErasureRequest)           a person erased: the map's entry and every entry about them go,
-//	                                    and a signed, immutable Erasure record says so
+//	RaiseErasure(by, ErasureRequest)    a person's erasure asked for: raised by whoever asked, or entered
+//	                                    on their behalf, to wait for its decision
+//	Accept of an Erasure                the person erased, under every pseudonym the map holds for them:
+//	                                    their entries go, and a signed, immutable Erasure record says so
 //	ExpireSide()                        what every kind holding it has kept for its retention, deleted
+//	MigrateWith(f)                      a module's older map of people moved into the subject map, as a
+//	                                    register is opened, keeping each pseudonym
 //
 // Retention is declared per kind in retention.go, counted from the last time
 // the entry was kept for a record of the kind, and enforced by the
@@ -213,9 +229,15 @@
 // the person until it is deleted. Nothing more is kept beside the register
 // about a pseudonym once its person is erased (ErrErased).
 //
-// An erasure is decided by a person on the command line or in the admin,
-// and its approval is held to every rule Put holds it to before anything
-// is deleted. The agent interface and the API read the Erasure records and
+// An erasure is a request, raised by the person who asked or entered for
+// them by somebody else, and the record says who asked and who entered it.
+// It is decided through the approvals module, on Sign-off in the admin or
+// at the console, by somebody who is neither the person erased nor, while
+// anybody else may decide it, whoever asked or entered it; its decider is
+// its approval's last signer, named by pseudonym alone. Its approval is
+// held to every rule Put holds it to before anything is deleted, and an
+// erasure whose person had more kept about them since it was raised is
+// refused, and raised again. The agent interface and the API read the Erasure records and
 // say "subject erased" as the screens do, and neither erases anybody: the
 // agent interface's register operations are reads, and the API's module
 // routes are reads until internal/api/modules.go gains what a write needs.
