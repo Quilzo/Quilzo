@@ -37,7 +37,9 @@ func init() {
 			"  quilzo population link --on ON --a SOURCE[:FACT] --b SOURCE[:FACT]  link two sources on an exact identifier\n",
 		run: cmdPopulation,
 		needs: map[string]need{
-			"population":        {action: auth.ActView},
+			"population":        {action: auth.ActEditDraft},
+			"population list":   {action: auth.ActView},
+			"population show":   {action: auth.ActView},
 			"population define": {action: auth.ActEditDraft},
 			"population count":  {action: auth.ActEditDraft},
 			"population link":   {action: auth.ActEditDraft},
@@ -53,7 +55,7 @@ func init() {
 
 func cmdPopulation(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["population"]}
 	}
 	switch args[0] {
 	case "list":

@@ -31,7 +31,10 @@ func init() {
 			"  quilzo requirement show FRAMEWORK REF    one requirement, with what it is mapped to\n",
 		run: cmdRequirement,
 		needs: map[string]need{
-			"requirement":           {action: auth.ActView},
+			"requirement":           {action: auth.ActApprove},
+			"requirement starters":  {action: auth.ActView},
+			"requirement list":      {action: auth.ActView},
+			"requirement show":      {action: auth.ActView},
 			"requirement install":   {action: auth.ActEditDraft},
 			"requirement uninstall": {action: auth.ActEditDraft},
 			"requirement approve":   {action: auth.ActApprove},
@@ -47,7 +50,7 @@ func init() {
 
 func cmdRequirement(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"starters"}
+		args = []string{bareRuns["requirement"]}
 	}
 	switch args[0] {
 	case "starters":

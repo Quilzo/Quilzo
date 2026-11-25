@@ -27,6 +27,19 @@ import (
 // approve it decides alone, and it is marked so; anybody else's waits for
 // somebody else, who approves it with `quilzo ... approve ID`.
 
+// Each of the four commands' own row asks what its strictest line asks,
+// and the lines that read narrow it to view, so a line added later without
+// a row of its own arrives over-guarded rather than open to a reader. Run
+// bare, each only reads, and is asked as the line it runs (bareRuns): the
+// entries are added here, beside the commands, so the modules edit no list
+// another module edits.
+func init() {
+	bareRuns["requirement"] = "starters"
+	bareRuns["soa"] = "scopes"
+	bareRuns["control"] = "list"
+	bareRuns["population"] = "list"
+}
+
 // programmeKeeper is where the programme keeps who each pseudonym is and
 // the words of justifications: beside the store, where they can be erased,
 // and on a store encrypted at rest, no words at all.

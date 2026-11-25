@@ -43,7 +43,12 @@ func init() {
 			"  quilzo control replay RUN                do a run again from the commit it read, and compare\n",
 		run: cmdControl,
 		needs: map[string]need{
-			"control":         {action: auth.ActView},
+			"control":         {action: auth.ActApprove},
+			"control list":    {action: auth.ActView},
+			"control tests":   {action: auth.ActView},
+			"control schema":  {action: auth.ActView},
+			"control explain": {action: auth.ActView},
+			"control replay":  {action: auth.ActView},
 			"control add":     {action: auth.ActEditDraft},
 			"control map":     {action: auth.ActEditDraft},
 			"control draft":   {action: auth.ActEditDraft},
@@ -61,7 +66,7 @@ func init() {
 
 func cmdControl(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["control"]}
 	}
 	one := func(usage string) (string, error) {
 		pos, err := positionals(args[1:], 1)

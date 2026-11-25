@@ -34,7 +34,9 @@ func init() {
 			"  quilzo soa show SCOPE [--csv]            the statement: every requirement, decided or not, and its evidence\n",
 		run: cmdSoa,
 		needs: map[string]need{
-			"soa":         {action: auth.ActView},
+			"soa":         {action: auth.ActApprove},
+			"soa scopes":  {action: auth.ActView},
+			"soa show":    {action: auth.ActView},
 			"soa scope":   {action: auth.ActEditDraft},
 			"soa decide":  {action: auth.ActEditDraft},
 			"soa approve": {action: auth.ActApprove},
@@ -50,7 +52,7 @@ func init() {
 
 func cmdSoa(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"scopes"}
+		args = []string{bareRuns["soa"]}
 	}
 	switch args[0] {
 	case "scopes":

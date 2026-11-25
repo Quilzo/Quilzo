@@ -21,10 +21,17 @@ import (
 // approve, so neither decides alone.
 func programmeApprover(t *testing.T, root, token string) string {
 	t.Helper()
-	if _, e, code := cliRun(t, root, token, "auth", "grant", "lee", "admin", "--on", auth.AreaCompliance); code != 0 {
+	return programmePerson(t, root, token, "lee", "admin")
+}
+
+// programmePerson grants somebody a role on the compliance area and issues
+// them a person's token with it.
+func programmePerson(t *testing.T, root, token, name, role string) string {
+	t.Helper()
+	if _, e, code := cliRun(t, root, token, "auth", "grant", name, role, "--on", auth.AreaCompliance); code != 0 {
 		t.Fatalf("auth grant: %s", e)
 	}
-	o, e, code := cliRun(t, root, token, "token", "issue", "lee", "--principal", "lee", "--role", "admin", "--person", "--json")
+	o, e, code := cliRun(t, root, token, "token", "issue", name, "--principal", name, "--role", role, "--person", "--json")
 	if code != 0 {
 		t.Fatalf("token issue: %s", e)
 	}
@@ -242,5 +249,31 @@ func TestAControlTestIsDraftedApprovedRunAndReplayed(t *testing.T) {
 	if text, merr := callTool(t, m, "quilzo_read", "control_explain", map[string]any{"run": run}); merr != nil ||
 		!strings.Contains(text, "were not selected") {
 		t.Errorf("control_explain answered %q %v", firstLines(text, 3), merr)
+	}
+}
+
+// A reader of the compliance area reads the programme on each of its four
+// commands, run bare or by a line that reads, and is refused every line
+// that writes or decides. A line no row names is asked what the strictest
+// line of its command asks, so a line added later without a row of its own
+// arrives over-guarded rather than open to a reader.
+func TestAReaderReadsTheProgrammeAndWritesNothing(t *testing.T) {
+	root, owner := accessStore(t)
+	reader := programmePerson(t, root, owner, "rae", "reader")
+	for _, line := range [][]string{{"requirement"}, {"requirement", "starters"}, {"requirement", "list"},
+		{"soa"}, {"soa", "scopes"}, {"control"}, {"control", "list"}, {"control", "tests"}, {"control", "schema"},
+		{"population"}, {"population", "list"}} {
+		if _, e, code := cliRun(t, root, reader, line...); code != 0 {
+			t.Errorf("a reader running `quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	for _, line := range [][]string{{"requirement", "install", "iso-27001"}, {"requirement", "approve", strings.Repeat("0", 32)},
+		{"soa", "scope", "group", "--title", "The group", "--domains", "identity"}, {"soa", "approve", strings.Repeat("0", 32)},
+		{"control", "add", "AC-01", "--title", "A second factor", "--domain", "identity"}, {"control", "run", "--due"},
+		{"population", "count", "accounts"}, {"requirement", "nonsense"}, {"soa", "nonsense"}, {"control", "nonsense"},
+		{"population", "nonsense"}} {
+		if _, e, code := cliRun(t, root, reader, line...); code != 3 {
+			t.Errorf("a reader running `quilzo %s` exited %d, not 3: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
 	}
 }
