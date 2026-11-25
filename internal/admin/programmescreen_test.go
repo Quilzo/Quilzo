@@ -121,6 +121,19 @@ func TestSoAScreenListsBoth(t *testing.T) {
 func TestTheProgrammeScreensAreAccessible(t *testing.T) {
 	srv, token := setup(t)
 	run := withProgramme(t, srv)
+	// A page has one h1, which the checker only advises; the kit's rule
+	// is that it is one, so it is held here as a failure.
+	check := func(what, body string) {
+		t.Helper()
+		if n := strings.Count(body, "<h1"); n != 1 {
+			t.Errorf("%s puts %d h1 on the page; a page has one", what, n)
+		}
+		for _, f := range a11y.Check(what, body).Findings {
+			if f.Severity == a11y.Blocking || f.Rule == "multiple-h1" || f.Rule == "no-h1" {
+				t.Errorf("%s: %s (%s): %s", what, f.Rule, f.Criterion, f.Detail)
+			}
+		}
+	}
 	paths := []string{"/programme/requirements", "/programme/requirements?framework=iso-27001",
 		"/programme/requirements?framework=dora", "/programme/soa", "/programme/soa/group", "/programme/controls",
 		"/programme/controls/run/" + string(run), "/programme/populations"}
@@ -130,11 +143,7 @@ func TestTheProgrammeScreensAreAccessible(t *testing.T) {
 			t.Errorf("%s answered %d", path, w.Code)
 			continue
 		}
-		for _, f := range a11y.Check(path, w.Body.String()).Findings {
-			if f.Severity == a11y.Blocking {
-				t.Errorf("%s: %s (%s): %s", path, f.Rule, f.Criterion, f.Detail)
-			}
-		}
+		check(path, w.Body.String())
 	}
 	empty, tok := setup(t)
 	for _, path := range []string{"/programme/requirements", "/programme/soa", "/programme/controls", "/programme/populations"} {
@@ -143,14 +152,11 @@ func TestTheProgrammeScreensAreAccessible(t *testing.T) {
 			t.Errorf("an empty %s answered %d", path, w.Code)
 			continue
 		}
-		for _, f := range a11y.Check(path, w.Body.String()).Findings {
-			if f.Severity == a11y.Blocking {
-				t.Errorf("an empty %s: %s (%s): %s", path, f.Rule, f.Criterion, f.Detail)
-			}
-		}
+		check("an empty "+path, w.Body.String())
 	}
 	for _, path := range []string{"/programme/soa/nowhere", "/programme/controls/run/00000000000000000000000000000000",
-		"/programme/requirements?framework=nonsense"} {
+		"/programme/requirements?framework=nonsense", "/programme/soa/", "/programme/soa-csv/", "/programme/soa-csv/nowhere",
+		"/programme/controls/run/"} {
 		if w := get(t, srv, path, token); w.Code != http.StatusNotFound {
 			t.Errorf("%s answered %d", path, w.Code)
 		}
