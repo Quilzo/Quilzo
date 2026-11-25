@@ -6,6 +6,7 @@ package sarif
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -143,6 +144,170 @@ func TestTheMissingFingerprintIsReported(t *testing.T) {
 	}
 	if !l.Runs[0].Results[1].Churns() {
 		t.Fatal("a result with no fingerprint at all was not")
+	}
+
+	gap, ok := gapNamed(l.Gaps(), "primaryLocationLineHash")
+	if !ok {
+		t.Fatal("no gap reported for the missing fingerprint")
+	}
+	if gap.Count != 1 || gap.From != "semgrep" {
+		t.Fatalf("the gap counts %d, from %q", gap.Count, gap.From)
+	}
+	for _, want := range []string{"editing it closes the alert", "scanner is noisy"} {
+		if !strings.Contains(gap.Costs, want) {
+			t.Fatalf("the cost does not mention %q: %s", want, gap.Costs)
+		}
+	}
+}
+
+// gapNamed is the gap whose What says what, if there is one.
+func gapNamed(gaps []Gap, what string) (Gap, bool) {
+	for _, g := range gaps {
+		if strings.Contains(g.What, what) {
+			return g, true
+		}
+	}
+	return Gap{}, false
+}
+
+// TestSecuritySeverityBeatsLevel: a level is not a severity.
+func TestSecuritySeverityBeatsLevel(t *testing.T) {
+	l, err := Read([]byte(semgrepish))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := l.Runs[0]
+	// 8.6 is high even though the level says error, and 9.4 is critical
+	// even though the level says warning, which is the whole point.
+	if s, scored := run.SeverityOf(run.Results[0]); s != SeverityHigh || !scored {
+		t.Fatalf("8.6 became %v (scored %v)", s, scored)
+	}
+	if s, scored := run.SeverityOf(run.Results[1]); s != SeverityCritical || !scored {
+		t.Fatalf("9.4 became %v (scored %v); the level said warning", s, scored)
+	}
+	if _, ok := gapNamed(l.Gaps(), "security-severity"); ok {
+		t.Fatal("a log whose every result has a security severity fell back to the level")
+	}
+
+	// A tool that gives only a level is counted.
+	bare := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t"}},
+		"results":[{"ruleId":"r","level":"error","message":{"text":"m"},
+		"locations":[{"physicalLocation":{"artifactLocation":{"uri":"a.go"},
+		"region":{"startLine":1}}}]}]}]}`
+	bl, err := Read([]byte(bare))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, scored := bl.Runs[0].SeverityOf(bl.Runs[0].Results[0]); s != SeverityHigh || scored {
+		t.Fatalf("error became %v (scored %v)", s, scored)
+	}
+	gap, ok := gapNamed(bl.Gaps(), "security-severity")
+	if !ok {
+		t.Fatal("no gap for the missing severity")
+	}
+	if gap.Count != 1 || !strings.Contains(gap.Costs, "wrong axis") {
+		t.Fatalf("the gap counts %d and costs %s", gap.Count, gap.Costs)
+	}
+
+	// A rule's default level stands in where the result gives none.
+	ruled := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t","rules":[{"id":"r",
+		"defaultConfiguration":{"level":"warning"}}]}},"results":[{"ruleId":"r","message":{"text":"m"}}]}]}`
+	rl, err := Read([]byte(ruled))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := rl.Runs[0].SeverityOf(rl.Runs[0].Results[0]); s != SeverityMedium {
+		t.Fatalf("a rule's warning became %v", s)
+	}
+}
+
+// TestScoreBoundariesAreThePublishedOnes.
+func TestScoreBoundariesAreThePublishedOnes(t *testing.T) {
+	for _, c := range []struct {
+		in   float64
+		want Severity
+	}{
+		{9.0, SeverityCritical},
+		{8.9, SeverityHigh},
+		{7.0, SeverityHigh},
+		{6.9, SeverityMedium},
+		{4.0, SeverityMedium},
+		{3.9, SeverityLow},
+		{0.1, SeverityLow},
+	} {
+		if got := score(c.in); got != c.want {
+			t.Errorf("%.1f became %v, want %v", c.in, got, c.want)
+		}
+	}
+	// A number as well as a string, because tools do both.
+	var asNumber Properties
+	if err := json.Unmarshal([]byte(`{"security-severity":7.5}`), &asNumber); err != nil {
+		t.Fatal(err)
+	}
+	if f, ok := asNumber.Score(); !ok || f != 7.5 {
+		t.Fatalf("number form = %v, %v", f, ok)
+	}
+	var asString Properties
+	if err := json.Unmarshal([]byte(`{"security-severity":"7.5"}`), &asString); err != nil {
+		t.Fatal(err)
+	}
+	if f, ok := asString.Score(); !ok || f != 7.5 {
+		t.Fatalf("string form = %v, %v", f, ok)
+	}
+	if len(Severities) != 4 || Severities[0] != SeverityLow || Severities[3] != SeverityCritical {
+		t.Fatalf("the severities, lowest first, are %v", Severities)
+	}
+}
+
+func TestKindsComeFromTags(t *testing.T) {
+	l, err := Read([]byte(semgrepish))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := l.Runs[0]
+	if k := run.KindOf(run.Results[0]); k != KindWeakness {
+		t.Fatalf("kind = %v", k)
+	}
+	if k := run.KindOf(run.Results[1]); k != KindSecret {
+		t.Fatalf("a rule tagged secret became %v", k)
+	}
+	for tags, want := range map[string]Kind{
+		`["dependency"]`: KindDependency, `["supply-chain"]`: KindDependency,
+		`["iac","terraform"]`: KindConfiguration, `["misconfiguration"]`: KindConfiguration,
+	} {
+		src := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t","rules":[{"id":"r","properties":{"tags":` +
+			tags + `}}]}},"results":[{"ruleId":"r","message":{"text":"m"}}]}]}`
+		tl, err := Read([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if k := tl.Runs[0].KindOf(tl.Runs[0].Results[0]); k != want {
+			t.Errorf("a rule tagged %s became %v, not %v", tags, k, want)
+		}
+	}
+}
+
+// TestAResultWithNowhereToGoIsAGap: a finding nobody can open is a number
+// rather than work, and the log is said to hold it.
+func TestAResultWithNowhereToGoIsAGap(t *testing.T) {
+	src := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t"}},
+		"results":[{"ruleId":"r","level":"error","message":{"text":"m"}}]}]}`
+	l, err := Read([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Count() != 1 {
+		t.Fatalf("read = %d", l.Count())
+	}
+	if _, _, ok := l.Runs[0].Results[0].Where(); ok {
+		t.Fatal("a result with no location was given one")
+	}
+	gap, ok := gapNamed(l.Gaps(), "no file location")
+	if !ok {
+		t.Fatal("no gap for the missing location")
+	}
+	if gap.Count != 1 || !strings.Contains(gap.Costs, "rather than work") {
+		t.Fatalf("the gap counts %d and costs %s", gap.Count, gap.Costs)
 	}
 }
 

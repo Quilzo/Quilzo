@@ -61,7 +61,7 @@ picture is a person's statement, and is recorded as one.
 | `ocsf` | OCSF 1.1 to 1.5 findings (classes 2001, 2003 and 2004), a JSON list or JSON Lines |
 | `cyclonedx` | CycloneDX 1.2 to 1.6 in JSON, with the VEX statements a bill carries |
 | `spdx` | SPDX 2.2 and 2.3 in JSON |
-| `sarif` | SARIF 2.1.0 |
+| `sarif` | SARIF 2.1.0: open findings by rule, by severity and by kind, and what was suppressed in the source |
 | `csaf` | CSAF 2.0 security advisories and VEX documents |
 | `openvex` | OpenVEX |
 | `dsse` | A DSSE envelope verified against a pinned key, holding an in-toto statement, or a bill of materials or a VEX document |
@@ -81,9 +81,9 @@ write, and a map that reads them from a column is refused.
 - The admin's **Evidence** screens: the files, one file with whether it
   checks, the import with a preview of every record before anything is
   written, column maps and pinned keys.
-- The agent interface: `evidence_files`, `evidence_verify` and
-  `evidence_ingest`, which a model is refused as every write to the register
-  refuses one.
+- The agent interface: `evidence_files`, `evidence_verify`,
+  `evidence_expire` and `evidence_ingest`; the last two write, and a model is
+  refused them as every write to the register refuses one.
 - The content API reads: `/api/v1/evidence/formats`, `/files`,
   `/files/{id}` and `/verify`.
 
@@ -102,4 +102,9 @@ write, and a map that reads them from a column is refused.
   cannot be checked here. A GRC tool's CSV, workbook or JSON export comes in
   through a column map that names the tool.
 - The SARIF reader came, with its tests, from a security team's own tools;
-  a digest of its shared fixture is held in its tests.
+  a digest of its shared fixture is held in its tests. A severity is the
+  tool's `security-severity` on the published bands (9.0 critical, 7.0 high,
+  4.0 medium) and, only where a result has none, its level, which the notes
+  say. That source's conversion of results into its own alerts, and its
+  SARIF writer, were not carried over, with their tests: Quilzo reads SARIF
+  and writes none.

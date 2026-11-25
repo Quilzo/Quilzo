@@ -200,8 +200,9 @@ func TestSPDXPackages(t *testing.T) {
 }
 
 // A SARIF log's results are counts about the repository scanned, across its
-// runs: open findings, findings by rule, and what was suppressed in the
-// source.
+// runs: open findings, findings by rule, by severity and by kind, and what
+// was suppressed in the source. A severity is the tool's security-severity
+// where it gave one, and its level only where it did not, which is said.
 func TestSARIFResults(t *testing.T) {
 	b, err := Read(Input{Format: FormatSARIF, Body: fixture(t, "sarif/scan.sarif")})
 	if err != nil {
@@ -214,13 +215,26 @@ func TestSARIFResults(t *testing.T) {
 		repo + " code.findings.suppressed":                        "1",
 		repo + " code.rule.go.lang.security.audit.dangerous-exec": "2",
 		repo + " code.rule.go-sql-injection":                      "1",
+		// The rule's 8.6 is high twice over; CodeQL's result gives no
+		// severity and no level, so it is low, and the suppressed key is
+		// not counted at all.
+		repo + " code.findings.critical": "0",
+		repo + " code.findings.high":     "2",
+		repo + " code.findings.medium":   "0",
+		repo + " code.findings.low":      "1",
+		repo + " code.kind.weakness":     "3",
 	} {
 		if o, ok := f[k]; !ok || value(o) != want {
 			t.Errorf("%s reads %q, not %q", k, value(o), want)
 		}
 	}
-	if !slices.ContainsFunc(b.Notes, func(n string) bool { return strings.Contains(n, "no fingerprint") }) {
-		t.Errorf("the result with no fingerprint is not said: %v", b.Notes)
+	if _, ok := f[repo+" code.kind.secret"]; ok {
+		t.Errorf("a suppressed secret is counted as an open one")
+	}
+	for _, want := range []string{"primaryLocationLineHash", "security-severity"} {
+		if !slices.ContainsFunc(b.Notes, func(n string) bool { return strings.Contains(n, want) }) {
+			t.Errorf("no note says a result has no %s: %v", want, b.Notes)
+		}
 	}
 }
 

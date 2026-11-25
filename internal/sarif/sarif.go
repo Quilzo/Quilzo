@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Rashik Adhikari
 // SPDX-License-Identifier: Apache-2.0
 
-// Package sarif reads and writes the interchange format every code scanner
-// already speaks.
+// Package sarif reads the interchange format every code scanner already
+// speaks.
 //
 // SARIF 2.1.0 is an OASIS standard and, unusually for this industry, it
 // won: Semgrep, CodeQL, ZAP, OSV-Scanner, Trivy, gosec and most of the rest
 // emit it, and GitHub code scanning consumes it. One reader therefore
-// covers static analysis, dynamic analysis and dependency scanning, and one
-// writer puts results back into the place developers already look.
+// covers static analysis, dynamic analysis and dependency scanning.
 //
 // # The churn nobody attributes correctly
 //
@@ -21,7 +20,7 @@
 //
 // It is not the scanner. It is a field the scanner did not fill in. So this
 // reads the fingerprint where a tool provided one, reports which results
-// arrived without one, and always emits one when writing.
+// arrived without one (Gaps).
 //
 // # A level is not a severity
 //
@@ -34,7 +33,8 @@
 //
 // Both are read here and kept apart. Where a tool gives a security severity
 // it is used, mapped on GitHub's own published boundaries; where it does
-// not, the level is used and the conversion says which happened.
+// not, the level is used, and SeverityOf and Gaps say which happened
+// (severity.go).
 //
 // # The limits, which are not what they look like
 //
@@ -76,8 +76,8 @@ import (
 // files nobody produces.
 const Version = "2.1.0"
 
-// Schema is the published schema location, emitted so a file this writes
-// validates against the same thing everybody else's does.
+// Schema is the published schema location, which a log names to say what
+// it validates against.
 const Schema = "https://json.schemastore.org/sarif-2.1.0.json"
 
 // The limits a platform applies, from GitHub's published table.
@@ -380,7 +380,7 @@ func (res Result) Suppressed() (string, bool) {
 //
 // Over the trimmed text of the line and the path, which is what makes it
 // survive reformatting above and below it. This is what a tool should have
-// emitted; where one did not, this is what is emitted on write.
+// emitted.
 func LineHash(path, lineText string) string {
 	h := sha256.New()
 	h.Write([]byte(strings.TrimSpace(path)))

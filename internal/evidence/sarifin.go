@@ -17,10 +17,18 @@ import (
 // and by which rule, in which repository: so a run becomes counts, as facts
 // about the repository it scanned (the run's version control provenance,
 // or, with none, the tool's own name). code.findings is the results nobody
-// suppressed; code.rule.RULE the same for one rule; code.findings.suppressed
-// the ones a person already decided about in the source. A run whose tool
-// said it did not finish is a fact too, code.run.failed, because an empty
-// run that failed is not a clean one.
+// suppressed; code.rule.RULE the same for one rule; code.findings.SEVERITY
+// the same by severity, all four written so that none open is a fact too;
+// code.kind.KIND by what sort of finding it is, which tells a secret left
+// in code from a weakness in it; code.findings.suppressed the ones a person
+// already decided about in the source. A run whose tool said it did not
+// finish is a fact too, code.run.failed, because an empty run that failed
+// is not a clean one.
+//
+// A severity is the tool's security-severity where it gave one, and its
+// level only where it did not; what the results left out (that, a
+// fingerprint, a file location) is said in the batch's notes, so a count
+// made on a level can be recognised as one.
 
 func init() { readers[FormatSARIF] = readSARIF }
 
@@ -41,6 +49,8 @@ func readSARIF(rd *reader) error {
 		place            string
 		open, suppressed int
 		byRule           map[string]int
+		bySeverity       map[sarif.Severity]int
+		byKind           map[sarif.Kind]int
 		failed           bool
 	}
 	byRepo := map[register.ID]*counts{}
@@ -60,11 +70,11 @@ func readSARIF(rd *reader) error {
 		}
 		c := byRepo[repo]
 		if c == nil {
-			c = &counts{place: place, byRule: map[string]int{}}
+			c = &counts{place: place, byRule: map[string]int{}, bySeverity: map[sarif.Severity]int{},
+				byKind: map[sarif.Kind]int{}}
 			byRepo[repo] = c
 			repos = append(repos, repo)
 		}
-		churn := 0
 		for _, res := range run.Results {
 			if _, yes := res.Suppressed(); yes {
 				c.suppressed++
@@ -78,15 +88,14 @@ func readSARIF(rd *reader) error {
 				}
 			}
 			c.byRule[firstText(rule, "unnamed")]++
-			if res.Churns() {
-				churn++
-			}
+			sev, _ := run.SeverityOf(res)
+			c.bySeverity[sev]++
+			c.byKind[run.KindOf(res)]++
 		}
 		c.failed = c.failed || run.Failed()
-		if churn > 0 {
-			rd.note("%d result(s) of %s have no fingerprint, and a platform opens a new alert each time their line is edited",
-				churn, label(tool))
-		}
+	}
+	for _, g := range l.Gaps() {
+		rd.note("%d result(s) with %s (the tool that left it out most often: %s): %s", g.Count, g.What, label(g.From), g.Costs)
 	}
 	for _, repo := range repos {
 		c := byRepo[repo]
@@ -105,6 +114,18 @@ func readSARIF(rd *reader) error {
 		for _, r := range rules {
 			if err := rd.observe(repo, factName("code.rule", r), register.NumberValue(float64(c.byRule[r])), place, ""); err != nil {
 				return err
+			}
+		}
+		for _, sev := range sarif.Severities {
+			if err := rd.observe(repo, "code.findings."+string(sev), register.NumberValue(float64(c.bySeverity[sev])), place, ""); err != nil {
+				return err
+			}
+		}
+		for _, k := range sarif.Kinds {
+			if n := c.byKind[k]; n > 0 {
+				if err := rd.observe(repo, "code.kind."+string(k), register.NumberValue(float64(n)), place, ""); err != nil {
+					return err
+				}
 			}
 		}
 		if c.failed {
