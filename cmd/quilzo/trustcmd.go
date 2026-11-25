@@ -43,8 +43,10 @@ func loadTrusts(root string) ([]federate.Trust, error) {
 	return f.Trusts, err
 }
 
-func trustUsage() error {
-	fmt.Print(`quilzo trust — let a CI job exchange its identity token for a short Quilzo token
+func trustUsage() error { return usagePage(trustPage, nil) }
+
+// trustPage is trust's page of subcommands.
+const trustPage = `quilzo trust — let a CI job exchange its identity token for a short Quilzo token
 
   add NAME --github OWNER/REPO [--ref REF] [--environment ENV]
            --as PRINCIPAL --role ROLE [--on /path] [--for 15m] [--read-only] [--audience URL]
@@ -56,9 +58,7 @@ func trustUsage() error {
 A job asks its platform for an identity token with this store's address as
 the audience, and posts it to /token/exchange. Nothing secret is kept in the
 repository. A value ending in * matches a prefix: --ref 'refs/heads/release/*'.
-`)
-	return nil
-}
+`
 
 func cmdTrust(root string, args []string) error {
 	if len(args) == 0 {
@@ -77,8 +77,7 @@ func cmdTrust(root string, args []string) error {
 	}
 	// A word that is none of them is refused, with the commands there are:
 	// it printed them and exited 0.
-	_ = trustUsage()
-	return errMisused{fmt.Errorf("unknown trust command %q", args[0])}
+	return usagePage(trustPage, errMisused{fmt.Errorf("unknown trust command %q", args[0])})
 }
 
 type claimFlags map[string]string

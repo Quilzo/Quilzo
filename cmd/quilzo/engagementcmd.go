@@ -133,14 +133,14 @@ func engagementOpen(root string, args []string) error {
 		}
 	}
 	if strings.TrimSpace(*until) == "" {
-		return fmt.Errorf(
+		return errMisused{fmt.Errorf(
 			"--until is required. An engagement that never ends is the " +
 				"access nobody revokes, which is the complaint about every " +
-				"one of these products")
+				"one of these products")}
 	}
 	parsed, perr := time.Parse("2006-01-02", strings.TrimSpace(*until))
 	if perr != nil {
-		return fmt.Errorf("--until is a date like 2026-12-31: %w", perr)
+		return errMisused{fmt.Errorf("--until is a date like 2026-12-31: %w", perr)}
 	}
 	e.Until = parsed.UTC()
 	if err := e.Validate(); err != nil {

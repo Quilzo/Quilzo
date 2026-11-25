@@ -119,6 +119,37 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 	}
 }
 
+// A command's page of subcommands is not an answer under --json.
+//
+// `auth`, `token`, `trust`, `spend` and `evolve` typed bare printed their
+// page of subcommands, prose, to stdout and exited 0 under --json, and all
+// but `token` printed it ahead of the refusal of a subcommand they do not
+// have; `quilzo --json` alone wrote the whole help there. A script reading
+// the one document stdout carries got a page of prose. Each is refused
+// now, as misused, with nothing on stdout; at a terminal the bare command
+// still answers with its page.
+func TestAPageOfSubcommandsIsNoAnswerUnderJSON(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	for _, c := range []string{"auth", "token", "trust", "spend", "evolve"} {
+		for _, line := range [][]string{{c}, {c, "zzbogus"}} {
+			answersInJSON(t, home, root, line, false)
+			if _, e, code := cliRun(t, root, "", append([]string{"--json"}, line...)...); code != out.ExitUsage {
+				t.Errorf("`quilzo --json %s` exited %d, want %d: %s", strings.Join(line, " "), code, out.ExitUsage, firstLines(e, 2))
+			}
+		}
+		if o, e, code := cliRun(t, root, "", c); code != 0 || !strings.HasPrefix(o, "quilzo "+c+" —") {
+			t.Errorf("`quilzo %s` at a terminal exited %d without its page: %s", c, code, firstLines(o+e, 2))
+		}
+	}
+	if o, _, code := cliRun(t, root, "", "--json"); code != out.ExitUsage || strings.TrimSpace(o) != "" {
+		t.Errorf("`quilzo --json` exited %d and wrote %d bytes of prose to stdout", code, len(o))
+	}
+}
+
 // An answer under --json that could not be written fails the command.
 //
 // The writer said "cannot encode output" on stderr and the command went on

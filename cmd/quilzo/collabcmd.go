@@ -123,6 +123,14 @@ func lockClaim(root string, args []string) error {
 	if len(pos) != 1 {
 		return errMisused{fmt.Errorf("usage: quilzo lock <page> [--note \"...\"]")}
 	}
+	// A name a page can have, as the store says one is: `lock ""` claimed
+	// the page called nothing, and `lock "not a page at all"` and `lock
+	// ../../etc` names no page can have, each listed by `lock list` as held
+	// and warning nobody. A page not written yet may be claimed, by the
+	// name it will have.
+	if err := store.CheckPath(pos[0]); err != nil {
+		return errMisused{err}
+	}
 
 	locks, err := loadLocks(root)
 	if err != nil {
@@ -715,9 +723,11 @@ func reviewRequire(root string, args []string) error {
 	if len(pos) != 1 {
 		return errMisused{fmt.Errorf("usage: quilzo review require <n> [--approvers a,b]")}
 	}
-	var n int
-	if _, err := fmt.Sscanf(pos[0], "%d", &n); err != nil || n < 0 {
-		return fmt.Errorf("the number of approvals must be zero or more")
+	// The whole word, as a number: Sscanf took the digits it found first,
+	// so `review require 2x` required two.
+	n, err := strconv.Atoi(pos[0])
+	if err != nil || n < 0 {
+		return errMisused{fmt.Errorf("the number of approvals must be zero or more")}
 	}
 
 	if *people > n {

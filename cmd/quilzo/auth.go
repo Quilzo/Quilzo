@@ -180,13 +180,16 @@ func cmdAuth(root string, args []string) error {
 		// Refused, with the commands there are. It printed them and exited
 		// 0, so a script that wrote `auth dny dana publisher` was told its
 		// deny had been made.
-		_ = authUsage()
-		return errMisused{fmt.Errorf("unknown auth command %q", args[0])}
+		return usagePage(authPage(), errMisused{fmt.Errorf("unknown auth command %q", args[0])})
 	}
 }
 
-func authUsage() error {
-	fmt.Print(`quilzo auth — who can do what
+func authUsage() error { return usagePage(authPage(), nil) }
+
+// authPage is auth's page of subcommands, roles and permissions.
+func authPage() string {
+	var b strings.Builder
+	b.WriteString(`quilzo auth — who can do what
 
   grant <principal> <role|permission|job|APP/ROLE> [--on /path] [--note "..."]
   deny <principal> <role|permission> [--on /path] [--note "..."]
@@ -201,18 +204,18 @@ Four roles, in order. Each includes the ones below it:
 
 `)
 	for _, r := range auth.Roles {
-		fmt.Printf("  %-10s %s\n", r, r.Describe())
+		fmt.Fprintf(&b, "  %-10s %s\n", r, r.Describe())
 	}
-	fmt.Print(`
+	b.WriteString(`
 Permissions for working with agents, each also granted on its own. Agents are
 /@agents, one agent /@agents/NAME:
 
 `)
 	for _, pm := range auth.Permissions {
 		need, _ := auth.Needs(pm.Action)
-		fmt.Printf("  %-17s %s (with the %s role already)\n", pm.Action, pm.Summary, need)
+		fmt.Fprintf(&b, "  %-17s %s (with the %s role already)\n", pm.Action, pm.Summary, need)
 	}
-	fmt.Print(`
+	b.WriteString(`
 An installed feature can declare roles for the people who work in it, over
 its own records, pages and agents: grant lab-samples/technician gives somebody
 what that role grants, and nothing else. quilzo auth roles lists them.
@@ -221,7 +224,7 @@ A grant on /blog covers everything under it. A deny wins wherever it sits, so
 "publisher everywhere except /legal" is two bindings rather than a broad grant
 you meant to narrow later.
 `)
-	return nil
+	return b.String()
 }
 
 func authRoles(root string) error {
@@ -846,7 +849,7 @@ func authExplain(root string, args []string) error {
 
 func cmdToken(root string, args []string) error {
 	if len(args) == 0 {
-		fmt.Print(`quilzo token — credentials for API access
+		return usagePage(`quilzo token — credentials for API access
 
   issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h] [--person]
   exchange [--role R] [--on /path] [--ttl 15m]   short-lived session from a token
@@ -854,11 +857,10 @@ func cmdToken(root string, args []string) error {
   revoke <id>                                    cascades to its sessions
   stale [--idle 720h]
 
-Tokens start with ` + auth.TokenPrefix + ` so a secret scanner can spot one in a repository.
+Tokens start with `+auth.TokenPrefix+` so a secret scanner can spot one in a repository.
 Only a hash is stored, so the secret is shown exactly once and cannot be
 recovered from this machine.
-`)
-		return nil
+`, nil)
 	}
 	switch args[0] {
 	case "issue":
@@ -928,7 +930,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		return errMisused{fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")}
 	}
 	if strings.TrimSpace(*principal) == "" {
-		return fmt.Errorf("--principal is required: a token acts as somebody")
+		return errMisused{fmt.Errorf("--principal is required: a token acts as somebody")}
 	}
 
 	// Without --role, the token acts as the principal actually can.

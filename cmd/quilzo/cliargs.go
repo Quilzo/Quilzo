@@ -420,3 +420,30 @@ func shellWord(s string) string {
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// usagePage is a command's page of what it takes, for the command typed with
+// nothing after it, or with a word that is none of its subcommands
+// (refusal, which it returns).
+//
+// The page is prose, and under --json stdout carries one document. `quilzo
+// --json auth` wrote thirty-four lines of it there and exited 0, and `quilzo
+// --json auth dny dana publisher` wrote them ahead of its refusal, so a
+// script reading the answer choked on its first word; `token`, `trust`,
+// `spend` and `evolve` did the same, each printing its page for itself.
+// Under --json the page is not written to stdout: typed bare, the command
+// is refused as misused with the page as what it says, on stderr as every
+// refusal under --json is, and given a word it does not have, the refusal
+// is said alone.
+//
+// At a terminal it is what it was: the answer to the bare command, and the
+// list of what there is above a refusal.
+func usagePage(page string, refusal error) error {
+	if w != nil && w.Mode == out.JSON {
+		if refusal == nil {
+			refusal = errMisused{errors.New(strings.TrimRight(page, "\n"))}
+		}
+		return refusal
+	}
+	fmt.Print(page)
+	return refusal
+}

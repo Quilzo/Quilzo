@@ -225,7 +225,7 @@ func parseChanges(args []string) ([]odp.Change, error) {
 	for _, a := range args {
 		k, v, ok := strings.Cut(a, "=")
 		if !ok {
-			return nil, fmt.Errorf("%q is not PARAM=VALUE (for example ac-07_odp.01=5, or ac-12_odp= to take it away)", a)
+			return nil, errMisused{fmt.Errorf("%q is not PARAM=VALUE (for example ac-07_odp.01=5, or ac-12_odp= to take it away)", a)}
 		}
 		out = append(out, odp.Change{Param: strings.TrimSpace(k), Value: v})
 	}

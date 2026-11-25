@@ -89,7 +89,7 @@ func sectionBackdrop(root string, args []string) error {
 	if pos[1] != "hero" {
 		n, err := strconv.Atoi(pos[1])
 		if err != nil {
-			return fmt.Errorf("%q is not a section index or hero", pos[1])
+			return errMisused{fmt.Errorf("%q is not a section index or hero", pos[1])}
 		}
 		at, where = n, fmt.Sprintf("section %d", n)
 	}
@@ -333,9 +333,12 @@ func sectionMove(root string, args []string) error {
 	if len(pos) != 3 {
 		return errMisused{fmt.Errorf("usage: quilzo section move <page> <index> up|down")}
 	}
+	// An index that is not a number, here and in every verb below, is the
+	// command line's mistake, exit 2, as its usage is: each exited 1, the
+	// code of a command that ran and failed.
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
-		return fmt.Errorf("%q is not a section index", pos[1])
+		return errMisused{fmt.Errorf("%q is not a section index", pos[1])}
 	}
 	by := 0
 	switch strings.ToLower(pos[2]) {
@@ -344,7 +347,7 @@ func sectionMove(root string, args []string) error {
 	case "down":
 		by = 1
 	default:
-		return fmt.Errorf("%q is not a direction; up or down", pos[2])
+		return errMisused{fmt.Errorf("%q is not a direction; up or down", pos[2])}
 	}
 	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
 		next, err := section.Move(body, index, by)
@@ -445,7 +448,7 @@ func sectionFields(root string, args []string) error {
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
-		return fmt.Errorf("%q is not a section index", pos[1])
+		return errMisused{fmt.Errorf("%q is not a section index", pos[1])}
 	}
 	s, err := open(root)
 	if err != nil {
@@ -498,13 +501,13 @@ func sectionSet(root string, args []string) error {
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
-		return fmt.Errorf("%q is not a section index", pos[1])
+		return errMisused{fmt.Errorf("%q is not a section index", pos[1])}
 	}
 	values := map[string]string{}
 	for _, pair := range pos[2:] {
 		path, value, found := strings.Cut(pair, "=")
 		if !found {
-			return fmt.Errorf("%q is not path=value", pair)
+			return errMisused{fmt.Errorf("%q is not path=value", pair)}
 		}
 		values[strings.TrimSpace(path)] = value
 	}
@@ -559,7 +562,7 @@ func sectionItem(root string, args []string) error {
 	}
 	index, err := strconv.Atoi(pos[1])
 	if err != nil {
-		return fmt.Errorf("%q is not a section index", pos[1])
+		return errMisused{fmt.Errorf("%q is not a section index", pos[1])}
 	}
 	list := pos[2]
 
@@ -578,7 +581,7 @@ func sectionItem(root string, args []string) error {
 		}
 		entry, cerr := strconv.Atoi(pos[3])
 		if cerr != nil {
-			return fmt.Errorf("%q is not an entry number", pos[3])
+			return errMisused{fmt.Errorf("%q is not an entry number", pos[3])}
 		}
 		return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
 			next, err := section.RemoveItem(body, index, list, entry)

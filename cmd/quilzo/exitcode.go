@@ -33,6 +33,19 @@ type errNotFound struct{ error }
 
 func (e errNotFound) Unwrap() error { return e.error }
 
+// errUnavailable marks a refusal because something the command works with,
+// and does not make, is not there to use: no template directory to render
+// against. It exits 5, which the help documents as "a required dependency
+// was missing".
+//
+// The help listed 5 and nothing returned it. `ipfs id`, `a11y`, `site` and
+// `theme show` of a store with no templates exited 1, as a command that ran
+// and failed does, so a deployment script could not tell "start a site
+// first" from a render that broke.
+type errUnavailable struct{ error }
+
+func (e errUnavailable) Unwrap() error { return e.error }
+
 // exitCode is the code an error leaves the program with, and the one place
 // an error becomes one of the codes `quilzo help` documents.
 //
@@ -49,6 +62,7 @@ func exitCode(err error) int {
 	var blocked errBlocked
 	var misused errMisused
 	var missing errNotFound
+	var unavailable errUnavailable
 	switch {
 	case err == nil:
 		return out.OK
@@ -70,6 +84,8 @@ func exitCode(err error) int {
 		errors.Is(err, odp.ErrNoProposal), errors.Is(err, newsletter.ErrNoIssue),
 		errors.Is(err, audit.ErrNoEntry):
 		return out.ExitNotFound
+	case errors.As(err, &unavailable):
+		return out.ExitUnavailable
 	}
 	return out.ExitFailure
 }

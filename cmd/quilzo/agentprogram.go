@@ -534,7 +534,7 @@ func agentProgramCmd(root string, args []string) error {
 		for _, kv := range envs {
 			k, v, ok := strings.Cut(kv, "=")
 			if !ok {
-				return fmt.Errorf("%q is not K=V", kv)
+				return errMisused{fmt.Errorf("%q is not K=V", kv)}
 			}
 			if p.Env == nil {
 				p.Env = map[string]string{}

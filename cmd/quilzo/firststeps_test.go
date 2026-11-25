@@ -1263,3 +1263,49 @@ func TestServeOpensAnAddressTheAdminAnswersAt(t *testing.T) {
 		l.Close()
 	}
 }
+
+// The guide's model routes and settings work as it writes them, in the
+// order it gives them, on a store that has nothing else.
+//
+// docs/cms.md set up the chatbot's embeddings with `config set
+// chatbot.embeddings vectors --reason "..."`, a flag config set does not
+// take (exit 2): a setting that sends the site's text to a provider takes
+// --accept-risk and a reason. And the route before it, priced with
+// --price-in, as the video route is with --price-video, was refused
+// because nothing had said what currency the prices are in.
+func TestTheGuidesRoutesAndSettingsWorkAsWritten(t *testing.T) {
+	var lines []string
+	in, cont := false, ""
+	for _, l := range strings.Split(readDoc(t, "docs/cms.md"), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "```") {
+			in = !in
+			continue
+		}
+		l = strings.TrimSpace(l)
+		if !in || l == "" {
+			continue
+		}
+		if cont != "" {
+			l, cont = cont+" "+l, ""
+		}
+		if before, ok := strings.CutSuffix(l, `\`); ok {
+			cont = strings.TrimSpace(before)
+			continue
+		}
+		if strings.HasPrefix(l, "quilzo gateway ") || strings.HasPrefix(l, "quilzo config set ") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) < 10 {
+		t.Fatalf("only %d gateway and config lines in docs/cms.md; it was not read", len(lines))
+	}
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	for _, l := range lines {
+		if _, e, code := cliRun(t, root, "", shellWords(l)[1:]...); code != 0 {
+			t.Errorf("docs/cms.md: `%s` exited %d: %s", l, code, firstLines(e, 2))
+		}
+	}
+}

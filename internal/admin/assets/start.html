@@ -82,7 +82,7 @@ the section of the manual about that screen rather than at the top of it.</p>
 
 {{if not .Dismissed}}
 <form method="post" action="/start/done" class="inline">
-  <button type="submit">Got it — go to my pages</button>
+  <button type="submit">Got it — go to {{.Next}}</button>
 </form>
 <p class="help">This screen stops opening on sign-in. It stays in the menu, and
 the checklist keeps reading the store, so it is worth coming back to.</p>

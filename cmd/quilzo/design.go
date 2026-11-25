@@ -183,6 +183,13 @@ func blockingCount(findings []theme.Finding) int {
 // loadLayouts reads every .html in the directory as a layout.
 func loadLayouts(dir string) (render.Layouts, error) {
 	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		// Not there is a dependency missing (exit 5), which starting a site
+		// or --templates answers; a directory that will not read is a
+		// failure like any other.
+		return render.Layouts{}, errUnavailable{fmt.Errorf(
+			"no template directory at %s: %w", dir, err)}
+	}
 	if err != nil {
 		return render.Layouts{}, fmt.Errorf(
 			"no template directory at %s: %w", dir, err)
@@ -269,8 +276,8 @@ func siteDesignAt(dir string) error {
 	st, err := os.Stat(dir)
 	switch {
 	case os.IsNotExist(err):
-		return fmt.Errorf("there is no site design at %s yet: start a site first "+
-			"(quilzo site new or quilzo demo), or give the directory its templates are in with --dir", dir)
+		return errUnavailable{fmt.Errorf("there is no site design at %s yet: start a site first "+
+			"(quilzo site new or quilzo demo), or give the directory its templates are in with --dir", dir)}
 	case err != nil:
 		return err
 	case !st.IsDir():

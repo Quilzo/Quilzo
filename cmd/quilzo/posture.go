@@ -781,8 +781,8 @@ func postureSuppress(root string, args []string) error {
 			"--reason ... --by ... [--days N]")}
 	}
 	if strings.TrimSpace(*reason) == "" {
-		return fmt.Errorf("a suppression needs a reason. An exception nobody " +
-			"wrote down is indistinguishable from an oversight")
+		return errMisused{fmt.Errorf("a suppression needs a reason. An exception nobody " +
+			"wrote down is indistinguishable from an oversight")}
 	}
 	// Recorded as the verified caller's, with a name typed after --by
 	// credited beside them (Caller.namedBy). Only a store that knows nobody

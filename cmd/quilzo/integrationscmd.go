@@ -229,7 +229,7 @@ func integrationsCall(root string, args []string) error {
 	for _, kv := range rest[2:] {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
-			return fmt.Errorf("%q is not key=value", kv)
+			return errMisused{fmt.Errorf("%q is not key=value", kv)}
 		}
 		given[k] = v
 	}

@@ -808,7 +808,7 @@ func auditExport(root string, args []string) error {
 		return err
 	}
 	if len(pos) > 0 {
-		return fmt.Errorf("auditlog export takes no %q; usage: quilzo auditlog export [-o FILE]", pos[0])
+		return errMisused{fmt.Errorf("auditlog export takes no %q; usage: quilzo auditlog export [-o FILE]", pos[0])}
 	}
 	events, err := exportedEntries(root)
 	if err != nil {
@@ -985,9 +985,13 @@ func auditProve(root string, args []string) error {
 	if len(args) != 1 {
 		return errMisused{fmt.Errorf("usage: quilzo auditlog prove <sequence>")}
 	}
-	var seq int64
-	if _, err := fmt.Sscanf(args[0], "%d", &seq); err != nil {
-		return fmt.Errorf("%q is not a sequence number", args[0])
+	// Read whole, as `auditlog show SEQ` reads it, and refused as a
+	// misused command line as show refuses it. Sscanf took the digits it
+	// found first, so `prove 3x` proved entry 3, and what it refused exited
+	// 1, a failure, where show's same refusal exited 2.
+	seq, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || seq < 1 {
+		return errMisused{fmt.Errorf("%q is not a sequence number; usage: quilzo auditlog prove <sequence>", args[0])}
 	}
 
 	events, err := auditEntries(root)

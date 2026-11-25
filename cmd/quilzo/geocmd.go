@@ -241,6 +241,9 @@ func cmdGeo(root string, args []string) error {
 			if len(args)%2 != 0 {
 				return errMisused{geoUsage()}
 			}
+			// What is refused below is a word typed here, so the command
+			// line's mistake, exit 2, as `shield trust add` refuses a word
+			// that is not a network: each exited 1, a failure.
 			n := geo.Network{Prefix: args[2]}
 			n.Network = args[3]
 			for i := 4; i+1 < len(args); i += 2 {
@@ -248,7 +251,7 @@ func cmdGeo(root string, args []string) error {
 				switch args[i] {
 				case "--kind":
 					if v != "office" && v != "vpn" {
-						return fmt.Errorf("--kind is office or vpn")
+						return errMisused{fmt.Errorf("--kind is office or vpn")}
 					}
 					n.Kind = v
 				case "--city":
@@ -258,13 +261,13 @@ func cmdGeo(root string, args []string) error {
 				case "--lat":
 					f, err := strconv.ParseFloat(v, 64)
 					if err != nil {
-						return err
+						return errMisused{err}
 					}
 					n.Lat = f
 				case "--lon":
 					f, err := strconv.ParseFloat(v, 64)
 					if err != nil {
-						return err
+						return errMisused{err}
 					}
 					n.Lon = f
 				default:
@@ -272,7 +275,7 @@ func cmdGeo(root string, args []string) error {
 				}
 			}
 			if _, err := netip.ParsePrefix(n.Prefix); err != nil {
-				return fmt.Errorf("%q is not a network: %w", n.Prefix, err)
+				return errMisused{fmt.Errorf("%q is not a network: %w", n.Prefix, err)}
 			}
 			c.Networks = append(c.Networks, n)
 			return saveGeo("geo.network-added", n.Prefix)

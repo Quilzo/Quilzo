@@ -20,6 +20,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // cliRun is the command line itself, run as a caller runs it, with what it
@@ -1266,4 +1268,75 @@ func (l lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.Write(p)
+}
+
+// A name that is empty, or that nothing can have, is refused and not kept
+// as though it were one.
+//
+// `fediverse block ""` listed an empty host, `fediverse block "not a host
+// at all"` a host nothing can have, and `@spam@bad.example` an account no
+// actor id is ever equal to: `fediverse blocked` showed each as refused, and
+// each refused nobody. `lock ""`, `lock "not a page at all"` and `lock
+// ../../etc` were claims on pages no page can be, each listed by `lock
+// list` as held. Each is a misused command line now, 2, with nothing
+// written; a host, an actor id and a page name are kept as before.
+func TestANameNothingCanHaveIsRefusedNotKept(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	for _, line := range [][]string{
+		{"fediverse", "block", ""},
+		{"fediverse", "block", "  "},
+		{"fediverse", "block", "not a host at all"},
+		{"fediverse", "block", "http://plain.example/users/x"},
+		{"fediverse", "block", "https://user:pw@bad.example/users/x"},
+		{"fediverse", "block", "@spam@bad.example"},
+		{"fediverse", "block", "bad.example:8443"},
+		{"fediverse", "block", "bad..example"},
+		{"lock", ""},
+		{"lock", "not a page at all"},
+		{"lock", "../../etc"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != out.ExitUsage {
+			t.Errorf("`quilzo %s` exited %d, want %d: %s", strings.Join(line, " "), code, out.ExitUsage, firstLines(e, 2))
+		}
+	}
+	listed := func(line ...string) string {
+		t.Helper()
+		o, e, code := cliRun(t, root, "", append([]string{"--json"}, line...)...)
+		if code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 2))
+		}
+		var doc any
+		if err := json.Unmarshal([]byte(o), &doc); err != nil {
+			t.Fatalf("`quilzo --json %s`: %v", strings.Join(line, " "), err)
+		}
+		b, _ := json.Marshal(doc)
+		return string(b)
+	}
+	if got := listed("fediverse", "blocked"); got != `{"actors":[],"hosts":[]}` {
+		t.Errorf("what was refused was kept: %s", got)
+	}
+	if got := listed("lock", "list"); got != `{"locks":[]}` {
+		t.Errorf("what was refused was kept: %s", got)
+	}
+
+	for _, line := range [][]string{
+		{"fediverse", "block", "Bad.Example"},
+		{"fediverse", "block", "https://good.example/users/x"},
+		{"fediverse", "block", "2001:db8::1"},
+		{"lock", "about"},
+		{"lock", "blog/first"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 2))
+		}
+	}
+	if got := listed("fediverse", "blocked"); got != `{"actors":["https://good.example/users/x"],"hosts":["2001:db8::1","bad.example"]}` {
+		t.Errorf("fediverse blocked: %s", got)
+	}
+	if got := listed("lock", "list"); !strings.Contains(got, `"page":"about"`) || !strings.Contains(got, `"page":"blog/first"`) {
+		t.Errorf("lock list: %s", got)
+	}
 }

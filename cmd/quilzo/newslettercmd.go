@@ -404,7 +404,8 @@ func removeSubscriber(root, who string, caller *Caller) (bool, error) {
 			// never depend on a rule tightening after they joined.
 			id = list.ID(strings.ToLower(strings.TrimSpace(who)))
 		default:
-			return false, err
+			// Neither an id nor an address: the word given, not the list.
+			return false, errMisused{err}
 		}
 	}
 	was, err := list.Remove(id, time.Now())

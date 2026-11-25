@@ -57,6 +57,35 @@ func TestSigningInAfterwardsLandsOnTheWork(t *testing.T) {
 	}
 }
 
+// The button that finishes Get started names the screen it goes to.
+//
+// It said "Got it — go to my pages" and went to Today, which is where a
+// sign-in lands for everybody who has not chosen to start on Pages.
+func TestFinishingGetStartedSaysWhereItGoes(t *testing.T) {
+	srv, token := setup(t)
+	for start, want := range map[string]struct{ says, goes string }{
+		"":      {"Got it — go to Today", "/today"},
+		"pages": {"Got it — go to my pages", "/"},
+	} {
+		ask := func(method, path string) *httptest.ResponseRecorder {
+			r := httptest.NewRequest(method, path, nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+			if start != "" {
+				r.AddCookie(&http.Cookie{Name: StartCookie, Value: start})
+			}
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, r)
+			return w
+		}
+		button := regexp.MustCompile(`<button type="submit">([^<]*)</button>`).FindStringSubmatch(ask(http.MethodGet, "/start").Body.String())
+		goes := ask(http.MethodPost, "/start/done").Header().Get("Location")
+		if button == nil || button[1] != want.says || goes != want.goes {
+			t.Errorf("starting at %q, the button says %q and goes to %q; want %q, to %s", start, button, goes, want.says, want.goes)
+		}
+	}
+}
+
 // The root stays the root, whatever the onboarding cookie says.
 func TestTheLandingPageIsNotConditional(t *testing.T) {
 	srv, token := setup(t)

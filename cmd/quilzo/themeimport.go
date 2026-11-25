@@ -452,7 +452,7 @@ func buildMapping(path string, sets stringList, scheme string) (map[string]strin
 	for _, s := range sets {
 		k, v, ok := strings.Cut(s, "=")
 		if !ok {
-			return nil, fmt.Errorf("%q is not token=path", s)
+			return nil, errMisused{fmt.Errorf("%q is not token=path", s)}
 		}
 		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}

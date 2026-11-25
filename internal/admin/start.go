@@ -230,11 +230,19 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The button names where it goes, which is where a sign-in lands
+	// (startPath): it said "go to my pages" and went to Today, as it does
+	// for everybody who has not chosen Pages.
+	next := "Today"
+	if startLabel(r) == "Pages" {
+		next = "my pages"
+	}
 	s.render(w, r, "start.html", map[string]any{
 		"Title": "Get started", "Principal": p, "Nav": "start",
 		"Steps": steps, "Done": done, "Total": len(steps),
 		"Gates":     gates,
 		"Dismissed": startDismissed(r),
+		"Next":      next,
 	})
 }
 

@@ -518,6 +518,151 @@ func TestEveryRuleOfTwoAndEveryMissingThingHasItsCode(t *testing.T) {
 	want(out.ExitBlocked, "policy", "approve", id("policy", "propose", "ac-12_odp=4 hours", "--reason", "shorter still"))
 }
 
+// A command line that is wrong exits 2 wherever its words are read: a word
+// that is not of the kind the command takes, a word it does not take, and a
+// flag it needs left out.
+//
+// `auditlog show ab` exited 2 and `auditlog prove ab` 1, as a command that
+// ran and failed does, and so did some thirty others that read their own
+// words: an id of the wrong shape (`feature approve`, `agent receipt`,
+// `apps receipt`, `inbox show`), a NAME=VALUE without its = (`add`, `site
+// fill`, `policy propose`, `records add`), a time or a number that is not
+// one (`schedule add`, `engagement open --until`, `review require`), and a
+// flag a command cannot go without (`token issue` without --principal,
+// `agent new` without --kind, `menu add` without --label, `compliance ssp`
+// without --impact). A script retrying failures retried each typo. Two read
+// a number by its first digits: `auditlog prove 3x` proved entry 3, and
+// `review require 2x` required two approvals and exited 0.
+//
+// And one rule, one code: `assist` without --author exited 1 where `media
+// generate`, `film`, `speak` and `transcribe` refuse the same omission by
+// the provenance gate, 3.
+func TestAWrongCommandLineExitsTwoWhereverItIsRead(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, c := range []struct {
+		want int
+		line []string
+	}{
+		{out.ExitUsage, []string{"add", "ab"}},
+		{out.ExitUsage, []string{"agent", "new", "b1"}},
+		{out.ExitUsage, []string{"agent", "receipt", "ab"}},
+		{out.ExitUsage, []string{"apps", "receipt", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "export", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "prove", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "prove", "3x"}},
+		{out.ExitUsage, []string{"compliance", "ssp"}},
+		{out.ExitUsage, []string{"engagement", "open", "ab"}},
+		{out.ExitUsage, []string{"engagement", "open", "ab", "--until", "tomorrow"}},
+		{out.ExitUsage, []string{"evolve", "run"}},
+		{out.ExitUsage, []string{"feature", "approve", "ab"}},
+		{out.ExitUsage, []string{"feature", "decline", "ab"}},
+		{out.ExitUsage, []string{"inbox", "show", "ab"}},
+		{out.ExitUsage, []string{"menu", "add", "main"}},
+		{out.ExitUsage, []string{"newsletter", "remove", "ab"}},
+		{out.ExitUsage, []string{"policy", "propose", "ab"}},
+		{out.ExitUsage, []string{"posture", "suppress", "f1"}},
+		{out.ExitUsage, []string{"records", "add", "ab"}},
+		{out.ExitUsage, []string{"records", "add", "ab", "x"}},
+		{out.ExitUsage, []string{"review", "require", "ab"}},
+		{out.ExitUsage, []string{"review", "require", "2x"}},
+		{out.ExitUsage, []string{"schedule", "add", "ab"}},
+		{out.ExitUsage, []string{"schedule", "add", "48h", "--reason", "x"}},
+		{out.ExitUsage, []string{"shield", "block", "ab"}},
+		{out.ExitUsage, []string{"shield", "trust", "add", "ab"}},
+		{out.ExitUsage, []string{"signals", "connect"}},
+		{out.ExitUsage, []string{"site", "fill", "ab"}},
+		{out.ExitUsage, []string{"token", "issue", "ab"}},
+
+		{out.ExitBlocked, []string{"assist", "ab"}},
+	} {
+		_, e, code := cliRun(t, root, "", c.line...)
+		if code != c.want {
+			t.Errorf("`quilzo %s` exited %d, want %d (%s): %s", strings.Join(c.line, " "),
+				code, c.want, out.Describe(c.want), firstLines(e, 2))
+		}
+	}
+}
+
+// The same wrong word exits 2 in the commands beside the ones above, which
+// read it by the same rule.
+//
+// Marking the commands one by one left their neighbours at 1: `shield trust
+// add ab` exited 2 and `shield trust remove ab` 1, `evolve run` without
+// --program 2 and with `--program a.go` 1, and `agent receipt ab` 2 while
+// `agent trace ab`, `agent resume ab` and `agent approve ab 1` refused the
+// same word as no run and exited 1. And the mistakes the test above names
+// went on exiting 1 wherever else they were made: a NAME=VALUE without its =
+// (`section set`, `agent answer`, `agent program --env`, `experiment add
+// --variant`, `personalise add --when`, `theme import --set`, `integrations
+// call`), a number that is not one (`section fields x`, `agent approve RUN
+// x`, a weight, `geo network add --lat`), a network that is not one (`geo
+// network add`, as `shield trust add` refuses it), a direction or a kind
+// that is neither, and `annotate follow --scroll -5`. So did a credential's
+// name no credential can have, and a setting this program has none of,
+// which `config set site.nmae` was asked whether it meant site.name and
+// exited 1 as though the setting had been tried and failed, where a
+// subcommand mistyped the same way exits 2.
+func TestTheSameWrongWordExitsTwoBesideTheCommandsThatSayIt(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, line := range [][]string{
+		{"agent", "new", "bot", "--kind", "retrieval"},
+		{"integrations", "template", "github-issues"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	tokens := filepath.Join(t.TempDir(), "tokens.json")
+	if err := os.WriteFile(tokens, []byte(`{"color":{"bg":{"$type":"color","$value":"#ffffff"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range [][]string{
+		{"shield", "trust", "remove", "ab"},
+		{"evolve", "run", "--program", "a.go", "--evaluator", "b.py"},
+		{"agent", "trace", "ab"},
+		{"agent", "resume", "ab"},
+		{"agent", "approve", "ab", "1"},
+		{"agent", "approve", "ab", "x"},
+		{"agent", "answer", "ab", "1", "novalue"},
+		{"agent", "program", "bot", "--env", "NOVALUE", "--", "/bin/true"},
+		{"experiment", "add", "t1", "--page", "index", "--variant", "bnovalue"},
+		{"experiment", "add", "t1", "--page", "index", "--variant", "b=index:many"},
+		{"personalise", "add", "r1", "--page", "index", "--variant", "index", "--when", "campaignX"},
+		{"theme", "import", tokens, "--set", "primary"},
+		{"integrations", "call", "github-issues", "listIssues", "novalue"},
+		{"geo", "network", "add", "ab", "office"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--kind", "home"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--lat", "north"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--lon", "west"},
+		{"section", "fields", "index", "x"},
+		{"section", "move", "index", "x", "up"},
+		{"section", "move", "index", "0", "sideways"},
+		{"section", "set", "index", "x", "a=b"},
+		{"section", "set", "index", "0", "novalue"},
+		{"section", "item", "add", "index", "x", "items"},
+		{"section", "item", "remove", "index", "0", "items", "x"},
+		{"section", "backdrop", "index", "x", "/media/ab"},
+		{"annotate", "follow", "--scroll", "-5"},
+		{"secret", "set", "Not A Name"},
+		{"config", "set", "site.nmae", "Hello"},
+		{"config", "explain", "site.nmae"},
+		{"config", "unset", "site.nmae"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != out.ExitUsage {
+			t.Errorf("`quilzo %s` exited %d, want %d (%s): %s", strings.Join(line, " "),
+				code, out.ExitUsage, out.Describe(out.ExitUsage), firstLines(e, 2))
+		}
+	}
+}
+
 // A colour decided by stdout is written only to stdout.
 //
 // What is written to stderr is coloured as stderr is (noteRed and the
@@ -641,5 +786,50 @@ func TestAWarningToAFileIsNotColouredForATerminal(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "\033") {
 		t.Errorf("the warning written to a file carried escape codes: %q", firstLines(stderr.String(), 2))
+	}
+}
+
+// No templates to render against is a dependency missing, 5, which is what
+// the help says 5 is for and the one example it gives.
+//
+// Nothing returned 5. `ipfs id`, `a11y`, `site`, `theme show` and `theme
+// set` of a store with no templates exited 1, the code of a render that
+// broke, so a script could not tell "start a site first" from a failure
+// worth retrying. Publishing is still refused by its gate, 3: the check
+// that could not run is the accessibility gate's.
+func TestNoTemplatesIsADependencyMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, line := range [][]string{
+		{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"},
+		{"publish", "--no-a11y-check", "--reason", "this test has no templates"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	for _, c := range []struct {
+		want int
+		line []string
+	}{
+		{out.ExitUnavailable, []string{"a11y"}},
+		{out.ExitUnavailable, []string{"ipfs", "id"}},
+		{out.ExitUnavailable, []string{"ipfs", "write", "-o", filepath.Join(t.TempDir(), "site")}},
+		{out.ExitUnavailable, []string{"compliance", "accessibility"}},
+		{out.ExitUnavailable, []string{"site", "--addr", "127.0.0.1:0"}},
+		{out.ExitUnavailable, []string{"theme", "show"}},
+		{out.ExitUnavailable, []string{"theme", "check"}},
+		{out.ExitUnavailable, []string{"theme", "set", "scheme", "dark"}},
+
+		{out.ExitBlocked, []string{"publish"}},
+	} {
+		_, e, code := cliRun(t, root, "", c.line...)
+		if code != c.want {
+			t.Errorf("`quilzo %s` with no templates exited %d, want %d (%s): %s", strings.Join(c.line, " "),
+				code, c.want, out.Describe(c.want), firstLines(e, 2))
+		}
 	}
 }

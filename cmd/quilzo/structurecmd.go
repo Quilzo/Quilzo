@@ -231,7 +231,7 @@ func menuItemSet(root string, args []string) error {
 	}
 	name := pos[0]
 	if strings.TrimSpace(*label) == "" {
-		return fmt.Errorf("an entry with no label is an entry nobody can read")
+		return errMisused{fmt.Errorf("an entry with no label is an entry nobody can read")}
 	}
 
 	caller := resolveCaller(root, flagToken)
@@ -406,7 +406,10 @@ func menusList(root string) error {
 			case !it.Live:
 				mark = yellow + "draft  " + reset
 			}
-			w.Human("  %s %s%s  %s%s%s\n", mark,
+			// The id first, which is what `menu remove NAME ITEM-ID` and
+			// `menu add --id` take: it was only in the --json answer, so
+			// removing an entry meant asking for JSON to find its name.
+			w.Human("  %s %s%-4s%s %s%s  %s%s%s\n", mark, dim, it.ID, reset,
 				strings.Repeat("  ", it.Depth), it.Label, dim, it.Target, reset)
 		}
 	}

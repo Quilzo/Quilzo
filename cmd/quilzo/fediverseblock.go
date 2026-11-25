@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -105,13 +106,15 @@ func fediverseBlock(root string, args []string) error {
 			"usage: quilzo fediverse block HOST-OR-ACTOR [--yes]\n" +
 				"  a host — example.social — covers every account on it")}
 	}
-	target := strings.TrimSpace(pos[0])
+	target, actor, err := blockTarget(pos[0])
+	if err != nil {
+		return err
+	}
 	list, err := loadBlocklist(root)
 	if err != nil {
 		return err
 	}
 
-	actor := strings.Contains(target, "://") || strings.Contains(target, "@")
 	if actor {
 		if list.Blocks(target) {
 			return fmt.Errorf("%s is already refused", target)
@@ -161,6 +164,65 @@ func fediverseBlock(root string, args []string) error {
 	w.Human("  %sthe inbox answers as usual and does nothing, so nobody is "+
 		"told they were blocked%s\n", dim, reset)
 	return nil
+}
+
+// blockTarget is what `fediverse block` was given, as the list keeps it: a
+// host, in lower case, or one account's actor id, the https address an
+// inbox is sent a Follow from and Blocks compares whole. Anything else is
+// refused as the command line's mistake, exit 2, and nothing is written.
+//
+// The list took any word as one or the other. `fediverse block ""` listed
+// an empty host, `fediverse block "not a host at all"` a host nothing can
+// have, and `@spam@bad.example` an account no actor id is ever equal to:
+// `fediverse blocked` showed each as refused, it refused nobody, and the
+// operator who typed it believed the account or the instance was blocked.
+// Unblocking takes any word still, so what an earlier version listed can
+// be taken off.
+func blockTarget(typed string) (target string, actor bool, err error) {
+	target = strings.TrimSpace(typed)
+	hint := "a host, example.social, for every account on it, or one account's " +
+		"actor id, https://example.social/users/NAME, which its profile links to"
+	switch {
+	case target == "":
+		return "", false, errMisused{fmt.Errorf("usage: quilzo fediverse block HOST-OR-ACTOR: %s", hint)}
+	case strings.Contains(target, "://"):
+		u, perr := url.Parse(target)
+		if perr != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil ||
+			strings.ContainsAny(target, " \t\r\n") {
+			return "", false, errMisused{fmt.Errorf("%q is not an actor id, which is an https address "+
+				"with no name or password in it; block %s", onOneLine(target), hint)}
+		}
+		return target, true, nil
+	case strings.Contains(target, "@"):
+		return "", false, errMisused{fmt.Errorf("%q is an account's handle, which no actor id is ever "+
+			"equal to, so blocking it would block nobody; block %s", onOneLine(target), hint)}
+	}
+	host := strings.ToLower(target)
+	if _, ipErr := netip.ParseAddr(host); ipErr != nil && !isHostName(host) {
+		return "", false, errMisused{fmt.Errorf("%q is not a host; block %s", onOneLine(target), hint)}
+	}
+	return host, false, nil
+}
+
+// isHostName reports whether s is a DNS name an actor's address can have:
+// labels of letters, digits and hyphens, none starting or ending with one,
+// joined by dots. An internationalised name is written in its xn-- form,
+// as an address carries it.
+func isHostName(s string) bool {
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // fediverseUnblock takes one back off the list.

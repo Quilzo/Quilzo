@@ -175,8 +175,8 @@ importing
   quilzo form list | expire | erase VALUE [--yes]   forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
   quilzo terms list | check                the controlled vocabularies
-  quilzo menu list | check                 navigation, and whether it resolves
-  quilzo menu add NAME | remove NAME       edit it; a broken target is refused
+  quilzo menu list | check                 navigation, each entry by its id, and whether it resolves
+  quilzo menu add NAME | remove NAME ITEM-ID   edit it; a broken target is refused
   quilzo ipfs id                           what the permanent web will call this site
   quilzo ipfs write -o site                render it for 'ipfs add -r'
   quilzo ipfs write --base-path /d2       ...to live in a subdirectory
@@ -226,14 +226,17 @@ templates and design
 
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen costs, losslessly; the codec's figures alone
-  quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
-  quilzo flow demo                         automation whose books have to add up
+  quilzo annotate follow --scroll 128      marks drawn on a shared screen keep to the content as it scrolls
+
+connected apps
   quilzo apps list                         apps connected to the agent interface, and what may connect
   quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
   quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
   quilzo apps unregister ID | disconnect ID   remove a registered app, or end one connection
   quilzo apps receipt CONNECTION [-o FILE] every call an app made through one connection, with proofs and a signed head
   quilzo apps could CONNECTION OP [PAGE]   could the app do it, and why: asked of the code that admits its calls
+
+the shield (Quilzo defends itself)
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
@@ -655,6 +658,7 @@ agents and integrations
   quilzo webhook add https://...           tell another system when you
                                             publish, or when a form arrives
   quilzo webhook list | remove URL | test  signed, timestamped, replay-proof
+  quilzo flow demo                         automation whose books have to add up
 
 security posture
   quilzo config show | list                everything settable, and its default
@@ -871,8 +875,12 @@ func main() {
 		rest = append(rest, args[i])
 	}
 	if len(rest) == 0 {
-		usage()
-		os.Exit(2)
+		// As a command's page is (usagePage): `quilzo --json` wrote the whole
+		// help to stdout, which carries one document under --json.
+		if err := usagePage(fullHelp(), nil); err != nil {
+			w.Error(err)
+		}
+		os.Exit(out.ExitUsage)
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
@@ -922,8 +930,12 @@ func main() {
 		commandHelp(cmd, cmdArgs[:1])
 		return
 	}
+	// Not for help itself, which answers `help --help` with its own lines
+	// below. The version is asked like any command: `quilzo version --help`
+	// went to the version, which takes nothing, and its flag set's "flag:
+	// help requested" was all it said, exit 1.
 	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
-		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
+		!strings.HasPrefix(cmd, "__") && cmd != "help" && cmd != "--help" {
 		asked = true
 		commandHelp(cmd, cmdArgs)
 		if !helpGoesToTheCommand(cmd, cmdArgs) {
@@ -1730,7 +1742,7 @@ func cmdAdd(root string, args []string) error {
 	for _, spec := range fs.Args() {
 		name, path, ok := strings.Cut(spec, "=")
 		if !ok {
-			return fmt.Errorf("expected NAME=FILE.json, got %q", spec)
+			return errMisused{fmt.Errorf("expected NAME=FILE.json, got %q", spec)}
 		}
 		// NAME=- is the page piped in. Standard input is read once, so a
 		// second would be an empty page.

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -744,4 +745,99 @@ func switchesOnArgsZero(tag ast.Expr) bool {
 		return e.Name == "sub"
 	}
 	return false
+}
+
+// `menu remove` is described as it is typed, and the word it needs is one
+// `menu list` shows.
+//
+// The help said `menu add NAME | remove NAME`, and `menu remove` takes the
+// entry as well, NAME ITEM-ID. The only place an entry's id was shown was
+// `menu list --json`, so somebody following the help was refused, and then
+// had to ask for JSON to find the word the refusal asked for.
+func TestMenuRemoveIsDescribedAsItIsTyped(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, label := range []string{"Home", "Shop"} {
+		if _, e, code := cliRun(t, root, "", "menu", "add", "main", "--label", label, "--target", "index"); code != 0 {
+			t.Fatalf("menu add %s: %s", label, firstLines(e, 2))
+		}
+	}
+
+	_, e, _ := cliRun(t, root, "", "menu", "remove")
+	takes := regexp.MustCompile(`(?m)quilzo menu remove ((?:[A-Z][A-Z-]*(?: |$))+)`).FindStringSubmatch(e)
+	if takes == nil {
+		t.Fatalf("`quilzo menu remove` did not say what it takes: %s", firstLines(e, 2))
+	}
+	said := regexp.MustCompile(`(?m)\| remove ((?:[A-Z][A-Z-]*(?: |$))+)`).FindStringSubmatch(helpFor("menu", nil))
+	if said == nil || strings.TrimSpace(said[1]) != strings.TrimSpace(takes[1]) {
+		t.Errorf("the help's `menu remove` is not what the command takes, %q:\n%s",
+			strings.TrimSpace(takes[1]), helpFor("menu", nil))
+	}
+
+	o, _, _ := cliRun(t, root, "", "--json", "menu", "list")
+	var set struct {
+		Menus []struct{ Items []struct{ ID, Label string } }
+	}
+	if err := json.Unmarshal([]byte(o), &set); err != nil || len(set.Menus) != 1 || len(set.Menus[0].Items) != 2 {
+		t.Fatalf("menu list --json: %v %s", err, firstLines(o, 6))
+	}
+	text, _, _ := cliRun(t, root, "", "menu", "list")
+	for _, it := range set.Menus[0].Items {
+		if !regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(it.ID) + `\b.*\b` + it.Label + `\b`).MatchString(text) {
+			t.Errorf("`quilzo menu list` does not show %s's id, %s:\n%s", it.Label, it.ID, text)
+		}
+	}
+	if _, e, code := cliRun(t, root, "", "menu", "remove", "main", set.Menus[0].Items[0].ID); code != 0 {
+		t.Errorf("`quilzo menu remove main %s` exited %d: %s", set.Menus[0].Items[0].ID, code, firstLines(e, 2))
+	}
+}
+
+// Each command in the help is under a heading that describes it.
+//
+// "sharing a screen" was the heading of the calls, and when they left
+// Quilzo what came after them stayed under it: `flow demo`, the connected
+// apps, the shield and the checks of the binary's own flaws, none of which
+// has anything to do with a screen. `annotate follow`, which draws on a
+// shared screen, did not say so, so it read as unrelated as the rest.
+func TestTheHelpsHeadingsDescribeWhatIsUnderThem(t *testing.T) {
+	sections := map[string][]string{}
+	heading := ""
+	for _, l := range strings.Split(fullHelp(), "\n") {
+		switch {
+		case l != "" && l[0] != ' ':
+			heading = l
+		case strings.HasPrefix(l, "  quilzo "):
+			sections[heading] = append(sections[heading], l)
+		}
+	}
+	if len(sections["sharing a screen"]) == 0 {
+		t.Fatal("the help has no section headed \"sharing a screen\"; the scan is wrong")
+	}
+	for _, l := range sections["sharing a screen"] {
+		if !strings.Contains(l, "shared screen") {
+			t.Errorf("under \"sharing a screen\", and nothing of a shared screen:\n%s", l)
+		}
+	}
+	shield := "the shield (Quilzo defends itself)"
+	for cmd, under := range map[string]string{
+		"flow": "agents and integrations", "apps": "connected apps", "shield": shield, "self": shield,
+	} {
+		seen := false
+		for h, lines := range sections {
+			for _, l := range lines {
+				if strings.HasPrefix(l, "  quilzo "+cmd+" ") {
+					seen = true
+					if h != under {
+						t.Errorf("`quilzo %s` is under %q, not %q:\n%s", cmd, h, under, l)
+					}
+				}
+			}
+		}
+		if !seen {
+			t.Errorf("the help has no `quilzo %s` line", cmd)
+		}
+	}
 }

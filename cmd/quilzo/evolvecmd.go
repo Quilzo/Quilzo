@@ -43,7 +43,11 @@ func cmdEvolve(root string, args []string) error {
 	case "run":
 		return evolveRun(root, args[1:], resolveCaller(root, flagToken))
 	default:
-		fmt.Print(`quilzo evolve — search over programs, against an evaluator they cannot reach
+		var refusal error
+		if cmd != "" {
+			refusal = errMisused{fmt.Errorf("unknown evolve command %q", cmd)}
+		}
+		return usagePage(`quilzo evolve — search over programs, against an evaluator they cannot reach
 
   run --program FILE --evaluator FILE [--input FILE]... [--eval-input FILE]...
       [--test-input FILE]... [--test-eval-input FILE]...
@@ -66,11 +70,7 @@ evaluator's box, beside its cases.
 
 A weight counts a metric toward the score; a negative weight counts it
 against, which minimises it (--weight time=-1). --memory is per process.
-`)
-		if cmd != "" {
-			return errMisused{fmt.Errorf("unknown evolve command %q", cmd)}
-		}
-		return nil
+`, refusal)
 	}
 }
 
@@ -631,13 +631,17 @@ func reservedInput(name string) bool {
 }
 
 // checkScript validates a script path's shape and returns its extension.
+//
+// A path left out and a path of a kind nothing here runs are both the
+// command line's, exit 2: only the first was, so `evolve run` without
+// --program exited 2 and with `--program a.go` 1.
 func checkScript(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return "", fmt.Errorf("a path is required")
+		return "", errMisused{fmt.Errorf("a path is required")}
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	if _, ok := interpreters[ext]; !ok {
-		return "", fmt.Errorf("%s is not a script this runs: Python (.py), R (.R) or Julia (.jl)", path)
+		return "", errMisused{fmt.Errorf("%s is not a script this runs: Python (.py), R (.R) or Julia (.jl)", path)}
 	}
 	if _, err := os.Stat(path); err != nil {
 		return "", err

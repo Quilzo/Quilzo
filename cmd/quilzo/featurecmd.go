@@ -721,7 +721,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		return fmt.Errorf("a feature is %sd by a person", verb)
 	}
 	if !reFeatureID.MatchString(id) {
-		return fmt.Errorf("%q is not a request id", id)
+		return errMisused{fmt.Errorf("%q is not a request id", id)}
 	}
 	var pend feature.Pending
 	body, err := os.ReadFile(featurePendingPath(root, id))

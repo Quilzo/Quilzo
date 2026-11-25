@@ -146,7 +146,7 @@ func receiptCmd(root, name, what string, args []string,
 
 func buildReceipt(root, run string, now time.Time) (*agentReceiptFile, error) {
 	if !agent.ValidRecordID(run) {
-		return nil, fmt.Errorf("%q is not a run id", run)
+		return nil, errMisused{fmt.Errorf("%q is not a run id", run)}
 	}
 	rf := &agentReceiptFile{Format: receiptFormat, Run: run, Made: now.UTC()}
 	err := proveRecords(root, rf, now, func(e audit.Event) bool {
@@ -171,7 +171,7 @@ func buildReceipt(root, run string, now time.Time) (*agentReceiptFile, error) {
 // buildAppReceipt is every call an app made through one connection.
 func buildAppReceipt(root, connection string, now time.Time) (*agentReceiptFile, error) {
 	if !reConnection.MatchString(connection) {
-		return nil, fmt.Errorf("%q is not an app connection's id (gr_…)", connection)
+		return nil, errMisused{fmt.Errorf("%q is not an app connection's id (gr_…)", connection)}
 	}
 	rf := &agentReceiptFile{Format: appReceiptFormat, Connection: connection, Made: now.UTC()}
 	err := proveRecords(root, rf, now, func(e audit.Event) bool {
