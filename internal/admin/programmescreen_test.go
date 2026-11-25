@@ -5,12 +5,12 @@ package admin
 
 import (
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/programme"
@@ -27,28 +27,39 @@ func withProgramme(t *testing.T, srv *Server) register.ID {
 	r.Audit = func(audit.Record) error { return nil }
 	r.Now = func() time.Time { return time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC) }
 	allow := func(auth.Action, string) error { return nil }
-	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
-	lee := register.Actor{Name: "lee", Subject: "1ee00000000000000000000000000002", Kind: audit.KindHuman, Verified: true, May: allow}
-	p := &programme.Programme{Reg: r, Now: r.Now, Keep: &programme.FileKeeper{Dir: filepath.Join(srv.Store.Root(), "programme")}}
-	alone := programme.Decider{By: olu, Eligible: 1, MayApprove: true, Proof: "a test"}
-	two := programme.Decider{By: olu, Eligible: 2, MayApprove: true, Proof: "a test"}
 	check := func(err error) {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, err := p.Install(alone, "iso-27001")
+	person := func(name string) register.Actor {
+		id, err := r.SubjectFor(name, "person")
+		check(err)
+		return register.Actor{Name: name, Subject: id, Kind: audit.KindHuman, Verified: true, May: allow}
+	}
+	olu, lee := person("olu"), person("lee")
+	// The programme's own approvals have nobody granted anything, so olu,
+	// at the console, is the one person eligible and approves alone.
+	p := &programme.Programme{Reg: r, Now: r.Now}
+	approve := func(by string, d programme.Decided, err error) {
+		t.Helper()
+		check(err)
+		_, err = p.Approve(approval.Person{Name: by, Kind: audit.KindHuman, Verified: true, Console: true, May: allow}, d.ID,
+			approval.Proof{Console: &approval.ConsoleProof{Typed: d.Surface, Verified: true}})
+		check(err)
+	}
+	d, err := p.Install(olu, "iso-27001")
+	approve("olu", d, err)
+	d, err = p.Install(olu, "nis2")
+	approve("olu", d, err)
+	_, err = p.Install(olu, "soc2") // waits for somebody
 	check(err)
-	_, err = p.Install(alone, "nis2")
-	check(err)
-	_, err = p.Install(two, "soc2") // waits for somebody else
-	check(err)
-	_, err = p.DecideScope(alone, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"},
+	d, err = p.DecideScope(olu, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"},
 		Frameworks: []string{"iso-27001", "nis2"}})
-	check(err)
-	_, err = p.DecideLine(alone, "group", "iso-27001", "A.7.4", false, "We hold no premises of our own.")
-	check(err)
+	approve("olu", d, err)
+	d, err = p.DecideLine(olu, "group", "iso-27001", "A.7.4", false, "We hold no premises of our own.")
+	approve("olu", d, err)
 	entra := register.Source{Name: "entra", Title: "Entra ID", Type: "import", Fresh: 86400, Grade: register.GradeConnector}
 	eid, _ := register.IDOf(entra)
 	recs := []register.Record{entra, register.Control{Ref: "AC-01", Title: "Second factor for every account", Domain: "identity", Owner: olu.Subject}}
@@ -67,13 +78,14 @@ func withProgramme(t *testing.T, srv *Server) register.ID {
 	check(err)
 	_, _, err = p.Recount(olu, pop)
 	check(err)
-	d, err := p.ProposeDraft(olu, programme.Draft{Control: "AC-01", Name: "mfa", Population: "accounts", Assertion: "all",
+	draft, err := p.ProposeDraft(olu, programme.Draft{Control: "AC-01", Name: "mfa", Population: "accounts", Assertion: "all",
 		Query: programme.DraftQuery{Of: "Observation", Member: "about", Terms: append(fact,
 			register.Term{Field: "value", Op: register.OpEquals, Values: []register.Scalar{register.BoolValue(true)}})}})
 	check(err)
-	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "a test"}, d.TestID)
+	a, err := (&approval.Approvals{Root: srv.Store.Root(), Register: r}).Ask(draft.TestID)
 	check(err)
-	_, rc, err := p.RunTest(programme.Scheduler(), d.TestID)
+	approve(lee.Name, programme.Decided{ID: draft.TestID, Surface: a.Hash}, nil)
+	_, rc, err := p.RunTest(programme.Scheduler(), draft.TestID)
 	check(err)
 	for _, w := range rc.Written {
 		if w.Kind == register.KindTestRun {
@@ -189,9 +201,16 @@ func TestTheProgrammeScreensSayWhatTheProgrammeHolds(t *testing.T) {
 	}
 	reqs := get(t, srv, "/programme/requirements", token).Body.String()
 	soc2, _ := programme.StarterNamed("soc2")
-	if !strings.Contains(reqs, "Waiting for a decision") || !strings.Contains(reqs, string(register.SurfaceOf(soc2.Decision(true)))) ||
-		!strings.Contains(reqs, "can't be decided from this page") || !strings.Contains(reqs, "Take the soc2 starter into the programme") {
-		t.Errorf("the waiting installation is not shown with its hash and without a button:\n%s", reqs[strings.Index(reqs, "<main"):])
+	sid, _ := register.IDOf(soc2.Decision(true))
+	ask, err := srv.approvalsFor().Ask(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reqs, "Waiting for a decision") || !strings.Contains(reqs, string(ask.Hash)) ||
+		!strings.Contains(reqs, "can't be decided from this page") || !strings.Contains(reqs, "Take the soc2 starter into the programme") ||
+		!strings.Contains(reqs, `href="/register/approvals/item/`+string(sid)+`"`) {
+		t.Errorf("the waiting installation is not shown with the hash Sign-off asks a passkey for, and a way there:\n%s",
+			reqs[strings.Index(reqs, "<main"):])
 	}
 }
 
@@ -206,8 +225,12 @@ func TestTheDisagreementNamesBothSources(t *testing.T) {
 	r.Audit = func(audit.Record) error { return nil }
 	r.Now = func() time.Time { return time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC) }
 	allow := func(auth.Action, string) error { return nil }
-	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
-	p := &programme.Programme{Reg: r, Now: r.Now, Keep: &programme.FileKeeper{Dir: filepath.Join(srv.Store.Root(), "programme")}}
+	oluID, err := r.SubjectFor("olu", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	olu := register.Actor{Name: "olu", Subject: oluID, Kind: audit.KindHuman, Verified: true, May: allow}
+	p := &programme.Programme{Reg: r, Now: r.Now}
 	hr := register.Source{Name: "hr", Title: "The staff list", Type: "upload", Fresh: 86400, Grade: register.GradeUploaded}
 	hid, _ := register.IDOf(hr)
 	if _, err := r.Put(olu, "the staff list", hr, register.Observation{Source: hid, About: register.ID(strings.Repeat("0", 31) + "1"),

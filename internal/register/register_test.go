@@ -87,6 +87,26 @@ func mustPut(t testing.TB, b *bench, by Actor, recs ...Record) Receipt {
 	return rc
 }
 
+// shown is the hash of what a person approving rec is shown, against the
+// register as it stands: the one surface Put holds an approval to.
+func shown(t testing.TB, b *bench, rec Record) Digest {
+	t.Helper()
+	d, err := b.Surface(WithApproval(rec, nil), mustID(t, rec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// bound is rec with its approval given over what it shows now, as an
+// approver's would be.
+func bound(t testing.TB, b *bench, rec Record) Record {
+	t.Helper()
+	a := *ApprovalOf(rec)
+	a.Surface = shown(t, b, rec)
+	return WithApproval(rec, &a)
+}
+
 func mustID(t testing.TB, rec Record) ID {
 	t.Helper()
 	id, err := IDOf(rec)
@@ -255,7 +275,7 @@ func TestPutChecksInvariantsWithoutSchema(t *testing.T) {
 	}
 	// The good one is written, and one bad record refuses the whole batch.
 	b := newBench(t)
-	mustPut(t, b, dana, good)
+	mustPut(t, b, dana, bound(t, b, good))
 	head := b.Head()
 	if _, err := b.Put(dana, "a test's write", control("AC-07"), Control{Ref: "AC-08"}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a batch with one bad record was answered %v", err)
@@ -443,7 +463,7 @@ func TestAnApprovalIsHandedToItsVerifier(t *testing.T) {
 	}
 	scope := Scope{Name: "group", Title: "The group", Domains: []Domain{"identity"}}
 	scope.Approval = signedBy(owner, "a0000000000000000000000000000009")
-	scope.Approval.Surface = SurfaceOf(scope)
+	scope.Approval.Surface = shown(t, b, scope)
 	mustPut(t, b, dana, scope)
 	if len(seen) != 1 || seen[0] != mustID(t, scope) {
 		t.Fatalf("the verifier was asked about %v", seen)

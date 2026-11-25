@@ -61,12 +61,18 @@ type PasskeyProof struct {
 // back the hash of what they approved. Weaker than a passkey, because
 // nothing but the machine vouches for the person at it, and said so
 // wherever an approval made this way is shown.
+//
+// It says that it was the console and whether the program proved who was
+// at it, and nothing else: the evidence names its person by the pseudonym
+// beside it, and is kept for good. It held the name of the token they
+// signed in with, which is often their name, so the evidence named them
+// after they were erased.
 type ConsoleProof struct {
 	Typed register.Digest `json:"typed"`
-	// Credential is the name of the token the command line proved them
-	// by, empty when the store has no access control and the person at
-	// the console is its owner.
-	Credential string `json:"credential,omitempty"`
+	// Verified says the command line proved who was at the console by the
+	// credential they used; not, on a store with no access control, where
+	// the person at the console is its owner.
+	Verified bool `json:"verified,omitempty"`
 }
 
 // Digest is the evidence's hash, which the record's signer holds.
@@ -166,14 +172,33 @@ func LoadEvidence(root string, d register.Digest) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	var e Evidence
+	var e legacyEvidence
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&e); err != nil {
 		return Evidence{}, fmt.Errorf("the evidence %s does not read as evidence: %w", d, err)
 	}
-	if e.Digest() != d {
+	// The file is held to its name by its own bytes, which keep wrote as
+	// the evidence's JSON, so evidence kept before the console's stopped
+	// naming a credential still checks, and is read without the name.
+	sum := sha256.Sum256(raw)
+	if register.Digest("sha256:"+hex.EncodeToString(sum[:])) != d {
 		return Evidence{}, fmt.Errorf("the evidence kept as %s is not what that digest names", d)
 	}
-	return e, nil
+	out := e.Evidence
+	if e.Console != nil {
+		out.Console = &ConsoleProof{Typed: e.Console.Typed, Verified: e.Console.Verified}
+	}
+	return out, nil
+}
+
+// legacyEvidence reads evidence as it has ever been kept: the console's
+// named the credential it was given with, which is read and let go.
+type legacyEvidence struct {
+	Evidence
+	Console *struct {
+		Typed      register.Digest `json:"typed"`
+		Verified   bool            `json:"verified,omitempty"`
+		Credential string          `json:"credential,omitempty"`
+	} `json:"console,omitempty"`
 }

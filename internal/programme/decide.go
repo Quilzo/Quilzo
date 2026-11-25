@@ -4,31 +4,61 @@
 package programme
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
 )
 
 // Decisions: a starter taken in or out, a scope, a line of the statement of
 // applicability, a control test. Each is a record that carries the approval
-// of the person who decided it, and each is made one of two ways. The
-// person who raises it is the only person who may approve it, and it is
-// written at once, marked as approved alone with a review by somebody else
-// due; or somebody else may, and it waits on the register's proposals ref
-// until one of them approves it (Approve). Nobody approves what they
-// raised while anybody else could.
+// of the person who decided it, and each is decided the one way every
+// decision in the register is: raised as a proposal (Raise), where it
+// waits, and approved through the approvals module's engine (Approve here,
+// Sign-off in the admin, `quilzo approval approve` at the console), under
+// the organisation's separation policy. The engine holds the rules: nobody
+// approves what they raised while anybody else could, no agent approves
+// anything, an approver signs in in a way that cannot be phished, each
+// approval is bound to the hash of what was shown and lapses at the end of
+// its rule's term, and the only person eligible approves alone, marked so,
+// with a review by somebody else owed.
+//
+// The programme says only what a decision brings with it (FollowWith): a
+// starter its requirements and mappings, refused for an edition this
+// program does not carry, and a control test the query waiting beside it,
+// refused when its population was redefined since it was drafted.
+
+func init() {
+	approval.FollowWith(register.KindStarter, func(r *register.Register, rec register.Record, _ []register.Proposal) ([]register.Record, error) {
+		return (&Programme{Reg: r}).follows(rec)
+	})
+	approval.FollowWith(register.KindControlTest, func(r *register.Register, rec register.Record, waiting []register.Proposal) ([]register.Record, error) {
+		p := &Programme{Reg: r}
+		t, ok := rec.(register.ControlTest)
+		if !ok {
+			return nil, nil
+		}
+		if err := p.sameDenominator(t); err != nil {
+			return nil, err
+		}
+		q, err := p.waitingQuery(waiting, t.Query)
+		if err != nil || q == nil {
+			return nil, err
+		}
+		return []register.Record{*q}, nil
+	})
+}
 
 // Programme is the security programme kept in one register.
 type Programme struct {
 	Reg *register.Register
-	// Keep keeps who each pseudonym is and the words of justifications.
-	Keep Keeper
+	// Approvals is the approvals module the programme's decisions are
+	// approved through, over Reg. Nil is one with no access control, where
+	// whoever is at the store is its owner and the one person eligible.
+	Approvals *approval.Approvals
 	// Now is the clock. Nil is the system's.
 	Now func() time.Time
 }
@@ -40,146 +70,82 @@ func (p *Programme) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Decider is a person deciding, as the surface they came through proved
-// them.
-type Decider struct {
-	// By is the person, as the register names a writer. A decision is a
-	// person's: By.Kind is a person and By.Subject their pseudonym.
-	By register.Actor
-	// Eligible is how many people may approve a decision of this kind, as
-	// the access policy has it when they ask, themselves included when
-	// MayApprove says they are one of them.
-	Eligible int
-	// MayApprove says the policy lets this person approve a decision of
-	// this kind. Somebody who may not decides nothing alone: what they
-	// raise waits for somebody who may.
-	MayApprove bool
-	// Proof is what the surface proved them by: the name of the credential
-	// they signed in with and how. It is hashed with the decision's surface
-	// into the approval's assertion, so the approval names what was
-	// approved and how its approver was known.
-	Proof string
+func (p *Programme) approvals() *approval.Approvals {
+	if p.Approvals != nil {
+		return p.Approvals
+	}
+	return &approval.Approvals{Root: p.Reg.Store.Root(), Register: p.Reg, Audit: p.Reg.Audit, Now: p.Now}
 }
 
 // ReviewWithin is how soon a decision made alone is reviewed by somebody
-// else. A team of one decides; a month later another person looks.
+// else, under the default separation policy. A team of one decides; a
+// month later another person looks.
 const ReviewWithin = 30 * 24 * time.Hour
 
-// ErrWaits is a decision that cannot be approved by whoever raised it,
-// because somebody else may: it waits for them.
-var ErrWaits = errors.New("somebody else who may approve it decides this")
+// ErrWaits is a decision that waits for an approval that has not been
+// given, by somebody else or by its raiser alone.
+var ErrWaits = errors.New("the decision waits for its approval")
 
 // Decided is what became of a decision raised or approved.
 type Decided struct {
 	// ID is the decision's record, in the register or waiting.
 	ID register.ID `json:"id"`
-	// Waits says it is on the proposals ref, for somebody else.
+	// Waits says it is on the proposals ref, for its approvers.
 	Waits bool `json:"waits,omitempty"`
+	// Surface is the hash of what its approvers are shown, which an
+	// approval at the console types back and a passkey signs.
+	Surface register.Digest `json:"surface,omitempty"`
+	// Yours says the person who raised it is the only person eligible to
+	// approve it, and so approves it alone.
+	Yours bool `json:"yours,omitempty"`
+	// Signed and Needed are the approvals given and how many the rule asks.
+	Signed int `json:"signed,omitempty"`
+	Needed int `json:"needed,omitempty"`
 	// Alone says it was approved by the only person eligible.
 	Alone   bool             `json:"alone,omitempty"`
 	Receipt register.Receipt `json:"receipt"`
 }
 
-// approvalOf is a person's approval of a record that somebody raised.
-func approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time) (*register.Approval, error) {
-	if d.By.Kind != audit.KindHuman || !d.By.Subject.Valid() {
-		return nil, fmt.Errorf("%w: a decision is a person's, named by their pseudonym", register.ErrModel)
+// Raise proposes a decision a person raises, to wait for its approval. What
+// it brings is checked first, so a decision that could not be written is
+// never asked of anybody.
+func (p *Programme) Raise(by register.Actor, why string, rec register.Record) (Decided, error) {
+	if by.Kind != audit.KindHuman || !by.Subject.Valid() {
+		return Decided{}, fmt.Errorf("%w: a decision is raised by a person, named by their pseudonym", register.ErrModel)
 	}
-	eligible := d.Eligible
-	if eligible < 1 {
-		eligible = 1
-	}
-	surface := register.SurfaceOf(rec)
-	h := sha256.New()
-	h.Write([]byte("quilzo/approval evidence v1\n" + string(surface) + "\n" + d.Proof))
-	a := &register.Approval{Atom: string(auth.ActApprove), Rule: "raiser-is-not-approver", Needed: 1, Of: eligible,
-		Surface: surface, Raised: raised,
-		Signers: []register.Signer{{Subject: d.By.Subject, At: register.TimeOf(at),
-			Assertion: register.Digest("sha256:" + hex.EncodeToString(h.Sum(nil)))}}}
-	if raised == d.By.Subject {
-		if eligible > 1 || !d.MayApprove {
-			return nil, ErrWaits
-		}
-		a.Rule, a.Alone, a.ReviewDue = "only-person-eligible", true, register.TimeOf(at.Add(ReviewWithin))
-	}
-	return a, nil
-}
-
-// Raise makes a decision a person raises: written at once, with what
-// follows from it, when they are the only person who may approve it, and
-// otherwise proposed, to wait for somebody else.
-func (p *Programme) Raise(d Decider, why string, rec register.Record) (Decided, error) {
-	follows, err := p.follows(rec)
-	if err != nil {
+	rec = withApproval(rec, nil)
+	if _, err := p.follows(rec); err != nil {
 		return Decided{}, err
 	}
 	id, err := register.IDOf(rec)
 	if err != nil {
 		return Decided{}, err
 	}
-	a, err := approvalOf(rec, d.By.Subject, d, p.now())
-	if errors.Is(err, ErrWaits) {
-		rc, err := p.Reg.Propose(d.By, why, rec)
-		return Decided{ID: id, Waits: true, Receipt: rc}, err
-	}
+	rc, err := p.Reg.Propose(by, why, rec)
 	if err != nil {
 		return Decided{}, err
 	}
-	rc, err := p.Reg.Put(d.By, why, append([]register.Record{withApproval(rec, a)}, follows...)...)
-	return Decided{ID: id, Alone: a.Alone, Receipt: rc}, err
+	d := Decided{ID: id, Waits: true, Receipt: rc}
+	if a, err := p.approvals().Ask(id); err == nil {
+		d.Surface, d.Needed, d.Yours = a.Hash, a.Needed, a.Yours(by.Name, by.Subject)
+	}
+	return d, nil
 }
 
-// Approve is a person's approval of a decision that waits, written with
-// what follows from it in one commit. The person who raised it is named as
-// having asked; the register refuses an approver who proposed it.
-func (p *Programme) Approve(d Decider, id register.ID) (Decided, error) {
-	waiting, err := p.Reg.Proposals()
-	if err != nil {
-		return Decided{}, err
+// Approve is a person's approval of a decision that waits, through the
+// approvals module, over the hash proof was given for. With as many
+// approvals as the rule asks, the decision is written with what it brings
+// in one commit; until then it waits, and Waits says so.
+func (p *Programme) Approve(by approval.Person, id register.ID, proof approval.Proof) (Decided, error) {
+	out, err := p.approvals().Sign(by, id, proof)
+	if out == nil {
+		return Decided{ID: id}, err
 	}
-	var found *register.Proposal
-	for i := range waiting {
-		if waiting[i].ID == id {
-			found = &waiting[i]
-		}
+	d := Decided{ID: id, Waits: !out.Done, Surface: out.Surface, Signed: out.Signed, Needed: out.Needed, Alone: out.Alone}
+	if out.Receipt != nil {
+		d.Receipt = *out.Receipt
 	}
-	if found == nil {
-		return Decided{}, fmt.Errorf("%w: no decision with the identifier %s is waiting", register.ErrNotFound, id)
-	}
-	raised := found.Subject
-	if raised == "" {
-		// An agent asked: it is named by a pseudonym of its own, as an
-		// agent, so the approval says what asked.
-		if raised, err = p.Keep.Pseudonym("agent:"+found.Agent, "agent"); err != nil {
-			return Decided{}, err
-		}
-	}
-	rec := withApproval(found.Record, nil)
-	follows, err := p.follows(rec)
-	if err != nil {
-		return Decided{}, err
-	}
-	if t, ok := rec.(register.ControlTest); ok {
-		if err := p.sameDenominator(t); err != nil {
-			return Decided{}, err
-		}
-		q, err := p.waitingQuery(waiting, t.Query)
-		if err != nil {
-			return Decided{}, err
-		}
-		if q != nil {
-			follows = append(follows, *q)
-		}
-	}
-	a, err := approvalOf(rec, raised, d, p.now())
-	if errors.Is(err, ErrWaits) || err == nil && raised == d.By.Subject {
-		return Decided{}, fmt.Errorf("%w: whoever raised a decision is not the one who approves it", register.ErrRefused)
-	}
-	if err != nil {
-		return Decided{}, err
-	}
-	rc, err := p.Reg.AcceptWith(d.By, id, a, follows...)
-	return Decided{ID: id, Receipt: rc}, err
+	return d, err
 }
 
 // follows is what a decision brings with it, written in its commit: a
@@ -207,19 +173,5 @@ func (p *Programme) follows(rec register.Record) ([]register.Record, error) {
 
 // withApproval is a record with its approval set, of whichever kind.
 func withApproval(rec register.Record, a *register.Approval) register.Record {
-	switch r := rec.(type) {
-	case register.Starter:
-		r.Approval = a
-		return r
-	case register.Scope:
-		r.Approval = a
-		return r
-	case register.Applicability:
-		r.Approval = a
-		return r
-	case register.ControlTest:
-		r.Approval = a
-		return r
-	}
-	return rec
+	return register.WithApproval(rec, a)
 }

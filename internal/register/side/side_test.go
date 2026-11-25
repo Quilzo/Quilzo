@@ -410,3 +410,73 @@ func TestTheSubjectMapFindsANameByItsBucket(t *testing.T) {
 		return nil
 	})
 }
+
+// A person named by a map kept before this one keeps the pseudonym the
+// records already hold: adopted, the name is found by it, and enrolling the
+// name again mints nothing. A pseudonym erased already is not adopted, so a
+// person who was forgotten is not remembered again from an older file. A
+// name the map holds under another pseudonym is still found by that one,
+// and the adopted one is kept beside it as the same person's (Others), so
+// that erasing either finds both.
+func TestAnOlderPseudonymIsAdoptedUnchanged(t *testing.T) {
+	s, _, _ := newSide(t)
+	const older = "a0000000000000000000000000000001"
+	ok, err := s.Adopt("Dana@example.com", "person", older)
+	if err != nil || !ok {
+		t.Fatalf("adopting dana's pseudonym: %v %v", ok, err)
+	}
+	if got, found, err := s.Lookup("dana@example.com"); err != nil || !found || got != older {
+		t.Fatalf("dana is found as %q (%v %v), and was adopted as %s", got, found, err, older)
+	}
+	if again, err := s.Adopt("dana@example.com", "person", older); err != nil || again {
+		t.Errorf("adopting dana again was answered %v %v", again, err)
+	}
+	if got, minted, err := s.Enrol("dana@example.com", "person"); err != nil || minted || got != older {
+		t.Errorf("enrolling dana minted %q (%v %v)", got, minted, err)
+	}
+
+	// An erased pseudonym stays erased.
+	const gone = "a0000000000000000000000000000002"
+	if _, err := s.Adopt("lee@example.com", "person", gone); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EraseSubject(gone, "request"); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := s.Adopt("lee@example.com", "person", gone); err != nil || again {
+		t.Errorf("an erased pseudonym was adopted again: %v %v", again, err)
+	}
+	if _, found, _ := s.Lookup("lee@example.com"); found {
+		t.Error("an erased person is named again by an older file")
+	}
+
+	// A name the map already holds under another pseudonym keeps it.
+	kim, _, err := s.Enrol("kim@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const kimOlder = "a0000000000000000000000000000003"
+	if ok, err := s.Adopt("kim@example.com", "person", kimOlder); err != nil || !ok {
+		t.Fatalf("adopting kim's older pseudonym: %v %v", ok, err)
+	}
+	if got, _, _ := s.Lookup("kim@example.com"); got != kim {
+		t.Errorf("kim is found as %s, and was named %s first", got, kim)
+	}
+	if p, err := s.Who(kimOlder); err != nil || p.Name != "kim@example.com" {
+		t.Errorf("kim's older pseudonym names %+v (%v)", p, err)
+	}
+	for _, from := range []string{kim, kimOlder} {
+		others, err := s.Others(from)
+		if err != nil || len(others) != 1 || others[0] == from {
+			t.Errorf("kim's other pseudonyms, from %s, are %v (%v)", from, others, err)
+		}
+	}
+	// A pseudonym is one person's: an older file that gave it to somebody
+	// else is refused, and changes nothing.
+	if _, err := s.Adopt("someone@example.com", "person", older); err == nil {
+		t.Error("a pseudonym that names dana was adopted for somebody else")
+	}
+	if p, _ := s.Who(older); p.Name != "Dana@example.com" {
+		t.Errorf("dana's pseudonym names %q now", p.Name)
+	}
+}

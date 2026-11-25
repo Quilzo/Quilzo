@@ -160,11 +160,25 @@ func TestSignedIngestNeedsAPinnedKey(t *testing.T) {
 	if _, e, code := cliRun(t, root, token, "ingest", "dsse", envFile); code != 3 || !strings.Contains(e, "pinned") {
 		t.Fatalf("an envelope no pinned key verifies exited %d: %s", code, e)
 	}
-	if o, e, code := cliRun(t, root, token, "evidence", "pin", "build", keyFile, "--title", "the build service"); code != 0 ||
-		!strings.Contains(o, "sha256:") {
-		t.Fatalf("pinning exited %d: %s", code, e)
+	o, e, code := cliRun(t, root, token, "--json", "evidence", "pin", "build", keyFile, "--title", "the build service")
+	var pin struct {
+		ID      string `json:"id"`
+		Surface string `json:"surface"`
+		Waits   bool   `json:"waits"`
+		Yours   bool   `json:"yours"`
 	}
-	o, e, code := cliRun(t, root, token, "--json", "ingest", "dsse", envFile)
+	if code != 0 || json.Unmarshal([]byte(o), &pin) != nil || !pin.Waits || !pin.Yours || !strings.HasPrefix(pin.Surface, "sha256:") {
+		t.Fatalf("asking for a pin exited %d: %s %s", code, e, firstLines(o, 5))
+	}
+	// Until it is approved the key verifies nothing; the owner, the only
+	// person who may approve it, approves it alone at the console.
+	if _, e, code := cliRun(t, root, token, "ingest", "dsse", envFile); code != 3 {
+		t.Fatalf("an envelope whose key waits to be pinned exited %d: %s", code, e)
+	}
+	if _, e, code := cliRun(t, root, token, "approval", "approve", pin.ID, "--surface", pin.Surface); code != 0 {
+		t.Fatalf("approving the pin exited %d: %s", code, e)
+	}
+	o, e, code = cliRun(t, root, token, "--json", "ingest", "dsse", envFile)
 	var signed struct {
 		Batch struct {
 			Grade string

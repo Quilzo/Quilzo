@@ -46,8 +46,10 @@ func (p *Programme) Due() ([]register.ID, error) {
 	var due []register.ID
 	err = v.Each(register.KindControlTest, func(e register.Entry, _ map[string]any) error {
 		t := e.Record.(register.ControlTest)
-		if t.Approval == nil {
-			return nil // the register refuses one, and a test without one never runs
+		// The register refuses a test without an approval, and a test whose
+		// approval lapsed is a decision nobody holds: neither runs.
+		if t.Approval == nil || t.Approval.Lapsed(register.TimeOf(now)) {
+			return nil
 		}
 		every := DefaultEvery
 		if t.Every > 0 {

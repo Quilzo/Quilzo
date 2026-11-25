@@ -209,18 +209,18 @@ func (s *Starter) Decision(install bool) register.Starter {
 }
 
 // Install raises the decision to take a starter in.
-func (p *Programme) Install(d Decider, framework string) (Decided, error) {
-	return p.starterDecision(d, framework, true)
+func (p *Programme) Install(by register.Actor, framework string) (Decided, error) {
+	return p.starterDecision(by, framework, true)
 }
 
 // Uninstall raises the decision to take a starter out. Its requirements stay
 // in the register, as everything written does, and are read as out of the
 // programme.
-func (p *Programme) Uninstall(d Decider, framework string) (Decided, error) {
-	return p.starterDecision(d, framework, false)
+func (p *Programme) Uninstall(by register.Actor, framework string) (Decided, error) {
+	return p.starterDecision(by, framework, false)
 }
 
-func (p *Programme) starterDecision(d Decider, framework string, install bool) (Decided, error) {
+func (p *Programme) starterDecision(by register.Actor, framework string, install bool) (Decided, error) {
 	s, ok := StarterNamed(framework)
 	if !ok {
 		return Decided{}, fmt.Errorf("%w: there is no starter for %q", register.ErrNotFound, framework)
@@ -229,7 +229,7 @@ func (p *Programme) starterDecision(d Decider, framework string, install bool) (
 	if install {
 		verb = "take the %s starter into the programme"
 	}
-	return p.Raise(d, fmt.Sprintf(verb, framework), s.Decision(install))
+	return p.Raise(by, fmt.Sprintf(verb, framework), s.Decision(install))
 }
 
 // Installed is the frameworks whose starters are in the programme at a

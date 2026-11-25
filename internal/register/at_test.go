@@ -64,7 +64,7 @@ func TestAControlTestsApprovalIsOfThatTest(t *testing.T) {
 	test := ControlTest{Control: mustID(t, control("AC-01")), Name: "weekly", Population: owner,
 		Query: digest(7), Assertion: "all"}
 	a := signedBy(owner, "a0000000000000000000000000000009")
-	a.Surface = SurfaceOf(test)
+	a.Surface = shown(t, b, test)
 	test.Approval = a
 	mustPut(t, b, dana, test)
 
@@ -74,10 +74,10 @@ func TestAControlTestsApprovalIsOfThatTest(t *testing.T) {
 		t.Errorf("a test whose query changed under its old approval was answered %v", err)
 	}
 	again := *a
-	again.Surface = SurfaceOf(changed)
+	again.Surface = shown(t, b, changed)
 	changed.Approval = &again
 	mustPut(t, b, dana, changed)
-	if SurfaceOf(changed) == SurfaceOf(test) {
+	if shown(t, b, changed) == shown(t, b, test) {
 		t.Error("two tests with different queries have one surface")
 	}
 }

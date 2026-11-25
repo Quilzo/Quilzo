@@ -1767,17 +1767,21 @@ from records that name the source that reported them, is compared with a
 second source where there is one, and keeps the disagreement as its own
 number; one with a single source is labelled unchecked, and one not shown
 independent of the tool it measures is labelled circular. Links join two
-sources only on an identifier both report exactly. Until the approvals
-module brings passkeys bound to the decision's hash, a decision is approved
-on the command line, where the assertion recorded is a hash of the
-decision with the credential the session was verified by.
+sources only on an identifier both report exactly. Every one of these
+decisions is raised and waits, and is approved through the approvals module
+as every decision in the register is: under the separation policy, by
+somebody other than whoever raised it unless they are the only person who
+may, on Sign-off with a passkey bound to the hash of what it shows, or at
+the console by typing that hash back (`quilzo requirement approve ID
+--surface HASH`, and the same for `soa` and `control`; `quilzo approval
+show ID` shows the decision and its hash).
 
 The admin's four programme screens (Requirements, Applicability, Control
 tests and Populations, under Assurance) and the content API under
 `/api/v1/requirements`, `/api/v1/soa`, `/api/v1/controls` and
 `/api/v1/populations` read the programme; each waiting decision is shown
-with the hash of exactly what would be approved, and the command that
-decides it. Adding a control, mapping it, defining and counting a
+with the hash of exactly what would be approved, the hash Sign-off asks a
+passkey for, and a link to Sign-off, where it is decided. Adding a control, mapping it, defining and counting a
 population and running a test are done on the command line, and an agent
 drafts a test through the agent interface's `control_draft`, which waits
 like any other draft. Not built yet: the posture rows counted against these
@@ -2773,12 +2777,23 @@ in. The policy's
 `phishing_resistant` setting turns this off, and the change is in the audit
 log as `approval.policy`; every approval is still a fresh passkey signature.
 
-What is not yet built, and said so: the pseudonyms approvals name people by
-are kept in `approvals/people.json` beside the store until the register's own
-subject map takes them over; the evidence files are not yet sealed with the
-store's keyring; and re-deriving a held decision's hash from the register as
-it stood before the write is the independent verifier's work, so `approval
-check` checks each signature and what it was over, not the surface again.
+**One person, one pseudonym.** Approvals name people by the pseudonyms the
+register's own subject map holds, the map every surface names its writers
+by, so the person who raised a decision on the command line is its raiser
+on Sign-off, and the reverse. An older `approvals/people.json`, and the
+programme's own `programme/subjects` and `programme/text`, are moved into
+the side store the first time the register is opened, each person keeping
+the pseudonym the records already hold, and deleted. A person's erasure
+(`quilzo register erase`, or Erase a person in the admin) is raised as their
+request, entered on their behalf where somebody else enters it, and decided
+here like any other decision, by somebody who is neither the person erased
+nor, while anybody else may decide it, whoever asked or entered it.
+
+What is not yet built, and said so: the evidence files are not yet sealed
+with the store's keyring; and re-deriving a held decision's hash from the
+register as it stood before the write is the independent verifier's work,
+so `approval check` checks each signature and what it was over, not the
+surface again.
 
 ---
 

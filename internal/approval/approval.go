@@ -15,6 +15,15 @@
 // record through the register's one write path, which checks the evidence
 // again before anything is committed (verify.go).
 //
+// It is the one way any decision in the register is approved, whichever
+// surface it is decided on: a risk accepted, a starter taken into the
+// programme, a scope, a line of the statement of applicability, a control
+// test, a person's erasure, a third party's key pinned. Its surface is the
+// one the register holds every approval to (register.SurfaceWith); it names
+// people by the register's own subject map, which every surface names its
+// writers by (people.go); and a module that owns a kind says what a
+// decision of it brings with it (FollowWith).
+//
 // The rules that are not the policy's to relax are kept here, in code:
 // whoever raised or drafted a record does not approve it; no agent approves
 // anything, so no agent approves an agent's work; each person counts once;
@@ -42,6 +51,38 @@ import (
 	"github.com/quilzo/quilzo/internal/register"
 )
 
+// Follows is what a decision of one kind brings with it, written in the
+// commit that writes the decision, and the check that it can be written at
+// all: a starter taken into the programme brings its requirements and
+// mappings, and refuses an edition this program does not carry; a control
+// test brings the query waiting beside it, and refuses a population
+// redefined since it was drafted. rec is the decision as it waits, without
+// its approval, and waiting is everything on the proposals ref.
+type Follows func(r *register.Register, rec register.Record, waiting []register.Proposal) ([]register.Record, error)
+
+// follows is what each kind brings, as the module that owns it says.
+var follows = map[register.Kind]Follows{}
+
+// FollowWith says what a decision of a kind brings with it. It is called
+// from the init of the module that owns the kind, so that the decision is
+// approved here, through the one engine, whichever surface it is approved
+// on, and is written with what it brings.
+func FollowWith(kind register.Kind, f Follows) { follows[kind] = f }
+
+// brings is what a waiting decision brings with it, or why it cannot be
+// written.
+func (m *Approvals) brings(a *Ask) ([]register.Record, error) {
+	f := follows[a.Proposal.Kind]
+	if f == nil {
+		return nil, nil
+	}
+	waiting, err := m.Register.Proposals()
+	if err != nil {
+		return nil, err
+	}
+	return f(m.Register, register.WithApproval(a.Proposal.Record, nil), waiting)
+}
+
 // Approvals is the approvals of one store's register.
 type Approvals struct {
 	// Root is the store's directory, beside which the evidence, the
@@ -54,7 +95,7 @@ type Approvals struct {
 	// Separation is the separation policy; nil reads the store's, or the
 	// default.
 	Separation *Policy
-	// People names people by pseudonym; nil is the file beside the store.
+	// People names people by pseudonym; nil is the register's subject map.
 	People People
 	// Settling is internal/dual's day after an administrator stopped being
 	// one, during which nobody approves alone. Nil never holds anybody
@@ -160,6 +201,13 @@ func (a *Ask) AloneFor(subject register.ID) bool {
 	return a.Of == 1 && (a.raisers[subject] || a.Needed > 1)
 }
 
+// Yours reports whether a person, by name and pseudonym, would approve the
+// decision alone: they may approve it, and nobody else may. On a store with
+// nobody granted anything, whoever is at it is the one person eligible.
+func (a *Ask) Yours(name string, subject register.ID) bool {
+	return a.AloneFor(subject) && (a.Eligible(name) || len(a.eligible) == 0 && len(a.seconds) == 0)
+}
+
 // Raisers reports whether the person with this pseudonym raised or drafted
 // the decision, and so may not approve it unless they approve it alone.
 func (a *Ask) Raisers(subject register.ID) bool { return a.raisers[subject] }
@@ -179,9 +227,6 @@ type Signed struct {
 	Evidence register.Digest `json:"evidence"`
 	Method   register.Method `json:"method"`
 	Batch    register.Digest `json:"batch,omitempty"`
-	// Name is who signed, kept beside the store and never in the record,
-	// so the next signer can be told apart from them.
-	Name string `json:"name"`
 	// Function is what they are to the organisation when the policy names
 	// them as a second.
 	Function string `json:"function,omitempty"`
@@ -224,7 +269,14 @@ func (m *Approvals) people() People {
 	if m.People != nil {
 		return m.People
 	}
-	return PeopleAt(m.Root)
+	return SubjectMap{Register: m.Register}
+}
+
+// Known is the pseudonym the subject map holds for a person, by name,
+// minting none: who a screen is showing a decision to.
+func (m *Approvals) Known(name string) (register.ID, bool) {
+	id, ok, err := known(m.people(), name)
+	return id, ok && err == nil
 }
 
 // agentPrefixes begin the names an agent goes by: agent/NAME in the access
@@ -325,12 +377,17 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 		a.raisers[p.Subject] = true
 		a.Raised = p.Subject
 	}
-	if raised, ok := fieldsOf(p.Record)["raised_by"].(string); ok && register.ID(raised).Valid() {
-		a.raisers[register.ID(raised)] = true
-		a.Raised = register.ID(raised)
+	// A record that says who asked for it, an erasure the person asked
+	// for and somebody else entered, names its requester as the one who
+	// raised it, and whoever entered it raised it too.
+	for _, field := range []string{"raised_by", "requested_by"} {
+		if raised, ok := fieldsOf(p.Record)[field].(string); ok && register.ID(raised).Valid() {
+			a.raisers[register.ID(raised)] = true
+			a.Raised = register.ID(raised)
+		}
 	}
 	if a.Raised == "" && p.Agent != "" {
-		if id, ok, err := known(m.people(), p.Agent); err != nil {
+		if id, ok, err := known(m.people(), agentName(p.Agent)); err != nil {
 			return nil, err
 		} else if ok {
 			a.Raised = id
@@ -469,6 +526,10 @@ func (m *Approvals) Sign(by Person, id register.ID, proof Proof) (*Outcome, erro
 	if err := m.mayDecide(pol, by); err != nil {
 		return refuse(err)
 	}
+	brings, err := m.brings(a)
+	if err != nil {
+		return refuse(err)
+	}
 	subject, err := m.people().Pseudonym(by.Name)
 	if err != nil {
 		return nil, err
@@ -486,12 +547,13 @@ func (m *Approvals) Sign(by Person, id register.ID, proof Proof) (*Outcome, erro
 		return nil, err
 	}
 	signed.Evidence = d
-	return m.signed(pol, by, subject, a, signed, now)
+	return m.signed(pol, by, subject, a, signed, brings, now)
 }
 
 // signed adds a signature to a request and, once there are enough, writes
-// the record.
-func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, s Signed, now time.Time) (*Outcome, error) {
+// the record, with what it brings in the same commit.
+func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, s Signed, brings []register.Record,
+	now time.Time) (*Outcome, error) {
 	var signers []Signed
 	err := atomicfile.Update(m.requestsPath(), func(f *requestsFile) error {
 		f.prune(now, pol.WaitDays)
@@ -539,14 +601,14 @@ func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, 
 			Method: sg.Method, Batch: sg.Batch})
 	}
 	if ap.Raised == "" && a.Proposal.Agent != "" {
-		if ap.Raised, err = m.people().Pseudonym(a.Proposal.Agent); err != nil {
+		if ap.Raised, err = m.people().Pseudonym(agentName(a.Proposal.Agent)); err != nil {
 			return nil, err
 		}
 	}
 	if ap.Raised == "" {
 		ap.Raised = subject
 	}
-	rc, err := m.Register.Accept(m.actor(by, subject, a), a.Proposal.ID, ap)
+	rc, err := m.Register.AcceptWith(m.actor(by, subject, a), a.Proposal.ID, ap, brings...)
 	if err != nil && !errors.Is(err, register.ErrUnrecorded) {
 		return nil, err
 	}
@@ -679,7 +741,7 @@ func (m *Approvals) evidenceOf(by Person, subject register.ID, p Purpose, want r
 func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask, now time.Time) (Signed, error) {
 	key := auth.PersonKey(by.Name)
 	spec, _ := register.SpecOf(string(a.Proposal.Kind))
-	s := Signed{Subject: subject, At: register.TimeOf(now), Method: "passkey", Name: key}
+	s := Signed{Subject: subject, At: register.TimeOf(now), Method: "passkey"}
 	if by.Console {
 		s.Method = "console"
 	}
@@ -701,6 +763,14 @@ func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask,
 			"policy approves beside them, not in their place")
 	}
 	raiser := a.raisers[subject] || (a.Proposal.Agent != "" && auth.SamePerson(a.Proposal.Agent, by.Name))
+	// A raiser is known by pseudonym, and by the name the subject map holds
+	// for it, so the same person under another spelling the map keeps
+	// apart ("mailto:dana@example.com") is still the person who raised it.
+	for id := range a.raisers {
+		if who := whoIs(m.people(), id); who != "" && auth.SamePerson(who, by.Name) {
+			raiser = true
+		}
+	}
 	if raiser && !alone {
 		return s, errRefused("you raised or drafted this %s, and whoever raises a decision does not approve it; "+
 			"%d other people may", strings.ToLower(string(a.Proposal.Kind)), a.Of-1)
@@ -709,7 +779,7 @@ func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask,
 		return s, errRefused("an agent does not approve its own proposal")
 	}
 	for _, have := range a.Signed {
-		if have.Subject == subject || auth.SamePerson(have.Name, by.Name) {
+		if have.Subject == subject || auth.SamePerson(whoIs(m.people(), have.Subject), by.Name) {
 			return s, errRefused("you have approved this already; each approver counts once")
 		}
 	}

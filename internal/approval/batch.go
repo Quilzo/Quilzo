@@ -43,8 +43,9 @@ const BatchWait = 24 * time.Hour
 // Batch is a batch as it is shown to its approver.
 type Batch struct {
 	Root register.Digest `json:"root"`
-	// By is who it was shown to, the only person who may approve it.
-	By      string        `json:"by"`
+	// Subject is who it was shown to, by pseudonym, the only person who
+	// may approve it. It named them besides, and the file beside the store
+	// is no place for a name.
 	Subject register.ID   `json:"subject"`
 	Shown   register.Time `json:"shown"`
 	Until   register.Time `json:"until"`
@@ -115,7 +116,7 @@ func (m *Approvals) StartBatch(by Person, ids []register.ID) (*Batch, error) {
 		return nil, err
 	}
 	now := m.now()
-	b := Batch{By: auth.PersonKey(by.Name), Subject: subject, Shown: register.TimeOf(now),
+	b := Batch{Subject: subject, Shown: register.TimeOf(now),
 		Until: register.TimeOf(now.Add(BatchWait)), Viewing: -1}
 	seen := map[register.ID]bool{}
 	var leaves []register.Digest
@@ -144,13 +145,13 @@ func (m *Approvals) StartBatch(by Person, ids []register.ID) (*Batch, error) {
 	}
 	err = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(now)
-		owed := f.owed(b.By)
+		owed := f.owed(b.Subject)
 		for i, it := range b.Items {
 			if owed[string(it.Record)+" "+string(it.Surface)] {
 				b.Items[i].Sampled = true
 			}
 		}
-		f.drop(b.Root, b.By)
+		f.drop(b.Root, b.Subject)
 		f.Batches = append(f.Batches, b)
 		return nil
 	})
@@ -163,10 +164,10 @@ func (m *Approvals) StartBatch(by Person, ids []register.ID) (*Batch, error) {
 // asking for the batch until it left out the one decision somebody did not
 // want to open, in the same order, another order or beside another
 // decision, was a way round it.
-func (f *batchesFile) owed(by string) map[string]bool {
+func (f *batchesFile) owed(by register.ID) map[string]bool {
 	out := map[string]bool{}
 	for _, b := range f.Batches {
-		if !auth.SamePerson(b.By, by) {
+		if b.Subject != by {
 			continue
 		}
 		for _, it := range b.Items {
@@ -205,9 +206,10 @@ var ErrNoBatch = errors.New("no batch waiting has that root")
 // the same surfaces in the same order.
 func (m *Approvals) BatchOf(by Person, root register.Digest) (*Batch, error) {
 	var out *Batch
+	me, ok := m.Known(by.Name)
 	err := atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(m.now())
-		if b := f.find(root, by.Name); b != nil {
+		if b := f.find(root, me); ok && b != nil {
 			c := *b
 			c.Items = append([]BatchEntry(nil), b.Items...)
 			out = &c
@@ -227,9 +229,13 @@ func (m *Approvals) BatchOf(by Person, root register.Digest) (*Batch, error) {
 func (m *Approvals) OpenInBatch(by Person, root register.Digest, id register.ID) (*Batch, *Ask, error) {
 	now := register.TimeOf(m.now())
 	var out *Batch
+	me, known := m.Known(by.Name)
 	err := atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(m.now())
-		b := f.find(root, by.Name)
+		var b *Batch
+		if known {
+			b = f.find(root, me)
+		}
 		if b == nil {
 			if f.find(root, "") != nil {
 				return errRefused("this batch was shown to somebody else, and only they approve it")
@@ -309,6 +315,7 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 	// Each decision as it stands has to be the one shown: a change since
 	// is a surface the root does not hold.
 	asks := make([]*Ask, len(b.Items))
+	brought := make([][]register.Record, len(b.Items))
 	for i, it := range b.Items {
 		a, err := m.Ask(it.Record)
 		if err != nil {
@@ -320,6 +327,9 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 		}
 		if _, err := m.canSign(pol, by, subject, a, now); err != nil {
 			return refuse(err)
+		}
+		if brought[i], err = m.brings(a); err != nil {
+			return refuse(fmt.Errorf("%s %s: %w", it.Kind, it.Record, err))
 		}
 		asks[i] = a
 	}
@@ -339,20 +349,20 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 		return nil, err
 	}
 	out := &BatchOutcome{Root: root, Evidence: d, Receipt: rc}
-	for _, a := range asks {
+	for i, a := range asks {
 		s, err := m.canSign(pol, by, subject, a, now)
 		if err != nil {
 			return out, err
 		}
 		s.Evidence, s.Batch = d, root
-		o, err := m.signed(pol, by, subject, a, s, now)
+		o, err := m.signed(pol, by, subject, a, s, brought[i], now)
 		if err != nil && !errors.Is(err, register.ErrUnrecorded) {
 			return out, err
 		}
 		out.Items = append(out.Items, o)
 	}
 	_ = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
-		f.drop(root, b.By)
+		f.drop(root, b.Subject)
 		return nil
 	})
 	return out, nil
@@ -436,9 +446,9 @@ func (m *Approvals) recorder(by Person, subject register.ID, kind register.Kind)
 
 // find is the batch with this root shown to this person, or, with nobody
 // named, shown to anybody.
-func (f *batchesFile) find(root register.Digest, by string) *Batch {
+func (f *batchesFile) find(root register.Digest, by register.ID) *Batch {
 	for i := range f.Batches {
-		if f.Batches[i].Root == root && (by == "" || auth.SamePerson(f.Batches[i].By, by)) {
+		if f.Batches[i].Root == root && (by == "" || f.Batches[i].Subject == by) {
 			return &f.Batches[i]
 		}
 	}
@@ -447,10 +457,10 @@ func (f *batchesFile) find(root register.Digest, by string) *Batch {
 
 // drop takes away the batch with this root shown to this person, and
 // leaves anybody else's.
-func (f *batchesFile) drop(root register.Digest, by string) {
+func (f *batchesFile) drop(root register.Digest, by register.ID) {
 	kept := f.Batches[:0]
 	for _, b := range f.Batches {
-		if b.Root != root || !auth.SamePerson(b.By, by) {
+		if b.Root != root || b.Subject != by {
 			kept = append(kept, b)
 		}
 	}

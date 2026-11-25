@@ -28,7 +28,8 @@ import (
 // A test is drafted, by a person or by a model filling the draft's typed
 // schema (DraftSchema), and the draft is a proposal: it waits on the
 // register's proposals ref, where nothing runs it, until a person who did
-// not draft it approves it (Programme.Approve). Its approval is bound to the
+// not draft it approves it, through the approvals module (Programme.Approve,
+// or Sign-off in the admin). Its approval is bound to the
 // test, the query's digest among it and its population as it was defined
 // (DenominatorOf), so a test whose query changed is refused, and one whose
 // population was redefined runs over nothing, until somebody approves it
@@ -253,6 +254,13 @@ func Evaluate(v *register.View, testID register.ID, at time.Time) (Run, error) {
 		run.Record.Population = membersDigest(nil)
 		run.Record.Snapshot = readDigest()
 		return run, nil
+	}
+	// An approval lapses at the end of its rule's term, and a test whose
+	// approval lapsed is a decision nobody holds until a person approves
+	// it again.
+	if test.Approval.Lapsed(register.TimeOf(at)) {
+		return fail("its approval lapsed on " + test.Approval.Expires.At().Format("2 January 2006") +
+			", so the test runs again once a person approves it again")
 	}
 	q, err := queryAt(v, test.Query)
 	if err != nil {

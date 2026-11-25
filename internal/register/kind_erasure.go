@@ -3,7 +3,10 @@
 
 package register
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // The erasure of a person: the one decision the register records about
 // somebody that leaves them out of it.
@@ -30,11 +33,27 @@ func (ErasureBasis) Values() []string {
 }
 
 // Erasure records that a person was erased.
+//
+// It is raised as a request, by the person who asked or on their behalf by
+// somebody who entered it, and waits on the proposals ref; it is decided
+// through the approvals module, as every decision is, by somebody who is
+// neither the person erased nor, while anybody else may decide it, whoever
+// asked or entered it. Who decided it and when are the approval's: the
+// decider is its last signer, named by pseudonym alone, and the moment is
+// theirs, which is when the person's data went (fromApproval).
 type Erasure struct {
 	Subject ID           `json:"subject" reg:"required,ref=Subject" about:"the pseudonym whose person was erased; from then on it names nobody"`
 	Basis   ErasureBasis `json:"basis" reg:"required" about:"the ground it was erased on"`
-	Decider ID           `json:"decider" reg:"required,ref=Subject" about:"who decided it"`
-	At      Time         `json:"at" reg:"required" about:"when it was erased"`
+	// RequestedBy is who asked for it: the person themselves, or whoever
+	// else asked; EnteredBy is who entered the request, when somebody did
+	// on their behalf.
+	RequestedBy ID   `json:"requested_by,omitempty" reg:"ref=Subject" about:"who asked for it: the person themselves, or whoever else asked"`
+	EnteredBy   ID   `json:"entered_by,omitempty" reg:"ref=Subject" about:"who entered the request, on behalf of whoever asked"`
+	Decider     ID   `json:"decider" reg:"required,ref=Subject" about:"who decided it: the last to approve it"`
+	At          Time `json:"at" reg:"required" about:"when it was erased: when its decider approved it"`
+	// Also is the person's other pseudonyms, which maps kept before there
+	// was one map gave them, erased with this one.
+	Also []ID `json:"also,omitempty" about:"the person's other pseudonyms, erased with this one"`
 	// Map says the map's entry from the pseudonym to the person was
 	// deleted; Entries and Kinds are how many entries of free text and
 	// files about them went, and the kinds whose records named them.
@@ -59,10 +78,31 @@ func (e Erasure) Check() error {
 	if e.Decider == e.Subject {
 		return fmt.Errorf("a person does not decide their own erasure: after it, nothing would say who decided")
 	}
-	if e.Approval != nil && (len(e.Approval.Signers) != 1 || e.Approval.Signers[0].Subject != e.Decider) {
-		return fmt.Errorf("an erasure's approval is the decider's, and only theirs")
+	if a := e.Approval; a != nil {
+		for _, s := range a.Signers {
+			if s.Subject == e.Subject || slices.Contains(e.Also, s.Subject) {
+				return fmt.Errorf("a person does not decide their own erasure: after it, nothing would say who decided")
+			}
+		}
+		if len(a.Signers) == 0 || a.Signers[len(a.Signers)-1].Subject != e.Decider {
+			return fmt.Errorf("an erasure's decider is the last to approve it")
+		}
 	}
 	return nil
+}
+
+// fromApproval is the erasure with what its approval says of it: who
+// decided it, the last to approve it, and when, which is when the person's
+// data went. Without an approval it names neither, so what an approver is
+// shown is the request, and their approval is not part of what it
+// approves.
+func (e Erasure) fromApproval(a *Approval) Record {
+	e.Decider, e.At = "", 0
+	if a != nil && len(a.Signers) > 0 {
+		last := a.Signers[len(a.Signers)-1]
+		e.Decider, e.At = last.Subject, last.At
+	}
+	return e
 }
 
 func (e Erasure) index(r *Row) {

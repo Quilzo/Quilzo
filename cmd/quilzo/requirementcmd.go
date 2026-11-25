@@ -26,7 +26,8 @@ func init() {
 		heading: "security programme: requirements (frameworks' starters, in Quilzo's own words, mapped by identifier)",
 		help: "  quilzo requirement starters              the frameworks there are starters for, and which are installed\n" +
 			"  quilzo requirement install | uninstall FRAMEWORK  take a starter into the programme, or out, as one decision\n" +
-			"  quilzo requirement approve ID            approve a starter's installation that waits for you\n" +
+			"  quilzo requirement approve ID --surface HASH  approve a starter's installation that waits for you,\n" +
+			"                                            typing back the hash `quilzo approval show ID` gives\n" +
 			"  quilzo requirement list [--framework F]  the requirements of the installed starters\n" +
 			"  quilzo requirement show FRAMEWORK REF    one requirement, with what it is mapped to\n",
 		run: cmdRequirement,
@@ -71,26 +72,18 @@ func cmdRequirement(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		d := deciderFor(root, caller, by, register.KindStarter)
 		var got programme.Decided
 		if args[0] == "install" {
-			got, err = p.Install(d, pos[0])
+			got, err = p.Install(by, pos[0])
 		} else {
-			got, err = p.Uninstall(d, pos[0])
+			got, err = p.Uninstall(by, pos[0])
 		}
 		if err != nil {
 			return programmeError(err)
 		}
 		return sayDecided(got, "requirement")
 	case "approve":
-		pos, err := positionals(args[1:], 1)
-		if err != nil {
-			return err
-		}
-		if len(pos) != 1 {
-			return errMisused{fmt.Errorf("usage: quilzo requirement approve ID")}
-		}
-		return approveDecision(root, pos[0], "requirement", register.KindStarter)
+		return approveDecision(root, args[1:], "requirement", register.KindStarter)
 	case "list":
 		fs := flag.NewFlagSet("requirement list", flag.ContinueOnError)
 		framework := fs.String("framework", "", "only this framework's requirements")
@@ -282,7 +275,7 @@ func requirementShow(root, framework, ref string) error {
 				label = r.Framework + " " + r.Ref
 			}
 		}
-		words, _ := p.Keep.Words(mp.Rationale)
+		words, _ := p.Words(mp.Rationale)
 		fmt.Printf("    %s%s%s %s\n      %s%s%s\n", bold, mp.Relation, reset, printable(label), dim, printable(words), reset)
 	}
 	return nil

@@ -185,9 +185,10 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 		bases = append(bases, map[string]string{"Value": b, "Words": basisWords[register.ErasureBasis(b)]})
 	}
 	data := map[string]any{"Title": "Erase a person", "Nav": "register", "Principal": p, "Bases": bases,
-		"Header": seckit.Header{Title: "Erase a person", Lead: "Deletes who a pseudonym stands for, and the free text " +
-			"and files about them, from beside the register, and writes the signed record that says so. The register " +
-			"itself is not changed, so every record and every chain still checks. It cannot be undone."}}
+		"Header": seckit.Header{Title: "Erase a person", Lead: "Asks for who a pseudonym stands for, and the free text " +
+			"and files about them, to be deleted from beside the register, and for the signed record that says so to be " +
+			"written. Somebody who may decide an erasure decides it on Sign-off; the register itself is not changed, so " +
+			"every record and every chain still checks. Once decided it cannot be undone."}}
 	form := &erasureForm{Requested: "subject"}
 	data["Form"] = form
 	if r.Method != http.MethodPost {
@@ -228,12 +229,15 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
+	// The request is the person's, entered by whoever is signed in, or
+	// theirs; never a pseudonym typed in for somebody else.
 	var asked register.ID
 	if form.Requested == "subject" {
 		asked = id
 	}
 	if id == by.Subject {
-		form.problem("erase-subject", "Person", "You do not decide your own erasure: somebody else who may decide one does")
+		form.problem("erase-subject", "Person", "You do not enter your own erasure: somebody else who may decide one "+
+			"enters your request, and somebody else again decides it")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "register_erase.html", data)
 		return
@@ -243,9 +247,8 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	rc, err := writer.Erase(by, register.ErasureRequest{Subject: id, Basis: register.ErasureBasis(form.Basis),
-		RequestedBy: asked, Eligible: max(register.Eligible(s.Policy, auth.ActApprove, erasureResource()), 1),
-		Evidence: sessionEvidence(p)})
+	_, eid, err := writer.RaiseErasure(by, register.ErasureRequest{Subject: id, Basis: register.ErasureBasis(form.Basis),
+		RequestedBy: asked})
 	switch {
 	case errors.Is(err, register.ErrErased):
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusConflict, "Title": "Erase a person",
@@ -258,16 +261,10 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, register.ErrRefused), errors.Is(err, register.ErrModel):
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden, "Title": "Not permitted",
-			"Principal": p, "Heading": "You cannot erase that person here", "Body": err.Error()})
+			"Principal": p, "Heading": "You cannot ask for that person's erasure here", "Body": err.Error()})
 		return
 	case errors.Is(err, register.ErrInvalid):
-		// Every field was checked above, so what is left is the approval:
-		// with anybody else eligible, the person who raises a decision is
-		// not the one who makes it. It is the question of who asked, and
-		// is said there, with nothing erased.
-		form.problem("erase-requested", "Who asked for it", "Somebody else may decide an erasure too, and the "+
-			"person who raises a decision does not make it: choose who asked for it, or ask somebody else who "+
-			"may decide it to erase them")
+		form.problem("erase-requested", "Who asked for it", err.Error())
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "register_erase.html", data)
 		return
@@ -275,10 +272,15 @@ func (s *Server) handleRegisterErase(w http.ResponseWriter, r *http.Request) {
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	data["Done"] = map[string]any{"Record": string(register.ErasureID(id)), "Commit": rc.Commit, "Subject": string(id),
-		"Entries": len(about)}
-	data["Said"] = fmt.Sprintf("Erased the person behind %s: the subject map's entry and %d entries of text and files "+
-		"about them. The register still checks.", id, len(about))
+	m := s.approvalsFor()
+	raised := map[string]any{"ID": string(eid), "Subject": string(id), "Entries": len(about),
+		"Href": "/register/approvals/item/" + string(eid)}
+	if a, err := m.Ask(eid); err == nil {
+		raised["Hash"], raised["Yours"] = string(a.Hash), a.Yours(p.Name, by.Subject)
+	}
+	data["Raised"] = raised
+	data["Said"] = fmt.Sprintf("Asked for the erasure of the person behind %s: the subject map's entry and %d entries of "+
+		"text and files about them. Nothing is erased until it is decided on Sign-off.", id, len(about))
 	data["Form"] = &erasureForm{Requested: "subject"}
 	s.render(w, r, "register_erase.html", data)
 }
@@ -319,17 +321,4 @@ func (s *Server) registerWriter(p principal) (*register.Register, register.Actor
 	}
 	by.Subject = id
 	return reg, by, nil
-}
-
-// sessionEvidence is the authentication evidence a decision made here is
-// bound to: the session's credential and how it was signed in. A passkey's
-// assertion over the record's own hash is the approvals module's, and
-// stronger; the approval's rule says which this was.
-//
-// It names the decider by nothing else, as the command line's does
-// (consoleEvidence in cmd/quilzo): the assertion binds it to their
-// pseudonym, and is in the register for good, where the name in it was a
-// thing to guess at.
-func sessionEvidence(p principal) []byte {
-	return []byte("admin session\x00" + p.TokenID + "\x00" + strings.Join(p.Methods, ","))
 }

@@ -41,7 +41,7 @@ func TestARaiserCannotApproveAloneWhenOthersMay(t *testing.T) {
 	}
 	// A team of one is what alone is for, and it is recorded so.
 	risk.Approval = alone(1)
-	rc := mustPut(t, b, dana, risk)
+	rc := mustPut(t, b, dana, bound(t, b, risk))
 	if row, ok := mustIndex(t, b).Find(KindRisk, rc.Written[0].ID); !ok || row.Flags&FlagAlone == 0 {
 		t.Errorf("a decision made alone is not flagged in its row: %+v", row)
 	}

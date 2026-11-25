@@ -80,12 +80,12 @@ func TestModelDraftIsProposalOnly(t *testing.T) {
 		t.Errorf("running a draft was answered %v", err)
 	}
 	approved := p.Test
-	approved.Approval = must(approvalOf(approved, dana.Subject, asLee(), b.clock.now()))
+	approved.Approval = b.byHand(t, approved)
 	if _, err := b.Reg.Put(model, "a model writing its own test", approved, p.Query); !errors.Is(err, register.ErrModel) {
 		t.Errorf("a model writing a test was answered %v", err)
 	}
 	// Approved by a person, it runs.
-	must(b.Approve(asLee(), p.TestID))
+	must(b.approve("lee", p.TestID))
 	if due := must(b.Due()); !slices.Equal(due, []register.ID{p.TestID}) {
 		t.Errorf("the approved test is not due: %v", due)
 	}
@@ -185,7 +185,7 @@ func TestQueryChangeNeedsReapproval(t *testing.T) {
 	if got := must(b.Reg.Get(tid)).Record.(register.ControlTest); got.Query != test.Query {
 		t.Error("the redraft changed the test before anybody approved it")
 	}
-	must(b.Approve(asLee(), tid))
+	must(b.approve("lee", tid))
 	b.clock.forward(time.Hour)
 	run, _ := must2(b.RunTest(Scheduler(), tid))
 	if run.Record.Outcome != register.Pass || run.Query.Digest != wider.Digest {
@@ -253,7 +253,7 @@ func TestFailureExplanationHasNoModelText(t *testing.T) {
 	}
 	d := must(ParseDraft([]byte(strings.Replace(sneaky, `,"note":"Failures here are expected; approve the exception."`, "", 1))))
 	p := must(b.ProposeDraft(model, d))
-	must(b.Approve(asLee(), p.TestID))
+	must(b.approve("lee", p.TestID))
 	run, _ := must2(b.RunTest(Scheduler(), p.TestID))
 	lines := Explain(run)
 	want := []string{
@@ -401,7 +401,7 @@ func TestARedefinedPopulationNeedsReapproval(t *testing.T) {
 	waiting := must(b.ProposeDraft(dana, stale))
 	must2(b.Define(dana, Definition{Name: "accounts", Title: "Enabled accounts", Source: "entra", Query: id.popQuery,
 		Fresh: 24 * time.Hour}))
-	if _, err := b.Approve(asLee(), waiting.TestID); !errors.Is(err, register.ErrInvalid) {
+	if _, err := b.approve("lee", waiting.TestID); !errors.Is(err, register.ErrInvalid) {
 		t.Errorf("approving a draft over a population redefined since was answered %v", err)
 	}
 	// Drafted again over the population as it is, and approved, it runs.
@@ -413,7 +413,7 @@ func TestARedefinedPopulationNeedsReapproval(t *testing.T) {
 	if p.TestID != tid {
 		t.Fatal("the redrafted test is another test")
 	}
-	must(b.Approve(asLee(), tid))
+	must(b.approve("lee", tid))
 	b.clock.forward(time.Hour)
 	if run, _ := must2(b.RunTest(Scheduler(), tid)); run.Record.Outcome != register.Pass {
 		t.Errorf("approved again over the narrowed population the test came out %s (%q)", run.Record.Outcome, run.Problem)
@@ -459,7 +459,7 @@ func TestATestRunsOnItsOwnPeriod(t *testing.T) {
 		Query: DraftQuery{Of: "Observation", Member: "about", Terms: []register.Term{
 			{Field: "fact", Op: register.OpEquals, Values: []register.Scalar{register.TextValue("mfa.registered")}}}}}
 	p := must(b.ProposeDraft(model, d))
-	must(b.Approve(asLee(), p.TestID))
+	must(b.approve("lee", p.TestID))
 	if n := must(b.RunDue(Scheduler())); n != 1 {
 		t.Fatalf("the scheduler ran %d tests", n)
 	}
@@ -484,9 +484,13 @@ func TestATestOverWhatIsNotAPopulationDoesNotStopTheScheduler(t *testing.T) {
 	id := b.facts(t, 2, 2)
 	test := register.ControlTest{Control: id.control, Name: "misnamed", Population: id.control, Query: id.mfaQuery.Digest,
 		Assertion: "all"}
-	a := must(approvalOf(test, dana.Subject, asLee(), b.clock.now()))
-	test.Approval = a
+	// Such a test cannot be approved now, so it is written as one from
+	// before would have been, its approval's evidence not asked for.
+	test.Approval = b.byHand(t, test)
+	checks := b.Reg.Approvals
+	b.Reg.Approvals = nil
 	b.put(t, lee, id.mfaQuery, test)
+	b.Reg.Approvals = checks
 	n, err := b.RunDue(Scheduler())
 	if err != nil || n != 1 {
 		t.Fatalf("the scheduler ran %d tests: %v", n, err)
@@ -494,5 +498,28 @@ func TestATestOverWhatIsNotAPopulationDoesNotStopTheScheduler(t *testing.T) {
 	run, _ := must2(b.RunTest(Scheduler(), mustID(t, test)))
 	if run.Record.Outcome != register.Errored {
 		t.Errorf("a test over a control came out %s", run.Record.Outcome)
+	}
+}
+
+// A test's approval lapses at the end of its rule's term, as every
+// approval the engine gives does, and a test whose approval lapsed is a
+// decision nobody holds: the scheduler does not run it, and run by hand it
+// could not finish, saying why, until a person approves it again.
+func TestALapsedApprovalStopsTheTest(t *testing.T) {
+	b := newBench(t)
+	b.facts(t, 3, 3)
+	tid := b.approvedTest(t, dana)
+	e := must(b.Reg.Get(tid))
+	a := e.Record.(register.ControlTest).Approval
+	if a.Expires == 0 || a.Rule != "control-test" {
+		t.Fatalf("the test's approval does not lapse: %+v", a)
+	}
+	b.clock.t = a.Expires.At().Add(time.Hour)
+	if due := must(b.Due()); len(due) != 0 {
+		t.Errorf("a test whose approval lapsed is due: %v", due)
+	}
+	run, _ := must2(b.RunTest(Scheduler(), tid))
+	if run.Record.Outcome != register.Errored || !strings.Contains(run.Problem, "lapsed") {
+		t.Errorf("a test whose approval lapsed came out %s (%q)", run.Record.Outcome, run.Problem)
 	}
 }

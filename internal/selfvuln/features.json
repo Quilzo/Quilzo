@@ -345,7 +345,6 @@
   ],
   "path/filepath": [
    "*",
-   "api",
    "boards",
    "chatbots",
    "forms",

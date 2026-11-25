@@ -505,7 +505,7 @@ func TestTheConsoleApprovesByTheHashTypedBack(t *testing.T) {
 	if _, err := b.m.Sign(console, id, Proof{Passkey: b.key("root-admin").prove(t, other)}); !errors.Is(err, ErrRefused) {
 		t.Fatalf("the console was taken for a passkey: %v", err)
 	}
-	out, err := b.m.Sign(console, id, Proof{Console: &ConsoleProof{Typed: a.Hash, Credential: "cli"}})
+	out, err := b.m.Sign(console, id, Proof{Console: &ConsoleProof{Typed: a.Hash, Verified: true}})
 	if err != nil || !out.Done {
 		t.Fatalf("the console could not approve: %v", err)
 	}

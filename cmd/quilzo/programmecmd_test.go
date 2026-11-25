@@ -56,6 +56,19 @@ func waitingID(t *testing.T, o string) string {
 	return d.ID
 }
 
+// shownOf is the hash a decision that waits is shown to its approvers
+// under, from the JSON its raising answered.
+func shownOf(t *testing.T, o string) string {
+	t.Helper()
+	var d struct {
+		Surface string `json:"surface"`
+	}
+	if err := json.Unmarshal([]byte(o), &d); err != nil || d.Surface == "" {
+		t.Fatalf("the decision did not say the hash its approvers are shown: %s", firstLines(o, 4))
+	}
+	return d.Surface
+}
+
 // The programme's commands decide the way the programme does: with two
 // people who may approve, what one raises waits for the other, who
 // approves it; the one who raised it is refused, and what was decided is
@@ -68,14 +81,23 @@ func TestTheProgrammeCommandsDecideByTwoPeople(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("requirement install: %d %s", code, e)
 	}
-	id := waitingID(t, o)
+	id, shown := waitingID(t, o), shownOf(t, o)
+	if shown != surfaceOf(t, root, owner, id) {
+		t.Errorf("the install said its hash is %s, and `quilzo approval show` says another", shown)
+	}
 	if o, _, _ := cliRun(t, root, owner, "--json", "requirement", "list"); strings.Contains(o, "A.5.1") {
 		t.Fatal("the starter's requirements are listed before anybody approved it")
 	}
-	if _, e, code := cliRun(t, root, owner, "requirement", "approve", id); code != 3 {
+	if _, e, code := cliRun(t, root, owner, "requirement", "approve", id, "--surface", shown); code != 3 || !strings.Contains(e, "raised or drafted") {
 		t.Errorf("the owner approving what the owner raised exited %d: %s", code, firstLines(e, 3))
 	}
-	if _, e, code := cliRun(t, root, lee, "requirement", "approve", id); code != 0 {
+	if _, e, code := cliRun(t, root, lee, "requirement", "approve", id); code != 2 || !strings.Contains(e, "--surface") {
+		t.Errorf("approving with no hash typed back exited %d: %s", code, firstLines(e, 3))
+	}
+	if _, e, code := cliRun(t, root, lee, "requirement", "approve", id, "--surface", "sha256:"+strings.Repeat("0", 64)); code != 3 {
+		t.Errorf("approving with another hash typed back exited %d: %s", code, firstLines(e, 3))
+	}
+	if _, e, code := cliRun(t, root, lee, "requirement", "approve", id, "--surface", shown); code != 0 {
 		t.Fatalf("lee approving the install exited %d: %s", code, firstLines(e, 3))
 	}
 	o, _, _ = cliRun(t, root, owner, "--json", "requirement", "list")
@@ -94,7 +116,7 @@ func TestTheProgrammeCommandsDecideByTwoPeople(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("soa scope: %d %s", code, e)
 	}
-	if _, e, code := cliRun(t, root, lee, "soa", "approve", waitingID(t, o)); code != 0 {
+	if _, e, code := cliRun(t, root, lee, "soa", "approve", waitingID(t, o), "--surface", shownOf(t, o)); code != 0 {
 		t.Fatalf("soa approve: %d %s", code, e)
 	}
 	o, e, code = cliRun(t, root, lee, "--json", "soa", "decide", "group", "iso-27001", "A.7.4", "--excluded",
@@ -102,7 +124,7 @@ func TestTheProgrammeCommandsDecideByTwoPeople(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("soa decide: %d %s", code, e)
 	}
-	if _, e, code := cliRun(t, root, owner, "soa", "approve", waitingID(t, o)); code != 0 {
+	if _, e, code := cliRun(t, root, owner, "soa", "approve", waitingID(t, o), "--surface", shownOf(t, o)); code != 0 {
 		t.Fatalf("soa approve of the line: %d %s", code, e)
 	}
 	o, _, code = cliRun(t, root, owner, "soa", "show", "group", "--csv")
@@ -187,7 +209,8 @@ func TestAControlTestIsDraftedApprovedRunAndReplayed(t *testing.T) {
 	if _, _, code := cliRun(t, root, owner, "control", "draft", bad); code != 2 {
 		t.Errorf("a draft with a field it does not have exited %d", code)
 	}
-	if _, e, code := cliRun(t, root, lee, "control", "approve", proposed.TestID); code != 0 {
+	if _, e, code := cliRun(t, root, lee, "control", "approve", proposed.TestID, "--surface",
+		surfaceOf(t, root, owner, proposed.TestID)); code != 0 {
 		t.Fatalf("control approve: %s", e)
 	}
 	o, e, code = cliRun(t, root, owner, "--json", "control", "run", proposed.TestID)
@@ -288,12 +311,12 @@ func TestAnAuthorDecidesNothingAlone(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("an author raising an install exited %d: %s", code, firstLines(e, 3))
 	}
-	id := waitingID(t, o)
+	id, idShown := waitingID(t, o), shownOf(t, o)
 	o, e, code = cliRun(t, root, ann, "--json", "soa", "scope", "group", "--title", "The group", "--domains", "identity")
 	if code != 0 {
 		t.Fatalf("an author raising a scope exited %d: %s", code, firstLines(e, 3))
 	}
-	scope := waitingID(t, o)
+	scope, scopeShown := waitingID(t, o), shownOf(t, o)
 	nis2 := func() (installed, alone bool) {
 		t.Helper()
 		o, _, _ := cliRun(t, root, owner, "--json", "requirement", "starters")
@@ -317,7 +340,7 @@ func TestAnAuthorDecidesNothingAlone(t *testing.T) {
 	if installed, _ := nis2(); installed {
 		t.Fatal("an author's install is in the programme before anybody approved it")
 	}
-	for _, line := range [][]string{{"requirement", "approve", id}, {"soa", "approve", scope}} {
+	for _, line := range [][]string{{"requirement", "approve", id, "--surface", idShown}, {"soa", "approve", scope, "--surface", scopeShown}} {
 		if _, e, code := cliRun(t, root, owner, line...); code != 0 {
 			t.Fatalf("the owner running `quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
 		}

@@ -87,8 +87,8 @@ func TestAnApprovalMadeAloneKeepsWhatTheRuleAsked(t *testing.T) {
 	risk := Risk{Ref: "R-9", Title: "Supplier outage", Owner: owner, Raised: dana.Subject, Likelihood: 2, Impact: 5,
 		Status: "accepted", Approval: a}
 	b := newBench(t)
-	rc := mustPut(t, b, dana, risk)
-	if len(rc.Approved) != 1 || rc.Approved[0] != a.Surface {
+	rc := mustPut(t, b, dana, bound(t, b, risk))
+	if len(rc.Approved) != 1 || rc.Approved[0] != shown(t, b, risk) {
 		t.Errorf("the receipt does not carry the surface approved: %+v", rc.Approved)
 	}
 	a2 := signedBy(dana.Subject, dana.Subject)

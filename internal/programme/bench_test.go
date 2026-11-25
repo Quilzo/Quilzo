@@ -6,11 +6,14 @@ package programme
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
@@ -23,25 +26,49 @@ type clock struct{ t time.Time }
 func (c *clock) now() time.Time          { return c.t }
 func (c *clock) forward(d time.Duration) { c.t = c.t.Add(d) }
 
-// bench is a programme on a register of its own, with its audit entries and
-// its clock.
+// bench is a programme on a register of its own, with its audit entries,
+// its clock, the access policy its approvers are asked by, and who
+// approves what dana raises: lee, where two people may approve, and dana
+// herself where she is the only one.
 type bench struct {
 	*Programme
-	log   []audit.Record
-	clock *clock
+	log      []audit.Record
+	clock    *clock
+	access   *auth.Policy
+	approver string
 }
 
-func newBench(t testing.TB) *bench {
+// newBench is a programme where dana and lee may each approve.
+func newBench(t testing.TB) *bench { return benchOf(t, "dana", "lee") }
+
+// newBenchAlone is a programme where dana is the only person who may.
+func newBenchAlone(t testing.TB) *bench { return benchOf(t, "dana") }
+
+func benchOf(t testing.TB, approvers ...string) *bench {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "store"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &bench{clock: &clock{time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)}}
+	b := &bench{clock: &clock{time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)}, access: &auth.Policy{},
+		approver: approvers[len(approvers)-1]}
+	for _, who := range approvers {
+		if err := b.access.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: register.Area}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	reg := register.Open(s)
 	reg.Now = b.clock.now
 	reg.Audit = func(r audit.Record) error { b.log = append(b.log, r); return nil }
-	b.Programme = &Programme{Reg: reg, Keep: &MemKeeper{}, Now: b.clock.now}
+	// dana and lee are in the subject map under the pseudonyms the test
+	// names them by, so the approvals know them as the register does.
+	for _, a := range []register.Actor{dana, lee} {
+		if _, err := reg.Side().Adopt(a.Name, "person", string(a.Subject)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &approval.Approvals{Root: s.Root(), Register: reg, Access: b.access, Audit: reg.Audit, Now: b.clock.now}
+	b.Programme = &Programme{Reg: reg, Approvals: m, Now: b.clock.now}
 	return b
 }
 
@@ -54,15 +81,45 @@ var (
 	model    = register.Actor{Name: "control-tester", Kind: audit.KindAI, Model: "an-agent", Verified: true, May: allow}
 )
 
-// asDana and asLee are the two people who decide, with two eligible.
-func asDana() Decider {
-	return Decider{By: dana, Eligible: 2, MayApprove: true, Proof: "dana's session"}
+// console is somebody at the store's console, as the approvals module
+// knows them, asked the access policy as themselves.
+func (b *bench) console(name string) approval.Person {
+	return approval.Person{Name: name, Kind: audit.KindHuman, Verified: true, Console: true,
+		May: func(act auth.Action, resource string) error {
+			if d := b.access.Evaluate(name, act, resource); !d.Allowed {
+				return errors.New(d.Reason)
+			}
+			return nil
+		}}
 }
-func asLee() Decider { return Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "lee's session"} }
 
-// alone is dana as the only person eligible.
-func alone() Decider {
-	return Decider{By: dana, Eligible: 1, MayApprove: true, Proof: "dana's session"}
+// approve is somebody approving a waiting decision at the console, typing
+// back the hash it shows now.
+func (b *bench) approve(name string, id register.ID) (Decided, error) {
+	a, err := b.Approvals.Ask(id)
+	if err != nil {
+		return Decided{}, err
+	}
+	return b.Approve(b.console(name), id, approval.Proof{Console: &approval.ConsoleProof{Typed: a.Hash}})
+}
+
+// agreed is a decision dana raised, approved by the bench's approver.
+func (b *bench) agreed(t testing.TB, d Decided) Decided {
+	t.Helper()
+	if !d.Waits {
+		t.Fatalf("a decision raised did not wait for its approval: %+v", d)
+	}
+	return must(b.approve(b.approver, d.ID))
+}
+
+// byHand is an approval of rec put together without the approvals module,
+// over what rec shows now: what a writer that went round it would send.
+func (b *bench) byHand(t testing.TB, rec register.Record) *register.Approval {
+	t.Helper()
+	shown := must(b.Reg.Surface(withApproval(rec, nil), mustID(t, withApproval(rec, nil))))
+	return &register.Approval{Atom: "approve", Rule: "control-test", Needed: 1, Of: 2, Surface: shown, Raised: dana.Subject,
+		Signers: []register.Signer{{Subject: lee.Subject, At: register.TimeOf(b.clock.now()), Method: "console",
+			Assertion: register.Digest("sha256:" + strings.Repeat("0", 64))}}}
 }
 
 // must is a value a test needs, or the end of the test. It panics, which
@@ -158,6 +215,6 @@ func (b *bench) approvedTest(t testing.TB, by register.Actor) register.ID {
 			{Field: "fact", Op: register.OpEquals, Values: []register.Scalar{register.TextValue("mfa.registered")}},
 			{Field: "value", Op: register.OpEquals, Values: []register.Scalar{register.BoolValue(true)}}}}}
 	p := must(b.ProposeDraft(by, d))
-	must(b.Approve(asLee(), p.TestID))
+	must(b.approve("lee", p.TestID))
 	return p.TestID
 }

@@ -188,6 +188,11 @@ func (r *Register) AcceptWith(by Actor, id ID, approval *Approval, follows ...Re
 	if err := r.decider(by, p, approval != nil && approval.Alone); err != nil {
 		return Receipt{}, err
 	}
+	// Accepting an erasure is erasing the person: what is about them goes
+	// from beside the register as its record is written (privacy.go).
+	if p.Kind == KindErasure {
+		return r.erase(by, p, approval)
+	}
 	rec := withApproval(p.Record, approval)
 	// Accepting is what writes the record, so the permission to approve
 	// records of this kind is the permission asked, and it was asked above.
@@ -318,6 +323,12 @@ func withApproval(rec Record, a *Approval) Record {
 		}
 	}
 	got, _ := out.Interface().(Record)
+	// A kind some of whose fields are its approval's, an erasure's decider
+	// and moment, takes them from the approval it is given, and has none
+	// without one.
+	if f, ok := got.(interface{ fromApproval(*Approval) Record }); ok {
+		got = f.fromApproval(a)
+	}
 	return got
 }
 

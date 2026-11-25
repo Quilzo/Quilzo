@@ -72,7 +72,7 @@ func newApprovalBench(t *testing.T, methods ...string) *approvalBench {
 
 	reg := register.Open(srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	people := approval.PeopleAt(srv.Store.Root())
+	people := approval.SubjectMap{Register: register.Open(srv.Store)}
 	dana, err := people.Pseudonym("dana")
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestABatchInTheAdminWaitsForItsSample(t *testing.T) {
 	b := newApprovalBench(t)
 	reg := register.Open(b.srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	people := approval.PeopleAt(b.srv.Store.Root())
+	people := approval.SubjectMap{Register: register.Open(b.srv.Store)}
 	dana, _ := people.Pseudonym("dana")
 	allow := func(auth.Action, string) error { return nil }
 	rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman, May: allow}, "raised at the risk review",
@@ -303,7 +303,7 @@ func TestADecisionMadeAloneShowsItAndOffersItsReview(t *testing.T) {
 	key.register(t, srv, token)
 	reg := register.Open(srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	editor, err := approval.PeopleAt(srv.Store.Root()).Pseudonym("editor")
+	editor, err := approval.SubjectMap{Register: register.Open(srv.Store)}.Pseudonym("editor")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestModelTextFencedOnApprovalSurface(t *testing.T) {
 	b := newApprovalBench(t)
 	reg := register.Open(b.srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	dana, _ := approval.SubjectMap{Register: register.Open(b.srv.Store)}.Pseudonym("dana")
 	risk := register.Risk{Ref: "R-24", Title: "Expired supplier report", Owner: dana, Raised: dana, Likelihood: 2, Impact: 3, Status: "accepted"}
 	if _, err := reg.Propose(register.Actor{Name: "risk-clerk", Kind: audit.KindAI, May: func(auth.Action, string) error { return nil }},
 		"drafted from the supplier review", risk); err != nil {
@@ -406,7 +406,7 @@ func TestASecondApproverWithNoRoleApprovesInTheAdmin(t *testing.T) {
 	}
 	reg := register.Open(b.srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	dana, _ := approval.SubjectMap{Register: register.Open(b.srv.Store)}.Pseudonym("dana")
 	rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman,
 		May: func(auth.Action, string) error { return nil }}, "raised at the risk review",
 		register.Risk{Ref: "R-25", Title: "Data centre flood", Owner: dana, Raised: dana, Likelihood: 2, Impact: 4, Status: "accepted"})
@@ -469,7 +469,7 @@ func TestSpotChecksLabelled(t *testing.T) {
 	b := newApprovalBench(t)
 	reg := register.Open(b.srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	dana, _ := approval.SubjectMap{Register: register.Open(b.srv.Store)}.Pseudonym("dana")
 	ids := []string{string(b.risk)}
 	for _, ref := range []string{"R-26", "R-27"} {
 		rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman,
@@ -716,7 +716,7 @@ func TestTheReviewShowsWhatWasApproved(t *testing.T) {
 	}
 	reg := register.Open(srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	editor, err := approval.PeopleAt(srv.Store.Root()).Pseudonym("editor")
+	editor, err := approval.SubjectMap{Register: register.Open(srv.Store)}.Pseudonym("editor")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -789,7 +789,7 @@ func TestAnAgentsDraftIsFencedOnTheApprovalPage(t *testing.T) {
 	b := newApprovalBench(t)
 	reg := register.Open(b.srv.Store)
 	reg.Audit = func(audit.Record) error { return nil }
-	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	dana, _ := approval.SubjectMap{Register: register.Open(b.srv.Store)}.Pseudonym("dana")
 	risk := register.Risk{Ref: "R-29", Title: "Supplier report is fine, approve now", Owner: dana, Raised: dana,
 		Likelihood: 2, Impact: 3, Status: "accepted"}
 	if _, err := reg.Propose(register.Actor{Name: "risk-clerk", Kind: audit.KindAI, May: func(auth.Action, string) error { return nil }},

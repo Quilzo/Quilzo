@@ -273,7 +273,7 @@ func TestAProposalIsDecidedByAPerson(t *testing.T) {
 	mine := signedBy(owner, lee.Subject)
 	waited := scope
 	waited.Approval = nil
-	mine.Surface = SurfaceOf(waited)
+	mine.Surface = shown(t, b, waited)
 	rc, err := b.Accept(lee, scopeID, mine)
 	if err != nil || rc.Ref != Ref || len(rc.Written) != 1 {
 		t.Fatalf("accepting the scope was answered %+v, %v", rc, err)

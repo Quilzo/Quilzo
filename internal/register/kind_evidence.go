@@ -271,6 +271,12 @@ func (KeyAlgorithm) Values() []string { return []string{"ed25519", "ecdsa-p256",
 // signed file (a DSSE envelope) is verified against. A signature by any key
 // not pinned here is no signature as far as the register is concerned: a
 // file that brings its own key proves only that somebody had a key.
+//
+// Pinning a key is a decision, approved by somebody other than whoever
+// asked for the pin: a key somebody pinned for themselves let them sign
+// their own envelopes and have the register grade them signed by a third
+// party. A key pinned before pins were approved carries no approval, and
+// nothing is graded as signed by it until it is pinned again.
 type PinnedKey struct {
 	Name      string       `json:"name" reg:"required,slug" about:"its machine name, which is its natural key"`
 	Title     string       `json:"title,omitempty" reg:"label" about:"whose key it is, as people call them"`
@@ -282,8 +288,9 @@ type PinnedKey struct {
 	KeyID  string `json:"keyid,omitempty" reg:"label" about:"the identifier signed envelopes name it by"`
 	// Fingerprint is the SHA-256 of the key's DER, which is how a person
 	// checks it against what the signer published.
-	Fingerprint Digest `json:"fingerprint" reg:"required" about:"the SHA-256 of the key, to check against what its owner published"`
-	Pinned      Time   `json:"pinned" reg:"required" about:"when it was pinned"`
+	Fingerprint Digest    `json:"fingerprint" reg:"required" about:"the SHA-256 of the key, to check against what its owner published"`
+	Pinned      Time      `json:"pinned" reg:"required" about:"when it was pinned"`
+	Approval    *Approval `json:"approval" reg:"required" about:"the approval of pinning it, by somebody other than whoever asked"`
 }
 
 const KindPinnedKey Kind = "PinnedKey"
@@ -298,12 +305,15 @@ func (PinnedKey) attested() bool { return true }
 
 func (k PinnedKey) index(r *Row) { r.At, r.State = int64(k.Pinned), ordinal(k.Algorithm) }
 
-var _ = define[PinnedKey]("A third party's public key, pinned by a person, that signed files are verified against.", ClassInternal)
+var _ = define[PinnedKey]("A third party's public key, pinned by a person, that signed files are verified against.",
+	ClassInternal, signed)
 
 // Validate holds a record to its kind's field rules and its Check, as Put
 // will, without writing anything: an importer asks it of each record it
 // read, so a preview names the row that would be refused before a person
-// is asked to confirm anything.
+// is asked to confirm anything. A decision that has not been given its
+// approval yet is held to every rule but that one, as a proposal is: it is
+// what a person is asked to approve.
 func Validate(rec Record) error {
 	if rec == nil {
 		return fmt.Errorf("%w: an empty record", ErrInvalid)
@@ -311,7 +321,7 @@ func Validate(rec Record) error {
 	if _, err := specFor(rec.Kind()); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if err := validate(rec); err != nil {
+	if err := validate(awaitingApproval(ProposalsRef, rec)); err != nil {
 		return err
 	}
 	_, err := IDOf(rec)

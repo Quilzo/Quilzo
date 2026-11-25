@@ -47,9 +47,10 @@ func init() {
 			"                                            rated highest\n" +
 			"  quilzo register inventory                the data inventory: what each kind holds about people, how long\n" +
 			"                                            and who may read it, for a record of processing\n" +
-			"  quilzo register erase --subject ID | --name NAME --basis BASIS  erase a person from beside the register\n" +
-			"                                            and write the signed record of it; the register still checks.\n" +
-			"                                            --requested-by ID, or subject for the person; --yes to go on\n" +
+			"  quilzo register erase --subject ID | --name NAME --basis BASIS  ask for a person's erasure from beside\n" +
+			"                                            the register; somebody else decides it (quilzo approval approve)\n" +
+			"                                            and the signed record of it is written; the register still\n" +
+			"                                            checks. --requested-by subject for the person, or ID; --yes\n" +
 			"  quilzo register expire                   delete now the text and files each kind's retention has ended,\n" +
 			"                                            as the server does every quarter of an hour\n",
 		run: cmdRegister,

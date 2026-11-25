@@ -5,8 +5,13 @@ package programme
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,15 +19,11 @@ import (
 	"github.com/quilzo/quilzo/internal/register"
 )
 
-// installs is the starter installed by dana and approved by lee, with the
-// receipt of the one commit that put it in.
+// installs is the starter installed by dana and approved by the bench's
+// approver, with the receipt of the one commit that put it in.
 func (b *bench) installs(t testing.TB, framework string) register.Receipt {
 	t.Helper()
-	raised := must(b.Install(asDana(), framework))
-	if !raised.Waits {
-		t.Fatalf("installing %s with somebody else eligible did not wait for them: %+v", framework, raised)
-	}
-	return must(b.Approve(asLee(), raised.ID)).Receipt
+	return b.agreed(t, must(b.Install(dana, framework))).Receipt
 }
 
 // Taking a starter into the programme is one decision: one Starter record
@@ -31,14 +32,14 @@ func (b *bench) installs(t testing.TB, framework string) register.Receipt {
 // approves it, the register holds none of it.
 func TestStarterInstallsAsOneDecision(t *testing.T) {
 	b := newBench(t)
-	raised := must(b.Install(asDana(), "iso-27001"))
-	if !raised.Waits || b.Reg.Head() != "" {
+	raised := must(b.Install(dana, "iso-27001"))
+	if !raised.Waits || raised.Yours || b.Reg.Head() != "" {
 		t.Fatalf("a starter raised by one of two eligible was written before the other approved it: %+v", raised)
 	}
-	if _, err := b.Approve(asDana(), raised.ID); !errors.Is(err, register.ErrRefused) {
+	if _, err := b.approve("dana", raised.ID); !errors.Is(err, register.ErrRefused) {
 		t.Errorf("dana approving the install she raised was answered %v", err)
 	}
-	rc := must(b.Approve(asLee(), raised.ID))
+	rc := must(b.approve("lee", raised.ID))
 	iso, _ := StarterNamed("iso-27001")
 	if len(iso.Clauses) != 93 {
 		t.Errorf("the ISO/IEC 27001:2022 starter holds %d controls, and Annex A has 93", len(iso.Clauses))
@@ -64,19 +65,24 @@ func TestStarterInstallsAsOneDecision(t *testing.T) {
 	if !s.Installed || s.Approval == nil || s.Approval.Raised != dana.Subject || s.Approval.Signers[0].Subject != lee.Subject {
 		t.Errorf("the decision is %+v", s)
 	}
-	if s.Content != iso.Content() || s.Approval.Surface != register.SurfaceOf(withApproval(s, nil)) {
-		t.Error("the decision does not name what it brought, or its approval is of something else")
+	if s.Content != iso.Content() || s.Approval.Surface != raised.Surface || rc.Receipt.Approved[0] != raised.Surface {
+		t.Error("the decision does not name what it brought, or its approval is of something other than what was shown")
 	}
 	installed := must(Installed(b.view(t)))
 	if _, ok := installed["iso-27001"]; !ok {
 		t.Error("the programme does not read the starter as installed")
 	}
 
-	// The only person eligible decides alone, at once, with a review due.
-	b2 := newBench(t)
-	d := must(b2.Install(alone(), "iso-42001"))
+	// The only person eligible approves alone what she raised, with a
+	// review due.
+	b2 := newBenchAlone(t)
+	d := must(b2.Install(dana, "iso-42001"))
+	if !d.Waits || !d.Yours {
+		t.Fatalf("the only person eligible raising a starter was told %+v", d)
+	}
+	d = must(b2.approve("dana", d.ID))
 	if d.Waits || !d.Alone {
-		t.Fatalf("the only person eligible installing a starter was %+v", d)
+		t.Fatalf("the only person eligible approving the starter she raised was %+v", d)
 	}
 	got := must(b2.Reg.Get(d.ID)).Record.(register.Starter)
 	if !got.Approval.Alone || got.Approval.ReviewDue == 0 {
@@ -84,16 +90,18 @@ func TestStarterInstallsAsOneDecision(t *testing.T) {
 	}
 	// Somebody who may not approve decides nothing alone, even where only
 	// one person may: what they raise waits for that person.
-	b3 := newBench(t)
-	notEligible := Decider{By: lee, Eligible: 1, MayApprove: false, Proof: "lee's session"}
-	if d := must(b3.Install(notEligible, "dora")); !d.Waits || b3.Reg.Head() != "" {
-		t.Errorf("somebody who may not approve installed a starter alone: %+v", d)
+	b3 := newBenchAlone(t)
+	if d := must(b3.Install(lee, "dora")); !d.Waits || d.Yours || b3.Reg.Head() != "" {
+		t.Errorf("somebody who may not approve was told they decide a starter alone: %+v", d)
+	}
+	if _, err := b3.approve("lee", mustID(t, starterOf(t, "dora", true))); !errors.Is(err, register.ErrRefused) {
+		t.Errorf("somebody who may not approve approved a starter: %v", err)
 	}
 	// And a starter this program does not carry, or another edition of
 	// one, is not what would be written, so it is refused.
 	forged := iso.Decision(true)
 	forged.Content = register.Digest("sha256:" + strings.Repeat("0", 64))
-	if _, err := b2.Raise(alone(), "a forged starter", forged); !errors.Is(err, register.ErrInvalid) {
+	if _, err := b2.Raise(dana, "a forged starter", forged); !errors.Is(err, register.ErrInvalid) {
 		t.Errorf("a starter whose content is not this program's was answered %v", err)
 	}
 }
@@ -104,20 +112,20 @@ func TestStarterInstallsAsOneDecision(t *testing.T) {
 func TestStarterUninstallsAsOneDecision(t *testing.T) {
 	b := newBench(t)
 	b.installs(t, "iso-27001")
-	scope := must(b.DecideScope(alone(), register.Scope{Name: "group", Title: "The group",
-		Domains: []register.Domain{"identity"}, Frameworks: []string{"iso-27001"}}))
+	scope := b.agreed(t, must(b.DecideScope(dana, register.Scope{Name: "group", Title: "The group",
+		Domains: []register.Domain{"identity"}, Frameworks: []string{"iso-27001"}})))
 	if scope.Waits {
 		t.Fatal("the scope waits")
 	}
-	before := must(StatementAt(b.view(t), b.Keep, "group"))
+	before := must(StatementAt(b.view(t), b.Words, "group"))
 	if len(before.Lines) != 93 {
 		t.Fatalf("the statement has %d lines with the starter installed", len(before.Lines))
 	}
-	raised := must(b.Uninstall(asDana(), "iso-27001"))
+	raised := must(b.Uninstall(dana, "iso-27001"))
 	if !raised.Waits {
 		t.Fatal("taking a starter out did not wait for somebody else")
 	}
-	rc := must(b.Approve(asLee(), raised.ID))
+	rc := must(b.approve("lee", raised.ID))
 	if rc.Receipt.Commit == "" || len(rc.Receipt.Written) != 1 || rc.Receipt.Written[0].Kind != register.KindStarter {
 		t.Fatalf("taking the starter out wrote %+v", rc.Receipt.Written)
 	}
@@ -127,7 +135,7 @@ func TestStarterUninstallsAsOneDecision(t *testing.T) {
 	if n := must(b.Reg.Counts())[register.KindRequirement]; n != 93 {
 		t.Errorf("the register holds %d requirements; what was written stays", n)
 	}
-	after := must(StatementAt(b.view(t), b.Keep, "group"))
+	after := must(StatementAt(b.view(t), b.Words, "group"))
 	if len(after.Lines) != 0 {
 		t.Errorf("the statement lists %d requirements of a starter taken out", len(after.Lines))
 	}
@@ -140,7 +148,7 @@ func TestStarterUninstallsAsOneDecision(t *testing.T) {
 func TestApplicabilityNeedsApproval(t *testing.T) {
 	b := newBench(t)
 	b.installs(t, "iso-27001")
-	must(b.DecideScope(alone(), register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"}}))
+	b.agreed(t, must(b.DecideScope(dana, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"}})))
 	v := b.view(t)
 	rid := must(RequirementID("iso-27001", "A.7.4"))
 	sid := must(register.DeriveID(register.KindScope, register.Local, "group"))
@@ -150,23 +158,22 @@ func TestApplicabilityNeedsApproval(t *testing.T) {
 	}
 	other := line
 	other.Applicable = true
-	a := must(approvalOf(other, dana.Subject, asLee(), b.clock.now()))
-	line.Approval = a
+	line.Approval = b.byHand(t, other)
 	if _, err := b.Reg.Put(dana, "a line with another's approval", line); !errors.Is(err, register.ErrInvalid) {
 		t.Errorf("a line carrying the approval of another was answered %v", err)
 	}
 
-	d := must(b.DecideLine(asDana(), "group", "iso-27001", "A.7.4", false,
+	d := must(b.DecideLine(dana, "group", "iso-27001", "A.7.4", false,
 		"We have no premises of our own; staff work from home and the office is a shared desk."))
 	if !d.Waits {
 		t.Fatal("a line raised by one of two eligible was written at once")
 	}
-	st := must(StatementAt(b.view(t), b.Keep, "group"))
+	st := must(StatementAt(b.view(t), b.Words, "group"))
 	if st.Undecided != 93 || st.Applying != 0 || st.NotApplying != 0 {
 		t.Errorf("before its approval the statement counts %d undecided, %d applying, %d not", st.Undecided, st.Applying, st.NotApplying)
 	}
-	must(b.Approve(asLee(), d.ID))
-	st = must(StatementAt(b.view(t), b.Keep, "group"))
+	must(b.approve("lee", d.ID))
+	st = must(StatementAt(b.view(t), b.Words, "group"))
 	if st.NotApplying != 1 || st.Undecided != 92 {
 		t.Errorf("after its approval the statement counts %d not applying, %d undecided", st.NotApplying, st.Undecided)
 	}
@@ -181,14 +188,14 @@ func TestScopeNeedsApproval(t *testing.T) {
 	if _, err := b.Reg.Put(dana, "a scope with no approval", s); !errors.Is(err, register.ErrInvalid) {
 		t.Errorf("a scope with no approval was answered %v", err)
 	}
-	d := must(b.DecideScope(asDana(), s))
+	d := must(b.DecideScope(dana, s))
 	if !d.Waits || b.Reg.Head() != "" {
 		t.Fatal("a scope raised by one of two eligible was written at once")
 	}
-	if _, err := b.Approve(asDana(), d.ID); !errors.Is(err, register.ErrRefused) {
+	if _, err := b.approve("dana", d.ID); !errors.Is(err, register.ErrRefused) {
 		t.Errorf("dana approving her own scope was answered %v", err)
 	}
-	must(b.Approve(asLee(), d.ID))
+	must(b.approve("lee", d.ID))
 	got := must(b.Reg.Get(d.ID)).Record.(register.Scope)
 	if got.Approval == nil || got.Approval.Signers[0].Subject != lee.Subject {
 		t.Errorf("the scope's approval is %+v", got.Approval)
@@ -233,7 +240,7 @@ func TestMappingCarriesIR8477Relation(t *testing.T) {
 			if !strings.Contains(strings.Join(register.Relation("").Values(), " "), string(m.Relation)) || m.Relation == "" {
 				t.Errorf("a %s mapping is related by %q", s.Framework, m.Relation)
 			}
-			if words, ok := b.Keep.Words(m.Rationale); !ok || words == "" {
+			if words, ok := b.Words(m.Rationale); !ok || words == "" {
 				t.Errorf("a %s mapping's rationale has no words", s.Framework)
 			}
 		}
@@ -246,18 +253,18 @@ func TestMappingCarriesIR8477Relation(t *testing.T) {
 // requirement. A cell a spreadsheet would run as a formula is guarded, and
 // nothing is called compliant.
 func TestSoACSVExport(t *testing.T) {
-	b := newBench(t)
+	b := newBenchAlone(t)
 	b.installs(t, "nis2")
-	must(b.DecideScope(alone(), register.Scope{Name: "group", Title: "The group",
-		Domains: []register.Domain{"identity"}, Frameworks: []string{"nis2"}}))
-	must(b.DecideLine(alone(), "group", "nis2", "Art. 21(2)(j)", true, "=HYPERLINK(\"http://x\") we sign in with passkeys"))
+	b.agreed(t, must(b.DecideScope(dana, register.Scope{Name: "group", Title: "The group",
+		Domains: []register.Domain{"identity"}, Frameworks: []string{"nis2"}})))
+	b.agreed(t, must(b.DecideLine(dana, "group", "nis2", "Art. 21(2)(j)", true, "=HYPERLINK(\"http://x\") we sign in with passkeys")))
 	ctl := register.Control{Ref: "AC-01", Title: "Second factor for every account", Domain: "identity", Owner: dana.Subject}
 	b.put(t, dana, ctl)
 	must(func() (register.ID, error) {
 		id, _, err := b.MapControl(dana, "AC-01", "nis2", "Art. 21(2)(j)", "subset-of", "Second factors are part of the point.")
 		return id, err
 	}())
-	st := must(StatementAt(b.view(t), b.Keep, "group"))
+	st := must(StatementAt(b.view(t), b.Words, "group"))
 	var buf bytes.Buffer
 	if err := st.WriteCSV(&buf); err != nil {
 		t.Fatal(err)
@@ -336,9 +343,9 @@ func TestNIS2MapsToISOByRelation(t *testing.T) {
 	if maps < 10 {
 		t.Errorf("NIS2 is mapped to ISO by %d relations", maps)
 	}
-	must(b.DecideScope(alone(), register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"},
-		Frameworks: []string{"iso-27001", "nis2"}}))
-	st := must(StatementAt(b.view(t), b.Keep, "group"))
+	b.agreed(t, must(b.DecideScope(dana, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"},
+		Frameworks: []string{"iso-27001", "nis2"}})))
+	st := must(StatementAt(b.view(t), b.Words, "group"))
 	var fromNIS2, toISO bool
 	for _, l := range st.Lines {
 		for _, r := range l.Related {
@@ -388,43 +395,82 @@ func TestStartersAreInQuilzosOwnWords(t *testing.T) {
 	}
 }
 
-// A person has one pseudonym however many processes ask for it at once,
-// and it is the same the next time it is asked for.
-func TestAPersonHasOnePseudonym(t *testing.T) {
-	dir := t.TempDir()
-	ids := make(chan register.ID, 8)
-	for range 8 {
-		go func() {
-			k := &FileKeeper{Dir: dir}
-			id, err := k.Pseudonym("dana@example.org", "person")
-			if err != nil {
-				t.Error(err)
-			}
-			ids <- id
-		}()
+// starterOf is the decision about a starter, as it waits.
+func starterOf(t testing.TB, framework string, install bool) register.Starter {
+	t.Helper()
+	st, ok := StarterNamed(framework)
+	if !ok {
+		t.Fatalf("there is no starter for %s", framework)
 	}
-	first := <-ids
-	for range 7 {
-		if id := <-ids; id != first {
-			t.Errorf("one person was given %s and %s", first, id)
+	return st.Decision(install)
+}
+
+// What the programme kept beside the store before the side store kept it,
+// a person's pseudonym in programme/subjects and the words of a
+// justification in programme/text, is moved into the side store when the
+// register is opened: the person keeps the pseudonym the records name them
+// by, so the person who raised a decision is still its raiser, and the
+// words are held under the kind of the record that holds their digest.
+// The files are deleted, and opened again there is nothing to move.
+func TestTheProgrammesKeeperMovesIntoTheSubjectMap(t *testing.T) {
+	b := newBench(t)
+	b.installs(t, "iso-27001")
+	b.agreed(t, must(b.DecideScope(dana, register.Scope{Name: "group", Title: "The group",
+		Domains: []register.Domain{"identity"}, Frameworks: []string{"iso-27001"}})))
+	words := "We hold no premises of our own."
+	rid := must(RequirementID("iso-27001", "A.7.4"))
+	sid := must(register.DeriveID(register.KindScope, register.Local, "group"))
+	line := register.Applicability{Requirement: rid, Scope: sid, Applicable: false, Justification: TextOf(words)}
+	line.Approval = b.byHand(t, line)
+	checks := b.Reg.Approvals
+	b.Reg.Approvals = nil
+	b.put(t, lee, line)
+	b.Reg.Approvals = checks
+
+	root := b.Reg.Store.Root()
+	const kim = register.ID("c0000000000000000000000000000003")
+	sum := sha256.Sum256([]byte("quilzo/programme person v1\nkim@example.com"))
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if !first.Valid() {
-		t.Fatalf("the pseudonym is %q", first)
+	write(filepath.Join(root, "programme", "subjects", hex.EncodeToString(sum[:])+".json"),
+		`{"name":"kim@example.com","pseudonym":"`+string(kim)+`","type":"person"}`)
+	write(filepath.Join(root, "programme", "text", strings.TrimPrefix(string(TextOf(words)), "sha256:")), words)
+	write(filepath.Join(root, "programme", "text", strings.Repeat("ab", 32)), "changed beside the store")
+
+	r := register.Open(b.Reg.Store)
+	if err := r.Unmerged(); err != nil {
+		t.Fatalf("the programme's files did not move: %v", err)
 	}
-	k := &FileKeeper{Dir: dir}
-	if again, _ := k.Pseudonym("dana@example.org", "person"); again != first {
-		t.Errorf("asked again, the pseudonym is %s, not %s", again, first)
+	if got, ok, err := r.Side().Lookup("kim@example.com"); err != nil || !ok || got != string(kim) {
+		t.Errorf("kim is %q (%v %v) in the subject map, and the programme named her %s", got, ok, err, kim)
 	}
-	words := "We hold no premises of our own."
-	text := must(k.Keep(words))
-	if got, ok := k.Words(text); !ok || got != words {
-		t.Errorf("the words kept read back as %q", got)
+	if h := r.TextOf(TextOf(words)); h.State != register.TextHeld || h.Words != words {
+		t.Errorf("the justification is %+v in the side store", h)
 	}
-	sealed := &FileKeeper{Dir: t.TempDir(), NoWords: true}
-	if text := must(sealed.Keep(words)); text != TextOf(words) {
-		t.Error("a keeper that keeps no words gave another digest")
-	} else if _, ok := sealed.Words(text); ok {
-		t.Error("a keeper that keeps no words read some back")
+	e, err := r.Side().Entry(string(TextOf(words)))
+	if _, held := e.Kinds[string(register.KindApplicability)]; err != nil || len(e.Kinds) != 1 || !held {
+		t.Errorf("the justification is kept for %+v (%v)", e.Kinds, err)
+	}
+	if h := r.TextOf(register.Text("sha256:" + strings.Repeat("ab", 32))); h.State == register.TextHeld {
+		t.Error("words changed beside the store were moved as if they were what was decided on")
+	}
+	if _, err := os.Stat(filepath.Join(root, "programme")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the programme's files are still beside the store: %v", err)
+	}
+	if err := MigrateKeeper(r); err != nil {
+		t.Errorf("moving what was moved already: %v", err)
+	}
+	st := must(StatementAt(must(r.At("")), (&Programme{Reg: r}).Words, "group"))
+	for _, l := range st.Lines {
+		if l.Ref == "A.7.4" && (!l.Kept || l.Justification != words) {
+			t.Errorf("the statement shows the moved justification as %+v", l)
+		}
 	}
 }

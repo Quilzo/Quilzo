@@ -36,7 +36,8 @@ func init() {
 			"  quilzo control map REF FRAMEWORK REQ --relation R --why TEXT  map a control to a requirement (NIST IR 8477)\n" +
 			"  quilzo control schema                    the JSON schema a test's draft fills in\n" +
 			"  quilzo control draft FILE                propose a test from a draft (FILE, or - for standard input)\n" +
-			"  quilzo control approve ID                approve a test that waits for you, and its query\n" +
+			"  quilzo control approve ID --surface HASH  approve a test that waits for you, and its query, typing back\n" +
+			"                                            the hash `quilzo approval show ID` gives\n" +
 			"  quilzo control tests                     the approved tests, each with its newest run\n" +
 			"  quilzo control run TEST | --due          run one approved test, or every one that is due\n" +
 			"  quilzo control explain RUN               why a run came out as it did, in code's words\n" +
@@ -120,7 +121,7 @@ func cmdControl(root string, args []string) error {
 		}
 		who := by.Subject
 		if *owner != "" {
-			if who, err = p.Keep.Pseudonym(*owner, "person"); err != nil {
+			if who, err = p.Reg.SubjectFor(*owner, "person"); err != nil {
 				return err
 			}
 		}
@@ -182,16 +183,13 @@ func cmdControl(root string, args []string) error {
 		if w.JSON(got) {
 			return nil
 		}
-		fmt.Printf("  the test %s%s%s waits for somebody who did not draft it; they run:\n    quilzo control approve %s\n",
-			bold, d.Name, reset, got.TestID)
+		fmt.Printf("  the test %s%s%s waits for somebody who did not draft it: on Sign-off in the admin, or at the console, "+
+			"where `quilzo approval show %s` shows it and the hash they type back to\n    quilzo control approve %s --surface HASH\n",
+			bold, d.Name, reset, got.TestID, got.TestID)
 		fmt.Printf("  %snothing runs it until then, and its query is filed under %s%s\n", dim, got.Query.Digest, reset)
 		return nil
 	case "approve":
-		id, err := one("quilzo control approve ID")
-		if err != nil {
-			return err
-		}
-		return approveDecision(root, id, "control", register.KindControlTest)
+		return approveDecision(root, args[1:], "control", register.KindControlTest)
 	case "run":
 		fs := flag.NewFlagSet("control run", flag.ContinueOnError)
 		due := fs.Bool("due", false, "run every approved test that is due")
@@ -447,7 +445,7 @@ func controlTestsJob(root string) upkeep.Job {
 		r := register.Open(s)
 		r.Audit = func(rec audit.Record) error { return recordE(root, rec) }
 		r.Ready = func() error { return auditReady(root) }
-		p := &programme.Programme{Reg: r, Keep: programmeKeeper(root, s), Now: func() time.Time { return now }}
+		p := &programme.Programme{Reg: r, Now: func() time.Time { return now }}
 		return p.RunDue(programme.Scheduler())
 	}}
 }

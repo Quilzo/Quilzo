@@ -142,7 +142,9 @@ type Second struct {
 // a quarter. The board's appetite and a source's write scope are level
 // four. A minuted decision is recorded by somebody who may record minutes,
 // and every other decision the register holds is approved by somebody who
-// may approve, other than whoever drafted it.
+// may approve, other than whoever drafted it: a starter taken in or out, a
+// scope, a line of the statement of applicability, a control test, a
+// person's erasure and a third party's key pinned among them.
 func Default() *Policy {
 	return &Policy{
 		ReviewDays: 30, WaitDays: 14, PhishingResistant: true,
@@ -157,6 +159,9 @@ func Default() *Policy {
 			{Name: "decision", Kind: register.KindDecision, Atom: auth.ActApprove, Level: L3},
 			{Name: "write-scope", Kind: register.KindSource, Atom: auth.ActManageConnectors, Level: L4, TermDays: 365},
 			{Name: "control-test", Kind: register.KindControlTest, Atom: auth.ActApprove, Level: L3, TermDays: 365},
+			{Name: "starter", Kind: register.KindStarter, Atom: auth.ActApprove, Level: L3},
+			{Name: "erasure", Kind: register.KindErasure, Atom: auth.ActApprove, Level: L3},
+			{Name: "pinned-key", Kind: register.KindPinnedKey, Atom: auth.ActApprove, Level: L3, TermDays: 366},
 			{Name: "scope", Kind: register.KindScope, Atom: auth.ActApprove, Level: L3, TermDays: 366},
 			{Name: "applicability", Kind: register.KindApplicability, Atom: auth.ActApprove, Level: L3, TermDays: 366},
 			{Name: "ai-system", Kind: register.KindAISystem, Atom: auth.ActApprove, Level: L3, TermDays: 365},
