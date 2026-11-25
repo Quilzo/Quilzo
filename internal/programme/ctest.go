@@ -489,16 +489,21 @@ func populationName(p register.Population) string {
 }
 
 // Standing is how a control stands, from the runs of its tests and nothing
-// else: its newest evidence that came from a run of one of its own tests,
-// which is in the register. Evidence that names no such run, a statement
-// among it, does not move it.
+// else: the newest run of one of its own tests that finished, read from the
+// run itself. A run that could not finish shows nothing about the control.
+// Evidence does not move it: evidence that names no run, a statement among
+// it, is not a run, and evidence that names a run and says it came out
+// otherwise, or at another moment, than the run records is not believed
+// over the run, so writing over the evidence a failing run left does not
+// make the control pass, nor hide that it failed. The grade is the one the
+// run's own evidence gives, where that evidence agrees with the run.
 type Standing struct {
 	Outcome register.Outcome `json:"outcome,omitempty"`
 	At      register.Time    `json:"at,omitempty"`
 	Run     register.ID      `json:"run,omitempty"`
 	Grade   register.Grade   `json:"grade,omitempty"`
-	// Runs is how many runs of its tests have left evidence of it, and
-	// Failed how many of those failed.
+	// Runs is how many runs of its tests finished, and Failed how many of
+	// those failed.
 	Runs, Failed int
 }
 
@@ -511,30 +516,46 @@ func Standings(v *register.View) (map[register.ID]Standing, error) {
 	}); err != nil {
 		return nil, err
 	}
-	runs := map[register.ID]register.ID{} // run -> test
+	runs := map[register.ID]register.TestRun{}
 	if err := v.Each(register.KindTestRun, func(e register.Entry, _ map[string]any) error {
-		runs[e.ID] = e.Record.(register.TestRun).Test
+		runs[e.ID] = e.Record.(register.TestRun)
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	out := map[register.ID]Standing{}
-	err := v.Each(register.KindEvidence, func(e register.Entry, _ map[string]any) error {
+	// The grade of each run's facts is on the evidence it left, where that
+	// evidence says what the run says.
+	grades := map[register.ID]register.Grade{}
+	if err := v.Each(register.KindEvidence, func(e register.Entry, _ map[string]any) error {
 		ev := e.Record.(register.Evidence)
-		test, ok := runs[ev.Run]
-		if ev.Run == "" || !ok || tests[test] != ev.Control {
-			return nil
+		if run, ok := runs[ev.Run]; ok && tests[run.Test] == ev.Control && ev.Outcome == run.Outcome && ev.At == run.Ran {
+			grades[ev.Run] = ev.Grade
 		}
-		s := out[ev.Control]
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	ids := make([]register.ID, 0, len(runs))
+	for id := range runs {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	out := map[register.ID]Standing{}
+	for _, id := range ids {
+		run := runs[id]
+		control, ok := tests[run.Test]
+		if !ok || run.Outcome != register.Pass && run.Outcome != register.Fail {
+			continue
+		}
+		s := out[control]
 		s.Runs++
-		if ev.Outcome == register.Fail {
+		if run.Outcome == register.Fail {
 			s.Failed++
 		}
-		if s.Outcome == "" || ev.At > s.At || ev.At == s.At && ev.Outcome == register.Fail {
-			s.Outcome, s.At, s.Run, s.Grade = ev.Outcome, ev.At, ev.Run, ev.Grade
+		if s.Outcome == "" || run.Ran > s.At || run.Ran == s.At && run.Outcome == register.Fail {
+			s.Outcome, s.At, s.Run, s.Grade = run.Outcome, run.Ran, id, grades[id]
 		}
-		out[ev.Control] = s
-		return nil
-	})
-	return out, err
+		out[control] = s
+	}
+	return out, nil
 }

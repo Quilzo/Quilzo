@@ -419,3 +419,33 @@ func TestARedefinedPopulationNeedsReapproval(t *testing.T) {
 		t.Errorf("approved again over the narrowed population the test came out %s (%q)", run.Record.Outcome, run.Problem)
 	}
 }
+
+// A control stands as its runs came out, read from the runs themselves.
+// Evidence that names a real run and says it came out otherwise, written
+// over the evidence the run left or beside it, does not move the control:
+// the run is what the status moves on, and the evidence only points at it.
+func TestEvidenceIsReadAsItsRunCameOut(t *testing.T) {
+	b := newBench(t)
+	id := b.facts(t, 3, 2)
+	tid := b.approvedTest(t, dana)
+	run, rc := must2(b.RunTest(Scheduler(), tid))
+	if run.Record.Outcome != register.Fail {
+		t.Fatalf("the run came out %s", run.Record.Outcome)
+	}
+	runID := mustID(t, run.Record)
+	over := register.Evidence{Control: id.control, Run: runID, At: run.Record.Ran, Outcome: register.Pass,
+		Grade: register.GradeConnector}
+	b.put(t, importer, over)
+	if got := must(b.Reg.Get(mustID(t, over))).Record.(register.Evidence); got.Outcome != register.Pass {
+		t.Fatalf("the evidence was not written over: %+v (%s)", got, rc.Commit)
+	}
+	if s := must(Standings(b.view(t)))[id.control]; s.Outcome != register.Fail || s.Failed != 1 {
+		t.Errorf("evidence saying a failing run passed moved the control to %+v", s)
+	}
+	later := over
+	later.At = run.Record.Ran + 3600
+	b.put(t, importer, later)
+	if s := must(Standings(b.view(t)))[id.control]; s.Outcome != register.Fail || s.At != run.Record.Ran {
+		t.Errorf("evidence dated after its run moved the control to %+v", s)
+	}
+}
