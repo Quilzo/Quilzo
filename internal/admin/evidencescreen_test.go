@@ -100,8 +100,9 @@ func TestImportPreviewWritesNothingUntilConfirmed(t *testing.T) {
 		}
 	}
 	accessible(t, "/evidence/import (preview)", body)
-	if reg.Head() != "" || len(*audited) != 0 {
-		t.Fatal("the preview wrote to the register")
+	// The sealing is recorded, and nothing else: no record is written.
+	if reg.Head() != "" || len(*audited) != 1 || (*audited)[0].Action != evidence.SealAction {
+		t.Fatalf("the preview wrote to the register, or recorded %+v", *audited)
 	}
 	digest := evidence.DigestOf(evidenceFixture(t, "ocsf/prowler-1.2.0.json"))
 	if _, err := evidence.New(reg).Raw.Open(digest); err != nil {

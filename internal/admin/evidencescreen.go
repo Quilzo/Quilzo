@@ -295,8 +295,10 @@ func (s *Server) handleEvidenceImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Sealed before anything reads it, as every import is.
-	wr, _, err := s.evidenceWriter(p)
+	// Sealed before anything reads it, as every import is, as the person
+	// who sent it and recorded in the audit log: a file previewed and never
+	// confirmed is kept all the same.
+	wr, by, err := s.evidenceWriter(p)
 	if err != nil {
 		s.render(w, r, "evidence_import.html", s.importData(p, g, f, []seckit.Problem{{Field: "import-file", Label: "The file", Message: err.Error()}}))
 		return
@@ -307,7 +309,7 @@ func (s *Server) handleEvidenceImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := g.Raw.Seal(body, time.Now(), 0); err != nil {
+	if _, err := wr.Seal(by, body); err != nil {
 		s.render(w, r, "evidence_import.html", s.importData(p, g, f, []seckit.Problem{{Field: "import-file", Label: "The file",
 			Message: "the file could not be sealed, so it was not read: " + err.Error()}}))
 		return

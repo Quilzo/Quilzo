@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/register"
 )
 
@@ -259,5 +260,46 @@ func TestMapRefusesWhatATableCannotSay(t *testing.T) {
 	if _, err := w2.g.Ingest(nameless, "", Input{Format: FormatJSON, Body: body, Map: m}); !errors.Is(err, ErrUnreadable) ||
 		!strings.Contains(err.Error(), "pseudonym") {
 		t.Errorf("a statement brought by somebody the surface names by no pseudonym is read: %v", err)
+	}
+}
+
+// Filling the raw store is a write, and is recorded as one: a file sealed
+// for the first time is an entry in the audit log naming who brought it,
+// whether or not it could be read after, and a file sealed again is not.
+// A file that could not be read, or a preview nobody confirmed, left bytes
+// kept for thirteen months that no record anywhere said who had put there.
+func TestEverySealIsRecorded(t *testing.T) {
+	w := newWorld(t, false)
+	junk := []byte("Serial,Hostname\n\"unterminated\n")
+	w.confirm(t, laptopMap())
+	if _, err := w.g.Ingest(person, "", Input{Format: FormatCSV, Body: junk, Map: laptopMap()}); err == nil {
+		t.Fatal("a broken CSV was read")
+	}
+	seals := func() []audit.Record {
+		var out []audit.Record
+		for _, r := range w.audited {
+			if r.Action == SealAction {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if s := seals(); len(s) != 1 || s[0].Principal != person.Name || s[0].Detail["digest"] != string(digestOf(junk)) {
+		t.Fatalf("sealing a file that could not be read is recorded as %+v", s)
+	}
+	w.ingest(t, person, Input{Format: FormatCSV, Body: []byte(laptops), Map: laptopMap()})
+	w.ingest(t, person, Input{Format: FormatCSV, Body: []byte(laptops), Map: laptopMap()})
+	if s := seals(); len(s) != 2 {
+		t.Errorf("two files sealed, one of them twice, are %d entries", len(s))
+	}
+	if _, err := w.g.Seal(register.Actor{Name: "crew", Kind: audit.KindAI, May: allow}, []byte("x")); !errors.Is(err, register.ErrModel) {
+		t.Errorf("a model sealed a file: %v", err)
+	}
+	w.reg.Audit = nil
+	if _, err := w.g.Seal(person, []byte("unrecorded")); err == nil {
+		t.Error("a file was sealed with no audit log to record it in")
+	}
+	if _, err := w.g.Raw.Meta(digestOf([]byte("unrecorded"))); !errors.Is(err, ErrNotHeld) {
+		t.Errorf("a file was sealed with no audit log to record it in: %v", err)
 	}
 }

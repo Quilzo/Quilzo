@@ -143,3 +143,25 @@ func TestAReaderWritesNothingFromTheEvidenceScreens(t *testing.T) {
 		t.Errorf("a reader's import filled the raw store: %v", err)
 	}
 }
+
+// The preview seals the file it reads, and that sealing is recorded as the
+// person who sent it, though nothing is written to the register until they
+// confirm: a file previewed and never confirmed is still in the raw store
+// for thirteen months, and the audit log says who put it there.
+func TestPreviewSealIsRecorded(t *testing.T) {
+	srv, token := setup(t)
+	audited := recording(t)
+	w := postFile(t, srv, token, evidenceImportPath, "prowler.json", evidenceFixture(t, "ocsf/prowler-1.2.0.json"),
+		map[string]string{"format": "ocsf"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("the preview answered %d", w.Code)
+	}
+	digest := string(evidence.DigestOf(evidenceFixture(t, "ocsf/prowler-1.2.0.json")))
+	if len(*audited) != 1 || (*audited)[0].Action != evidence.SealAction || (*audited)[0].Principal != "editor" ||
+		(*audited)[0].Detail["digest"] != digest {
+		t.Fatalf("the preview's sealing is recorded as %+v", *audited)
+	}
+	if register.Open(srv.Store).Head() != "" {
+		t.Fatal("the preview wrote to the register")
+	}
+}

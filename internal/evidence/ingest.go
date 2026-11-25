@@ -122,29 +122,8 @@ func (g *Ingester) PinnedKeys() ([]register.PinnedKey, error) {
 // under the evidence clerk's name, for a person to decide; a proposal
 // already decided into the register is not proposed again.
 func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, error) {
-	if len(in.Body) > MaxFile {
-		return Result{}, fmt.Errorf("%w: it is %d bytes, and the most read is %d", ErrUnreadable, len(in.Body), MaxFile)
-	}
-	if len(in.Body) == 0 {
-		return Result{}, fmt.Errorf("%w: it is empty", ErrUnreadable)
-	}
-	switch by.Kind {
-	case audit.KindHuman, audit.KindService:
-	default:
-		// The register refuses the write too; refusing here first keeps a
-		// model's file out of the raw store as well.
-		return Result{}, fmt.Errorf("%w: a file a model brings is not evidence", register.ErrModel)
-	}
-	// The access policy before the seal: somebody who may not write the
-	// register does not get to fill the raw store either.
-	if by.May == nil {
-		return Result{}, fmt.Errorf("%w: this surface did not say how to ask it", register.ErrRefused)
-	}
-	for _, k := range []register.Kind{register.KindObservation, register.KindRawFile} {
-		spec, _ := register.SpecOf(string(k))
-		if err := by.May(auth.ActEditDraft, spec.Resource()); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", register.ErrRefused, err)
-		}
+	if err := g.mayFill(by, in.Body); err != nil {
+		return Result{}, err
 	}
 	if in.Map != nil {
 		if err := g.confirmed(in.Map); err != nil {
@@ -161,16 +140,9 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 		}
 		in.Keys = keys
 	}
-	// Nothing is sealed for a write the audit log could not record.
-	if g.Reg.Ready != nil {
-		if err := g.Reg.Ready(); err != nil {
-			return Result{}, fmt.Errorf("nothing was sealed or written, because the audit log cannot record it: %w", err)
-		}
-	}
-	now := g.now()
-	sealed, err := g.Raw.Seal(in.Body, now, g.Keep)
+	sealed, err := g.sealAs(by, in.Body)
 	if err != nil {
-		return Result{}, fmt.Errorf("the file could not be sealed, so it was not read: %w", err)
+		return Result{Sealed: sealed}, err
 	}
 	in.By = by.Kind
 	in.Subject = ""
@@ -211,6 +183,83 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 		}
 	}
 	return res, nil
+}
+
+// SealAction is the name a file sealed in the raw evidence store for the
+// first time is recorded under in the audit log.
+const SealAction = "evidence.seal"
+
+// Seal keeps a file in the raw evidence store as by, before anything reads
+// it, as the first step of Ingest is: the Import screen's preview seals
+// what it shows, and is held to what an import is held to.
+func (g *Ingester) Seal(by register.Actor, body []byte) (Sealed, error) {
+	if err := g.mayFill(by, body); err != nil {
+		return Sealed{}, err
+	}
+	return g.sealAs(by, body)
+}
+
+// mayFill refuses whoever may not fill the raw store, before anything is
+// sealed: a file too large or empty; anybody but a person or a service, so
+// a model's file is kept out of the raw store as the register keeps it out
+// of the record; somebody the access policy does not let write the
+// register; and any file while the audit log cannot record its sealing.
+func (g *Ingester) mayFill(by register.Actor, body []byte) error {
+	if len(body) > MaxFile {
+		return fmt.Errorf("%w: it is %d bytes, and the most read is %d", ErrUnreadable, len(body), MaxFile)
+	}
+	if len(body) == 0 {
+		return fmt.Errorf("%w: it is empty", ErrUnreadable)
+	}
+	switch by.Kind {
+	case audit.KindHuman, audit.KindService:
+	default:
+		return fmt.Errorf("%w: a file a model brings is not evidence", register.ErrModel)
+	}
+	if by.May == nil {
+		return fmt.Errorf("%w: this surface did not say how to ask it", register.ErrRefused)
+	}
+	for _, k := range []register.Kind{register.KindObservation, register.KindRawFile} {
+		spec, _ := register.SpecOf(string(k))
+		if err := by.May(auth.ActEditDraft, spec.Resource()); err != nil {
+			return fmt.Errorf("%w: %v", register.ErrRefused, err)
+		}
+	}
+	if g.Reg.Audit == nil {
+		return fmt.Errorf("%w: the register has no audit log to record the file in, so nothing was sealed", register.ErrRefused)
+	}
+	if g.Reg.Ready != nil {
+		if err := g.Reg.Ready(); err != nil {
+			return fmt.Errorf("nothing was sealed or written, because the audit log cannot record it: %w", err)
+		}
+	}
+	return nil
+}
+
+// sealAs seals a file and records, as by, a file sealed for the first time
+// or held again after its bytes were erased. A file sealed again while it is
+// held is the same file, and a second import of it writes nothing anywhere.
+func (g *Ingester) sealAs(by register.Actor, body []byte) (Sealed, error) {
+	was, err := g.Raw.Meta(DigestOf(body))
+	fresh := errors.Is(err, ErrNotHeld) || err == nil && !was.Held()
+	sealed, err := g.Raw.Seal(body, g.now(), g.Keep)
+	if err != nil {
+		return sealed, fmt.Errorf("the file could not be sealed, so it was not read: %w", err)
+	}
+	if !fresh {
+		return sealed, nil
+	}
+	kind := by.Kind
+	if !kind.Valid() {
+		kind = audit.KindUnknown
+	}
+	err = g.Reg.Audit(audit.Record{Action: SealAction, Resource: register.Area, Outcome: audit.Success, Principal: by.Name,
+		Kind: kind, Model: by.Model, Verified: by.Verified && kind != audit.KindUnknown,
+		Detail: map[string]string{"digest": string(sealed.Digest), "size": fmt.Sprint(sealed.Size)}})
+	if err != nil {
+		return sealed, fmt.Errorf("%w: the file was sealed, and its sealing was not recorded: %v", register.ErrUnrecorded, err)
+	}
+	return sealed, nil
 }
 
 // confirmed refuses a column map that is not in the register as a person

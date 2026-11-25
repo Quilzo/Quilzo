@@ -9,7 +9,11 @@ itself has gone.
 1. **It is sealed first.** The file is kept in the raw evidence store beside
    the store (`evidence/` under the store's directory), under its SHA-256,
    before anything parses it. On an encrypted store it is sealed with the
-   store's own keyring. What is read is the file that was sealed.
+   store's own keyring. What is read is the file that was sealed. A file
+   sealed for the first time is recorded in the audit log (`evidence.seal`)
+   as whoever brought it, whether or not it can be read and whether or not
+   a preview of it is ever confirmed; nothing is sealed while the audit log
+   cannot take that entry.
 2. **It is read as hostile.** Each format's reader holds the file to a size
    (64 MB), a nesting depth (64) and a number of records (200,000). A JSON
    document that gives a key twice in one object is refused, because two
@@ -80,7 +84,15 @@ A table is read only through a column map in the register. `quilzo evidence
 draft-map` and the Import screen draft one from the table's headings, with
 the first rows it would read; a person changes what is wrong and confirms
 it, once. The grade, the raw digest and the place are the importer's to
-write, and a map that reads them from a column is refused.
+write, and a map that reads them from a column is refused. So is who
+stated a piece of evidence: a statement read from a table is the person's
+who brings the file, named by the pseudonym the surface knows for them,
+and is refused where the surface knows none (no surface passes a
+pseudonym yet, so statements come in only as test runs' evidence for now).
+A table is never read into a Decision, an Acknowledgement or a
+MetricValue: each is never changed once written and is made by what it
+records, so a table read into one would name a decider or a reader who
+never acted, or a figure nothing computed, for good.
 
 ## On every surface
 
