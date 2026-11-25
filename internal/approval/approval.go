@@ -54,7 +54,7 @@ type Approvals struct {
 	// Separation is the separation policy; nil reads the store's, or the
 	// default.
 	Separation *Policy
-	// People names people by pseudonym; nil is the file beside the store.
+	// People names people by pseudonym; nil is the register's subject map.
 	People People
 	// Settling is internal/dual's day after an administrator stopped being
 	// one, during which nobody approves alone. Nil never holds anybody
@@ -179,9 +179,6 @@ type Signed struct {
 	Evidence register.Digest `json:"evidence"`
 	Method   register.Method `json:"method"`
 	Batch    register.Digest `json:"batch,omitempty"`
-	// Name is who signed, kept beside the store and never in the record,
-	// so the next signer can be told apart from them.
-	Name string `json:"name"`
 	// Function is what they are to the organisation when the policy names
 	// them as a second.
 	Function string `json:"function,omitempty"`
@@ -224,7 +221,14 @@ func (m *Approvals) people() People {
 	if m.People != nil {
 		return m.People
 	}
-	return PeopleAt(m.Root)
+	return SubjectMap{Register: m.Register}
+}
+
+// Known is the pseudonym the subject map holds for a person, by name,
+// minting none: who a screen is showing a decision to.
+func (m *Approvals) Known(name string) (register.ID, bool) {
+	id, ok, err := known(m.people(), name)
+	return id, ok && err == nil
 }
 
 // agentPrefixes begin the names an agent goes by: agent/NAME in the access
@@ -330,7 +334,7 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 		a.Raised = register.ID(raised)
 	}
 	if a.Raised == "" && p.Agent != "" {
-		if id, ok, err := known(m.people(), p.Agent); err != nil {
+		if id, ok, err := known(m.people(), agentName(p.Agent)); err != nil {
 			return nil, err
 		} else if ok {
 			a.Raised = id
@@ -539,7 +543,7 @@ func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, 
 			Method: sg.Method, Batch: sg.Batch})
 	}
 	if ap.Raised == "" && a.Proposal.Agent != "" {
-		if ap.Raised, err = m.people().Pseudonym(a.Proposal.Agent); err != nil {
+		if ap.Raised, err = m.people().Pseudonym(agentName(a.Proposal.Agent)); err != nil {
 			return nil, err
 		}
 	}
@@ -679,7 +683,7 @@ func (m *Approvals) evidenceOf(by Person, subject register.ID, p Purpose, want r
 func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask, now time.Time) (Signed, error) {
 	key := auth.PersonKey(by.Name)
 	spec, _ := register.SpecOf(string(a.Proposal.Kind))
-	s := Signed{Subject: subject, At: register.TimeOf(now), Method: "passkey", Name: key}
+	s := Signed{Subject: subject, At: register.TimeOf(now), Method: "passkey"}
 	if by.Console {
 		s.Method = "console"
 	}
@@ -701,6 +705,14 @@ func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask,
 			"policy approves beside them, not in their place")
 	}
 	raiser := a.raisers[subject] || (a.Proposal.Agent != "" && auth.SamePerson(a.Proposal.Agent, by.Name))
+	// A raiser is known by pseudonym, and by the name the subject map holds
+	// for it, so the same person under another spelling the map keeps
+	// apart ("mailto:dana@example.com") is still the person who raised it.
+	for id := range a.raisers {
+		if who := whoIs(m.people(), id); who != "" && auth.SamePerson(who, by.Name) {
+			raiser = true
+		}
+	}
 	if raiser && !alone {
 		return s, errRefused("you raised or drafted this %s, and whoever raises a decision does not approve it; "+
 			"%d other people may", strings.ToLower(string(a.Proposal.Kind)), a.Of-1)
@@ -709,7 +721,7 @@ func (m *Approvals) canSign(pol *Policy, by Person, subject register.ID, a *Ask,
 		return s, errRefused("an agent does not approve its own proposal")
 	}
 	for _, have := range a.Signed {
-		if have.Subject == subject || auth.SamePerson(have.Name, by.Name) {
+		if have.Subject == subject || auth.SamePerson(whoIs(m.people(), have.Subject), by.Name) {
 			return s, errRefused("you have approved this already; each approver counts once")
 		}
 	}

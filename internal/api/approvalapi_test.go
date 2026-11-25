@@ -21,7 +21,7 @@ func withRisk(t *testing.T, s *Server) register.ID {
 	t.Helper()
 	r := register.Open(s.Store)
 	r.Audit = func(audit.Record) error { return nil }
-	dana, err := approval.PeopleAt(s.Store.Root()).Pseudonym("dana")
+	dana, err := approval.SubjectMap{Register: register.Open(s.Store)}.Pseudonym("dana")
 	if err != nil {
 		t.Fatal(err)
 	}

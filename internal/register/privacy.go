@@ -49,10 +49,35 @@ func (r *Register) Side() *side.Store {
 	return s
 }
 
+// migrations move the maps of people that modules kept beside the store,
+// before the subject map was the one map, into it.
+var migrations []func(*Register) error
+
+// MigrateWith adds the move of a module's older map of people, or of words
+// it kept, into the side store, which every register runs as it is opened.
+// It is called from the module's init, and each move is idempotent: a
+// store moved already, or one that never had the older file, has nothing
+// to move, and finding that out is a look at whether a file is there.
+//
+// The approvals module kept who each pseudonym was in approvals/people.json,
+// and the programme in programme/subjects and programme/text, beside a
+// subject map that named the same people by other pseudonyms. One person
+// was then three people, and the person who raised a decision approved it
+// as somebody the register could not tell from anybody else.
+func MigrateWith(f func(*Register) error) { migrations = append(migrations, f) }
+
+// Unmerged is why an older map of people beside the store could not be
+// moved into the subject map when the register was opened, or nil.
+func (r *Register) Unmerged() error { return r.unmerged }
+
 // SubjectFor is the pseudonym of a person or an account, by the name the
 // systems that name them use, minted the first time they are named. The
 // name goes in the subject map and nowhere else.
 func (r *Register) SubjectFor(name string, typ SubjectType) (ID, error) {
+	if r.unmerged != nil {
+		return "", fmt.Errorf("an older map of people beside the store could not be moved into the subject map, so "+
+			"nobody is given a pseudonym until it is: %w", r.unmerged)
+	}
 	if !slices.Contains(typ.Values(), string(typ)) {
 		return "", fmt.Errorf("%w: a subject is one of %s, not %q", ErrInvalid, strings.Join(typ.Values(), ", "), clipped(string(typ)))
 	}

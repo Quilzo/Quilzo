@@ -212,7 +212,7 @@ func (s *Server) theirsHeld(p principal, h approval.Held) bool {
 	if s.seesAll(p) {
 		return true
 	}
-	if me, ok := approval.PeopleAt(s.Store.Root()).Known(p.Name); ok {
+	if me, ok := s.approvalsFor().Known(p.Name); ok {
 		for _, sg := range h.Approval.Signers {
 			if sg.Subject == me {
 				return true
@@ -260,7 +260,7 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
+	me, _ := m.Known(p.Name)
 	var rows []approvalRow
 	for _, a := range waiting {
 		if !s.theirsToDecide(p, a) {
@@ -642,7 +642,7 @@ func (s *Server) renderAsk(w http.ResponseWriter, r *http.Request, p principal, 
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
+	me, _ := s.approvalsFor().Known(p.Name)
 	label := askLabel(a)
 	base := "/register/approvals/item/" + string(a.Proposal.ID)
 	if batch != "" {

@@ -65,15 +65,27 @@ type Register struct {
 
 	mu sync.Mutex
 	ix *Index
+	// unmerged is why an older map of people beside the store could not be
+	// moved into the subject map (MigrateWith). Nobody is given a pseudonym
+	// while it is set: a second one for somebody the older map names is
+	// the thing one map is for.
+	unmerged error
 }
 
 // Open is the register on a store, with its approvals held to their
 // evidence where the approvals module is part of the program
-// (CheckApprovalsWith).
+// (CheckApprovalsWith), and any older map of people beside it moved into
+// the subject map (MigrateWith).
 func Open(s *store.Store) *Register {
 	r := &Register{Store: s}
 	if approvalCheck != nil {
 		r.Approvals = approvalCheck(r)
+	}
+	for _, m := range migrations {
+		if err := m(r); err != nil {
+			r.unmerged = err
+			break
+		}
 	}
 	return r
 }

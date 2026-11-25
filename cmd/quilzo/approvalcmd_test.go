@@ -20,7 +20,7 @@ import (
 func proposeRisk(t *testing.T, root, ref string) register.ID {
 	t.Helper()
 	r := registerOn(t, root)
-	people := approval.PeopleAt(root)
+	people := approval.SubjectMap{Register: r}
 	dana, err := people.Pseudonym("dana")
 	if err != nil {
 		t.Fatal(err)

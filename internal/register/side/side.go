@@ -606,6 +606,75 @@ func (s *Store) Enrol(name, typ string) (pseudonym string, minted bool, err erro
 	return pseudonym, minted, err
 }
 
+// Adopt enrols a name under the pseudonym a map kept before this one gave
+// it, so that the person keeps the pseudonym the records already name them
+// by: moving the entries across changes no record. adopted says the map
+// took it in now.
+//
+// A pseudonym erased already is not adopted: the person behind it asked to
+// be forgotten, and an older file is not how they come back. A name the map
+// holds under another pseudonym is still found by that one, and this one is
+// kept beside it as the same person's, so that an erasure of either finds
+// the other (Others). A pseudonym that already names somebody else is
+// refused, changing nothing: one pseudonym is one person.
+func (s *Store) Adopt(name, typ, pseudonym string) (adopted bool, err error) {
+	name = strings.TrimSpace(name)
+	if err := validName(name); err != nil {
+		return false, err
+	}
+	if !rePseudonym.MatchString(pseudonym) {
+		return false, fmt.Errorf("%q is not a pseudonym", clip(pseudonym))
+	}
+	err = s.locked(func() error {
+		if _, err := os.Stat(s.personTomb(pseudonym)); err == nil {
+			return nil
+		}
+		p, err := s.Who(pseudonym)
+		switch {
+		case err == nil && nameKey(p.Name) == nameKey(name):
+			return nil
+		case err == nil:
+			return fmt.Errorf("the pseudonym %s names somebody else in the subject map, and is not given to a second person", pseudonym)
+		case !errors.Is(err, ErrNoSubject):
+			return err
+		}
+		payload, err := json.Marshal(Person{Pseudonym: pseudonym, Name: name, Type: typ, Created: s.now()})
+		if err != nil {
+			return err
+		}
+		if err := s.write(s.personPath(pseudonym), payload, personAAD(pseudonym)); err != nil {
+			return err
+		}
+		adopted = true
+		if _, found, err := s.lookup(name); err != nil || found {
+			return err
+		}
+		return s.file(name, pseudonym)
+	})
+	return adopted, err
+}
+
+// Others is every other pseudonym the map holds for the person a pseudonym
+// stands for: what two maps gave one person before they were one map. It
+// reads the whole map, as only an erasure needs it.
+func (s *Store) Others(pseudonym string) ([]string, error) {
+	p, err := s.Who(pseudonym)
+	if err != nil {
+		return nil, err
+	}
+	people, err := s.Subjects()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, q := range people {
+		if q.Pseudonym != pseudonym && nameKey(q.Name) == nameKey(p.Name) {
+			out = append(out, q.Pseudonym)
+		}
+	}
+	return out, nil
+}
+
 // validName refuses a name that is no name: empty, or on more than one
 // line, or longer than any address.
 func validName(name string) error {
