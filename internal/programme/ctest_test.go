@@ -449,3 +449,30 @@ func TestEvidenceIsReadAsItsRunCameOut(t *testing.T) {
 		t.Errorf("evidence dated after its run moved the control to %+v", s)
 	}
 }
+
+// A test that says how often it runs is due on its own period, and a
+// draft asking to run more often than hourly is refused.
+func TestATestRunsOnItsOwnPeriod(t *testing.T) {
+	b := newBench(t)
+	b.facts(t, 2, 2)
+	d := Draft{Control: "AC-01", Name: "twice-daily", Population: "accounts", Assertion: "all", Every: 12 * 3600,
+		Query: DraftQuery{Of: "Observation", Member: "about", Terms: []register.Term{
+			{Field: "fact", Op: register.OpEquals, Values: []register.Scalar{register.TextValue("mfa.registered")}}}}}
+	p := must(b.ProposeDraft(model, d))
+	must(b.Approve(asLee(), p.TestID))
+	if n := must(b.RunDue(Scheduler())); n != 1 {
+		t.Fatalf("the scheduler ran %d tests", n)
+	}
+	b.clock.forward(11 * time.Hour)
+	if due := must(b.Due()); len(due) != 0 {
+		t.Errorf("a test run every twelve hours is due after eleven: %v", due)
+	}
+	b.clock.forward(time.Hour)
+	if due := must(b.Due()); !slices.Equal(due, []register.ID{p.TestID}) {
+		t.Errorf("a test run every twelve hours is not due after twelve: %v", due)
+	}
+	d.Name, d.Every = "every-minute", 60
+	if _, err := b.ProposeDraft(model, d); !errors.Is(err, register.ErrInvalid) {
+		t.Errorf("a draft run every minute was answered %v", err)
+	}
+}
