@@ -476,3 +476,23 @@ func TestATestRunsOnItsOwnPeriod(t *testing.T) {
 		t.Errorf("a draft run every minute was answered %v", err)
 	}
 }
+
+// A test that names something other than a population as its population
+// is a run that could not finish, not a stopped scheduler.
+func TestATestOverWhatIsNotAPopulationDoesNotStopTheScheduler(t *testing.T) {
+	b := newBench(t)
+	id := b.facts(t, 2, 2)
+	test := register.ControlTest{Control: id.control, Name: "misnamed", Population: id.control, Query: id.mfaQuery.Digest,
+		Assertion: "all"}
+	a := must(approvalOf(test, dana.Subject, asLee(), b.clock.now()))
+	test.Approval = a
+	b.put(t, lee, id.mfaQuery, test)
+	n, err := b.RunDue(Scheduler())
+	if err != nil || n != 1 {
+		t.Fatalf("the scheduler ran %d tests: %v", n, err)
+	}
+	run, _ := must2(b.RunTest(Scheduler(), mustID(t, test)))
+	if run.Record.Outcome != register.Errored {
+		t.Errorf("a test over a control came out %s", run.Record.Outcome)
+	}
+}

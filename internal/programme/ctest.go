@@ -259,11 +259,15 @@ func Evaluate(v *register.View, testID register.ID, at time.Time) (Run, error) {
 		return fail("the query the test runs is not in the register")
 	}
 	run.Query = q
+	// The register holds a reference to the kind it names by the schema,
+	// not by a check at each write, so what the test names is asked to be
+	// a population before it is read as one: a run on the admin server's
+	// timer that met anything else would stop the timer.
 	pe, err := v.Get(test.Population)
-	if err != nil {
+	pop, isPopulation := pe.Record.(register.Population)
+	if err != nil || !isPopulation {
 		return fail("the population the test is run over is not in the register")
 	}
-	pop := pe.Record.(register.Population)
 	run.Population = pop
 	if test.Denominator != DenominatorOf(pop) {
 		return fail("the population was redefined after the test was approved, so the test runs again once a person " +
