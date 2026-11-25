@@ -753,3 +753,30 @@ func TestTheReviewShowsWhatWasApproved(t *testing.T) {
 		t.Error("the review does not offer the record's page to somebody who reads the register")
 	}
 }
+
+// An administrator whose single sign-on said only "mfa", and who has no
+// passkey here, is told how to get one, since only a passkey or a sign-in
+// that cannot be phished lets them on. They were told another
+// administrator could let them in from Sign-ins, which cannot: the
+// session is held for how it was signed in to, not for being unlike its
+// person, and lists nowhere as held.
+func TestAPhishableSignInWithNoPasskeyIsToldHowToGetOne(t *testing.T) {
+	srv, _ := setup(t)
+	srv.Passkeys = &Passkeys{}
+	secret, _, err := srv.Tokens.IssueSession("test", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodSSO)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/", secret); w.Header().Get("Location") != "/signin/verify" {
+		t.Fatalf("an administrator whose sign-in can be phished was not held: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	page := get(t, srv, "/signin/verify", secret).Body.String()
+	if !strings.Contains(page, "quilzo auth enrol editor") || strings.Contains(page, "Another administrator can let you in") {
+		t.Fatalf("the confirmation does not say how to get the passkey it asks for\n%s", firstLines(page, 60))
+	}
+	for _, f := range a11y.Check("/signin/verify", page).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("/signin/verify: %s", f)
+		}
+	}
+}
