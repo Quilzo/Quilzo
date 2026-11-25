@@ -4,6 +4,7 @@
 package programme
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
@@ -191,5 +192,33 @@ func TestCircularDenominatorLabelled(t *testing.T) {
 	b.clock.forward(2 * time.Hour)
 	if !slices.Contains(Labels(independent, b.clock.now()), Stale) {
 		t.Error("a count older than the population allows is not labelled stale")
+	}
+}
+
+// A population's members are read from its source, so it is drawn from a
+// kind whose records say which source reported them. Subjects, links and
+// the programme's own records name no source, and a population over them
+// would read every one of them whatever source it named, and agree with
+// any cross-check: it is refused, and one written some other way counts
+// nothing.
+func TestAPopulationIsReadFromItsSource(t *testing.T) {
+	b := newBench(t)
+	id := b.facts(t, 3, 3)
+	everyone := must(CheckQuery(register.Query{Of: "Subject"}))
+	facts := factQuery(t, "account.enabled")
+	for name, d := range map[string]Definition{
+		"its members":     {Name: "people", Source: "entra", Query: everyone, Fresh: time.Hour},
+		"its cross-check": {Name: "people", Source: "entra", Query: facts, Fresh: time.Hour, CrossCheck: "hr", CrossQuery: &everyone},
+	} {
+		if _, _, err := b.Define(dana, d); !errors.Is(err, register.ErrInvalid) {
+			t.Errorf("a population whose query for %s reads a kind with no source was answered %v", name, err)
+		}
+	}
+	pop := register.Population{Name: "people", Source: id.entra, Query: everyone.Digest, Fresh: 3600, Independent: true,
+		CrossCheck: id.hr, CrossQuery: everyone.Digest}
+	b.put(t, dana, everyone, pop)
+	if c, err := CountAt(b.view(t), mustID(t, pop), b.clock.now()); !errors.Is(err, register.ErrInvalid) {
+		t.Errorf("a population over subjects, cross-checked against a source that reported none, counted %q (%v)",
+			Disagreement(c), err)
 	}
 }

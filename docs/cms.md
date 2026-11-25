@@ -1674,10 +1674,14 @@ relation; nothing is called compliant. A control test (`quilzo control`) is
 a typed query over the register's records and an assertion over a
 population: drafted by a person or by an agent filling the draft's schema,
 approved by somebody else, then run by the admin server when it is due.
-Each run names the commit it read, so `quilzo control replay` does it again
+The approval covers the population as it was defined then, its source and
+the query that selects it, so a population redefined afterwards stops the
+test until somebody approves it again over the new one. Each run names the
+commit it read, so `quilzo control replay` does it again
 from the same facts, and a failure is explained by code from the query's
 terms and the failing members' identifiers. A population (`quilzo
-population`) says which source its count comes from, is compared with a
+population`) says which source its count comes from, and so is drawn
+from records that name the source that reported them, is compared with a
 second source where there is one, and keeps the disagreement as its own
 number; one with a single source is labelled unchecked, and one not shown
 independent of the tool it measures is labelled circular. Links join two

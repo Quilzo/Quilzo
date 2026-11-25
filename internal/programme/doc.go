@@ -43,7 +43,9 @@
 // register record filed under its own digest; a term compares one field by
 // equals, not-equals, in, exists or absent, and there are no expressions.
 // A person approves a test, its approval bound to the test by the hash of
-// what they were shown, and the scheduler then runs it (schedule.go). Each
+// what they were shown, its population's source and query among it, so a
+// population redefined since stops the test until it is approved again; and
+// the scheduler then runs it (schedule.go). Each
 // run reads the register at its head and writes a TestRun naming that
 // commit, the digest of the members it ran over, the digest of what it read
 // and the members that failed, by identifier, and an Evidence record. The
@@ -58,8 +60,9 @@
 // resource's identifier, the hash of an address. A near match is not a
 // match, and an identifier two records of one source share links neither.
 // A population (population.go) is the N of every "n of N": it says which
-// source its members are read from, is compared with a second source where
-// there is one, and keeps the disagreement as a number of its own. One with
+// source its members are read from, of a kind whose records name the
+// source that reported them, is compared with a second source where there
+// is one, and keeps the disagreement as a number of its own. One with
 // no second source is labelled unchecked, and one drawn from the tool it is
 // used to measure is labelled circular.
 //

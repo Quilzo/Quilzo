@@ -196,16 +196,19 @@ func Select(v *register.View, q register.Query, from register.ID) (Selection, er
 	if _, err := CheckQuery(q); err != nil {
 		return Selection{}, err
 	}
+	if from != "" {
+		if err := sourced(q); err != nil {
+			return Selection{}, err
+		}
+	}
 	m := matcher(q)
 	sel := Selection{Sources: map[register.ID]bool{}}
 	seen := map[register.ID]bool{}
 	err := v.Each(register.Kind(q.Of), func(e register.Entry, fields map[string]any) error {
 		sel.Read = append(sel.Read, Read{Kind: e.Kind, ID: e.ID, Object: e.Object})
 		src, _ := fields["source"].(string)
-		if from != "" {
-			if _, has := fields["source"]; has && register.ID(src) != from {
-				return nil
-			}
+		if from != "" && register.ID(src) != from {
+			return nil
 		}
 		if !m.Match(collection.Record{ID: string(e.ID), Fields: fields}) {
 			return nil
@@ -231,6 +234,23 @@ func Select(v *register.View, q register.Query, from register.ID) (Selection, er
 	})
 	sort.Slice(sel.Members, func(i, j int) bool { return sel.Members[i] < sel.Members[j] })
 	return sel, err
+}
+
+// sourced refuses a query a population is read with when its kind does not
+// say which source reported each record. A population's members are read
+// from its source and no other; records that name no source would all be
+// read whatever source the population named, and two such reads would
+// agree with each other whatever the two sources knew, so the count and its
+// cross-check would both say something nobody checked.
+func sourced(q register.Query) error {
+	spec, _ := register.SpecOf(q.Of)
+	for _, f := range spec.Fields {
+		if f.Name == "source" && f.Type == "id" {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: a population is read from a source, and %s records do not say which source reported them",
+		register.ErrInvalid, spec.Kind)
 }
 
 // digestOf is the digest of a list of lines, each ended by a line break,

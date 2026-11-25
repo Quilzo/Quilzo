@@ -222,6 +222,9 @@ func (p *Programme) Define(by register.Actor, d Definition) (register.ID, regist
 		return "", register.Receipt{}, err
 	}
 	q, err := CheckQuery(d.Query)
+	if err == nil {
+		err = sourced(q)
+	}
 	if err != nil {
 		return "", register.Receipt{}, err
 	}
@@ -238,6 +241,9 @@ func (p *Programme) Define(by register.Actor, d Definition) (register.ID, regist
 			return "", register.Receipt{}, err
 		}
 		cq, err := CheckQuery(*d.CrossQuery)
+		if err == nil {
+			err = sourced(cq)
+		}
 		if err != nil {
 			return "", register.Receipt{}, err
 		}
