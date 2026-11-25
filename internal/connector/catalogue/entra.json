@@ -1,0 +1,189 @@
+{
+  "tool": "Microsoft Entra ID",
+  "about": "Every account in the directory and whether it is enabled; whether each has registered a second factor, and one that cannot be phished; who holds a directory role, and whether that role is privileged; every Conditional Access policy, whether it is on, whom it covers and whether it asks for multi-factor or phishing-resistant authentication; and, with Intune, every managed device with its encryption and compliance. Read through Microsoft Graph, by an app registration that can only read.",
+  "default": "global",
+  "regions": {
+    "global": {
+      "host": "graph.microsoft.com",
+      "token": "login.microsoftonline.com"
+    }
+  },
+  "params": {
+    "tenant": "the tenant ID, a GUID from the Entra admin centre's overview page"
+  },
+  "credentials": {
+    "entra-client-id": "The Application (client) ID of an app registration in this tenant, made for this source alone.",
+    "entra-client-secret": "A client secret of that app registration. Grant it these application permissions, with admin consent, and nothing else: User.Read.All (accounts), AuditLog.Read.All (the registration report), RoleManagement.Read.Directory (directory roles), Policy.Read.All (Conditional Access) and DeviceManagementManagedDevices.Read.All (Intune devices). A token carrying any other permission is refused before it is used."
+  },
+  "manifest": {
+    "name": "entra",
+    "tool": "Microsoft Entra ID",
+    "host": "",
+    "auth": {
+      "kind": "oauth-client",
+      "secret": "entra-client-secret",
+      "token": {
+        "host": "",
+        "path": "/{tenant}/oauth2/v2.0/token",
+        "client": "entra-client-id",
+        "scopes": [
+          "https://graph.microsoft.com/.default"
+        ],
+        "roles": [
+          "User.Read.All",
+          "AuditLog.Read.All",
+          "RoleManagement.Read.Directory",
+          "Policy.Read.All",
+          "DeviceManagementManagedDevices.Read.All"
+        ],
+        "body": "form"
+      }
+    },
+    "rate": {
+      "per_second": 5
+    },
+    "note": "Graph's application tokens are requested for .default and mean whatever the app registration was granted, so the permissions are read from the token itself and a token carrying any not listed under roles is refused. The registration report needs Entra ID P1 or P2: without it Graph answers 403, which is shown as a licence gap and not as a failure. Without Intune the devices endpoint answers 403 in the same way. Display names, mail addresses and sign-in times are not read: an account is its user principal name, which goes into the subject map and nowhere else.",
+    "endpoints": [
+      {
+        "name": "users",
+        "path": "/v1.0/users",
+        "query": {
+          "$select": "id,userPrincipalName,accountEnabled,userType",
+          "$top": "999"
+        },
+        "produces": "identity",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "@odata\\.nextLink"
+        },
+        "reads": [
+          "id",
+          "userPrincipalName",
+          "accountEnabled",
+          "userType"
+        ],
+        "map": {
+          "id": "id",
+          "upn": "userPrincipalName",
+          "enabled": "accountEnabled",
+          "type": "userType"
+        }
+      },
+      {
+        "name": "registration",
+        "path": "/v1.0/reports/authenticationMethods/userRegistrationDetails",
+        "produces": "identity",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "@odata\\.nextLink"
+        },
+        "reads": [
+          "id",
+          "userPrincipalName",
+          "isAdmin",
+          "isMfaCapable",
+          "isMfaRegistered",
+          "isPasswordlessCapable",
+          "methodsRegistered"
+        ],
+        "map": {
+          "id": "id",
+          "upn": "userPrincipalName",
+          "admin": "isAdmin",
+          "mfa_capable": "isMfaCapable",
+          "mfa_registered": "isMfaRegistered",
+          "passwordless": "isPasswordlessCapable",
+          "methods": "methodsRegistered"
+        }
+      },
+      {
+        "name": "roles",
+        "path": "/v1.0/roleManagement/directory/roleAssignments",
+        "query": {
+          "$expand": "principal"
+        },
+        "produces": "identity",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "@odata\\.nextLink"
+        },
+        "reads": [
+          "principalId",
+          "roleDefinitionId",
+          "directoryScopeId",
+          "principal.userPrincipalName",
+          "principal.@odata\\.type"
+        ],
+        "map": {
+          "principal": "principalId",
+          "role": "roleDefinitionId",
+          "scope": "directoryScopeId",
+          "upn": "principal.userPrincipalName",
+          "principal_type": "principal.@odata\\.type"
+        }
+      },
+      {
+        "name": "policies",
+        "path": "/v1.0/identity/conditionalAccess/policies",
+        "produces": "control",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "@odata\\.nextLink"
+        },
+        "reads": [
+          "id",
+          "displayName",
+          "state",
+          "conditions.users.includeUsers",
+          "conditions.applications.includeApplications",
+          "conditions.clientAppTypes",
+          "grantControls.builtInControls",
+          "grantControls.authenticationStrength.id"
+        ],
+        "map": {
+          "id": "id",
+          "name": "displayName",
+          "state": "state",
+          "users": "conditions.users.includeUsers",
+          "apps": "conditions.applications.includeApplications",
+          "clients": "conditions.clientAppTypes",
+          "controls": "grantControls.builtInControls",
+          "strength": "grantControls.authenticationStrength.id"
+        }
+      },
+      {
+        "name": "devices",
+        "path": "/v1.0/deviceManagement/managedDevices",
+        "query": {
+          "$select": "id,deviceName,serialNumber,operatingSystem,isEncrypted,complianceState"
+        },
+        "produces": "device",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "@odata\\.nextLink"
+        },
+        "reads": [
+          "id",
+          "deviceName",
+          "serialNumber",
+          "operatingSystem",
+          "isEncrypted",
+          "complianceState"
+        ],
+        "map": {
+          "id": "id",
+          "name": "deviceName",
+          "serial": "serialNumber",
+          "os": "operatingSystem",
+          "encrypted": "isEncrypted",
+          "compliance": "complianceState"
+        }
+      }
+    ]
+  }
+}
