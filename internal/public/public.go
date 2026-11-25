@@ -1180,6 +1180,16 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// visitor reaches from a stale link; the asset and JSON routes above
 		// keep the plain response, because a stylesheet request answered with
 		// an HTML page is worse than one answered with a string.
+		//
+		// Not for a page the store holds and cannot read. One page object
+		// altered on disk was answered "There is nothing at this address. It
+		// may have been moved or removed", which is what a page taken down
+		// says, and nothing on the site said otherwise.
+		if st.unreadablePage(name) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "this page cannot be shown just now", http.StatusServiceUnavailable)
+			return
+		}
 		st.notFound(w, r)
 		return
 	}

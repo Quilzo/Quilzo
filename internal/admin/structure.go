@@ -232,7 +232,16 @@ func (s *Server) handleTermRemove(w http.ResponseWriter, r *http.Request) {
 	// Usage is computed from the content, here, rather than from a counter
 	// somebody has to keep true. A cached count that drifts is how a term gets
 	// deleted while three pages still carry it.
-	draft, _ := site.PagesAt(s.Store, site.RefDraft)
+	//
+	// And from a draft that can be read. One read as no pages, because one of
+	// its objects was altered on disk, counted nothing, and a term a page
+	// still carried was removed as one that nothing did.
+	draft, err := site.PagesAt(s.Store, site.RefDraft)
+	if err != nil && s.Store.GetRef(site.RefDraft) != "" {
+		s.structRedirect(w, r, "", "The draft cannot be read, so which pages carry "+id+
+			" cannot be told, and it is not removed: "+err.Error())
+		return
+	}
 	usage := taxonomy.Count(draft, name)
 
 	if err := v.Remove(id, usage.Items[id]); err != nil {

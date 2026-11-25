@@ -1200,3 +1200,29 @@ func TestARefusedPublishShowsTheChanges(t *testing.T) {
 		t.Errorf("the refusal while frozen does not show the changes:\n%s", body)
 	}
 }
+
+// A draft that cannot be read is said to be that, not shown as no pages.
+// One page object altered on disk made the whole draft unreadable, and the
+// Pages screen said "No pages yet" of a store of twelve, and each page's
+// editor opened empty, as on a page nobody had written: somebody who took
+// it at its word wrote the home page again into the editor.
+func TestADraftThatCannotBeReadIsNotShownAsNoPages(t *testing.T) {
+	srv, token := setup(t)
+	ids, err := site.PageIDsAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := ids["about"]
+	p := filepath.Join(srv.Store.Root(), "objects", oid[:2], oid[2:])
+	os.Chmod(p, 0o600)
+	if err := os.WriteFile(p, []byte("blob\x00{\"title\":\"Altered\"}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/page/index", "/page/about"} {
+		w := get(t, srv, path, token)
+		body := w.Body.String()
+		if w.Code == http.StatusOK || strings.Contains(body, "No pages yet") || !strings.Contains(body, oid) {
+			t.Errorf("%s answered %d, not naming what cannot be read:\n%s", path, w.Code, body[:min(len(body), 400)])
+		}
+	}
+}
