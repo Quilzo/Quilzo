@@ -1,0 +1,134 @@
+{
+  "name": "example",
+  "tool": "Example Directory",
+  "host": "api.example.com",
+  "auth": {
+    "kind": "oauth-client",
+    "secret": "example-client-secret",
+    "token": {
+      "host": "login.example.com",
+      "path": "/oauth2/token",
+      "client": "example-client-id",
+      "scopes": [
+        "directory.users:read"
+      ],
+      "body": "form"
+    }
+  },
+  "rate": {
+    "per_second": 4,
+    "per_minute": 100,
+    "per_day": 2000
+  },
+  "pages": 50,
+  "records": 10000,
+  "timeout": 20000000000,
+  "note": "A manifest in the shared format, kept identical in both repositories that read it: a change here is a change to the format, made in both.",
+  "endpoints": [
+    {
+      "name": "people",
+      "path": "/v1/people",
+      "query": {
+        "status": "all"
+      },
+      "produces": "identity",
+      "records": "results.data",
+      "page": {
+        "kind": "cursor",
+        "from": "results.pageInfo.endCursor",
+        "param": "pageCursor",
+        "size": 100,
+        "size_param": "pageSize",
+        "more": "results.pageInfo.hasNextPage"
+      },
+      "reads": [
+        "id",
+        "login",
+        "enabled",
+        "profile.department",
+        "factors"
+      ],
+      "map": {
+        "id": "id",
+        "upn": "login",
+        "enabled": "enabled",
+        "department": "profile.department"
+      }
+    },
+    {
+      "name": "devices",
+      "path": "/v1/devices",
+      "produces": "device",
+      "accept": "application/vnd.example.v2+json",
+      "headers": {
+        "Example-Version": "2026-01-01"
+      },
+      "rate": {
+        "per_minute": 30
+      },
+      "page": {
+        "kind": "offset",
+        "param": "offset",
+        "size": 200,
+        "size_param": "limit"
+      },
+      "records": "devices",
+      "explode": "volumes",
+      "reads": [
+        "serial",
+        "encrypted",
+        "^.id"
+      ],
+      "map": {
+        "serial": "serial",
+        "encrypted": "encrypted",
+        "device": "^.id"
+      }
+    },
+    {
+      "name": "apps",
+      "path": "/v1/people/{key}/apps",
+      "produces": "software",
+      "page": {
+        "kind": "next-url",
+        "from": "header:Link"
+      },
+      "each": {
+        "of": "people",
+        "key": "id"
+      },
+      "reads": [
+        "name",
+        "version"
+      ],
+      "map": {
+        "name": "name",
+        "version": "version"
+      }
+    },
+    {
+      "name": "events",
+      "path": "/v1/events",
+      "produces": "event",
+      "page": {
+        "kind": "page",
+        "param": "page",
+        "size": 500,
+        "size_param": "per_page",
+        "start": 1
+      },
+      "since": "filter",
+      "since_as": "created ge {since}",
+      "watermark": "created",
+      "watermark_layout": "epoch-ms",
+      "reads": [
+        "created",
+        "type"
+      ],
+      "map": {
+        "created": "created",
+        "type": "type"
+      }
+    }
+  ]
+}

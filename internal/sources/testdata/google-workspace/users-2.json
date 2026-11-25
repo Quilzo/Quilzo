@@ -1,0 +1,6 @@
+{
+  "kind": "admin#directory#users",
+  "users": [
+    {"kind": "admin#directory#user", "id": "333333333333333333333", "primaryEmail": "left@fabrikam.example", "isAdmin": false, "isDelegatedAdmin": false, "suspended": true, "archived": true, "isEnrolledIn2Sv": true, "isEnforcedIn2Sv": false}
+  ]
+}

@@ -84,6 +84,13 @@ func (SourceType) Values() []string {
 	return []string{"connector", "ci", "import", "upload", "manual"}
 }
 
+// SourceBy is the kind of actor that made a source: a person, or a
+// service (a connector's run, a pipeline, a tool that sends files).
+type SourceBy string
+
+// Values lists the kinds of actor a source may belong to.
+func (SourceBy) Values() []string { return []string{"person", "service"} }
+
 // Source is where facts come from: a connector to an identity provider, a
 // pipeline that pushes results, an importer, a person uploading a file.
 type Source struct {
@@ -97,6 +104,26 @@ type Source struct {
 	// reads. A source reads unless a person approved otherwise.
 	Write    bool      `json:"write,omitempty" about:"it holds a scope that can change the system it reads"`
 	Approval *Approval `json:"approval,omitempty" about:"the approval of its write scope"`
+	// By is the kind of actor that made the source, and the only kind
+	// whose facts are filed under it: a table a person uploads cannot
+	// overwrite what a connector observed, because a connector's source is
+	// a service's. Empty on a source made before this was recorded.
+	By SourceBy `json:"by,omitempty" about:"the kind of actor that made it, and the only kind whose facts it takes"`
+	// Owner is who answers for the source being fresh, and is mailed when
+	// it is not.
+	Owner ID `json:"owner,omitempty" reg:"ref=Subject" about:"who answers for it, and is told when it is stale"`
+	// Recipe, Region and Params say what a connector runs: a recipe the
+	// program ships, the region of the tool it reads, and the values that
+	// recipe takes (an Entra tenant, a GitHub organisation), each name=value
+	// and each checked by the recipe's own pattern before it is used.
+	Recipe string   `json:"recipe,omitempty" reg:"slug" about:"the shipped recipe a connector runs"`
+	Region string   `json:"region,omitempty" reg:"slug" about:"the region of the tool the recipe reads"`
+	Params []string `json:"params,omitempty" reg:"label" about:"the values the recipe takes, each name=value"`
+	// Repository and Workflow say which pipeline may push to a source of
+	// type ci: a job whose platform-signed identity names that repository
+	// and that workflow, and no other.
+	Repository string `json:"repository,omitempty" reg:"label" about:"the repository whose pipeline pushes to it"`
+	Workflow   string `json:"workflow,omitempty" reg:"label" about:"the workflow of that repository whose jobs push to it"`
 }
 
 func (Source) Kind() Kind              { return KindSource }
@@ -108,6 +135,10 @@ func (s Source) Check() error {
 	if s.Type == "connector" && len(s.Hosts) == 0 {
 		return fmt.Errorf("a connector names the hosts it may connect to; with none it can reach nothing")
 	}
+	// A connector's recipe and a pipeline's repository and workflow are
+	// held where they are used: a connector with no recipe does not run,
+	// and a push matches no pipeline whose repository or workflow is
+	// empty (internal/sources, internal/evidence's PushAllowed).
 	return nil
 }
 func (s Source) index(r *Row) {

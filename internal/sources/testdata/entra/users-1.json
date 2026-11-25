@@ -1,0 +1,8 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,userPrincipalName,accountEnabled,userType)",
+  "value": [
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000001", "userPrincipalName": "ann.lee@contoso.example", "accountEnabled": true, "userType": "Member", "displayName": "Ann Lee", "mail": "ann.lee@contoso.example"},
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000002", "userPrincipalName": "bo.chen@contoso.example", "accountEnabled": true, "userType": "Member", "displayName": "Bo Chen"}
+  ],
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?$select=id,userPrincipalName,accountEnabled,userType&$top=999&$skiptoken=RFNwdAIAAQAAAB"
+}

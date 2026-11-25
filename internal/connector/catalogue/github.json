@@ -1,0 +1,240 @@
+{
+  "tool": "GitHub",
+  "about": "The organisation: whether it requires two-factor authentication, its members, which of them have no second factor and which are owners; every repository, whether its default branch is protected, by classic protection or by rulesets, and what that protection asks for (a pull request, approving reviews, status checks, no force pushes, no deletion); and what GitHub Actions may run and what its workflows' token may do. Read by a GitHub App installed on the organisation, whose installation token is asked for read permissions only.",
+  "default": "github",
+  "regions": {
+    "github": {
+      "host": "api.github.com",
+      "token": "api.github.com"
+    }
+  },
+  "params": {
+    "org": "the organisation's login, as in github.com/ORG",
+    "installation": "the App's installation ID on that organisation, the number at the end of the installation's settings address"
+  },
+  "credentials": {
+    "github-app-id": "The GitHub App's ID, a number on the App's settings page.",
+    "github-app-key": "A private key of that App, in PEM, as GitHub downloads it. Give the App these permissions at the Read-only level and no others: organisation Members, organisation Administration, repository Administration and repository Metadata. The installation token is asked for exactly these, and one that comes back with any other, or with any at the write level, is refused before it is used. The members without two-factor authentication are listed to organisation owners only, so where GitHub answers that list with 403 the run says so and the rest is read."
+  },
+  "manifest": {
+    "name": "github",
+    "tool": "GitHub",
+    "host": "",
+    "auth": {
+      "kind": "github-app",
+      "secret": "github-app-key",
+      "token": {
+        "host": "",
+        "path": "/app/installations/{installation}/access_tokens",
+        "client": "github-app-id",
+        "scopes": [
+          "members:read",
+          "organization_administration:read",
+          "administration:read",
+          "metadata:read"
+        ],
+        "body": "json"
+      }
+    },
+    "rate": {
+      "per_minute": 80
+    },
+    "note": "An installation token allows 5,000 requests an hour, more on Enterprise Cloud; this keeps under a third of that. A spent limit is answered with 403 and the moment it resets, which is waited for, up to two minutes a try and four tries, before the run is left for the next one. Branch protection is read for each repository's default branch, by name: a default branch whose name is not safe in a path is counted and skipped.",
+    "endpoints": [
+      {
+        "name": "org",
+        "path": "/orgs/{org}",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "single": true,
+        "reads": [
+          "login",
+          "two_factor_requirement_enabled",
+          "default_repository_permission",
+          "members_can_create_public_repositories"
+        ],
+        "map": {
+          "login": "login",
+          "two_factor": "two_factor_requirement_enabled",
+          "default_permission": "default_repository_permission",
+          "public_repositories": "members_can_create_public_repositories"
+        }
+      },
+      {
+        "name": "members",
+        "path": "/orgs/{org}/members",
+        "query": {
+          "per_page": "100"
+        },
+        "produces": "identity",
+        "accept": "application/vnd.github+json",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "login"
+        ],
+        "map": {
+          "login": "login"
+        }
+      },
+      {
+        "name": "without-2fa",
+        "path": "/orgs/{org}/members",
+        "query": {
+          "filter": "2fa_disabled",
+          "per_page": "100"
+        },
+        "produces": "identity",
+        "accept": "application/vnd.github+json",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "login"
+        ],
+        "map": {
+          "login": "login"
+        }
+      },
+      {
+        "name": "owners",
+        "path": "/orgs/{org}/members",
+        "query": {
+          "role": "admin",
+          "per_page": "100"
+        },
+        "produces": "identity",
+        "accept": "application/vnd.github+json",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "login"
+        ],
+        "map": {
+          "login": "login"
+        }
+      },
+      {
+        "name": "repositories",
+        "path": "/orgs/{org}/repos",
+        "query": {
+          "type": "all",
+          "per_page": "100"
+        },
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "name",
+          "full_name",
+          "default_branch",
+          "private",
+          "archived"
+        ],
+        "map": {
+          "name": "name",
+          "full_name": "full_name",
+          "default_branch": "default_branch",
+          "private": "private",
+          "archived": "archived"
+        }
+      },
+      {
+        "name": "branch",
+        "path": "/repos/{org}/{key}/branches/{also}",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "single": true,
+        "each": {
+          "of": "repositories",
+          "key": "name",
+          "also": "default_branch"
+        },
+        "reads": [
+          "name",
+          "protected"
+        ],
+        "map": {
+          "branch": "name",
+          "protected": "protected"
+        }
+      },
+      {
+        "name": "rules",
+        "path": "/repos/{org}/{key}/rules/branches/{also}",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "each": {
+          "of": "repositories",
+          "key": "name",
+          "also": "default_branch"
+        },
+        "reads": [
+          "type",
+          "parameters.required_approving_review_count"
+        ],
+        "map": {
+          "rule": "type",
+          "approvals": "parameters.required_approving_review_count"
+        }
+      },
+      {
+        "name": "repository-actions",
+        "path": "/repos/{org}/{key}/actions/permissions",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "single": true,
+        "each": {
+          "of": "repositories",
+          "key": "name"
+        },
+        "reads": [
+          "enabled",
+          "allowed_actions"
+        ],
+        "map": {
+          "enabled": "enabled",
+          "allowed": "allowed_actions"
+        }
+      },
+      {
+        "name": "actions",
+        "path": "/orgs/{org}/actions/permissions",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "single": true,
+        "reads": [
+          "enabled_repositories",
+          "allowed_actions"
+        ],
+        "map": {
+          "repositories": "enabled_repositories",
+          "allowed": "allowed_actions"
+        }
+      },
+      {
+        "name": "workflow-token",
+        "path": "/orgs/{org}/actions/permissions/workflow",
+        "produces": "control",
+        "accept": "application/vnd.github+json",
+        "single": true,
+        "reads": [
+          "default_workflow_permissions",
+          "can_approve_pull_request_reviews"
+        ],
+        "map": {
+          "permissions": "default_workflow_permissions",
+          "approves": "can_approve_pull_request_reviews"
+        }
+      }
+    ]
+  }
+}

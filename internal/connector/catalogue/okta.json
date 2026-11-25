@@ -1,0 +1,145 @@
+{
+  "tool": "Okta",
+  "about": "Everybody in the Okta organisation with their lifecycle status; the factors each has enrolled, and whether one of them cannot be phished (a security key, a passkey or FastPass); who holds an administrator role, and which; and the global session policies with their status. Read with an API token made by an account that can only read.",
+  "default": "okta",
+  "regions": {
+    "okta": {
+      "host": "{org}.okta.com"
+    },
+    "emea": {
+      "host": "{org}.okta-emea.com"
+    },
+    "preview": {
+      "host": "{org}.oktapreview.com"
+    }
+  },
+  "params": {
+    "org": "the organisation's subdomain: acme for acme.okta.com"
+  },
+  "credentials": {
+    "okta-api-token": "An API token made by an account holding the Read-Only Administrator role and no other role. An Okta API token can do whatever its maker can, so before anything else is read the run asks Okta which roles the token's own account holds, and refuses to go on if it holds any but Read-Only Administrator."
+  },
+  "manifest": {
+    "name": "okta",
+    "tool": "Okta",
+    "host": "",
+    "auth": {
+      "kind": "bearer",
+      "secret": "okta-api-token",
+      "scheme": "SSWS"
+    },
+    "rate": {
+      "per_minute": 100
+    },
+    "note": "An API token's reach is its maker's, and is not written on the token, so the token's own roles are read first (grant) and the run refuses one that holds more than Read-Only Administrator. Factors and roles are read for each user and each administrator; a large organisation takes a while at Okta's pace, and a run that stops at a limit says so and leaves its facts as they were. The next page is in the Link header, and is followed only to the organisation's own host.",
+    "endpoints": [
+      {
+        "name": "grant",
+        "path": "/api/v1/users/me/roles",
+        "produces": "identity",
+        "reads": [
+          "type",
+          "status"
+        ],
+        "map": {
+          "type": "type",
+          "status": "status"
+        }
+      },
+      {
+        "name": "users",
+        "path": "/api/v1/users",
+        "query": {
+          "limit": "200"
+        },
+        "produces": "identity",
+        "page": {
+          "kind": "next-url",
+          "from": "header:Link"
+        },
+        "reads": [
+          "id",
+          "status",
+          "profile.login"
+        ],
+        "map": {
+          "id": "id",
+          "status": "status",
+          "login": "profile.login"
+        }
+      },
+      {
+        "name": "factors",
+        "path": "/api/v1/users/{key}/factors",
+        "produces": "identity",
+        "each": {
+          "of": "users",
+          "key": "id"
+        },
+        "reads": [
+          "factorType",
+          "provider",
+          "status"
+        ],
+        "map": {
+          "type": "factorType",
+          "provider": "provider",
+          "status": "status"
+        }
+      },
+      {
+        "name": "administrators",
+        "path": "/api/v1/iam/assignees/users",
+        "produces": "identity",
+        "records": "value",
+        "page": {
+          "kind": "next-url",
+          "from": "_links.next.href"
+        },
+        "reads": [
+          "id"
+        ],
+        "map": {
+          "id": "id"
+        }
+      },
+      {
+        "name": "administrator-roles",
+        "path": "/api/v1/users/{key}/roles",
+        "produces": "identity",
+        "each": {
+          "of": "administrators",
+          "key": "id"
+        },
+        "reads": [
+          "type",
+          "status"
+        ],
+        "map": {
+          "type": "type",
+          "status": "status"
+        }
+      },
+      {
+        "name": "session-policies",
+        "path": "/api/v1/policies",
+        "query": {
+          "type": "OKTA_SIGN_ON"
+        },
+        "produces": "control",
+        "reads": [
+          "id",
+          "name",
+          "status",
+          "priority"
+        ],
+        "map": {
+          "id": "id",
+          "name": "name",
+          "status": "status",
+          "priority": "priority"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-errors" .Problems}}
+<form method="post" action="/sources/add" class="param-form" novalidate>
+  {{$kind := index .ByField "source-kind-connector"}}{{$name := index .ByField "source-name"}}{{$recipe := index .ByField "source-recipe"}}{{$repo := index .ByField "source-repository"}}{{$wf := index .ByField "source-workflow"}}{{$owner := index .ByField "source-owner"}}{{$hours := index .ByField "source-hours"}}
+  <fieldset>
+    <legend>How its facts arrive</legend>
+    {{template "kit-field-error" $kind}}
+    <input type="radio" id="source-kind-connector" name="kind" value="connector"{{if eq .Form.Kind "connector"}} checked{{end}}>
+    <label for="source-kind-connector">A connector reads a tool</label>
+    <input type="radio" id="source-kind-pipeline" name="kind" value="pipeline"{{if eq .Form.Kind "pipeline"}} checked{{end}}>
+    <label for="source-kind-pipeline">A pipeline pushes from a repository</label>
+  </fieldset>
+  <label for="source-name">Its name</label>
+  {{template "kit-field-error" $name}}
+  <input id="source-name" name="name" value="{{.Form.Name}}" maxlength="64" autocomplete="off" aria-describedby="source-name-hint{{if $name.Message}} source-name-error{{end}}"{{if $name.Message}} aria-invalid="true"{{end}}>
+  <p class="hint" id="source-name-hint">A machine name, such as entra-production or docs-ci.</p>
+  <label for="source-title">What people call it</label>
+  <input id="source-title" name="title" value="{{.Form.Title}}" maxlength="200" autocomplete="off">
+  <fieldset>
+    <legend>For a connector</legend>
+    <label for="source-recipe">Its recipe</label>
+    {{template "kit-field-error" $recipe}}
+    <select id="source-recipe" name="recipe"{{if $recipe.Message}} aria-invalid="true" aria-describedby="source-recipe-error"{{end}}>
+      <option value="">Choose the tool it reads</option>
+      {{range .Recipes}}<option value="{{.Name}}"{{if eq $.Form.Recipe .Name}} selected{{end}}>{{.Tool}}</option>
+      {{end}}</select>
+    <label for="source-region">The tool's region</label>
+    <input id="source-region" name="region" value="{{.Form.Region}}" maxlength="64" autocomplete="off" aria-describedby="source-region-hint">
+    <p class="hint" id="source-region-hint">Leave it empty for the recipe's own; Okta's are okta, emea and preview.</p>
+    <label for="source-tenant">The Entra tenant ID</label>
+    <input id="source-tenant" name="tenant" value="{{.Form.Tenant}}" maxlength="36" autocomplete="off">
+    <label for="source-org">The Okta organisation, or the GitHub organisation</label>
+    <input id="source-org" name="org" value="{{.Form.Org}}" maxlength="63" autocomplete="off">
+    <label for="source-installation">The GitHub App's installation ID</label>
+    <input id="source-installation" name="installation" value="{{.Form.Installation}}" maxlength="20" inputmode="numeric" autocomplete="off">
+  </fieldset>
+  <fieldset>
+    <legend>For a pipeline</legend>
+    <label for="source-repository">The repository whose jobs push</label>
+    {{template "kit-field-error" $repo}}
+    <input id="source-repository" name="repository" value="{{.Form.Repository}}" maxlength="200" autocomplete="off" aria-describedby="source-repository-hint{{if $repo.Message}} source-repository-error{{end}}"{{if $repo.Message}} aria-invalid="true"{{end}}>
+    <p class="hint" id="source-repository-hint">owner/name on GitHub, or a GitLab project's path.</p>
+    <label for="source-workflow">The workflow whose jobs push</label>
+    {{template "kit-field-error" $wf}}
+    <input id="source-workflow" name="workflow" value="{{.Form.Workflow}}" maxlength="200" autocomplete="off" aria-describedby="source-workflow-hint{{if $wf.Message}} source-workflow-error{{end}}"{{if $wf.Message}} aria-invalid="true"{{end}}>
+    <p class="hint" id="source-workflow-hint">The path of its file in the repository, such as .github/workflows/evidence.yml or .gitlab-ci.yml.</p>
+  </fieldset>
+  <label for="source-owner">Its owner's mail address</label>
+  {{template "kit-field-error" $owner}}
+  <input id="source-owner" name="owner" type="email" value="{{.Form.Owner}}" maxlength="320" autocomplete="off" aria-describedby="source-owner-hint{{if $owner.Message}} source-owner-error{{end}}"{{if $owner.Message}} aria-invalid="true"{{end}}>
+  <p class="hint" id="source-owner-hint">They are told once each time it goes stale. The register holds their pseudonym, not this address.</p>
+  <label for="source-hours">How often it reports, in hours</label>
+  {{template "kit-field-error" $hours}}
+  <input id="source-hours" name="hours" value="{{.Form.Hours}}" inputmode="numeric" maxlength="5" autocomplete="off"{{if $hours.Message}} aria-invalid="true" aria-describedby="source-hours-error"{{end}}>
+  <div class="auto-controls"><button type="submit">Add the source</button></div>
+</form>
+<p class="hint">From a terminal: <code>quilzo source add</code> and <code>quilzo source add-pipeline</code>.</p>
+{{template "foot" .}}

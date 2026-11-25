@@ -1,0 +1,74 @@
+{
+  "tool": "Google Workspace",
+  "about": "Every user in the Workspace account with whether the account is active, whether two-step verification is enrolled and whether it is enforced, and whether the user is a super administrator or holds a delegated administrator role. Read through the Admin SDK's Directory API by a service account acting, with domain-wide delegation, as one administrator who can only read.",
+  "default": "google",
+  "regions": {
+    "google": {
+      "host": "admin.googleapis.com",
+      "token": "oauth2.googleapis.com"
+    }
+  },
+  "credentials": {
+    "google-service-account": "The JSON key file of a service account made for this source alone, in a Google Cloud project with the Admin SDK API turned on. In the Admin console, under Security, API controls and domain-wide delegation, give the service account's client ID the one scope https://www.googleapis.com/auth/admin.directory.user.readonly and no other.",
+    "google-admin-user": "The address of the administrator the service account acts as: an account whose admin role grants Users read and nothing else. The address is kept here, sealed, and not in the register, because it names a person."
+  },
+  "manifest": {
+    "name": "google-workspace",
+    "tool": "Google Workspace",
+    "host": "",
+    "auth": {
+      "kind": "jwt-bearer",
+      "secret": "google-service-account",
+      "token": {
+        "host": "",
+        "path": "/token",
+        "client": "google-admin-user",
+        "scopes": [
+          "https://www.googleapis.com/auth/admin.directory.user.readonly"
+        ],
+        "body": "form"
+      }
+    },
+    "rate": {
+      "per_second": 5
+    },
+    "note": "The assertion is signed here with the service account's key, which never leaves this process, and asks for the read-only user scope alone; the address the key file names for tokens is not used, the declared token host is. Names, phone numbers, addresses and recovery details are not read: a user is their primary address, which goes into the subject map and nowhere else.",
+    "endpoints": [
+      {
+        "name": "users",
+        "path": "/admin/directory/v1/users",
+        "query": {
+          "customer": "my_customer",
+          "maxResults": "500",
+          "projection": "basic",
+          "viewType": "admin_view"
+        },
+        "produces": "identity",
+        "records": "users",
+        "page": {
+          "kind": "cursor",
+          "from": "nextPageToken",
+          "param": "pageToken"
+        },
+        "reads": [
+          "primaryEmail",
+          "suspended",
+          "archived",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isEnrolledIn2Sv",
+          "isEnforcedIn2Sv"
+        ],
+        "map": {
+          "email": "primaryEmail",
+          "suspended": "suspended",
+          "archived": "archived",
+          "admin": "isAdmin",
+          "delegated_admin": "isDelegatedAdmin",
+          "enrolled_2sv": "isEnrolledIn2Sv",
+          "enforced_2sv": "isEnforcedIn2Sv"
+        }
+      }
+    ]
+  }
+}

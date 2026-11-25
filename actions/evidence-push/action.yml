@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: 2026 Rashik Adhikari
+# SPDX-License-Identifier: Apache-2.0
+#
+# Push a file of evidence from a GitHub Actions job to a Quilzo server, with
+# the job's own identity and no stored secret.
+#
+# The job asks GitHub for the identity token it signs for this run, makes a
+# key that lives only as long as the step, exchanges the token at the
+# server's /token/exchange for a token of minutes bound to that key, and
+# posts the file to /api/v1/evidence/import with a fresh proof. The server
+# files it under the pipeline's source that names this repository and this
+# workflow, graded "ci". See docs/sources.md.
+#
+#   permissions:
+#     id-token: write
+#     contents: read
+#   steps:
+#     - uses: quilzo/quilzo/actions/evidence-push@v0.1.0
+#       with:
+#         server: https://quilzo.example.org
+#         file: results.sarif
+#         format: sarif
+name: Push evidence to Quilzo
+description: Push a file of evidence to a Quilzo server with the job's identity token, holding no secret.
+inputs:
+  server:
+    description: The Quilzo server's address, https://quilzo.example.org.
+    required: true
+  file:
+    description: The file to push.
+    required: true
+  format:
+    description: How the server reads it, sarif, cyclonedx, spdx, ocsf, csaf, openvex, dsse or osquery.
+    required: true
+  source:
+    description: The pipeline's source on the server, when its repository and workflow do not find it.
+    required: false
+    default: ""
+  audience:
+    description: The audience the server's trust expects in the identity token. The server's address by default.
+    required: false
+    default: ""
+  quilzo:
+    description: The quilzo program to run, already on the runner. Install a release you have verified first.
+    required: false
+    default: quilzo
+runs:
+  using: composite
+  steps:
+    - name: Push the evidence
+      shell: bash
+      env:
+        QUILZO_PUSH_SERVER: ${{ inputs.server }}
+        QUILZO_PUSH_FILE: ${{ inputs.file }}
+        QUILZO_PUSH_FORMAT: ${{ inputs.format }}
+        QUILZO_PUSH_SOURCE: ${{ inputs.source }}
+        QUILZO_PUSH_AUDIENCE: ${{ inputs.audience }}
+        QUILZO_PUSH_PROGRAM: ${{ inputs.quilzo }}
+      run: |
+        set -euo pipefail
+        args=(evidence push "$QUILZO_PUSH_FILE" --format "$QUILZO_PUSH_FORMAT" --to "$QUILZO_PUSH_SERVER")
+        if [ -n "$QUILZO_PUSH_SOURCE" ]; then args+=(--source "$QUILZO_PUSH_SOURCE"); fi
+        if [ -n "$QUILZO_PUSH_AUDIENCE" ]; then args+=(--audience "$QUILZO_PUSH_AUDIENCE"); fi
+        "$QUILZO_PUSH_PROGRAM" "${args[@]}"

@@ -262,6 +262,20 @@ var Purposes = []Purpose{
 			"Buy button and orders are read at the provider's own dashboard",
 	},
 	{
+		Name: "sources",
+		What: "a source's connector reading the tool it was added for (Microsoft Graph, GitHub, " +
+			"Google Workspace, Okta) at the hosts its recipe names and no others, read-only, with a " +
+			"credential from the vault",
+		Without: "no connector runs, and its source goes stale and is named on the Sources screen; " +
+			"files, imports and pipelines' pushes still bring evidence in",
+	},
+	{
+		Name: "push",
+		What: "a pipeline's job sending evidence to a Quilzo server (quilzo evidence push), " +
+			"with a token its platform signed exchanged there for one bound to a key the job holds",
+		Without: "a job cannot push evidence; a person brings the file in instead",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +

@@ -1,0 +1,5 @@
+[
+  {"id": "00u1ann0000000000001", "status": "ACTIVE", "created": "2025-03-01T10:00:00.000Z", "lastLogin": "2026-11-24T08:00:00.000Z", "profile": {"login": "ann.lee@northwind.example", "email": "ann.lee@northwind.example", "firstName": "Ann", "lastName": "Lee", "mobilePhone": "+44 20 7946 0000"}},
+  {"id": "00u1bo00000000000002", "status": "ACTIVE", "profile": {"login": "bo.chen@northwind.example", "email": "bo.chen@northwind.example", "firstName": "Bo"}},
+  {"id": "00u1cat0000000000003", "status": "SUSPENDED", "profile": {"login": "cat@northwind.example", "email": "cat@northwind.example"}}
+]

@@ -809,6 +809,12 @@ type Token struct {
 	// token copied without its key is useless.
 	Key string `json:"key,omitempty"`
 
+	// Workload, on a token exchanged for a CI job's identity token, is
+	// what the job's platform signed about it: its issuer, its repository,
+	// its workflow, its branch and its run (WorkloadClaims). A pipeline's
+	// push is held to these, and to nothing the job says about itself.
+	Workload map[string]string `json:"workload,omitempty"`
+
 	// Inherits, on a session exchanged from a token bound to no key, is how
 	// long that token was issued to last, in seconds. Whoever holds the
 	// parent can mint another session at will, so a session is worth as
@@ -1582,6 +1588,36 @@ func (ts *TokenStore) IssueFederated(name, principal string, role Role, resource
 		}
 	}
 	return secret, t, nil
+}
+
+// WorkloadClaims are the claims of a job's identity token a federated
+// token keeps: those that say which repository, which workflow, which
+// branch and which run, as GitHub Actions and GitLab CI write them.
+var WorkloadClaims = []string{"repository", "workflow_ref", "job_workflow_ref", "project_path",
+	"ci_config_ref_uri", "ref", "run_id", "pipeline_id"}
+
+// NoteWorkload records, on a federated token, what its job's identity
+// token said of the job: the issuer and the claims WorkloadClaims names,
+// each as the issuer wrote it.
+func (ts *TokenStore) NoteWorkload(id, issuer string, claims map[string]any) error {
+	kept := map[string]string{"iss": issuer}
+	for _, k := range WorkloadClaims {
+		if v, ok := claims[k].(string); ok && v != "" && len(v) <= 512 {
+			kept[k] = v
+		}
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if ts.Tokens[i].Parent != "" || ts.Tokens[i].Kind != KindProgram {
+				return errors.New("only a token exchanged for a job's identity carries what the job is")
+			}
+			ts.Tokens[i].Workload = kept
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
 }
 
 // IssueForGrant mints an access token for an app a person consented to,

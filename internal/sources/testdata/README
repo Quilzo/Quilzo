@@ -1,0 +1,9 @@
+Recorded responses for the source recipes' tests.
+
+Each file is a response body shaped as the tool's published API
+documentation shows it: Microsoft Graph v1.0, the GitHub REST API (version
+2022-11-28), the Google Admin SDK Directory API v1 and the Okta Management
+API. No live tenant, organisation or domain was read to make them; the
+accounts, identifiers and names are made up, and every address is under the
+reserved example domains. They hold fields the recipes do not read as well
+as those they do, so the tests show that only the declared fields are kept.

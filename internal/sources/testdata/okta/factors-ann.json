@@ -1,0 +1,4 @@
+[
+  {"id": "fwf1ann0000000000001", "factorType": "webauthn", "provider": "FIDO", "vendorName": "FIDO", "status": "ACTIVE", "profile": {"credentialId": "l3Br0n-7H3g047NqESqJynFtIgf3Ix9OfaRoNwLoloso99Xl2zS_O7EXUkmPeAIzTVtEL4dYjicJWBz7NpqhGA", "authenticatorName": "YubiKey 5"}},
+  {"id": "opf1ann0000000000002", "factorType": "token:software:totp", "provider": "OKTA", "status": "ACTIVE"}
+]

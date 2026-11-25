@@ -62,9 +62,16 @@ func TestEveryModuleRouteKeepsTheAPIsRules(t *testing.T) {
 		if head := req(t, s, "HEAD", path, tok, nil, nil); head.Code != http.StatusOK {
 			t.Errorf("HEAD %s answered %d", path, head.Code)
 		}
-		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH"} {
+		// A route that writes answers POST as well, and says so in Allow;
+		// what its POST does is its module's own tests' to show.
+		_, writes := described[tmpl].(map[string]any)["post"]
+		allow, refused := "GET, HEAD", []string{"POST", "PUT", "DELETE", "PATCH"}
+		if writes {
+			allow, refused = "GET, HEAD, POST", []string{"PUT", "DELETE", "PATCH"}
+		}
+		for _, method := range refused {
 			w := req(t, s, method, path, tok, nil, nil)
-			if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "GET, HEAD" {
+			if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != allow {
 				t.Errorf("%s %s answered %d with Allow %q", method, path, w.Code, w.Header().Get("Allow"))
 			}
 		}

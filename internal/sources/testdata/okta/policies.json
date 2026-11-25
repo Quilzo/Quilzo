@@ -1,0 +1,4 @@
+[
+  {"id": "00p1sign00000000001", "status": "ACTIVE", "name": "Default Policy", "priority": 1, "system": true, "type": "OKTA_SIGN_ON", "conditions": {"people": {"groups": {"include": ["00g1everyone"]}}}},
+  {"id": "00p1sign00000000002", "status": "INACTIVE", "name": "Contractors", "priority": 2, "system": false, "type": "OKTA_SIGN_ON"}
+]

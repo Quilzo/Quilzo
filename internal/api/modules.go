@@ -25,8 +25,16 @@ import (
 // middleware as every route here: a token, the rate limit, the shield, no
 // cross-origin request. Each describes itself in OpenAPI, and the tests that
 // hold the API to its description read the modules' routes with the rest.
-// A module that writes through the API will add what a write needs here,
-// once, and not in its own file.
+//
+// A route may also write, by declaring a handler for POST (post) and
+// describing it. Its handler asks the policy and writes through the
+// module's own write path, which records what it wrote, as the command
+// line's does; nothing here writes for it. And a route may take a token
+// bound to a key (proved): presented as DPoP with a fresh proof made by the
+// key (RFC 9449), checked and spent before the handler runs, where every
+// other route refuses such a token. That is how a pipeline's job, which
+// holds no secret, presents the minutes-long token its platform's identity
+// was exchanged for.
 
 // apiModule is what a module adds to the content API.
 type apiModule struct {
@@ -42,8 +50,14 @@ type apiRoute struct {
 	// for one address, "/api/v1/register/records/" for everything below.
 	path string
 	// handle answers a GET or a HEAD; any other method is refused before
-	// it is called.
+	// it is called, unless post answers a POST.
 	handle func(*Server, http.ResponseWriter, *http.Request)
+	// post, when set, answers a POST: a write, which the handler asks of
+	// the policy and makes through its module's one write path.
+	post func(*Server, http.ResponseWriter, *http.Request)
+	// proved says the route takes a token bound to a key, with the
+	// request's proof made by that key.
+	proved bool
 	// describe is how the description says it: each OpenAPI path template
 	// the route answers, with its path item.
 	describe map[string]map[string]any
@@ -115,8 +129,13 @@ func checkRoutes(m apiModule) error {
 			if !routeAnswers(r.path, tmpl) {
 				return fmt.Errorf("%s describes %s, which it does not answer", r.path, tmpl)
 			}
-			if _, ok := item["get"]; !ok || len(item) != 1 {
-				return fmt.Errorf("%s is described with methods other than get, and a module's route reads", tmpl)
+			_, writes := item["post"]
+			if _, ok := item["get"]; !ok || len(item) != 1 && !(writes && len(item) == 2) {
+				return fmt.Errorf("%s is described with methods other than get and post, and a module's route reads "+
+					"or, with a handler for it, writes", tmpl)
+			}
+			if writes != (r.post != nil) {
+				return fmt.Errorf("%s describes a post it does not answer, or answers one it does not describe", tmpl)
 			}
 		}
 		taken[r.path] = true
@@ -136,16 +155,35 @@ func routeAnswers(pattern, tmpl string) bool {
 func (s *Server) mountModules(mux *http.ServeMux) {
 	for _, m := range apiModules {
 		for _, r := range m.routes {
-			handle := r.handle
+			handle, post := r.handle, r.post
 			mux.HandleFunc(r.path, func(w http.ResponseWriter, req *http.Request) {
-				if !readMethod(req) {
+				switch {
+				case post != nil && req.Method == http.MethodPost:
+					post(s, w, req)
+				case !readMethod(req) && post != nil:
+					w.Header().Set("Allow", "GET, HEAD, POST")
+					writeError(w, http.StatusMethodNotAllowed, Error{Error: "GET or POST only"})
+				case !readMethod(req):
 					s.notAllowed(w, req, Error{Error: "GET only"})
-					return
+				default:
+					handle(s, w, req)
 				}
-				handle(s, w, req)
 			})
 		}
 	}
+}
+
+// moduleProved reports whether a path is a module's route that takes a
+// token bound to a key.
+func moduleProved(p string) bool {
+	for _, m := range apiModules {
+		for _, r := range m.routes {
+			if r.proved && (p == r.path || strings.HasSuffix(r.path, "/") && strings.HasPrefix(p, r.path)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // moduleRoute reports whether a path is a module's.
