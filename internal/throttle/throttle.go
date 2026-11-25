@@ -254,9 +254,11 @@ func (l *Limiter) checkOne(key string, now time.Time) Decision {
 	if wait := delay - now.Sub(r.last); wait > 0 {
 		return Decision{
 			RetryAfter: wait, Failures: r.failures,
+			// "1 recent failure" when none are free (After 0), which the
+			// configuration allows: it was "1 recent failures".
 			Why: fmt.Sprintf(
-				"%d recent failures, so attempts are being slowed down. Try "+
-					"again in %s.", r.failures, inWords(wait)),
+				"%s, so attempts are being slowed down. Try again in %s.",
+				count(r.failures, "1 recent failure", "recent failures"), inWords(wait)),
 		}
 	}
 	return Decision{Allowed: true, Failures: r.failures}
@@ -501,12 +503,6 @@ func (l *Limiter) State() []Snapshot {
 // It was Go's own rendering, which the sign-in page showed to a person as
 // "Try again in 1s" and "Nothing further is accepted for 59m32s".
 func inWords(d time.Duration) string {
-	count := func(n int, one, many string) string {
-		if n == 1 {
-			return one
-		}
-		return strconv.Itoa(n) + " " + many
-	}
 	if secs := max(int((d+time.Second-1)/time.Second), 1); secs < 60 {
 		return count(secs, "1 second", "seconds")
 	}
@@ -519,6 +515,15 @@ func inWords(d time.Duration) string {
 		return hours
 	}
 	return hours + " and " + minutes
+}
+
+// count is n of something, with its noun in agreement: one for a single
+// one, the number and many otherwise.
+func count(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return strconv.Itoa(n) + " " + many
 }
 
 // randRead is crypto/rand.Read, named so the panic above reads clearly.

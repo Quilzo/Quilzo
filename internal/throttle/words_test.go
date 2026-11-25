@@ -54,3 +54,22 @@ func TestHowLongToWaitIsSaidInWords(t *testing.T) {
 		}
 	}
 }
+
+// How many failures there were is said with its noun in agreement. With no
+// failures free (auth.throttle.after 0, which the configuration allows),
+// the first one is slowed, and it was "1 recent failures".
+func TestHowManyFailuresIsSaidInAgreement(t *testing.T) {
+	now := start
+	p := Default()
+	p.After = 0
+	l := at(New(p), &now)
+	s := Subject{Source: "203.0.113.9"}
+	l.Fail(s)
+	if d := l.Check(s); !strings.HasPrefix(d.Why, "1 recent failure, so") {
+		t.Errorf("one failure: %q", d.Why)
+	}
+	l.Fail(s)
+	if d := l.Check(s); !strings.HasPrefix(d.Why, "2 recent failures, so") {
+		t.Errorf("two failures: %q", d.Why)
+	}
+}
