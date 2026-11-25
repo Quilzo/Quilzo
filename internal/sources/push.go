@@ -64,20 +64,15 @@ func Workload(issuer string, claims map[string]any) evidence.Workload {
 	return w
 }
 
-// WorkloadClaims are the claims a short token keeps of the job it was
-// exchanged for, in the form Workload reads them back.
-func WorkloadClaims(w evidence.Workload) map[string]string {
-	if w.Repository == "" {
-		return nil
-	}
-	return map[string]string{"platform": w.Platform, "repository": w.Repository, "workflow": w.Workflow,
-		"ref": w.Ref, "run": w.Run}
-}
-
-// WorkloadOf reads back what WorkloadClaims kept.
+// WorkloadOf is the job a federated token was exchanged for, from what
+// the token keeps of its identity token (auth.Token.Workload): the issuer
+// under "iss" and the claims as the issuer wrote them.
 func WorkloadOf(kept map[string]string) evidence.Workload {
-	return evidence.Workload{Platform: kept["platform"], Repository: kept["repository"], Workflow: kept["workflow"],
-		Ref: kept["ref"], Run: kept["run"]}
+	claims := make(map[string]any, len(kept))
+	for k, v := range kept {
+		claims[k] = v
+	}
+	return Workload(kept["iss"], claims)
 }
 
 // Issuers are the platforms whose jobs push, as a trust names them.

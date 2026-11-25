@@ -240,6 +240,14 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 			failed("invalid_grant", err)
 			return
 		}
+		// What the job's platform signed about it goes with the token, so
+		// that a pipeline's push is held to its repository and its
+		// workflow (internal/sources), and not to what the job says.
+		if err := toks.NoteWorkload(tok.ID, t.Issuer, claims); err != nil {
+			_, _ = toks.Revoke(tok.ID)
+			fail(http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
 		detail["how"], detail["trust"] = "federated", t.Name
 		for _, k := range []string{"repository", "ref", "environment", "project_path", "run_id"} {
 			if v, ok := claims[k].(string); ok {

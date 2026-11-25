@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Rashik Adhikari
+# SPDX-License-Identifier: Apache-2.0
+#
+# Push a file of evidence from a GitLab CI job to a Quilzo server, with the
+# job's own identity and no stored secret. Include this file, or copy the
+# job, and set QUILZO_SERVER, QUILZO_FILE and QUILZO_FORMAT. GitLab puts
+# the job's identity token in QUILZO_ID_TOKEN, for the server's audience;
+# the server files the file under the pipeline's source that names this
+# project and .gitlab-ci.yml, graded "ci". See docs/sources.md.
+quilzo-evidence-push:
+  stage: .post
+  id_tokens:
+    QUILZO_ID_TOKEN:
+      aud: $QUILZO_SERVER
+  script:
+    - quilzo evidence push "$QUILZO_FILE" --format "$QUILZO_FORMAT" --to "$QUILZO_SERVER"

@@ -66,7 +66,9 @@ func init() {
 			"                                            from a table's headings, with the rows it would read\n" +
 			"  quilzo evidence confirm-map MAPFILE      confirm a column map as yours, having looked at what it reads\n" +
 			"  quilzo evidence pin NAME KEYFILE [--keyid ID] [--title TEXT]  pin a third party's public key, which\n" +
-			"                                            signed files are verified against\n",
+			"                                            signed files are verified against\n" +
+			"  quilzo evidence push FILE --format FORMAT --to URL [--source NAME]  from a pipeline's job: push a file\n" +
+			"                                            to a server with the job's identity token, holding no secret\n",
 		run: cmdEvidence,
 		// The command asks for the most any of its lines needs, and the
 		// lines that read narrow it, so a line added later and named nowhere
@@ -81,7 +83,9 @@ func init() {
 			"evidence draft-map":   {action: auth.ActView},
 			"evidence expire":      {action: auth.ActEditDraft, hint: "erasing raw files changes what is kept beside the register"},
 			"evidence confirm-map": {action: auth.ActEditDraft, hint: "a confirmed column map is written to the register"},
-			"evidence pin":         {action: auth.ActEditDraft, hint: "a pinned key is written to the register"}},
+			"evidence pin":         {action: auth.ActEditDraft, hint: "a pinned key is written to the register"},
+			"evidence push": {why: "sends a file to another server, with a token that server issues for the job's own " +
+				"identity, and never opens this store"}},
 		area:       register.Area,
 		reads:      [][]string{{"evidence", "list"}, {"evidence", "verify"}, {"evidence", "maps"}, {"evidence", "keys"}},
 		absent:     []string{"evidence", "show", "sha256:" + strings.Repeat("0", 64)},
@@ -261,6 +265,8 @@ func cmdEvidence(root string, args []string) error {
 		args = []string{bareRuns["evidence"]}
 	}
 	switch args[0] {
+	case "push":
+		return evidencePushCmd(args[1:])
 	case "list":
 		fs := flag.NewFlagSet("evidence list", flag.ContinueOnError)
 		offset := fs.Int("offset", 0, "how many files to skip")
@@ -336,7 +342,7 @@ func cmdEvidence(root string, args []string) error {
 		}
 		return evidencePin(root, pos[0], pos[1], *keyid, *title)
 	default:
-		return errMisused{fmt.Errorf("unknown evidence command %q; try list, show, verify, expire, maps, keys, draft-map, confirm-map or pin", clip(args[0], 40))}
+		return errMisused{fmt.Errorf("unknown evidence command %q; try list, show, verify, expire, maps, keys, draft-map, confirm-map, pin or push", clip(args[0], 40))}
 	}
 }
 

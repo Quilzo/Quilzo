@@ -23,6 +23,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -127,6 +128,9 @@ type Server struct {
 	Shield func() (until time.Time, on bool)
 
 	limiter *limiter
+	// proofs remembers the DPoP proofs spent at the routes that take a
+	// token bound to a key, so a proof is good for one request.
+	proofs dpop.Replays
 }
 
 // Handler routes the API.
@@ -496,6 +500,9 @@ func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }
 
 func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 	raw, scheme := auth.Presented(r.Header.Get("Authorization"))
+	if scheme == "DPoP" {
+		return s.authenticateProved(r, raw)
+	}
 	if scheme != "Bearer" {
 		// The admin's session cookie, accepted only when this server is
 		// mounted inside the admin and only for a same-origin request.
@@ -530,6 +537,54 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 		s.OnBadToken(r, strings.TrimSpace(raw), err)
 	}
 	return tok, err
+}
+
+// authenticateProved is a token bound to a key, presented with the
+// request's one DPoP proof made by that key, at a route that takes one
+// (moduleProved); every other route refuses it, as it always has. The
+// proof is checked before the token is looked at, and spent only once the
+// token is accepted, as the admin's exchange does (internal/admin's
+// proofOf says why).
+func (s *Server) authenticateProved(r *http.Request, raw string) (*auth.Token, error) {
+	if !moduleProved(r.URL.Path) {
+		return nil, auth.ErrKeyBound
+	}
+	if s.Tokens == nil {
+		return nil, fmt.Errorf("no token store")
+	}
+	proofs := r.Header.Values("DPoP")
+	if len(proofs) != 1 {
+		return nil, fmt.Errorf("%w: a request carries exactly one DPoP proof", dpop.ErrProof)
+	}
+	now := s.now()
+	p, err := dpop.Verify(proofs[0], r.Method, s.requestURL(r), strings.TrimSpace(raw), now)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := s.Tokens.AuthenticateProved(strings.TrimSpace(raw), "", p.Thumbprint, now)
+	if err != nil {
+		if s.OnBadToken != nil && !errors.Is(err, auth.ErrStepUp) {
+			s.OnBadToken(r, strings.TrimSpace(raw), err)
+		}
+		return nil, err
+	}
+	if err := s.proofs.Spend(p, now); err != nil {
+		return nil, err
+	}
+	return tok, nil
+}
+
+// requestURL is the address a request was made to, as a proof names it:
+// this server's origin as its host works it out, and the path.
+func (s *Server) requestURL(r *http.Request) string {
+	if s.Origin != nil {
+		return s.Origin(r) + r.URL.Path
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + r.URL.Path
 }
 
 // may checks a permission for the authenticated caller.
