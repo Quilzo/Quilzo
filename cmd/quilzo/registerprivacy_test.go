@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
@@ -143,10 +144,22 @@ func TestRegisterEraseCommand(t *testing.T) {
 	}
 	var erased struct {
 		Erasure register.ID
+		Surface string
+		Waits   bool
+		Yours   bool
 		Receipt register.Receipt
 	}
-	if err := json.Unmarshal([]byte(o), &erased); err != nil || erased.Erasure != register.ErasureID(ada) || erased.Receipt.Commit == "" {
+	if err := json.Unmarshal([]byte(o), &erased); err != nil || erased.Erasure != register.ErasureID(ada) || !erased.Waits ||
+		!erased.Yours || erased.Receipt.Ref != register.ProposalsRef {
 		t.Fatalf("register erase answered %s (%v)", firstLines(o, 4), err)
+	}
+	// Asked for, it waits; the owner, the only person who may decide an
+	// erasure, decides it alone at the console, typing back its hash.
+	if st := r.SubjectState(ada); st.State != register.SubjectHeld {
+		t.Fatalf("asking for the erasure erased the person: %+v", st)
+	}
+	if _, e, code := cliRun(t, root, token, "approval", "approve", string(erased.Erasure), "--surface", erased.Surface); code != 0 {
+		t.Fatalf("deciding the erasure at the console exited %d: %s", code, firstLines(e, 3))
 	}
 	if st := r.SubjectState(ada); st.State != register.SubjectErased {
 		t.Errorf("after the erasure the subject is %+v", st)
@@ -168,8 +181,9 @@ func TestRegisterEraseCommand(t *testing.T) {
 	if err != nil || e2.Kind != register.KindErasure {
 		t.Fatalf("the erasure record: %v", err)
 	}
-	if rec := e2.Record.(register.Erasure); rec.Approval == nil || rec.Approval.Raised != ada || rec.Basis != "request" {
-		t.Errorf("the erasure is %+v", rec)
+	if rec := e2.Record.(register.Erasure); rec.Approval == nil || rec.Approval.Raised != ada || rec.Basis != "request" ||
+		rec.RequestedBy != ada || rec.EnteredBy != by.Subject || rec.Decider != by.Subject || !rec.Approval.Alone {
+		t.Errorf("the erasure is %+v with %+v", rec, rec.Approval)
 	}
 	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request", "--yes"); code == 0 {
 		t.Errorf("a person erased twice: %s", e)
@@ -421,24 +435,49 @@ func TestABareRegisterCommandIsAskedAsTheListItRuns(t *testing.T) {
 	}
 }
 
-// An erasure's approval names its decider by their pseudonym alone. Its
-// assertion is a hash over the record as shown, the decider's pseudonym
-// and the evidence the decision was made on, and it is in the register for
-// good. With the decider's address in that evidence, and nothing else in
-// it that a guess could not supply (a token's name, whether it was
-// proved), a list of the organisation's addresses found which of them
-// decided: the pseudonym was undone for whoever read the record, and
-// stayed undone after the decider was erased in turn.
+// An erasure decided at the command line is bound to its decider by their
+// pseudonym alone: the evidence their approval keeps beside the store says
+// it was the console and whether the program proved who was at it, and
+// holds neither their name nor their token's, which is often the person's.
+// With the decider's address in it, a list of the organisation's addresses
+// found which of them decided, and it stayed found after the decider was
+// erased in turn.
 func TestAnErasureIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
-	for _, c := range []*Caller{
-		{Name: "dana.decider@example.com", Kind: audit.KindHuman, Verified: true, Credential: "dana-laptop"},
-		{Name: "dana", Kind: audit.KindHuman, Why: "no token was presented"},
-	} {
-		// Nor by the token's name, which is a label an administrator types
-		// and is often the person's.
-		if ev := string(consoleEvidence(c)); strings.Contains(ev, c.Name) || strings.Contains(ev, "dana") {
-			t.Errorf("the evidence of %s's decision at the command line is %q", c.Name, ev)
+	root, token := accessStore(t)
+	r := registerOn(t, root)
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, e, code := cliRun(t, root, token, "--json", "register", "erase", "--subject", string(ada), "--basis", "request",
+		"--requested-by", "subject", "--yes")
+	var raised struct {
+		Erasure register.ID
+		Surface string
+	}
+	if code != 0 || json.Unmarshal([]byte(o), &raised) != nil {
+		t.Fatalf("register erase: %d %s", code, e)
+	}
+	if _, e, code := cliRun(t, root, token, "approval", "approve", string(raised.Erasure), "--surface", raised.Surface); code != 0 {
+		t.Fatalf("deciding the erasure exited %d: %s", code, firstLines(e, 3))
+	}
+	got, err := registerOn(t, root).Get(raised.Erasure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := got.Record.(register.Erasure).Approval.Signers[0]
+	ev, err := approval.LoadEvidence(root, signer.Assertion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(ev)
+	for _, named := range []string{"owner", "boot", "credential"} {
+		if strings.Contains(string(raw), named) {
+			t.Errorf("the evidence of the decision at the console holds %q: %s", named, raw)
 		}
+	}
+	if ev.Console == nil || !ev.Console.Verified || ev.Subject != signer.Subject {
+		t.Errorf("the console's evidence is %+v", ev)
 	}
 }
 
@@ -475,30 +514,40 @@ func TestTheSweepIsRecordedAsWhoeverRanIt(t *testing.T) {
 	}
 }
 
-// An erasure nobody else asked for is decided by somebody other than the
-// person raising it when anybody else may decide one, as every approval
-// is. Asked for so at the command line, it is a line misused, exit 2,
-// that says what to add, and nothing is erased; it was a failure, exit 1,
-// that named the rule and not the flag.
+// An erasure the person entering it asks for themselves waits, as every
+// decision does, for somebody else who may decide it: whoever raised it is
+// refused it at the console, exit 3, saying so, and nothing is erased until
+// somebody else decides it. A requester the subject map does not name is no
+// request, a line misused, exit 2.
 func TestAnErasureRaisedByItsDeciderSaysWhoMustAsk(t *testing.T) {
 	root, token := accessStore(t)
-	if _, e, code := cliRun(t, root, token, "auth", "grant", "lee", "admin"); code != 0 {
-		t.Fatalf("auth grant: %s", e)
-	}
+	lee := programmeApprover(t, root, token)
 	r := registerOn(t, root)
 	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "no-longer-needed", "--yes")
-	if code != 2 || !strings.Contains(e, "--requested-by") {
-		t.Errorf("an erasure raised by its decider with another eligible exited %d: %s", code, firstLines(e, 4))
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request",
+		"--requested-by", strings.Repeat("ab", 16), "--yes"); code != 2 {
+		t.Errorf("an erasure asked for by a pseudonym nobody holds exited %d: %s", code, firstLines(e, 4))
+	}
+	o, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "no-longer-needed", "--yes")
+	if code != 0 || !strings.Contains(o, "nothing is erased until it is decided") || !strings.Contains(o, "quilzo approval approve") {
+		t.Fatalf("an erasure raised by the owner exited %d: %s %s", code, o, firstLines(e, 4))
+	}
+	id := register.ErasureID(ada)
+	hash := surfaceOf(t, root, token, string(id))
+	if _, e, code := cliRun(t, root, token, "approval", "approve", string(id), "--surface", hash); code != 3 ||
+		!strings.Contains(e, "raised or drafted") {
+		t.Errorf("the owner deciding the erasure the owner raised exited %d: %s", code, firstLines(e, 4))
 	}
 	if r.SubjectState(ada).State != register.SubjectHeld {
 		t.Fatal("the refused erasure erased the person")
 	}
-	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request",
-		"--requested-by", "subject", "--yes"); code != 0 {
-		t.Errorf("the erasure the person asked for exited %d: %s", code, firstLines(e, 4))
+	if _, e, code := cliRun(t, root, lee, "approval", "approve", string(id), "--surface", hash); code != 0 {
+		t.Errorf("lee deciding the erasure exited %d: %s", code, firstLines(e, 4))
+	}
+	if r.SubjectState(ada).State != register.SubjectErased {
+		t.Error("the erasure lee decided did not erase the person")
 	}
 }

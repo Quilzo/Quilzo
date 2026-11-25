@@ -52,11 +52,38 @@ func withAda(t *testing.T) (*bench, ID, Text) {
 	return b, ada, words
 }
 
-// erasure is what a privacy officer, dana, asks for when Ada asks to be
-// erased, with one other person who may decide it.
+// erasure is what a privacy officer, dana, enters when Ada asks to be
+// erased.
 func erasure(ada ID) ErasureRequest {
-	return ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada, Eligible: 2,
-		Evidence: []byte("the decider's passkey assertion over the surface")}
+	return ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada}
+}
+
+// decided is the approval of a waiting erasure by somebody, over what it
+// shows: what the approvals module gives, without the module, which the
+// register's own tests do not have.
+func decided(t testing.TB, b *bench, id ID, by Actor) *Approval {
+	t.Helper()
+	p, err := b.proposal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raised := p.Subject
+	if e, ok := p.Record.(Erasure); ok && e.RequestedBy != "" {
+		raised = e.RequestedBy
+	}
+	return &Approval{Atom: "approve", Rule: "erasure", Needed: 1, Of: 2, Surface: shown(t, b, p.Record), Raised: raised,
+		Signers: []Signer{{Subject: by.Subject, At: TimeOf(b.now()), Assertion: digest(9)}}}
+}
+
+// erase is an erasure entered by dana and decided by lee: raised, then
+// accepted with lee's approval.
+func erase(t testing.TB, b *bench, req ErasureRequest) (Receipt, error) {
+	t.Helper()
+	if _, _, err := b.RaiseErasure(dana, req); err != nil {
+		return Receipt{}, err
+	}
+	id := ErasureID(req.Subject)
+	return b.Accept(lee, id, decided(t, b, id, lee))
 }
 
 // PLAN theme 7, the buyer's test: after a person is erased, every record,
@@ -66,7 +93,7 @@ func erasure(ada ID) ErasureRequest {
 func TestEraseSubjectChainVerifies(t *testing.T) {
 	b, ada, words := withAda(t)
 	headBefore := b.Head()
-	rc, err := b.Erase(dana, erasure(ada))
+	rc, err := erase(t, b, erasure(ada))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +193,7 @@ func TestErasedIdentifiersUnrecoverable(t *testing.T) {
 	if before := scan(); len(before) == 0 {
 		t.Fatal("nothing identified Ada before she was erased; the scan is looking in the wrong place")
 	}
-	if _, err := b.Erase(dana, erasure(ada)); err != nil {
+	if _, err := erase(t, b, erasure(ada)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.Index(); err != nil {
@@ -223,7 +250,7 @@ func readsAs(body []byte, s string) bool {
 // retention period ended, or for good for a kind that has none.
 func TestNothingIsKeptAboutAPersonErased(t *testing.T) {
 	b, ada, _ := withAda(t)
-	if _, err := b.Erase(dana, erasure(ada)); err != nil {
+	if _, err := erase(t, b, erasure(ada)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.PutText(dana, KindRisk, "Ada Lovelace still owns the fix.", ada); !errors.Is(err, ErrErased) {
@@ -349,32 +376,41 @@ func TestErasureIsSignedRecord(t *testing.T) {
 		t.Fatalf("an erasure without its approval was answered %v", err)
 	}
 
-	// A model does not erase anybody, nor does somebody the policy does
-	// not let decide; and nothing is erased when either is refused.
-	if _, err := b.Erase(model, erasure(ada)); !errors.Is(err, ErrModel) {
+	// A model asks for nobody's erasure, nor does somebody the policy does
+	// not let decide one decide it; and nothing is erased when either is
+	// refused.
+	if _, _, err := b.RaiseErasure(model, erasure(ada)); !errors.Is(err, ErrModel) {
 		t.Errorf("a model's erasure was answered %v", err)
 	}
-	refused := dana
+	if _, _, err := b.RaiseErasure(dana, erasure(ada)); err != nil {
+		t.Fatal(err)
+	}
+	id := ErasureID(ada)
+	refused := lee
 	refused.May = func(act auth.Action, res string) error {
 		if act == auth.ActApprove {
 			return deny(act, res)
 		}
 		return nil
 	}
-	if _, err := b.Erase(refused, erasure(ada)); !errors.Is(err, ErrRefused) {
-		t.Errorf("an erasure by somebody who may not decide one was answered %v", err)
+	if _, err := b.Accept(refused, id, decided(t, b, id, refused)); !errors.Is(err, ErrRefused) {
+		t.Errorf("an erasure decided by somebody who may not decide one was answered %v", err)
 	}
-	// Nor does a person decide their own.
-	self := dana
+	// Whoever entered it does not decide it while somebody else may, and a
+	// person does not decide their own.
+	if _, err := b.Accept(dana, id, decided(t, b, id, dana)); !errors.Is(err, ErrRefused) {
+		t.Errorf("the person who entered the erasure deciding it was answered %v", err)
+	}
+	self := lee
 	self.Subject = ada
-	if _, err := b.Erase(self, erasure(ada)); !errors.Is(err, ErrInvalid) {
+	if _, err := b.Accept(self, id, decided(t, b, id, self)); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a person deciding their own erasure was answered %v", err)
 	}
 	if who := b.SubjectState(ada); who.State != SubjectHeld {
 		t.Fatalf("a refused erasure erased the person: %+v", who)
 	}
 
-	rc, err := b.Erase(dana, erasure(ada))
+	rc, err := b.Accept(lee, id, decided(t, b, id, lee))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,12 +423,16 @@ func TestErasureIsSignedRecord(t *testing.T) {
 	}
 	rec := e.Record.(Erasure)
 	a := rec.Approval
-	if a == nil || len(a.Signers) != 1 || a.Signers[0].Subject != dana.Subject || a.Raised != ada ||
-		rec.Decider != dana.Subject || rec.Subject != ada || !rec.Map || rec.Entries != 1 {
+	if a == nil || len(a.Signers) != 1 || a.Signers[0].Subject != lee.Subject || a.Raised != ada ||
+		rec.Decider != lee.Subject || rec.At != a.Signers[0].At || rec.Subject != ada || rec.RequestedBy != ada ||
+		rec.EnteredBy != dana.Subject || !rec.Map || rec.Entries != 1 {
 		t.Fatalf("the erasure record is %+v with %+v", rec, a)
 	}
 	if want := shown(t, b, rec); a.Surface != want {
 		t.Errorf("the approval is over %s and the record as shown is %s", a.Surface, want)
+	}
+	if left, _ := b.Proposals(); len(left) != 0 {
+		t.Errorf("%d proposals wait after the erasure was decided", len(left))
 	}
 	// Written once: changed, it is refused; asked for again, the person
 	// is already erased.
@@ -401,7 +441,7 @@ func TestErasureIsSignedRecord(t *testing.T) {
 	if _, err := b.Put(dana, "a changed erasure", changed); !errors.Is(err, ErrImmutable) && !errors.Is(err, ErrInvalid) {
 		t.Errorf("a changed erasure was answered %v", err)
 	}
-	if _, err := b.Erase(dana, erasure(ada)); !errors.Is(err, ErrErased) {
+	if _, _, err := b.RaiseErasure(dana, erasure(ada)); !errors.Is(err, ErrErased) {
 		t.Errorf("erasing an erased person again was answered %v", err)
 	}
 	// The audit log has the erasure under its own name, with the
@@ -494,7 +534,7 @@ func TestAnErasureWhoseApprovalDoesNotHoldErasesNothing(t *testing.T) {
 		return nil
 	}
 	head := b.Head()
-	if _, err := b.Erase(dana, erasure(ada)); !errors.Is(err, ErrInvalid) {
+	if _, err := erase(t, b, erasure(ada)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("an erasure whose approval does not hold was answered %v", err)
 	}
 	if who := b.SubjectState(ada); who.State != SubjectHeld {
@@ -507,7 +547,107 @@ func TestAnErasureWhoseApprovalDoesNotHoldErasesNothing(t *testing.T) {
 		t.Errorf("the register moved from %s to %s", head, b.Head())
 	}
 	b.Approvals = nil
-	if _, err := b.Erase(dana, erasure(ada)); err != nil {
+	id := ErasureID(ada)
+	if _, err := b.Accept(lee, id, decided(t, b, id, lee)); err != nil {
 		t.Errorf("with the approval holding, the erasure was answered %v", err)
+	}
+}
+
+// An erasure's requester is a recorded request: raised by the person who
+// asked, or entered on behalf of whoever asked, and the record says who
+// asked and who entered it. A pseudonym typed in for somebody the subject
+// map does not name is no request. Entered for a person and decided by
+// somebody else, it is the person's request, entered by the one and
+// decided by the other.
+//
+// The requester was any pseudonym the decider typed into --requested-by,
+// so the person who raised an erasure decided it by naming somebody else
+// as having asked.
+func TestAnErasureIsARequestRecordedWithWhoEnteredIt(t *testing.T) {
+	b, ada, _ := withAda(t)
+	if _, _, err := b.RaiseErasure(dana, ErasureRequest{Subject: ada, Basis: "request",
+		RequestedBy: "a0000000000000000000000000000099"}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an erasure asked for by a pseudonym nobody holds was answered %v", err)
+	}
+	if left, _ := b.Proposals(); len(left) != 0 {
+		t.Fatalf("a refused request waits: %+v", left)
+	}
+	// Asked for by somebody the subject map names, and entered by dana.
+	hr, err := b.SubjectFor("people-team@example.com", "account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := b.RaiseErasure(dana, ErasureRequest{Subject: ada, Basis: "no-longer-needed", RequestedBy: hr}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := b.proposal(ErasureID(ada))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := p.Record.(Erasure); e.RequestedBy != hr || e.EnteredBy != dana.Subject || e.Decider != "" || e.At != 0 {
+		t.Errorf("the request waits as %+v", e)
+	}
+	// Raised by dana herself, she asked for it, and nobody entered it for
+	// her.
+	if _, _, err := b.RaiseErasure(dana, ErasureRequest{Subject: ada, Basis: "no-longer-needed"}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = b.proposal(ErasureID(ada))
+	if e := p.Record.(Erasure); e.RequestedBy != dana.Subject || e.EnteredBy != "" {
+		t.Errorf("an erasure dana raised herself waits as %+v", e)
+	}
+	// Entered on Ada's own request, it is approved over what it shows, and
+	// what is about Ada changing since is what was not approved.
+	if _, _, err := b.RaiseErasure(dana, erasure(ada)); err != nil {
+		t.Fatal(err)
+	}
+	id := ErasureID(ada)
+	before := decided(t, b, id, lee)
+	if _, err := b.PutText(dana, KindRisk, "Ada also asked about her old laptop.", ada); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Accept(lee, id, before); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "raise it again") {
+		t.Errorf("an erasure whose person had more kept about them since it was approved was answered %v", err)
+	}
+	if who := b.SubjectState(ada); who.State != SubjectHeld {
+		t.Fatalf("the refused erasure erased the person: %+v", who)
+	}
+	if _, err := erase(t, b, erasure(ada)); err != nil {
+		t.Fatalf("raised again and approved as it stands: %v", err)
+	}
+	e, _ := b.Get(id)
+	if rec := e.Record.(Erasure); rec.Entries != 2 || rec.RequestedBy != ada || rec.EnteredBy != dana.Subject || rec.Decider != lee.Subject {
+		t.Errorf("the erasure record is %+v", rec)
+	}
+}
+
+// A person two older maps gave two pseudonyms is one person: erased under
+// either, both go, and the record names the other as erased with it.
+func TestAPersonIsErasedUnderEveryPseudonymTheMapHolds(t *testing.T) {
+	b, ada, _ := withAda(t)
+	const older = ID("a0000000000000000000000000000077")
+	if _, err := b.Side().Adopt(adaUPN, "person", string(older)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.PutText(dana, KindRisk, "Ada approved the exception under her older name.", older); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := erase(t, b, erasure(ada)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []ID{ada, older} {
+		if who := b.SubjectState(id); who.State != SubjectErased {
+			t.Errorf("after the erasure %s reads as %+v", id, who)
+		}
+		if about, _ := b.Side().About(string(id)); len(about) != 0 {
+			t.Errorf("after the erasure %d entries are kept about %s", len(about), id)
+		}
+	}
+	e, _ := b.Get(ErasureID(ada))
+	if rec := e.Record.(Erasure); len(rec.Also) != 1 || rec.Also[0] != older || rec.Entries != 2 {
+		t.Errorf("the erasure record is %+v", rec)
+	}
+	if _, found, _ := b.Side().Lookup(adaUPN); found {
+		t.Error("the subject map still names Ada")
 	}
 }

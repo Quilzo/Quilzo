@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
 )
@@ -69,5 +70,69 @@ func TestEveryProgrammeDecisionIsApprovedOverTheOneSurface(t *testing.T) {
 	}
 	if !found {
 		t.Error("the starter's write is not in the audit log")
+	}
+}
+
+// A person's erasure is decided through the engine, as every decision is:
+// entered by one person on the request of the person to be erased, it is
+// refused to whoever entered it and to the person asking while anybody
+// else may decide it, and decided by somebody else, with a passkey bound to
+// what it shows, it erases them. The decider is named by pseudonym alone,
+// and the record's approval is the engine's, under the erasure rule. A
+// team of one decides it alone, marked so, with a review owed.
+func TestAnErasureIsDecidedThroughTheEngine(t *testing.T) {
+	b := newBench(t, holds("lee", auth.ActApprove), holds("dana", auth.ActApprove), holds("ada@example.com", auth.ActApprove))
+	ada := b.subject("ada@example.com")
+	allow := func(auth.Action, string) error { return nil }
+	dana := register.Actor{Name: "dana", Subject: b.subject("dana"), Kind: audit.KindHuman, Verified: true, May: allow}
+	if _, err := b.reg.PutText(dana, register.KindRisk, "Ada raised this after the review.", ada); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := b.reg.RaiseErasure(dana, register.ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada}); err != nil {
+		t.Fatal(err)
+	}
+	id := register.ErasureID(ada)
+	for _, who := range []string{"dana", "ada@example.com"} {
+		if _, err := b.sign(who, id); !errors.Is(err, ErrRefused) {
+			t.Errorf("%s, who asked for or entered the erasure, decided it: %v", who, err)
+		}
+	}
+	if st := b.reg.SubjectState(ada); st.State != register.SubjectHeld {
+		t.Fatalf("a refused decision erased the person: %+v", st)
+	}
+	out, err := b.sign("lee", id)
+	if err != nil || !out.Done {
+		t.Fatalf("lee deciding the erasure: %+v %v", out, err)
+	}
+	if st := b.reg.SubjectState(ada); st.State != register.SubjectErased {
+		t.Errorf("the erasure lee decided left the person as %+v", st)
+	}
+	e, err := b.reg.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := e.Record.(register.Erasure)
+	if rec.Decider != b.subject("lee") || rec.Approval.Rule != "erasure" || rec.Approval.Raised != ada ||
+		rec.EnteredBy != dana.Subject || rec.Approval.Signers[0].Method != "passkey" || rec.Approval.Surface != out.Surface {
+		t.Errorf("the erasure is %+v with %+v", rec, rec.Approval)
+	}
+	if err := Verify(b.reg, rec, id, rec.Approval); err != nil {
+		t.Errorf("the erasure's approval does not check again: %v", err)
+	}
+
+	// A team of one.
+	one := newBench(t, holds("dana", auth.ActApprove))
+	kim := one.subject("kim@example.com")
+	solo := register.Actor{Name: "dana", Subject: one.subject("dana"), Kind: audit.KindHuman, Verified: true, May: allow}
+	if _, _, err := one.reg.RaiseErasure(solo, register.ErasureRequest{Subject: kim, Basis: "request", RequestedBy: kim}); err != nil {
+		t.Fatal(err)
+	}
+	out, err = one.sign("dana", register.ErasureID(kim))
+	if err != nil || !out.Done || !out.Alone {
+		t.Fatalf("the only person eligible deciding an erasure: %+v %v", out, err)
+	}
+	e, _ = one.reg.Get(register.ErasureID(kim))
+	if a := e.Record.(register.Erasure).Approval; !a.Alone || a.ReviewDue == 0 {
+		t.Errorf("an erasure decided alone is not marked so: %+v", a)
 	}
 }

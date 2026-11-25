@@ -5,12 +5,15 @@ package admin
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
@@ -24,7 +27,39 @@ func writerOn(t *testing.T, srv *Server) (*register.Register, register.Actor) {
 	r := register.Open(srv.Store)
 	r.Audit = func(audit.Record) error { return nil }
 	allow := func(auth.Action, string) error { return nil }
-	return r, register.Actor{Name: "editor", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, May: allow}
+	editor, err := r.SubjectFor("editor", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, register.Actor{Name: "editor", Subject: editor, Kind: audit.KindHuman, May: allow}
+}
+
+// withPasskey is somebody signed in here with a passkey of their own, as
+// an administrator of the site, who decides on Sign-off.
+func withPasskey(t *testing.T, srv *Server, name string) (string, *fakeAuthenticator) {
+	t.Helper()
+	if srv.Passkeys == nil {
+		srv.Passkeys = &Passkeys{}
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: name, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := srv.Tokens.IssueSession(name, name, auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := newFake(t, name+"-key")
+	key.register(t, srv, token)
+	return token, key
+}
+
+// signOff is a person deciding a waiting decision on Sign-off, their
+// passkey signing the challenge the page asks for.
+func signOff(t *testing.T, srv *Server, token string, key *fakeAuthenticator, id register.ID) *httptest.ResponseRecorder {
+	t.Helper()
+	start := decodeBody(t, postJSON(t, srv, "/register/approvals/item/"+string(id)+"/challenge", token, nil))
+	challenge, _ := start["challenge"].(string)
+	return postJSON(t, srv, "/register/approvals/item/"+string(id)+"/approve", token, key.assert(t, challenge))
 }
 
 // PLAN theme 28: a kind's screen filters by a field's value with a form
@@ -136,9 +171,13 @@ func TestTheRecordScreenShowsHistoryAndErasure(t *testing.T) {
 	}
 	accessible(t, path, body)
 
-	if _, err := r.Erase(by, register.ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada, Eligible: 2,
-		Evidence: []byte("a test")}); err != nil {
+	_, eid, err := r.RaiseErasure(by, register.ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada})
+	if err != nil {
 		t.Fatal(err)
+	}
+	leeToken, leeKey := withPasskey(t, srv, "lee")
+	if w := signOff(t, srv, leeToken, leeKey, eid); w.Code != http.StatusOK {
+		t.Fatalf("lee deciding the erasure on Sign-off answered %d: %s", w.Code, w.Body.String())
 	}
 	body = get(t, srv, path, token).Body.String()
 	if !strings.Contains(body, "Subject erased") || !strings.Contains(body, "Text erased") ||
@@ -209,17 +248,38 @@ func TestTheErasureScreen(t *testing.T) {
 	if r.SubjectState(ada).State != register.SubjectHeld {
 		t.Fatal("a refused erasure erased the person")
 	}
+	// Asked for, it waits on Sign-off, where the person who entered it is
+	// refused deciding it and somebody else decides it.
+	eid := register.ErasureID(ada)
 	w = postForm(t, srv, "/register/erase", token, full)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `role="status"`) ||
-		!strings.Contains(w.Body.String(), `href="/register/record/`+string(register.ErasureID(ada))+`"`) {
-		t.Fatalf("the erasure answered %d\n%s", w.Code, firstLines(w.Body.String(), 60))
+		!strings.Contains(w.Body.String(), `href="/register/approvals/item/`+string(eid)+`"`) {
+		t.Fatalf("asking for the erasure answered %d\n%s", w.Code, firstLines(w.Body.String(), 60))
 	}
-	accessible(t, "/register/erase (done)", w.Body.String())
+	accessible(t, "/register/erase (raised)", w.Body.String())
+	if r.SubjectState(ada).State != register.SubjectHeld {
+		t.Fatal("asking for the erasure erased the person before anybody decided it")
+	}
+	if srv.Passkeys == nil {
+		srv.Passkeys = &Passkeys{}
+	}
+	editorKey := newFake(t, "editor-key")
+	editorKey.register(t, srv, token)
+	leeToken, leeKey := withPasskey(t, srv, "lee")
+	if w := signOff(t, srv, token, editorKey, eid); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "raised or drafted") {
+		t.Errorf("the person who entered the erasure deciding it answered %d: %s", w.Code, w.Body.String())
+	}
+	if w := signOff(t, srv, leeToken, leeKey, eid); w.Code != http.StatusOK {
+		t.Fatalf("lee deciding the erasure answered %d: %s", w.Code, w.Body.String())
+	}
 	if r.SubjectState(ada).State != register.SubjectErased {
 		t.Error("the person was not erased")
 	}
 	if !strings.Contains(strings.Join(logged, " "), register.EraseAction) {
 		t.Errorf("the erasure is not in the audit log: %v", logged)
+	}
+	if page := get(t, srv, "/register/record/"+string(eid), token); page.Code != http.StatusOK {
+		t.Errorf("the erasure's record answered %d", page.Code)
 	}
 	if w := postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"request"},
 		"confirm": {"yes"}}.Encode()); w.Code != http.StatusConflict {
@@ -251,57 +311,85 @@ func TestTheDataInventoryScreen(t *testing.T) {
 	}
 }
 
-// An erasure's approval names its decider by their pseudonym alone, as the
-// command line's does (TestAnErasureIsBoundToItsDeciderByPseudonymAlone in
-// cmd/quilzo): the session's evidence holds no name a guess could find in
-// the hash the record keeps for good.
+// An erasure's approval names its decider by their pseudonym alone: the
+// record holds the pseudonym, and the authentication evidence its approval
+// keeps beside the store holds no name a guess could find, nor any token's.
 func TestAnErasureHereIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
-	p := principal{Name: "dana.decider@example.com", TokenID: "5f0c", Methods: []string{"passkey"}}
-	if ev := string(sessionEvidence(p)); strings.Contains(ev, p.Name) {
-		t.Errorf("the evidence of a decision in the admin is %q", ev)
+	srv, _ := setup(t)
+	srv.Audit = func(string, string, map[string]string) {}
+	r, by := writerOn(t, srv)
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, eid, err := r.RaiseErasure(by, register.ErasureRequest{Subject: ada, Basis: "request", RequestedBy: ada})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, key := withPasskey(t, srv, "dana.decider@example.com")
+	if w := signOff(t, srv, token, key, eid); w.Code != http.StatusOK {
+		t.Fatalf("deciding the erasure answered %d: %s", w.Code, w.Body.String())
+	}
+	e, err := r.Get(eid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := e.Record.(register.Erasure)
+	me, _ := srv.approvalsFor().Known("dana.decider@example.com")
+	if rec.Decider != me || !me.Valid() {
+		t.Errorf("the erasure was decided by %q, and the decider is %q", rec.Decider, me)
+	}
+	ev, err := approval.LoadEvidence(srv.Store.Root(), rec.Approval.Signers[0].Assertion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(ev)
+	if strings.Contains(string(raw), "dana") || ev.Subject != me {
+		t.Errorf("the decider's evidence names them: %s", raw)
 	}
 }
 
-// An erasure nobody else asked for is decided by somebody other than the
-// person raising it when anybody else may decide one, as every approval
-// is. Asked for so, it is refused, and the form says why beside the
-// question of who asked and at the top, with nothing erased. It was
-// answered with the page for a register that cannot be read, which said
-// nothing of the form and gave a 503 for a refusal.
+// An erasure the person signed in asks for themselves waits for somebody
+// else, as every decision does: it is not theirs to decide when anybody
+// else may. Nor does anybody enter their own erasure: that is said beside
+// the person, and at the top.
 func TestAnErasureRaisedByItsDeciderIsSaidBesideWhoAsked(t *testing.T) {
 	srv, token := setup(t)
 	srv.Audit = func(string, string, map[string]string) {}
-	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
-		t.Fatal(err)
-	}
 	r, _ := writerOn(t, srv)
 	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
 	if err != nil {
 		t.Fatal(err)
 	}
+	leeToken, leeKey := withPasskey(t, srv, "lee")
 	w := postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"no-longer-needed"},
 		"requested": {""}, "confirm": {"yes"}}.Encode())
 	body := w.Body.String()
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `class="kit-errors"`) ||
-		!strings.Contains(body, `id="erase-requested-error"`) || !strings.Contains(body, `href="#erase-requested"`) ||
-		!strings.Contains(body, `id="erase-requested"`) {
-		t.Fatalf("an erasure raised by its decider with another eligible answered %d\n%s", w.Code, firstLines(body, 60))
+	eid := register.ErasureID(ada)
+	if w.Code != http.StatusOK || !strings.Contains(body, `href="/register/approvals/item/`+string(eid)+`"`) ||
+		!strings.Contains(body, "It waits for somebody else") {
+		t.Fatalf("an erasure its raiser asked for themselves answered %d\n%s", w.Code, firstLines(body, 60))
 	}
 	accessible(t, "/register/erase (raised by its decider)", body)
 	if r.SubjectState(ada).State != register.SubjectHeld {
-		t.Error("the refused erasure erased the person")
+		t.Error("asking for the erasure erased the person")
 	}
-	// Nor does anybody decide their own: that is said beside the person.
+	p, err := r.Proposals()
+	if err != nil || len(p) != 1 {
+		t.Fatalf("%d proposals wait (%v)", len(p), err)
+	}
+	if e := p[0].Record.(register.Erasure); e.RequestedBy != p[0].Subject || e.EnteredBy != "" {
+		t.Errorf("the erasure the editor asked for waits as %+v", e)
+	}
+	// Nor does anybody enter their own.
 	w = postForm(t, srv, "/register/erase", token, url.Values{"subject": {"editor"}, "basis": {"request"},
 		"requested": {"subject"}, "confirm": {"yes"}}.Encode())
 	if body := w.Body.String(); w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `id="erase-subject-error"`) ||
-		strings.Contains(body, `id="erase-requested-error"`) {
-		t.Errorf("an erasure of its own decider answered %d\n%s", w.Code, firstLines(body, 60))
+		!strings.Contains(body, `class="kit-errors"`) {
+		t.Errorf("an erasure of the person entering it answered %d\n%s", w.Code, firstLines(body, 60))
 	}
-	// Asked for by the person, it is decided.
-	w = postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"request"},
-		"requested": {"subject"}, "confirm": {"yes"}}.Encode())
-	if w.Code != http.StatusOK || r.SubjectState(ada).State != register.SubjectErased {
-		t.Errorf("the erasure the person asked for answered %d", w.Code)
+	// Decided by somebody else, it is done.
+	if w := signOff(t, srv, leeToken, leeKey, eid); w.Code != http.StatusOK || r.SubjectState(ada).State != register.SubjectErased {
+		t.Errorf("lee deciding the erasure answered %d", w.Code)
 	}
 }

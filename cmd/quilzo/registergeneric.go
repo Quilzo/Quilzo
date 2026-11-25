@@ -248,8 +248,9 @@ func registerEraseCmd(root string, args []string) error {
 	subject := fs.String("subject", "", "the pseudonym of the person to erase")
 	name := fs.String("name", "", "the name the systems that name them use, found in the subject map")
 	basis := fs.String("basis", "", "the ground it is erased on: "+strings.Join(register.ErasureBasis("").Values(), ", "))
-	requested := fs.String("requested-by", "", "who asked for it: a pseudonym, or subject for the person themselves; empty is you")
-	yes := fs.Bool("yes", false, "erase them; at a terminal, without this, only say what would go")
+	requested := fs.String("requested-by", "", "who asked for it: subject for the person themselves, entered on their behalf; "+
+		"the pseudonym of somebody else the subject map names; empty is you")
+	yes := fs.Bool("yes", false, "ask for it; at a terminal, without this, only say what would go")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
@@ -286,7 +287,8 @@ func registerEraseCmd(root string, args []string) error {
 		asked = id
 	default:
 		if !register.ID(*requested).Valid() {
-			return errMisused{fmt.Errorf("--requested-by is a pseudonym, or subject for the person themselves")}
+			return errMisused{fmt.Errorf("--requested-by is subject, for the person themselves, or the pseudonym of " +
+				"somebody else the subject map names")}
 		}
 		asked = register.ID(*requested)
 	}
@@ -294,51 +296,44 @@ func registerEraseCmd(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if erasureHeld(*yes, fmt.Sprintf("this would erase the person behind %s: the subject map's entry for them and %s "+
-		"about them, and write the signed record of it", id, count(len(about), "entry of text and files"))) {
+	if erasureHeld(*yes, fmt.Sprintf("this would ask for the erasure of the person behind %s: the subject map's entry "+
+		"for them and %s about them, and the signed record of it once somebody decides it", id,
+		count(len(about), "entry of text and files"))) {
 		return nil
 	}
-	eligible := 1
-	if pol, err := loadPolicy(root); err == nil {
-		spec, _ := register.SpecOf(string(register.KindErasure))
-		eligible = max(register.Eligible(pol, auth.ActApprove, spec.Resource()), 1)
-	}
-	rc, err := r.Erase(by, register.ErasureRequest{Subject: id, Basis: register.ErasureBasis(*basis),
-		RequestedBy: asked, Eligible: eligible, Evidence: consoleEvidence(c)})
-	if errors.Is(err, register.ErrInvalid) && asked == "" && eligible > 1 {
-		// With anybody else eligible, the person who raises a decision is
-		// not the one who makes it, and an erasure nobody else asked for is
-		// raised by its decider: the line lacks who asked.
-		return errMisused{fmt.Errorf("%v\n  %d people may decide an erasure, so one you raise yourself is decided by "+
-			"another of them: say who asked for it with --requested-by subject (the person themselves) or "+
-			"--requested-by PSEUDONYM, or ask somebody else who may decide it", err, eligible)}
+	// Raised as a request, to wait for its decision through the approvals
+	// module, as every decision is: by somebody other than whoever asked
+	// or entered it, unless they are the only person who may decide one.
+	rc, eid, err := r.RaiseErasure(by, register.ErasureRequest{Subject: id, Basis: register.ErasureBasis(*basis),
+		RequestedBy: asked})
+	if errors.Is(err, register.ErrInvalid) {
+		return errMisused{err}
 	}
 	if err != nil {
 		return registerError(err)
 	}
-	if w.JSON(map[string]any{"erasure": register.ErasureID(id), "subject": id, "receipt": rc}) {
+	m, err := approvalsOn(root, r)
+	if err != nil {
+		return err
+	}
+	a, err := m.Ask(eid)
+	if err != nil {
+		return approvalErr(err)
+	}
+	yours := a.Yours(c.Name, by.Subject)
+	if w.JSON(map[string]any{"erasure": eid, "subject": id, "waits": true, "surface": a.Hash, "yours": yours,
+		"receipt": rc}) {
 		return nil
 	}
-	fmt.Printf("  erased the person behind %s: the subject map's entry and %s about them\n", id,
+	fmt.Printf("  asked for the erasure of the person behind %s: the subject map's entry and %s about them\n", id,
 		count(len(about), "entry of text and files"))
-	fmt.Printf("  %sthe record of it is %s, in commit %s; the register still checks%s\n", dim,
-		register.ErasureID(id), rc.Commit, reset)
+	who := "somebody other than you, and than the person who asked, who may decide an erasure: on Sign-off in the " +
+		"admin with their passkey, or at the console"
+	if yours {
+		who = "you alone, as the only person who may decide an erasure, marked so, with a review by somebody else due"
+	}
+	fmt.Printf("  nothing is erased until it is decided, by %s:\n    quilzo approval approve %s --surface %s\n", who, eid, a.Hash)
 	return nil
-}
-
-// consoleEvidence is the authentication evidence a decision made at the
-// command line is bound to: that it was made there, and whether the program
-// proved who made it. It is weaker than a passkey's assertion over the
-// record's hash, and the approval's rule says which it was.
-//
-// It names the decider by nothing: the assertion binds it to their
-// pseudonym, and the assertion is in the register for good. It held their
-// name and their token's, which is often their name too, and with nothing
-// else in it that a guess could not supply, a list of the organisation's
-// addresses found which of them had decided, before and after they were
-// erased themselves.
-func consoleEvidence(c *Caller) []byte {
-	return []byte("console\x00" + strconv.FormatBool(c.Verified))
 }
 
 // registerExpireCmd is `quilzo register expire`.

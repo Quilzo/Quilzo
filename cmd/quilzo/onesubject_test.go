@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -211,5 +213,79 @@ func TestOnePersonIsOnePseudonymOnTheCommandLineAndInTheAdmin(t *testing.T) {
 	}
 	if o, _, _ := cliRun(t, root, owner, "evidence", "keys"); !strings.Contains(o, "vendor") {
 		t.Errorf("the key approved by somebody else is not pinned: %s", firstLines(o, 6))
+	}
+}
+
+// After a person is erased, nothing the approvals or the programme keep
+// beside the store names them, and neither does the subject map: the
+// approvals' old map of people, which named zelda before the subject map
+// was the one map, was moved into it and deleted, her requests, signatures
+// and evidence name her by pseudonym alone, and her erasure took her out of
+// the one map there is. She keeps, until then, the pseudonym the old map
+// gave her, so what she decided before is still hers.
+func TestAfterAnErasureNothingBesideTheStoreNamesThePerson(t *testing.T) {
+	root, owner := accessStore(t)
+	lee := programmeApprover(t, root, owner)
+	const older = "a0000000000000000000000000000042"
+	if err := os.MkdirAll(filepath.Join(root, "approvals"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "approvals", "people.json"),
+		[]byte(`{"people":{"zelda@example.org":"`+older+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	zelda := programmePerson(t, root, owner, "zelda@example.org", "admin")
+
+	// Zelda raises a scope, which the owner approves; the owner raises one,
+	// which zelda approves; each at the console.
+	o, e, code := cliRun(t, root, zelda, "--json", "soa", "scope", "group", "--title", "The group", "--domains", "identity")
+	if code != 0 {
+		t.Fatalf("zelda raising a scope: %d %s", code, e)
+	}
+	if _, e, code := cliRun(t, root, owner, "soa", "approve", waitingID(t, o), "--surface", shownOf(t, o)); code != 0 {
+		t.Fatalf("the owner approving zelda's scope: %d %s", code, e)
+	}
+	o, e, code = cliRun(t, root, owner, "--json", "soa", "scope", "other", "--title", "Another", "--domains", "cloud")
+	if code != 0 {
+		t.Fatalf("the owner raising a scope: %d %s", code, e)
+	}
+	if _, e, code := cliRun(t, root, zelda, "soa", "approve", waitingID(t, o), "--surface", shownOf(t, o)); code != 0 {
+		t.Fatalf("zelda approving the owner's scope: %d %s", code, e)
+	}
+	r := registerOn(t, root)
+	if got, ok, _ := r.Side().Lookup("zelda@example.org"); !ok || got != older {
+		t.Fatalf("zelda is %q in the subject map, and the approvals' old map named her %s", got, older)
+	}
+
+	// The owner enters zelda's request to be erased; lee decides it.
+	o, e, code = cliRun(t, root, owner, "--json", "register", "erase", "--name", "zelda@example.org", "--basis", "request",
+		"--requested-by", "subject", "--yes")
+	var raised struct {
+		Erasure string
+		Surface string
+	}
+	if code != 0 || json.Unmarshal([]byte(o), &raised) != nil {
+		t.Fatalf("register erase: %d %s %s", code, o, e)
+	}
+	if _, e, code := cliRun(t, root, lee, "approval", "approve", raised.Erasure, "--surface", raised.Surface); code != 0 {
+		t.Fatalf("lee deciding zelda's erasure: %d %s", code, firstLines(e, 3))
+	}
+	if st := registerOn(t, root).SubjectState(older); st.State != register.SubjectErased {
+		t.Fatalf("after her erasure zelda's pseudonym reads as %+v", st)
+	}
+	for _, dir := range []string{"approvals", "programme", "side"} {
+		_ = filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err == nil && strings.Contains(strings.ToLower(string(body)), "zelda") {
+				t.Errorf("%s still names zelda", strings.TrimPrefix(path, root))
+			}
+			return nil
+		})
+	}
+	if _, err := os.Stat(filepath.Join(root, "approvals", "people.json")); !os.IsNotExist(err) {
+		t.Errorf("the approvals' old map of people is still beside the store: %v", err)
 	}
 }
