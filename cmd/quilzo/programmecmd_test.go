@@ -277,3 +277,52 @@ func TestAReaderReadsTheProgrammeAndWritesNothing(t *testing.T) {
 		}
 	}
 }
+
+// Somebody the policy lets draft and not approve decides nothing alone,
+// though only one person may approve: the command line asks the policy
+// whether they may, and what they raise waits for the one who may.
+func TestAnAuthorDecidesNothingAlone(t *testing.T) {
+	root, owner := accessStore(t)
+	ann := programmePerson(t, root, owner, "ann", "author")
+	o, e, code := cliRun(t, root, ann, "--json", "requirement", "install", "nis2")
+	if code != 0 {
+		t.Fatalf("an author raising an install exited %d: %s", code, firstLines(e, 3))
+	}
+	id := waitingID(t, o)
+	o, e, code = cliRun(t, root, ann, "--json", "soa", "scope", "group", "--title", "The group", "--domains", "identity")
+	if code != 0 {
+		t.Fatalf("an author raising a scope exited %d: %s", code, firstLines(e, 3))
+	}
+	scope := waitingID(t, o)
+	nis2 := func() (installed, alone bool) {
+		t.Helper()
+		o, _, _ := cliRun(t, root, owner, "--json", "requirement", "starters")
+		var got struct {
+			Starters []struct {
+				Framework        string
+				Installed, Alone bool
+			}
+		}
+		if err := json.Unmarshal([]byte(o), &got); err != nil {
+			t.Fatalf("requirement starters answered %s: %v", firstLines(o, 4), err)
+		}
+		for _, s := range got.Starters {
+			if s.Framework == "nis2" {
+				return s.Installed, s.Alone
+			}
+		}
+		t.Fatal("requirement starters does not list nis2")
+		return false, false
+	}
+	if installed, _ := nis2(); installed {
+		t.Fatal("an author's install is in the programme before anybody approved it")
+	}
+	for _, line := range [][]string{{"requirement", "approve", id}, {"soa", "approve", scope}} {
+		if _, e, code := cliRun(t, root, owner, line...); code != 0 {
+			t.Fatalf("the owner running `quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	if installed, alone := nis2(); !installed || alone {
+		t.Errorf("after the owner approved it nis2 is installed %v, alone %v", installed, alone)
+	}
+}
