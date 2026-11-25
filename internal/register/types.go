@@ -239,7 +239,21 @@ type Approval struct {
 	// somebody else has to have looked at it.
 	Alone     bool `json:"alone,omitempty" about:"the decision was made by the only person eligible"`
 	ReviewDue Time `json:"review_due,omitempty" about:"when a compensating review of a decision made alone is due"`
+	// Expires is when the approval stops counting, after which what it
+	// decided is a decision nobody holds and has to be made again. Zero is
+	// an approval that does not lapse: a minuted decision is history, and
+	// a record of what was decided then does not stop being one.
+	Expires Time `json:"expires,omitempty" about:"when the approval stops counting and has to be given again"`
 }
+
+// Method is how a signer was bound to what they approved.
+type Method string
+
+// Values lists the methods: a passkey's assertion over a challenge holding
+// the surface's hash, or an administrator at the store's own console who
+// typed that hash back, which is weaker and is said to be wherever it is
+// shown.
+func (Method) Values() []string { return []string{"passkey", "console"} }
 
 // Signer is one person's agreement.
 type Signer struct {
@@ -249,6 +263,14 @@ type Signer struct {
 	// this person to the surface: for a passkey, the assertion over a
 	// challenge made from the surface's hash.
 	Assertion Digest `json:"assertion" reg:"required" about:"the digest of the authentication evidence bound to the surface"`
+	// Method is how the evidence binds them. Empty is a passkey, as every
+	// approval was before the console was allowed to approve.
+	Method Method `json:"method,omitempty" about:"how the evidence binds them: a passkey, or an administrator at the console"`
+	// Batch is the Merkle root of the batch this person approved the
+	// record in, when they approved several by one assertion: their
+	// evidence is over the root, and the batch's record (ApprovalBatch)
+	// holds this surface among its leaves.
+	Batch Digest `json:"batch,omitempty" about:"the Merkle root of the batch they approved it in, when they approved several at once"`
 }
 
 // check holds an approval to its own rules: enough distinct signers, none of
@@ -258,7 +280,10 @@ func (a *Approval) check() error {
 	if a.Of < a.Needed && !a.Alone {
 		return fmt.Errorf("an approval that needs %d of %d eligible people cannot be met", a.Needed, a.Of)
 	}
-	if len(a.Signers) < a.Needed {
+	// Alone, Needed still says what the rule asked, which is what the
+	// badge says was not met; the one eligible person's approval is all
+	// there could be.
+	if len(a.Signers) < a.Needed && !a.Alone {
 		return fmt.Errorf("the approval needs %d approver(s) and holds %d", a.Needed, len(a.Signers))
 	}
 	seen := map[ID]bool{}
@@ -272,7 +297,7 @@ func (a *Approval) check() error {
 		}
 	}
 	if a.Alone {
-		if len(a.Signers) != 1 || a.Needed != 1 {
+		if len(a.Signers) != 1 {
 			return fmt.Errorf("a decision made alone has one approver")
 		}
 		// Alone is a team of one. With anybody else eligible, the person
@@ -287,5 +312,24 @@ func (a *Approval) check() error {
 	} else if a.ReviewDue != 0 {
 		return fmt.Errorf("a compensating review is for a decision made alone")
 	}
+	// An approval that had stopped counting before anybody gave it is not
+	// one: the term is from the moment it was given.
+	if a.Expires != 0 {
+		for _, s := range a.Signers {
+			if a.Expires <= s.At {
+				return fmt.Errorf("the approval stops counting before it was given")
+			}
+		}
+	}
 	return nil
 }
+
+// Lapsed reports whether an approval has stopped counting at now.
+func (a *Approval) Lapsed(now Time) bool { return a != nil && a.Expires != 0 && now >= a.Expires }
+
+// ApprovalOf is the approval a record carries, or nil when it carries none.
+func ApprovalOf(rec Record) *Approval { return approvalOf(rec) }
+
+// WithApproval is a copy of a record with its approval set to a: the
+// approval a person gives to a record somebody else proposed.
+func WithApproval(rec Record, a *Approval) Record { return withApproval(rec, a) }

@@ -3640,8 +3640,19 @@ td code, td .mono { overflow-wrap: break-word; }
    takes no room. */
 .kit-live { margin: .5rem 0; }
 .kit-live:empty { margin: 0; }
+/* What an agent wrote, on a page a person approves from: fenced, and
+   labelled in words, so it is never read as the record's own. */
+.kit-fenced { margin: .5rem 0 1rem; padding: .75rem 1rem; border: 2px dashed var(--outline);
+  border-radius: var(--shape-md); }
+.kit-fenced figcaption { margin-bottom: .35rem; font-weight: 600; }
+.kit-fenced blockquote { margin: 0; overflow-wrap: anywhere; }
+.kit-cited { margin: 0 0 1rem; padding-left: 1.25rem; }
+/* A choice in a table or a form: the box and its words one target, at
+   least 24 pixels high. */
+.choice { display: inline-flex; align-items: center; gap: .4rem; min-height: 24px; margin: .25rem 0; }
+.choice input { width: 1.25rem; height: 1.25rem; margin: 0; flex: none; }
 @media (forced-colors: active) {
-  .kit-tile, .kit-badge, .kit-approval, .kit-empty { border: 1px solid CanvasText; }
+  .kit-tile, .kit-badge, .kit-approval, .kit-empty, .kit-fenced { border: 1px solid CanvasText; }
   .kit-errors { border-color: CanvasText; }
   .kit-prov > summary:focus-visible, .kit-errors:focus { outline: 3px solid Highlight; }
 }

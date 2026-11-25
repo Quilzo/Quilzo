@@ -1,0 +1,21 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{if .Unopened}}<p class="notice warn" role="status">{{icon "warning"}} Open the {{.Unopened}} decision{{if ne .Unopened 1}}s{{end}} marked "Open this first: spot-check" before approving. The batch chose {{if ne .Unopened 1}}them{{else}}it{{end}} at random as spot-checks, and is refused until you have.</p>{{end}}
+<div class="table-wrap"><table class="kit-table">
+<caption>The decisions in this batch, in the order they are shown and signed</caption>
+<thead><tr><th scope="col">Decision</th><th scope="col">Kind</th><th scope="col">Before approving</th><th scope="col">Time spent</th><th scope="col">Hash of what it shows</th></tr></thead>
+<tbody>{{range .Rows}}<tr><th scope="row">{{.N}}. <a href="{{.Href}}">{{.Label}}</a>{{if .Changing}}<br><span class="hint">Changed since the batch was shown</span>{{end}}</th><td>{{.Kind}}</td><td>{{template "kit-badge" .Status}}</td><td>{{.Seconds}} seconds</td><td>{{template "kit-hash" .Hash}}</td></tr>{{end}}</tbody>
+</table></div>
+<section class="kit-approval" aria-labelledby="batch-approve">
+<h2 id="batch-approve">Approve these decisions together</h2>
+<dl class="kit-facts">
+<dt>What you sign</dt><dd>The Merkle root of the hashes above, in this order: <code class="kit-hash">{{.Root}}</code></dd>
+<dt>Waits until</dt><dd><time datetime="{{.Until.Format "2006-01-02T15:04:05Z07:00"}}">{{.Until.Format "2 Jan 2006, 15:04"}} UTC</time></dd>
+</dl>
+<form method="post" action="{{.Action}}" data-ceremony="batch">
+<p class="kit-approve-row"><button type="submit">Approve them with my passkey</button> <span class="hint">Your passkey signs the root <code>{{.Short}}</code>, and the batch's record carries it, with the time you spent on each.</span></p>
+</form>
+</section>
+{{with .Ceremony}}{{template "approval-ceremony" .}}{{end}}
+<p><a href="/register/approvals">Back to the decisions</a></p>
+{{template "foot" .}}

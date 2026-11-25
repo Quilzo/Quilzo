@@ -282,6 +282,11 @@ func (s *Server) handleStepUp(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "verify.html", map[string]any{
 		"Title": "Confirm it's you", "Who": p.Name, "Reason": p.StepUp,
 		"Passkey": s.hasPasskey(p.Name), "FirstFactor": p.Level < 2,
+		// A sign-in that can be phished, by somebody who decides here, is
+		// held for how it was made (approvalscreen.go) and not for being
+		// unlike its person, so no administrator can let it in: only a
+		// passkey, or a sign-in that cannot be phished, passes it.
+		"Phishable": p.StepUp == phishableSignIn,
 		// Signing on again cannot help a sign-on that said it used one
 		// factor: it would say so again.
 		"SingleSignOn": (s.OIDC != nil || len(s.ssoChoices()) > 0) && !hasMethod(p.Methods, auth.MethodSSOOneFactor),

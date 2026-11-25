@@ -42,6 +42,7 @@
     <dt>Becomes</dt><dd>{{if .Principal}}{{.Principal}}{{else}}the NameID{{end}}</dd>
     <dt>Addresses</dt><dd>{{if .AllowUnverified}}taken as sent, verified or not{{else if .VerifiedAttribute}}only those it says are verified, in <code>{{.VerifiedAttribute}}</code>{{else}}as sent, unless its <code>email_verified</code> says otherwise{{end}}</dd>
     <dt>Second factor</dt><dd>{{if or .MFAContexts .MFAAttribute}}from {{if .Label}}{{.Label}}{{else}}the provider{{end}} when it says so; otherwise a passkey here{{else}}a passkey here: {{if .Label}}{{.Label}}{{else}}the provider{{end}} has no way set up to say it used one{{end}}</dd>
+    <dt>Cannot be phished</dt><dd>{{if .PhishingContexts}}when it signs somebody in with {{range $i, $c := .PhishingContexts}}{{if $i}}, {{end}}<code>{{$c}}</code>{{end}}{{if eq .MFAAttribute "amr"}}, or its amr says hwk, phr or phrh{{end}}{{else if eq .MFAAttribute "amr"}}when its amr says hwk, phr or phrh{{else}}never said, so whoever decides here confirms with their passkey{{end}}</dd>
   </dl>
   <h4>Give these to {{if .Label}}{{.Label}}{{else}}the provider{{end}}</h4>
   <dl class="kv">
@@ -94,6 +95,11 @@
     <p><label><input type="checkbox" name="allow_unverified"> Take addresses as the provider sends them, verified or not</label></p>
     <div class="field"><label for="sglass">Who may still use a token or passkey (break glass)</label>
       <input id="sglass" name="break_glass" placeholder="admin@northwind.example"></div>
+    <div class="field"><label for="sphr">Classes that mean a method that cannot be phished</label>
+      <input id="sphr" name="phishing_contexts" spellcheck="false" autocomplete="off" aria-describedby="sphr-help">
+      <p id="sphr-help" class="help">AuthnContext classes, separated by commas, that this provider sends only for a
+        passkey or a hardware key. Whoever approves a decision, accepts a risk, publishes outside the organisation
+        or administers signs in with one of them, or confirms with their passkey here.</p></div>
     <p><label><input type="checkbox" name="replace"> Replace a provider with this name</label></p>
   </fieldset>
   <button type="submit">Read the metadata</button>

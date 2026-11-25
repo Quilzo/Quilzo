@@ -198,6 +198,8 @@ func cmdServe(root string, args []string) error {
 	srv.Audit = func(action, resource string, detail map[string]string) {
 		record(root, adminRecord(action, resource, detail))
 	}
+	srv.AuditRecord = func(rec audit.Record) error { return recordE(root, rec) }
+	srv.AuditReady = func() error { return auditReady(root) }
 
 	srv.Settings = &admin.Settings{
 		Load: func() (*config.Config, error) { return loadConfig(root) },
@@ -1124,7 +1126,7 @@ func cmdServe(root string, args []string) error {
 			RedirectURI: cfg.RedirectURI, Claim: cfg.Claim,
 			RequireVerifiedEmail: cfg.RequireVerifiedEmail,
 			Label:                cfg.providerLabel(), Tenant: cfg.Tenant,
-			Domains: cfg.Domains, MFAACR: cfg.MFAACR,
+			Domains: cfg.Domains, MFAACR: cfg.MFAACR, PhishingACR: cfg.PhishingACR,
 		}
 		if cfg.Provider == "google" {
 			srv.OIDC.HostedDomains = cfg.Domains

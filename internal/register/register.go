@@ -67,8 +67,16 @@ type Register struct {
 	ix *Index
 }
 
-// Open is the register on a store.
-func Open(s *store.Store) *Register { return &Register{Store: s} }
+// Open is the register on a store, with its approvals held to their
+// evidence where the approvals module is part of the program
+// (CheckApprovalsWith).
+func Open(s *store.Store) *Register {
+	r := &Register{Store: s}
+	if approvalCheck != nil {
+		r.Approvals = approvalCheck(r)
+	}
+	return r
+}
 
 func (r *Register) now() time.Time {
 	if r.Now != nil {

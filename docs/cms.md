@@ -2628,6 +2628,114 @@ turning off and each day's request are `signals.connected`,
 `signals.disconnected` and `signals.verify-asked`, and each message to the
 security contact is `signals.told`.
 
+### Approvals in the security record
+
+A risk accepted, an exception granted, the board's appetite, a minuted
+decision, a test's query: each decision of the security record carries its
+approval inside the record, saying who raised it, who agreed, under which
+rule, how many of how many eligible, and the hash of exactly what they were
+shown. Sign-off in the admin (`/register/approvals`), `quilzo approval`, the
+agent interface's `approval_list`, `approval_show` and `approval_policy`, and
+`GET /api/v1/approvals` read them.
+
+**Who may approve** is the organisation's separation policy:
+`quilzo approval policy` shows it, and `quilzo approval policy set FILE`
+declares one, as JSON, at the console; an administrator of the register
+declares it in the admin too, on Sign-off's separation policy page
+(`/register/approvals/policy`), where one that cannot be applied is refused
+with the reason beside the field.
+Declaring it is an administrator's either way, because whoever can rewrite
+the policy can make themselves the only person it needs, and the audit
+entry `approval.policy` carries the hash of the policy declared. Each rule
+names a kind of record,
+the permission that makes somebody eligible (`accept-risk`,
+`approve-exception`, `sign-board-pack`, `publish-external`,
+`manage-connectors`, `read-evidence`, `run-crew`, `record-minute`, each
+grantable alone with `quilzo auth grant WHO PERMISSION --on
+/@compliance/register`), its autonomy level (three, or four for what reaches
+outside or cannot be undone, which takes two people), the thresholds above
+which a second approver is needed, where that second comes from (the
+organisation's executive, its risk function or an outside adviser, named in
+the policy whether or not they hold a role here), and how long the approval
+counts before it lapses. Until a store declares its own, the default applies:
+an impact of four or more, or an exception longer than a quarter, takes two
+people. What no policy changes: whoever raised or drafted a decision does not
+approve it, no agent approves anything, each person counts once, and a team
+of one approves alone only with the decision marked "Approved alone", a
+review by somebody else due within the policy's days (thirty by default), and
+not for a day after another administrator stopped being one. A review that
+has not come by then, and an approval that has lapsed, are posture problems
+(`approval.review-overdue`, `approval.lapsed`).
+
+A second approver need hold no role over the register. The head of risk
+granted `accept-risk` alone, or an adviser the policy names under `seconds`
+whom the access policy grants nothing that decides, opens Sign-off and is
+shown the decisions they are eligible for, the ones they approved and the
+ones made alone whose review could be theirs, and nothing else of the
+register. Signing in still needs the access policy to know them, as every
+sign-in does, and enrolling a guest by link is not built yet: grant an
+outside adviser something narrow, such as `read-evidence` on the register.
+A named second signs in as an approver does, with a method that cannot be
+phished, or is asked for their passkey first. Sign-off is not in their
+menu, which lists what a role reaches; the address is
+`/register/approvals`.
+
+**What a passkey signs.** The page shows the decision, what it cites by hash,
+what it changes field by field, and beside the button the SHA-256 of all
+three. The passkey signs a fresh challenge whose bytes are that hash and a
+nonce; the receipt of the write carries the hash under `approved`, and the
+audit entries `approval.signed` and `register.put` carry it too. The
+evidence (the assertion as the browser sent it, the public key, the site and
+the challenge) is kept beside the store under its digest, which is what the
+record holds, and `quilzo approval check ID` checks it again with nothing
+but those files. The register checks every approval written to it the same
+way, whichever surface wrote it, and holds it to the separation policy as
+well: an approval put together by hand that names another rule, asks fewer
+people than the rule does, or counts a signature from a request that has
+lapsed, is refused. Several decisions are approved by one
+assertion over the RFC 6962 Merkle root of their hashes in the order shown,
+once the approver has opened the spot-checks the batch chose at random
+(about the square root of how many); a batch shown again, in any order or
+beside other decisions, still asks for the spot-checks an earlier showing
+chose and nobody has opened, so the sample cannot be asked for until it
+leaves one out. The batch's record holds which were opened and the seconds
+spent on each, and every decision it approved says
+whether it was a spot-check opened or was approved beside them unopened. Two
+people who each approve the same decisions, as one that takes two of them
+asks, are each shown the batch with a sample of their own, sign the same
+root, and each has a batch record of their own.
+
+**At the console**, an administrator approves, rejects and reviews by typing
+back the hash `quilzo approval show ID` gave: `quilzo approval approve ID
+--surface HASH`. No passkey can be asked from a terminal, so the record says
+the approval was the console's, and the admin shows it as weaker. Over the
+agent interface and the API nothing is approved: `approval_approve` answers
+an administrator with where the person approves, and refuses anybody else
+before that, and a POST to the API's routes is refused. A reader of the
+register runs `quilzo approval`, `list`, `show`, `check` and `policy`; every
+other line of the command is an administrator's.
+
+**Signing in to decide.** Whoever may approve, accept a risk, publish outside
+the organisation or administer signs in with a passkey, or through single
+sign-on whose provider said the method cannot be phished: an `amr` of `hwk`,
+`phr` or `phrh`, an `acr` named with `quilzo oidc configure
+--phishing-resistant-acr`, or a SAML class named with `quilzo saml add
+--phishing-resistant-context` or on the Single sign-on screen, whose card for
+each provider says when its sign-ins are taken as phishing-resistant. An `amr` of `mfa` alone is two factors and can
+be phished, so such a session is asked for the passkey first; somebody with
+no passkey here is given one by an administrator's enrolment link
+(`quilzo auth enrol WHO`), since no administrator can let such a session
+in. The policy's
+`phishing_resistant` setting turns this off, and the change is in the audit
+log as `approval.policy`; every approval is still a fresh passkey signature.
+
+What is not yet built, and said so: the pseudonyms approvals name people by
+are kept in `approvals/people.json` beside the store until the register's own
+subject map takes them over; the evidence files are not yet sealed with the
+store's keyring; and re-deriving a held decision's hash from the register as
+it stood before the write is the independent verifier's work, so `approval
+check` checks each signature and what it was over, not the surface again.
+
 ---
 
 ## Working on the same site at the same time

@@ -1,0 +1,20 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Said}}{{template "kit-live" .}}{{end}}
+{{template "kit-errors" .Problems}}
+<h2 id="waiting">Waiting for approval</h2>
+{{if .Waiting}}
+<form method="post" action="/register/approvals/batch" id="batch">
+<div class="table-wrap"><table class="kit-table">
+<caption>Decisions waiting for their approvers, oldest first</caption>
+<thead><tr><th scope="col">Decision</th><th scope="col">Kind</th><th scope="col">Approvals</th><th scope="col">Rule</th><th scope="col">Hash of what it shows</th><th scope="col">In a batch</th></tr></thead>
+<tbody>{{range .Waiting}}<tr><th scope="row"><a href="{{.Href}}">{{.Label}}</a></th><td>{{.Kind}}</td><td>{{.Signed}} of {{.Needed}} given, {{.Of}} eligible{{with .Over}}<br><span class="hint">Above the threshold: {{.}}</span>{{end}}</td><td>{{.Rule}}</td><td>{{template "kit-hash" .Hash}}</td><td>{{if .Batchable}}<span class="choice"><input type="checkbox" name="id" value="{{.ID}}" id="batch-{{.ID}}"> <label for="batch-{{.ID}}">Add <span class="visually-hidden">{{.Label}} </span>to the batch</label></span>{{else}}<span class="hint">{{.NotBatchable}}</span>{{end}}</td></tr>{{end}}</tbody>
+</table></div>
+{{template "kit-field-error" .BatchProblem}}
+<p><button type="submit">Show the chosen decisions as one batch</button> <span class="hint">You open the ones the batch chooses for you, and then one passkey signature approves them all.</span></p>
+</form>
+{{else}}{{template "kit-empty" .EmptyWaiting}}{{end}}
+<h2>Decisions held with their approvals</h2>
+{{if .Held}}{{template "kit-table" .HeldTable}}{{else}}{{template "kit-empty" .EmptyHeld}}{{end}}
+<p class="hint"><a href="/register/approvals/policy">The separation policy</a> says who may approve each kind of decision. <code>quilzo approval list</code> answers the same from a terminal.</p>
+{{template "foot" .}}

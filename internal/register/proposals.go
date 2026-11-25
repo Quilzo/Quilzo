@@ -133,8 +133,11 @@ func (r *Register) proposal(id ID) (Proposal, error) {
 }
 
 // decider holds whoever decides a proposal to the rules: a person, who may
-// approve records of the kind, and who did not propose it.
-func (r *Register) decider(by Actor, p Proposal) error {
+// approve records of the kind, and who did not propose it. alone is an
+// approval made alone, by the one person eligible, who is the only person
+// there is to decide what they proposed; the approval says so, and a
+// review by somebody else is owed.
+func (r *Register) decider(by Actor, p Proposal, alone bool) error {
 	if by.Kind != audit.KindHuman {
 		return fmt.Errorf("%w: a proposal is decided by a person", ErrModel)
 	}
@@ -142,7 +145,7 @@ func (r *Register) decider(by Actor, p Proposal) error {
 		r.audit2(by, audit.Denied, map[string]string{"reason": "authorisation", "kind": kinds[p.Kind].Collection})
 		return err
 	}
-	if p.Subject != "" && p.Subject == by.Subject || p.Agent != "" && auth.SamePerson(p.Agent, by.Name) {
+	if !alone && p.Subject != "" && p.Subject == by.Subject || p.Agent != "" && auth.SamePerson(p.Agent, by.Name) {
 		return fmt.Errorf("%w: whoever proposed a record is not the one who decides it", ErrRefused)
 	}
 	// A person's proposal names them by pseudonym, and a decider the
@@ -169,7 +172,7 @@ func (r *Register) Accept(by Actor, id ID, approval *Approval) (Receipt, error) 
 	if err != nil {
 		return Receipt{}, err
 	}
-	if err := r.decider(by, p); err != nil {
+	if err := r.decider(by, p, approval != nil && approval.Alone); err != nil {
 		return Receipt{}, err
 	}
 	rec := withApproval(p.Record, approval)
@@ -200,7 +203,7 @@ func (r *Register) Reject(by Actor, id ID) error {
 	if err != nil {
 		return err
 	}
-	if err := r.decider(by, p); err != nil {
+	if err := r.decider(by, p, false); err != nil {
 		return err
 	}
 	if err := r.drop(p, "rejected"); err != nil {

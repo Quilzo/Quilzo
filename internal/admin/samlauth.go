@@ -323,6 +323,9 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 // meaning more than one factor. Anything else is one factor, and the
 // person confirms with their passkey here.
 func samlProof(cfg *saml.Config, a *saml.Assertion) ssoProof {
+	if cfg.PhishingResistant(a) {
+		return ssoProof{MFA: true, PhishingResistant: true, Said: "AuthnContext " + a.AuthnContext + ", phishing-resistant"}
+	}
 	if cfg.MFA(a) {
 		return ssoProof{MFA: true, Said: "AuthnContext " + a.AuthnContext}
 	}
@@ -359,7 +362,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		refuse("The identity provider's own session ends in under a minute. Sign in there again.", "")
 		return
 	}
-	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.method())
+	secret, tok, err := s.Tokens.IssueSession(how+":"+principal, principal, s.roleFor(principal), "/", ttl, auth.RoleAdmin, proof.methods()...)
 	if err != nil {
 		refuse("the session could not be created: "+err.Error(), "")
 		return
@@ -683,6 +686,13 @@ func (s *Server) samlFromForm(r *http.Request) (saml.Config, *saml.IdPMetadata, 
 	}
 	for _, b := range strings.Fields(r.FormValue("break_glass")) {
 		c.BreakGlass = append(c.BreakGlass, strings.ToLower(b))
+	}
+	// The classes that mean a method that cannot be phished, which whoever
+	// approves a decision here needs, as quilzo saml add takes them.
+	for _, v := range strings.Split(r.FormValue("phishing_contexts"), ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			c.PhishingContexts = append(c.PhishingContexts, v)
+		}
 	}
 	raw := []byte(r.FormValue("metadata"))
 	if addr := strings.TrimSpace(r.FormValue("metadata_url")); addr != "" {

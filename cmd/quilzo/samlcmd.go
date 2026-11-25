@@ -285,6 +285,8 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
+	phishing := fs.String("phishing-resistant-context", "",
+		"AuthnContext classes that mean a method that cannot be phished was used, comma-separated; whoever approves a decision needs one, or a passkey")
 	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return nil, err
 	}
@@ -325,6 +327,11 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	}
 	if *label != "" {
 		c.Label = *label
+	}
+	for _, v := range strings.Split(*phishing, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			c.PhishingContexts = append(c.PhishingContexts, v)
+		}
 	}
 	for _, d := range strings.Split(*domains, ",") {
 		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {

@@ -8,8 +8,6 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
-	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -182,11 +180,11 @@ func dispatchTargets(t *testing.T) map[string]string {
 		}
 		return true
 	})
+	// A module's command is dispatched to the function it registered, as
+	// commandHandlers reads it, so a module that changes something is held
+	// to reaching the log as a command in main's switch is.
 	for _, m := range cliModules {
-		// The name is the package's path and the function's:
-		// github.com/quilzo/quilzo/cmd/quilzo.cmdRegister.
-		name := runtime.FuncForPC(reflect.ValueOf(m.run).Pointer()).Name()
-		out[m.command] = name[strings.LastIndex(name, ".")+1:]
+		out[m.command] = funcName(m.run)
 	}
 	return out
 }

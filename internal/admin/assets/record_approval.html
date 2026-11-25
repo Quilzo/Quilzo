@@ -1,0 +1,99 @@
+{{/*
+  One decision waiting for approval: what it is, what it cites, what it
+  changes, who may approve it, and the hash of all of it beside the button.
+  Its script runs the passkey ceremony and nothing else; without it the page
+  still shows everything, and says how the console approves the same hash.
+*/}}
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Back}}<p><a href="{{.Href}}">{{.Text}}</a></p>{{end}}
+{{with .Notice}}<p class="notice warn" role="status">{{icon "warning"}} {{.}}</p>{{end}}
+{{if .Why}}<h2>Why it was proposed</h2>
+{{if .ByAgent}}<figure class="kit-fenced"><figcaption>Written by the agent {{.Proposer}}, not by a person, and not checked. It is shown as it was proposed; nothing on this page is taken from it.</figcaption><blockquote><p>{{.Why}}</p></blockquote></figure>
+{{else}}<p>{{.Why}} <span class="hint">Proposed by the person whose pseudonym is <code>{{.Proposer}}</code>.</span></p>{{end}}{{end}}
+<h2>What you are approving</h2>
+{{if .ByAgent}}<figure class="kit-fenced"><figcaption>Drafted by the agent {{.Proposer}}, not by a person, and not checked. Every value below is the agent's until you approve it; approving makes it the record's, and yours.</figcaption>
+{{template "kit-table" .Fields}}</figure>
+{{else}}{{template "kit-table" .Fields}}{{end}}
+<h2>What it cites</h2>
+{{if .Evidence}}<ul class="kit-cited">{{range .Evidence}}<li><code class="kit-hash">{{.}}</code></li>{{end}}</ul>{{else}}<p>It cites nothing by hash.</p>{{end}}
+<h2>What changes</h2>
+{{if .ByAgent}}<figure class="kit-fenced"><figcaption>The change the agent {{.Proposer}} drafted, not checked: every value it would write is the agent's until you approve it.</figcaption>
+{{template "kit-table" .Diff}}</figure>
+{{else}}{{template "kit-table" .Diff}}{{end}}
+{{with .Signed}}<h2>Approvals given so far</h2>{{template "kit-timeline" .}}{{end}}
+{{template "kit-approval" .Approval}}
+{{with .Ceremony}}{{template "approval-ceremony" .}}{{end}}
+{{with .Reject}}<form method="post" action="{{.}}"><p><button type="submit" class="danger">Reject it</button> <span class="hint">Nothing is written to the register, and it leaves the proposals.</span></p></form>{{end}}
+<p class="hint">At the store's console an administrator approves the same by typing the hash back: <code>quilzo approval approve {{.ID}} --surface {{.Hash}}</code></p>
+{{template "foot" .}}
+
+{{define "approval-ceremony"}}<div class="kit-live" role="status" aria-live="polite" id="approval-said"></div>
+<div id="approval-ceremony" data-challenge="{{.Challenge}}" data-approve="{{.Approve}}" hidden></div>
+<script nonce="{{.Nonce}}">
+(function () {
+  "use strict";
+  var config = document.getElementById("approval-ceremony");
+  var said = document.getElementById("approval-said");
+  if (!config || !said) { return; }
+
+  // Base64url both ways, written out: WebAuthn speaks bytes and JSON does
+  // not, and a library would need a host in the policy.
+  function toBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) { s += "="; }
+    var raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+    return out;
+  }
+  function toText(buffer) {
+    var bytes = new Uint8Array(buffer), s = "";
+    for (var i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]); }
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function post(url, body) {
+    return fetch(url, { method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+      .then(function (r) {
+        return r.json().then(function (d) {
+          if (!r.ok) { throw new Error(d.error || "that did not work"); }
+          return d;
+        });
+      });
+  }
+  function say(text) { said.textContent = text; }
+
+  var forms = document.querySelectorAll(".kit-approval form, form[data-ceremony]");
+  Array.prototype.forEach.call(forms, function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!window.PublicKeyCredential) {
+        say("This browser cannot use a passkey, so nothing was approved. The console can approve the same hash.");
+        return;
+      }
+      var button = form.querySelector("button[type=submit]");
+      var outcome = form.querySelector("input[name=outcome]:checked");
+      if (button) { button.disabled = true; }
+      say("Waiting for your passkey. It signs the hash shown beside the button.");
+      var challenge = null;
+      post(config.getAttribute("data-challenge")).then(function (start) {
+        challenge = start.challenge;
+        return navigator.credentials.get({ publicKey: { challenge: toBytes(start.challenge), rpId: start.rpId,
+          userVerification: "required", timeout: 120000 } });
+      }).then(function (c) {
+        if (!c) { throw new Error("no passkey was offered"); }
+        var body = { id: c.id, challenge: challenge, clientDataJSON: toText(c.response.clientDataJSON),
+          authenticatorData: toText(c.response.authenticatorData), signature: toText(c.response.signature) };
+        if (outcome) { body.outcome = outcome.value; }
+        return post(config.getAttribute("data-approve"), body);
+      }).then(function (done) {
+        say(done.said || "Done.");
+        if (done.next) { window.setTimeout(function () { window.location.href = done.next; }, 1500); }
+      }).catch(function (err) {
+        if (button) { button.disabled = false; }
+        say("Nothing was approved: " + (err && err.message ? err.message : "that did not work"));
+      });
+    });
+  });
+})();
+</script>{{end}}

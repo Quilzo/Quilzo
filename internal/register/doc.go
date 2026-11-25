@@ -25,8 +25,12 @@
 //	kind_decisions.go  Risk, Exception, Decision, RiskAppetite, MetricValue
 //	kind_estate.go     Service, Vendor, AISystem, Incident, Policy, Acknowledgement
 //	kind_evidence.go   RawFile, ColumnMap, PinnedKey: how evidence came in
+//	kind_approvals.go  Review, ApprovalBatch
 //
-// and an Approval is embedded in the record it decides, never filed apart.
+// and an Approval is embedded in the record it decides, never filed apart:
+// what follows it, the review a decision made alone owes and the batch in
+// which several were approved by one assertion, are the last file's kinds,
+// and internal/approval is the module that fills an Approval in.
 // Facts that were collected (Observation), runs of a test (TestRun) and
 // what a run shows of a control (Evidence) are three kinds, so a figure can
 // be followed from the board's number to the members that were counted.
