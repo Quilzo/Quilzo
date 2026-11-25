@@ -123,7 +123,7 @@ func TestTheProgrammeRoutesReadTheProgramme(t *testing.T) {
 		t.Errorf("the population: %d %s", w.Code, w.Body)
 	}
 	for _, path := range []string{"/api/v1/soa/nowhere", "/api/v1/controls/runs/00000000000000000000000000000000",
-		"/api/v1/populations/nobody"} {
+		"/api/v1/populations/nobody", "/api/v1/soa/", "/api/v1/controls/runs/", "/api/v1/populations/"} {
 		if w := req(t, s, "GET", path, tok, nil, nil); w.Code != http.StatusNotFound {
 			t.Errorf("GET %s answered %d", path, w.Code)
 		}

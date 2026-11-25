@@ -123,6 +123,12 @@ type Statement struct {
 // The frameworks are those the scope answers to whose starters are
 // installed, or every installed one for a scope that names none.
 func StatementAt(v *register.View, keep Keeper, scope string) (Statement, error) {
+	// A statement asked for with no scope named is the statement of no
+	// scope there is, which is not there; it is not a register that could
+	// not be read.
+	if scope == "" {
+		return Statement{}, fmt.Errorf("%w: name the scope, as the scopes are listed", register.ErrNotFound)
+	}
 	sid, err := named(v, register.KindScope, register.Local, scope)
 	if err != nil {
 		return Statement{}, err
