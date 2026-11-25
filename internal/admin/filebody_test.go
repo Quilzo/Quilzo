@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/evidence"
 	"github.com/quilzo/quilzo/internal/listen"
 )
 
@@ -31,9 +32,10 @@ import (
 // missing from here is a slow upload refused.
 func TestEveryRouteThatCarriesAFileIsNamedToTheListener(t *testing.T) {
 	for path, want := range map[string]int64{
-		uploadPath:       MaxUpload,
-		exportUploadPath: MaxExportUpload + 1<<20,
-		recordUploadPath: MaxRecordUpload + 1<<20,
+		uploadPath:         MaxUpload,
+		exportUploadPath:   MaxExportUpload + 1<<20,
+		recordUploadPath:   MaxRecordUpload + 1<<20,
+		evidenceImportPath: evidence.MaxFile + 1<<20,
 	} {
 		got := FileBody(httptest.NewRequest(http.MethodPost, path, nil))
 		if got != want {

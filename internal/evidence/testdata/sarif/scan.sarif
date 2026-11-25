@@ -1,0 +1,148 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "semgrep",
+     "version": "1.90.0",
+     "rules": [
+      {
+       "id": "go.lang.security.audit.dangerous-exec",
+       "properties": {
+        "security-severity": "8.6"
+       }
+      },
+      {
+       "id": "generic.secrets.aws-key"
+      }
+     ]
+    }
+   },
+   "versionControlProvenance": [
+    {
+     "repositoryUri": "https://github.com/example/payments-api",
+     "revisionId": "deadbeef",
+     "branch": "main"
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "go.lang.security.audit.dangerous-exec",
+     "level": "error",
+     "message": {
+      "text": "exec built from input"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "run.go"
+        },
+        "region": {
+         "startLine": 42
+        }
+       }
+      }
+     ],
+     "partialFingerprints": {
+      "primaryLocationLineHash": "abc"
+     }
+    },
+    {
+     "ruleId": "go.lang.security.audit.dangerous-exec",
+     "level": "error",
+     "message": {
+      "text": "again"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "job.go"
+        },
+        "region": {
+         "startLine": 7
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "generic.secrets.aws-key",
+     "level": "warning",
+     "message": {
+      "text": "a key"
+     },
+     "suppressions": [
+      {
+       "kind": "inSource",
+       "status": "accepted",
+       "justification": "a test fixture"
+      }
+     ],
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "testdata/env"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "CodeQL",
+     "version": "2.19.0",
+     "rules": [
+      {
+       "id": "go/sql-injection"
+      }
+     ]
+    }
+   },
+   "versionControlProvenance": [
+    {
+     "repositoryUri": "https://github.com/example/payments-api",
+     "revisionId": "deadbeef"
+    }
+   ],
+   "invocations": [
+    {
+     "executionSuccessful": true
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "go/sql-injection",
+     "message": {
+      "text": "sql"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "db.go"
+        },
+        "region": {
+         "startLine": 3
+        }
+       }
+      }
+     ],
+     "partialFingerprints": {
+      "primaryLocationLineHash": "def"
+     }
+    }
+   ]
+  }
+ ]
+}

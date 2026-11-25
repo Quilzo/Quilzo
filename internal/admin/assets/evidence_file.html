@@ -1,0 +1,18 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-live" .Said}}
+<dl class="kit-facts">
+<dt>Sealed as</dt><dd><code class="kit-hash">{{.File.Record.Digest}}</code>, {{.File.Record.Size}} bytes</dd>
+<dt>Grade</dt><dd>{{template "kit-badge" .Grade}}</dd>
+<dt>First received</dt><dd>{{template "kit-cell" .Received}}</dd>
+<dt>The raw file</dt><dd>{{template "kit-badge" .Kept}}{{with .Until}} Kept until {{template "kit-cell" .}}.{{end}}{{with .Erased}} Erased {{template "kit-cell" .}}.{{end}}</dd>
+{{with .File.Record.Signer}}<dt>Signed by</dt><dd>the pinned key {{.}}</dd>{{end}}
+</dl>
+<h2>Whether it checks</h2>
+<p>{{template "kit-badge" .Verdict}} The seal {{.Check.Seal}}; the list of what was read {{.Check.Yield}}; read again: {{.Check.Replay}}. {{.Check.Standing}} of {{.Check.Facts}} records stand as they were read, and {{.Check.Superseded}} have been replaced by a later file.</p>
+{{if .Check.Problems}}<ul>{{range .Check.Problems}}<li>{{.}}</li>
+{{end}}</ul>{{end}}
+<h2>What was read from it</h2>
+{{template "kit-table" .Table}}
+<p class="hint"><a href="/evidence">All the files brought in</a>. <code>quilzo evidence verify {{.File.ID}}</code> checks it from a terminal.</p>
+{{template "foot" .}}

@@ -1,0 +1,21 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-errors" .Problems}}
+<h2>How it reads the table</h2>
+{{template "kit-table" .Table}}
+{{if .HasSample}}{{template "kit-table" .Sample}}{{end}}
+{{if .Draft.Unmapped}}<p>Columns it reads nothing from: {{range $i, $h := .Draft.Unmapped}}{{if $i}}, {{end}}{{$h}}{{end}}.</p>{{end}}
+<h2>Change it, and confirm it</h2>
+<form method="post" action="/evidence/map" class="param-form">
+  {{$text := index .ByField "map-text"}}
+  <input type="hidden" name="file" value="{{.Digest}}">
+  <input type="hidden" name="format" value="{{.Form.Format}}">
+  <input type="hidden" name="source" value="{{.Form.Source}}">
+  <input type="hidden" name="kind" value="{{.Form.Kind}}">
+  <label for="map-text">The map, as JSON</label>
+  {{template "kit-field-error" $text}}
+  <textarea id="map-text" name="map" rows="18" class="code" spellcheck="false" aria-describedby="map-text-hint{{if $text.Message}} map-text-error{{end}}"{{if $text.Message}} aria-invalid="true"{{end}}>{{.Text}}</textarea>
+  <p class="hint" id="map-text-hint">Give it a name of your own. When the table is another tool's export, say so in "tool": its facts are then graded imported, and otherwise uploaded. The grade, the raw digest and where each value was read are the importer's to write, never a column's.</p>
+  <div class="auto-controls"><button type="submit">Confirm this map</button></div>
+</form>
+{{template "foot" .}}

@@ -1,0 +1,30 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-live" .Said}}
+<dl class="kit-facts">
+<dt>Format</dt><dd>{{.Batch.Format}}</dd>
+<dt>Sealed as</dt><dd><code class="kit-hash">{{.Batch.Digest}}</code>, {{.Batch.Size}} bytes</dd>
+<dt>Grade</dt><dd>{{template "kit-badge" .Grade}} How the file came in, which nothing in the file changes.</dd>
+<dt>Filed under the source</dt><dd>{{.Batch.Source.Name}}</dd>
+<dt>Read from a hidden part</dt><dd>{{.Hidden}} of {{len .Batch.Facts}} records were read from a part of the file a person opening it would not see, and are marked so.</dd>
+</dl>
+{{if .Batch.Flags}}<h2>What a person opening the file would not see</h2>
+<ul>{{range .Batch.Flags}}<li>{{.Taint}}: {{.Where}}</li>
+{{end}}</ul>{{end}}
+{{if .Batch.Notes}}<h2>What the reader says about the file</h2>
+<ul>{{range .Batch.Notes}}<li>{{.}}</li>
+{{end}}</ul>{{end}}
+{{if .Batch.Proposed}}<h2>What it proposes</h2>
+<p>{{len .Batch.Proposed}} records the file proposes, such as a tool's mapping of its checks to a framework's clauses, will wait on the proposals for a person to decide. This import writes none of them.</p>{{end}}
+<h2>What it would write</h2>
+{{template "kit-table" .Table}}
+<form method="post" action="/evidence/import/confirm">
+<input type="hidden" name="file" value="{{.Batch.Digest}}">
+<input type="hidden" name="format" value="{{.Batch.Format}}">
+<input type="hidden" name="source" value="{{.Form.Source}}">
+<input type="hidden" name="map" value="{{.Form.Map}}">
+<input type="hidden" name="shown" value="{{.Batch.Raw.Yield}}">
+<p class="actions"><button type="submit">Write these records</button> <a href="/evidence/import">Bring another file in instead</a></p>
+<p class="hint">Written as you, through the register's one write path, in one commit, and recorded in the audit log. A second import of the same file writes nothing.</p>
+</form>
+{{template "foot" .}}

@@ -16,14 +16,15 @@
 // The register is typed records in collections whose names begin sec_
 // (Prefix), on the store ref "register" (Ref), which is never promoted to
 // a site. Each kind is a Go struct whose field types and tags are its schema
-// (kind.go, types.go, validate.go). The kinds are defined in four files, by
-// what they hold:
+// (kind.go, types.go, validate.go). The kinds are defined in files by what
+// they hold:
 //
 //	kind_facts.go      Asset, Subject, Source, Observation, Link, Population, Extracted
 //	kind_programme.go  Control, Requirement, Mapping, Scope, Applicability,
 //	                   ControlTest, TestRun, Evidence
 //	kind_decisions.go  Risk, Exception, Decision, RiskAppetite, MetricValue
 //	kind_estate.go     Service, Vendor, AISystem, Incident, Policy, Acknowledgement
+//	kind_evidence.go   RawFile, ColumnMap, PinnedKey: how evidence came in
 //
 // and an Approval is embedded in the record it decides, never filed apart.
 // Facts that were collected (Observation), runs of a test (TestRun) and

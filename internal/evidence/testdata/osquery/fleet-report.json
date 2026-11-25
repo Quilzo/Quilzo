@@ -1,0 +1,24 @@
+{
+ "query_id": 31,
+ "report_clipped": false,
+ "results": [
+  {
+   "host_id": 1,
+   "host_name": "mac-01.example.internal",
+   "last_fetched": "2026-11-24T09:00:00Z",
+   "columns": {
+    "enabled": "1",
+    "version": "14.6"
+   }
+  },
+  {
+   "host_id": 2,
+   "host_name": "mac-02.example.internal",
+   "last_fetched": "2026-11-24T09:00:00Z",
+   "columns": {
+    "enabled": "0",
+    "version": "14.5"
+   }
+  }
+ ]
+}

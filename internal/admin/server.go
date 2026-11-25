@@ -62,6 +62,7 @@ import (
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/enrol"
+	"github.com/quilzo/quilzo/internal/evidence"
 	"github.com/quilzo/quilzo/internal/federate"
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
@@ -1429,6 +1430,8 @@ func FileBody(r *http.Request) int64 {
 		return MaxExportUpload + 1<<20
 	case recordUploadPath:
 		return MaxRecordUpload + 1<<20
+	case evidenceImportPath:
+		return evidence.MaxFile + 1<<20
 	}
 	return 0
 }
