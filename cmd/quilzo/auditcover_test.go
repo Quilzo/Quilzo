@@ -31,6 +31,11 @@ import (
 func TestEveryMutatingCommandCanReachTheAuditLog(t *testing.T) {
 	fns, calls := callGraph(t)
 	dispatch := dispatchTargets(t)
+	// A module's command is dispatched to the function it registered
+	// (modules.go), and is held to this as main's own commands are.
+	for _, m := range cliModules {
+		dispatch[m.command] = funcName(m.run)
+	}
 
 	var missing []string
 	for cmd, n := range commandNeeds {
