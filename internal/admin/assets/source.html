@@ -1,0 +1,42 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-live" .Said}}
+{{with .Standing}}<dl class="kit-facts">
+<dt>Freshness</dt><dd>{{template "kit-badge" $.Freshness}}</dd>
+<dt>How its facts arrive</dt><dd>{{$.Kind}}</dd>
+<dt>Grade</dt><dd>{{template "kit-badge" $.Grade}}</dd>
+<dt>Expected</dt><dd>every {{$.Every}}</dd>
+<dt>Last reported</dt><dd>{{if .Last.IsZero}}Never{{else}}<time datetime="{{.Last.Format "2006-01-02T15:04:05Z07:00"}}">{{.Last.Format "2 January 2006, 15:04 MST"}}</time>{{end}}</dd>
+<dt>Reports</dt><dd>{{.Reports}} sealed</dd>
+{{with .Source.Hosts}}<dt>The only hosts it reaches</dt><dd>{{range $i, $h := .}}{{if $i}}, {{end}}<code>{{$h}}</code>{{end}}</dd>{{end}}
+{{with .Source.Repository}}<dt>Repository</dt><dd><code>{{.}}</code></dd>{{end}}
+{{with .Source.Workflow}}<dt>Workflow</dt><dd><code>{{.}}</code></dd>{{end}}
+<dt>Owner</dt><dd>{{if .Source.Owner}}<code>{{$.Owner}}</code> <span class="hint">(a pseudonym; the subject map holds who it is)</span>{{else}}None named, so nobody is told when it is stale{{end}}</dd>
+</dl>{{end}}
+{{with .Attempt}}<section aria-labelledby="source-run">
+<h2 id="source-run">Its last run</h2>
+<p>{{template "kit-badge" $.AttemptBadge}} <time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.Format "2 January 2006, 15:04 MST"}}</time>: {{.Facts}} fact(s) read, {{.Written}} new or changed, in {{.Requests}} request(s).</p>
+{{with .Problem}}<p>{{.}}</p>{{end}}
+{{with .Notes}}<ul>{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+</section>{{end}}
+{{with .Recipe}}<section aria-labelledby="source-privilege">
+<h2 id="source-privilege">The least its credential needs</h2>
+<ul>{{range .Privilege}}<li>{{.}}</li>{{end}}</ul>
+<p class="hint">This recipe was tested {{.Verified}}.</p>
+</section>{{end}}
+{{if .Credentials}}<section aria-labelledby="source-credentials">
+<h2 id="source-credentials">Credentials, kept in the vault</h2>
+<ul>{{range .Credentials}}<li><code>{{.Name}}</code>: {{if .Kept}}kept{{else}}not kept yet{{end}}. {{.About}}</li>{{end}}</ul>
+{{if $.CanAct}}<form method="post" action="/sources/credential" class="param-form">
+<input type="hidden" name="name" value="{{.Standing.Source.Name}}">
+<label for="source-credential">Which credential</label>
+<select id="source-credential" name="credential">{{range .Credentials}}<option value="{{.Name}}">{{.Name}}</option>{{end}}</select>
+<label for="source-credential-value">Its value</label>
+<input id="source-credential-value" name="value" type="password" autocomplete="off" aria-describedby="source-credential-hint" required>
+<p class="hint" id="source-credential-hint">It is sealed under the store's keyring and never shown again. A store with no keyring keeps none.</p>
+<div class="auto-controls"><button type="submit">Keep the credential</button></div>
+</form>{{end}}
+</section>{{end}}
+{{if and .CanAct (eq .Standing.Source.Type "connector")}}<form method="post" action="/sources/run"><input type="hidden" name="name" value="{{.Standing.Source.Name}}"><p class="actions"><button type="submit">Run it now</button></p></form>{{end}}
+<p><a href="/sources">All sources</a></p>
+{{template "foot" .}}

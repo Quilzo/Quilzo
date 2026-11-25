@@ -1,0 +1,16 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{template "kit-live" .Said}}
+{{if .Stale}}<section class="notice warn" aria-labelledby="sources-stale">
+<h2 id="sources-stale">Stale sources</h2>
+<ul>{{range .Stale}}<li>{{template "kit-badge" $.StaleBadge}} {{.}}</li>
+{{end}}</ul>
+</section>{{end}}
+{{if .CanAdd}}<p class="actions"><a class="btn" href="/sources/add">Add a source</a></p>{{end}}
+{{with .Empty}}{{template "kit-empty" .}}{{else}}{{template "kit-table" .Table}}{{end}}
+<h2>Recipes a connector runs</h2>
+<ul>
+{{range .Recipes}}<li><strong>{{.Tool}}</strong> ({{.Name}}): {{.About}} <span class="hint">Tested {{.Verified}}.</span></li>
+{{end}}</ul>
+<p class="hint">From a terminal: <code>quilzo source list</code>, <code>quilzo source stale</code> and <code>quilzo source run NAME</code>. A pipeline pushes with <code>quilzo evidence push</code>, holding no secret.</p>
+{{template "foot" .}}
