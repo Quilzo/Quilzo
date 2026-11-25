@@ -266,7 +266,7 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 		if !s.theirsToDecide(p, a) {
 			continue
 		}
-		row := approvalRow{ID: string(a.Proposal.ID), Kind: string(a.Proposal.Kind), Label: labelOf(a.Proposal.Record, a.Proposal.ID),
+		row := approvalRow{ID: string(a.Proposal.ID), Kind: string(a.Proposal.Kind), Label: askLabel(a),
 			Rule: a.Rule.Name, Over: strings.Join(a.Over, "; "), Href: "/register/approvals/item/" + string(a.Proposal.ID),
 			Signed: len(a.Signed), Needed: a.Needed, Of: a.Of, Hash: seckit.HashCell(string(a.Hash))}
 		switch {
@@ -352,6 +352,18 @@ func labelOf(rec register.Record, id register.ID) string {
 		return l
 	}
 	return string(rec.Kind()) + " " + seckit.Short(string(id))
+}
+
+// askLabel names a waiting decision. What an agent drafted is the agent's
+// until a person approves it, its title as much as its reason, so a
+// decision an agent proposed is named in words code writes, by its kind,
+// the agent and its identifier, and not by the title the agent gave it.
+func askLabel(a *approval.Ask) string {
+	if a.Proposal.Agent != "" {
+		return fmt.Sprintf("A %s the agent %s drafted, %s", strings.ToLower(string(a.Proposal.Kind)), a.Proposal.Agent,
+			seckit.Short(string(a.Proposal.ID)))
+	}
+	return labelOf(a.Proposal.Record, a.Proposal.ID)
 }
 
 func labelOf2(h approval.Held) string {
@@ -631,7 +643,7 @@ func (s *Server) renderAsk(w http.ResponseWriter, r *http.Request, p principal, 
 		return
 	}
 	me, _ := approval.PeopleAt(s.Store.Root()).Known(p.Name)
-	label := labelOf(a.Proposal.Record, a.Proposal.ID)
+	label := askLabel(a)
 	base := "/register/approvals/item/" + string(a.Proposal.ID)
 	if batch != "" {
 		base = "/register/approvals/batch/" + batch
@@ -649,12 +661,8 @@ func (s *Server) renderAsk(w http.ResponseWriter, r *http.Request, p principal, 
 	proposer, byAgent := string(a.Proposal.Subject), a.Proposal.Agent != ""
 	if byAgent {
 		proposer = a.Proposal.Agent
-		// What an agent drafted is the agent's until a person approves
-		// it, its title as much as its reason, so the page is named in
-		// words code writes and the fields are fenced as the agent's
-		// draft (record_approval.html).
-		label = fmt.Sprintf("A %s the agent %s drafted, %s", strings.ToLower(string(a.Proposal.Kind)), a.Proposal.Agent,
-			seckit.Short(string(a.Proposal.ID)))
+		// The fields are fenced as the agent's draft
+		// (record_approval.html), and the page is named by askLabel.
 		ap.What = "Approve the " + strings.ToLower(string(a.Proposal.Kind)) + " the agent drafted"
 	}
 	n, _ := nonce()
@@ -807,7 +815,7 @@ func (s *Server) renderBatch(w http.ResponseWriter, r *http.Request, p principal
 			Href: "/register/approvals/batch/" + hex + "/item/" + string(it.Record), Hash: seckit.HashCell(string(it.Surface)),
 			Seconds: it.Seconds, Sampled: it.Sampled, Opened: it.Opened != 0}
 		if a, err := m.Ask(it.Record); err == nil {
-			row.Label = labelOf(a.Proposal.Record, a.Proposal.ID)
+			row.Label = askLabel(a)
 			row.Changing = a.Hash != it.Surface
 		}
 		// The items the batch chose are spot-checks, and called so here and

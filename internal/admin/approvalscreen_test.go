@@ -813,6 +813,11 @@ func TestAnAgentsDraftIsFencedOnTheApprovalPage(t *testing.T) {
 		}
 		at = i + len(risk.Title)
 	}
+	// Nor does the list of what waits name it by the agent's title.
+	if list := get(t, b.srv, "/register/approvals", b.token).Body.String(); strings.Contains(list, risk.Title) ||
+		!strings.Contains(list, "the agent risk-clerk drafted") {
+		t.Errorf("the list names the decision by the title the agent gave it\n%s", firstLines(list, 60))
+	}
 	for _, f := range a11y.Check("agent draft", page).Findings {
 		if f.Severity == a11y.Blocking {
 			t.Errorf("the agent's draft: %s", f)
