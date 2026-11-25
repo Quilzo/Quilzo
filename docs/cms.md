@@ -1741,6 +1741,50 @@ never matched is not trusted to catch anything. There is no percentage: a compli
 is controls-passing over controls-in-scope, and scope is chosen by whoever
 wants the number.
 
+**The security programme, in the register.** Starters bring a framework's
+requirements by the framework's own identifiers, each with a line in
+Quilzo's own words, never the standard's text: ISO/IEC 27001:2022 Annex A,
+NIS2 Article 21(2) (mapped to ISO 27001 by NIST IR 8477 relationship, with
+why), the SOC 2 Trust Services Criteria, DORA's articles on ICT risk,
+incidents, testing and third parties, the categories of NIST CSF 2.0 and
+ISO/IEC 42001:2023 Annex A. Taking one in or out is one decision with its
+approval (`quilzo requirement install`). A scope and each line of the
+statement of applicability are decisions too (`quilzo soa`), and a
+requirement nobody decided is shown undecided, never counted either way.
+Mapped controls are shown as evidence towards a requirement, with their
+relation; nothing is called compliant. A control test (`quilzo control`) is
+a typed query over the register's records and an assertion over a
+population: drafted by a person or by an agent filling the draft's schema,
+approved by somebody else, then run by the admin server when it is due.
+The approval covers the population as it was defined then, its source and
+the query that selects it, so a population redefined afterwards stops the
+test until somebody approves it again over the new one. Each run names the
+commit it read, so `quilzo control replay` does it again
+from the same facts, and a failure is explained by code from the query's
+terms and the failing members' identifiers. A population (`quilzo
+population`) says which source its count comes from, and so is drawn
+from records that name the source that reported them, is compared with a
+second source where there is one, and keeps the disagreement as its own
+number; one with a single source is labelled unchecked, and one not shown
+independent of the tool it measures is labelled circular. Links join two
+sources only on an identifier both report exactly. Until the approvals
+module brings passkeys bound to the decision's hash, a decision is approved
+on the command line, where the assertion recorded is a hash of the
+decision with the credential the session was verified by.
+
+The admin's four programme screens (Requirements, Applicability, Control
+tests and Populations, under Assurance) and the content API under
+`/api/v1/requirements`, `/api/v1/soa`, `/api/v1/controls` and
+`/api/v1/populations` read the programme; each waiting decision is shown
+with the hash of exactly what would be approved, and the command that
+decides it. Adding a control, mapping it, defining and counting a
+population and running a test are done on the command line, and an agent
+drafts a test through the agent interface's `control_draft`, which waits
+like any other draft. Not built yet: the posture rows counted against these
+populations, and a replay that parses the sealed raw files again; a replay
+today reads the facts as the register held them at the run's commit, each
+fact naming the digest of the raw file it was read from.
+
 ## How this uses AI, and why it is not what everyone else means
 
 Almost every CMS shipping "AI" in 2026 means one of two things: a text box that

@@ -158,8 +158,12 @@ var _ = define[Observation]("The latest typed fact about one thing from one sour
 // LinkOn is the identifier two records were found to share.
 type LinkOn string
 
-// Values lists the identifiers a link may be made on.
-func (LinkOn) Values() []string { return []string{"serial", "hostname", "cloud-id", "upn"} }
+// Values lists the identifiers a link may be made on. An e-mail address is
+// never one of them: a link on people is made on the hash of their address,
+// which a source reports in place of it, so the address is not kept here.
+func (LinkOn) Values() []string {
+	return []string{"serial", "hostname", "cloud-id", "upn", "email-hash"}
+}
 
 // Link says two records from two sources are the same thing, because they
 // carry the same identifier, exactly. Code makes a link and nothing else
@@ -203,6 +207,15 @@ type Population struct {
 	CrossCheck  ID     `json:"cross_check,omitempty" reg:"ref=Source" about:"a second source the count is compared with"`
 	Size        int64  `json:"size" reg:"min=0" about:"how many members it had when last counted"`
 	Members     Digest `json:"members,omitempty" about:"the digest of its members when last counted"`
+	// CrossQuery selects what the second source knows of, and the count
+	// keeps both numbers and the disagreement between them as a number of
+	// its own: members on either side the other side has no counterpart
+	// for, by an exact link or the same record.
+	CrossQuery  Digest `json:"cross_query,omitempty" about:"the digest of the typed query that selects what the cross-check source knows of"`
+	CrossSize   int64  `json:"cross_size,omitempty" reg:"min=0" about:"how many the cross-check source knew of when last counted"`
+	Unexplained int64  `json:"unexplained,omitempty" reg:"min=0" about:"how many, on either side, the other source has no counterpart for"`
+	Counted     Time   `json:"counted,omitempty" about:"when it was last counted"`
+	Commit      string `json:"commit,omitempty" reg:"oid" about:"the register commit it was last counted at"`
 }
 
 func (Population) Kind() Kind              { return KindPopulation }
@@ -210,6 +223,15 @@ func (p Population) Key() (string, string) { return Local, p.Name }
 func (p Population) Check() error {
 	if p.CrossCheck != "" && p.CrossCheck == p.Source {
 		return fmt.Errorf("a population cannot be cross-checked against the source it is read from")
+	}
+	if (p.CrossCheck == "") != (p.CrossQuery == "") {
+		return fmt.Errorf("a cross-check names the second source and the query that selects what it knows of, both or neither")
+	}
+	if p.CrossCheck == "" && (p.CrossSize != 0 || p.Unexplained != 0) {
+		return fmt.Errorf("a population with one source has no second count to disagree with")
+	}
+	if p.Unexplained > p.Size+p.CrossSize {
+		return fmt.Errorf("more are unexplained than the two sources hold between them")
 	}
 	return nil
 }

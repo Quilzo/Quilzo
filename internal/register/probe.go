@@ -91,7 +91,11 @@ func (p Probe) Records() ([]Record, error) {
 			return nil, err
 		}
 		t := ControlTest{Control: controls[i], Name: "weekly", Population: populationID,
-			Query: probeDigest("test-query", i), Assertion: "all", Approval: approval}
+			Query: probeDigest("test-query", i), Assertion: "all"}
+		// Each test's approval is of that test, as its Check holds it to.
+		bound := *approval
+		bound.Surface = SurfaceOf(t)
+		t.Approval = &bound
 		if tests[i], err = IDOf(t); err != nil {
 			return nil, err
 		}
