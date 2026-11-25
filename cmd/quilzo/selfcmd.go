@@ -90,14 +90,24 @@ func loadKEV(root string) (kevKept, kevStatus) {
 		return kevKept{}, kevStatus{Problem: "self/kev.json names no vulnerability; give the catalogue again"}
 	}
 	st := kevStatus{Kept: true, Count: len(k.IDs)}
-	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(k.Released)); err == nil {
-		st.Of = t
-	} else if t, err := time.Parse(time.DateOnly, strings.TrimSpace(k.Released)); err == nil {
+	if t, ok := kevReleased(k.Released); ok {
 		st.Of = t
 	} else if fi, err := os.Stat(kevPath(root)); err == nil {
 		st.Of = fi.ModTime()
 	}
 	return k, st
+}
+
+// kevReleased is the date a catalogue says it was released, as CISA writes
+// it or as a day.
+func kevReleased(s string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(s)); err == nil {
+		return t, true
+	}
+	if t, err := time.Parse(time.DateOnly, strings.TrimSpace(s)); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
 }
 
 // exploitedIDs is which advisory ids are known to be exploited.
@@ -148,6 +158,18 @@ func selfKEV(root string, args []string) error {
 	}
 	if len(ids) == 0 {
 		return fmt.Errorf("%s names no vulnerability; it is not the catalogue, or it is empty", args[0])
+	}
+	// Not one older than the catalogue kept, as `self update` takes no older
+	// Go database. It was kept without a word, so a flaw found exploited
+	// since the older one was released went from contained at once to
+	// waiting for a person, by somebody giving last month's download.
+	if kept, st := loadKEV(root); st.Kept {
+		was, wasOK := kevReleased(kept.Released)
+		if now, ok := kevReleased(cat.DateReleased); ok && wasOK && now.Before(was) {
+			return fmt.Errorf("that catalogue is of %s, and the one kept is of %s already: an older one "+
+				"would forget what has been found exploited since", now.UTC().Format("2 January 2006"),
+				was.UTC().Format("2 January 2006"))
+		}
 	}
 	sort.Strings(ids)
 	out, err := json.Marshal(map[string]any{"released": cat.DateReleased, "ids": ids})

@@ -313,3 +313,32 @@ func TestAMissingOrOldExploitedCatalogueIsSaid(t *testing.T) {
 		t.Errorf("the posture with a current catalogue: %+v", got)
 	}
 }
+
+// A catalogue older than the one kept is refused, as an older Go database
+// is by `self update`. It was kept without a word, so a flaw found
+// exploited since the older one was released went from contained at once
+// to waiting for a person, by somebody giving last month's download.
+func TestAnOlderExploitedCatalogueIsRefused(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+	recent := time.Now().AddDate(0, 0, -2)
+	if err := selfKEV(root, []string{kevFile(t, recent)}); err != nil {
+		t.Fatal(err)
+	}
+	err := selfKEV(root, []string{kevFile(t, recent.AddDate(0, 0, -30))})
+	if err == nil || !strings.Contains(err.Error(), recent.UTC().Format("2 January 2006")) {
+		t.Errorf("an older catalogue: %v", err)
+	}
+	if _, st := loadKEV(root); !st.Of.Equal(recent) {
+		t.Errorf("the catalogue kept is of %s, want %s", st.Of, recent)
+	}
+	// The same one again, and a newer one, are taken.
+	for _, at := range []time.Time{recent, recent.AddDate(0, 0, 1)} {
+		if err := selfKEV(root, []string{kevFile(t, at)}); err != nil {
+			t.Errorf("the catalogue of %s: %v", at, err)
+		}
+	}
+}
