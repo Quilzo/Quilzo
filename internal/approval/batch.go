@@ -144,7 +144,7 @@ func (m *Approvals) StartBatch(by Person, ids []register.ID) (*Batch, error) {
 	}
 	err = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(now)
-		f.drop(b.Root)
+		f.drop(b.Root, b.By)
 		f.Batches = append(f.Batches, b)
 		return nil
 	})
@@ -171,12 +171,16 @@ func pick(n, k int) ([]int, error) {
 // ErrNoBatch is a root no batch waiting has.
 var ErrNoBatch = errors.New("no batch waiting has that root")
 
-// BatchOf is a batch waiting for its approver.
-func (m *Approvals) BatchOf(root register.Digest) (*Batch, error) {
+// BatchOf is the batch with this root waiting for this person. Two people
+// who each approve the same decisions, as one that takes two of them asks,
+// are each shown the batch on their own, with a sample of their own and
+// their own time on each item, and the same root, because it is the root of
+// the same surfaces in the same order.
+func (m *Approvals) BatchOf(by Person, root register.Digest) (*Batch, error) {
 	var out *Batch
 	err := atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(m.now())
-		if b := f.find(root); b != nil {
+		if b := f.find(root, by.Name); b != nil {
 			c := *b
 			c.Items = append([]BatchEntry(nil), b.Items...)
 			out = &c
@@ -198,12 +202,12 @@ func (m *Approvals) OpenInBatch(by Person, root register.Digest, id register.ID)
 	var out *Batch
 	err := atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(m.now())
-		b := f.find(root)
+		b := f.find(root, by.Name)
 		if b == nil {
+			if f.find(root, "") != nil {
+				return errRefused("this batch was shown to somebody else, and only they approve it")
+			}
 			return fmt.Errorf("%w: %s", ErrNoBatch, clip(string(root)))
-		}
-		if !auth.SamePerson(b.By, by.Name) {
-			return errRefused("this batch was shown to somebody else, and only they approve it")
 		}
 		at := -1
 		for i := range b.Items {
@@ -252,12 +256,12 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 	if err := m.mayDecide(pol, by); err != nil {
 		return nil, err
 	}
-	b, err := m.BatchOf(root)
+	b, err := m.BatchOf(by, root)
+	if errors.Is(err, ErrNoBatch) && m.shownTo(root) {
+		return nil, errRefused("this batch was shown to somebody else, and only they approve it")
+	}
 	if err != nil {
 		return nil, err
-	}
-	if !auth.SamePerson(b.By, by.Name) {
-		return nil, errRefused("this batch was shown to somebody else, and only they approve it")
 	}
 	now := m.now()
 	refuse := func(err error) (*BatchOutcome, error) {
@@ -321,10 +325,23 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 		out.Items = append(out.Items, o)
 	}
 	_ = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
-		f.drop(root)
+		f.drop(root, b.By)
 		return nil
 	})
 	return out, nil
+}
+
+// shownTo reports whether a batch with this root waits for anybody at all,
+// so that somebody else's is refused as somebody else's rather than as
+// nothing.
+func (m *Approvals) shownTo(root register.Digest) bool {
+	found := false
+	_ = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
+		f.prune(m.now())
+		found = f.find(root, "") != nil
+		return atomicfile.ErrUnchanged
+	})
+	return found
 }
 
 // recorder is a person writing one of this module's own records, a batch
@@ -342,19 +359,23 @@ func (m *Approvals) recorder(by Person, subject register.ID, kind register.Kind)
 		}}
 }
 
-func (f *batchesFile) find(root register.Digest) *Batch {
+// find is the batch with this root shown to this person, or, with nobody
+// named, shown to anybody.
+func (f *batchesFile) find(root register.Digest, by string) *Batch {
 	for i := range f.Batches {
-		if f.Batches[i].Root == root {
+		if f.Batches[i].Root == root && (by == "" || auth.SamePerson(f.Batches[i].By, by)) {
 			return &f.Batches[i]
 		}
 	}
 	return nil
 }
 
-func (f *batchesFile) drop(root register.Digest) {
+// drop takes away the batch with this root shown to this person, and
+// leaves anybody else's.
+func (f *batchesFile) drop(root register.Digest, by string) {
 	kept := f.Batches[:0]
 	for _, b := range f.Batches {
-		if b.Root != root {
+		if b.Root != root || !auth.SamePerson(b.By, by) {
 			kept = append(kept, b)
 		}
 	}

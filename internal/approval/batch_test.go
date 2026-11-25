@@ -100,7 +100,7 @@ func TestBatchRefusedUntilSampleOpened(t *testing.T) {
 			t.Errorf("%s does not name the batch it was approved in: %+v", id, s)
 		}
 	}
-	bid, _ := register.IDOf(register.ApprovalBatch{Root: batch.Root})
+	bid, _ := register.IDOf(register.ApprovalBatch{Root: batch.Root, Approver: b.subject("ciso")})
 	e, err := b.reg.Get(bid)
 	if err != nil {
 		t.Fatalf("the batch's record is not in the register: %v", err)
@@ -159,7 +159,7 @@ func TestTimePerItemRecorded(t *testing.T) {
 	if _, err := b.m.SignBatch(b.person("ciso"), batch.Root, b.proofFor("ciso", ForBatch, batch.Root)); err != nil {
 		t.Fatal(err)
 	}
-	bid, _ := register.IDOf(register.ApprovalBatch{Root: batch.Root})
+	bid, _ := register.IDOf(register.ApprovalBatch{Root: batch.Root, Approver: b.subject("ciso")})
 	e, err := b.reg.Get(bid)
 	if err != nil {
 		t.Fatal(err)
@@ -173,5 +173,67 @@ func TestTimePerItemRecorded(t *testing.T) {
 	}
 	if rec.Seconds != 147 {
 		t.Errorf("the batch is recorded as taking %d seconds from being shown, not 147", rec.Seconds)
+	}
+}
+
+// Two approvers may each batch the same decisions, as a decision that takes
+// two people asks of them: each is shown the batch on their own, opens what
+// it chose for them, and signs the same root, and the register keeps each
+// one's batch beside the other's.
+func TestTwoApproversBatchTheSameDecisions(t *testing.T) {
+	b := newBench(t, holds("ciso", auth.ActApproveException), holds("cfo", auth.ActApproveException))
+	starts := register.TimeOf(b.clock)
+	var ids []register.ID
+	for _, ref := range []string{"EX-LONG-1", "EX-LONG-2"} {
+		// Longer than a quarter, so each takes two approvers.
+		ids = append(ids, b.propose("dana", register.Exception{Ref: ref, About: "c0000000000000000000000000000001",
+			Reason: register.Text("sha256:" + strings.Repeat("d", 64)), Owner: b.subject("owner"),
+			Starts: starts, Expires: starts + 120*86400}))
+	}
+	first, err := b.m.StartBatch(b.person("ciso"), ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := b.m.StartBatch(b.person("cfo"), ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Root != second.Root {
+		t.Fatal("the same decisions in the same order have two roots")
+	}
+	for _, who := range []string{"ciso", "cfo"} {
+		for _, id := range ids {
+			if _, _, err := b.m.OpenInBatch(b.person(who), first.Root, id); err != nil {
+				t.Fatalf("%s could not open their own batch, shown beside somebody else's: %v", who, err)
+			}
+		}
+		if _, err := b.m.SignBatch(b.person(who), first.Root, b.proofFor(who, ForBatch, first.Root)); err != nil {
+			t.Fatalf("%s's batch was refused: %v", who, err)
+		}
+	}
+	for _, id := range ids {
+		e, err := b.reg.Get(id)
+		if err != nil {
+			t.Fatalf("%s was not written with its two approvals: %v", id, err)
+		}
+		ap := register.ApprovalOf(e.Record)
+		if len(ap.Signers) != 2 || ap.Signers[0].Batch != first.Root || ap.Signers[1].Batch != first.Root {
+			t.Errorf("%s does not hold both approvers' batches: %+v", id, ap.Signers)
+		}
+		for _, sg := range ap.Signers {
+			ev, err := LoadEvidence(b.root, sg.Assertion)
+			if err == nil {
+				err = ev.Check()
+			}
+			if err != nil || ev.For != first.Root {
+				t.Errorf("%s's evidence from %s does not check over the root: %v", id, sg.Subject, err)
+			}
+		}
+	}
+	for _, who := range []string{"ciso", "cfo"} {
+		bid, _ := register.IDOf(register.ApprovalBatch{Root: first.Root, Approver: b.subject(who)})
+		if _, err := b.reg.Get(bid); err != nil {
+			t.Errorf("%s's batch is not in the register: %v", who, err)
+		}
 	}
 }

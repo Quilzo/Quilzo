@@ -75,9 +75,9 @@ type BatchItem struct {
 // which is what tells a batch approved with care from one approved without
 // reading.
 type ApprovalBatch struct {
-	Root      Digest      `json:"root" reg:"required" about:"the Merkle root over the items' surfaces in the order shown; its natural key"`
+	Root      Digest      `json:"root" reg:"required" about:"the Merkle root over the items' surfaces in the order shown; with the approver, its natural key"`
 	Items     []BatchItem `json:"items" reg:"required,min=2" about:"the records approved, in the order they were shown"`
-	Approver  ID          `json:"approver" reg:"required,ref=Subject" about:"who approved them"`
+	Approver  ID          `json:"approver" reg:"required,ref=Subject" about:"who approved them, whose batch this is"`
 	At        Time        `json:"at" reg:"required" about:"when"`
 	Assertion Digest      `json:"assertion" reg:"required" about:"the digest of the approver's authentication evidence, bound to the root"`
 	Method    Method      `json:"method,omitempty" about:"how the evidence binds them: a passkey, or an administrator at the console"`
@@ -88,8 +88,13 @@ type ApprovalBatch struct {
 
 const KindApprovalBatch Kind = "ApprovalBatch"
 
-func (ApprovalBatch) Kind() Kind              { return KindApprovalBatch }
-func (b ApprovalBatch) Key() (string, string) { return Local, string(b.Root) }
+// The key is the root and the approver: two people who approve the same
+// decisions, as one that takes two of them asks, sign the same root, and
+// each one's batch is a record of its own.
+func (ApprovalBatch) Kind() Kind { return KindApprovalBatch }
+func (b ApprovalBatch) Key() (string, string) {
+	return Local, string(b.Root) + "/" + string(b.Approver)
+}
 func (b ApprovalBatch) Check() error {
 	seen := map[ID]bool{}
 	sampled := 0

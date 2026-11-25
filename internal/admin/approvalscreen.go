@@ -614,7 +614,7 @@ func (s *Server) handleApprovalBatch(w http.ResponseWriter, r *http.Request) {
 	root := rootOf(hex)
 	switch {
 	case action == "":
-		b, err := m.BatchOf(root)
+		b, err := m.BatchOf(s.approver(p), root)
 		if errors.Is(err, approval.ErrNoBatch) {
 			http.NotFound(w, r)
 			return
@@ -643,7 +643,7 @@ func (s *Server) handleApprovalBatch(w http.ResponseWriter, r *http.Request) {
 		}
 		s.renderAsk(w, r, p, a, hex, notice)
 	case action == "challenge":
-		b, err := m.BatchOf(root)
+		b, err := m.BatchOf(s.approver(p), root)
 		if err != nil {
 			approvalError(w, err)
 			return

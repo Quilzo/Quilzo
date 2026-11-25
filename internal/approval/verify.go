@@ -63,7 +63,7 @@ func Verify(r *register.Register, rec register.Record, id register.ID, a *regist
 			return fmt.Errorf("the evidence %s is not an approval of the batch %s", sg.Assertion, sg.Batch)
 		}
 		if sg.Batch != "" {
-			if err := batchHolds(r, sg.Batch, id, a.Surface); err != nil {
+			if err := batchHolds(r, sg.Batch, sg.Subject, id, a.Surface); err != nil {
 				return err
 			}
 		}
@@ -74,10 +74,11 @@ func Verify(r *register.Register, rec register.Record, id register.ID, a *regist
 	return nil
 }
 
-// batchHolds refuses an approval given in a batch whose record does not
-// hold its surface among the leaves the approver signed the root of.
-func batchHolds(r *register.Register, root register.Digest, id register.ID, surface register.Digest) error {
-	bid, err := register.IDOf(register.ApprovalBatch{Root: root})
+// batchHolds refuses an approval given in a batch whose record, the
+// approver's own, does not hold its surface among the leaves they signed
+// the root of.
+func batchHolds(r *register.Register, root register.Digest, approver, id register.ID, surface register.Digest) error {
+	bid, err := register.IDOf(register.ApprovalBatch{Root: root, Approver: approver})
 	if err != nil {
 		return err
 	}
