@@ -391,3 +391,27 @@ func TestTheUpkeepJobEnforcesRetention(t *testing.T) {
 		t.Error("the sweep is not in the audit log")
 	}
 }
+
+// The register's own row of the privilege table is its widest line,
+// deciding an erasure, so a line added later arrives guarded; each line
+// that reads narrows it to a view. A bare `quilzo register` lists the
+// kinds, and is asked as that line is: a reader of the compliance area
+// runs it and every read, and is refused the erasure and the expiry.
+func TestABareRegisterCommandIsAskedAsTheListItRuns(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: auth.AreaCompliance})
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{nil, {"kinds"}, {"list", "Risk"}, {"show", "00000000000000000000000000000000"},
+		{"history", "00000000000000000000000000000000"}, {"export", "Risk"}, {"inventory"}, {"proposals"}} {
+		if err := authoriseCommand(root, "register", args); err != nil {
+			t.Errorf("a reader of the compliance area running register %v: %v", args, err)
+		}
+	}
+	for _, args := range [][]string{{"erase", "--subject", "x"}, {"expire"}, {"a-line-added-later"}} {
+		if err := authoriseCommand(root, "register", args); err == nil {
+			t.Errorf("a reader of the compliance area ran register %v", args)
+		}
+	}
+	if bareRuns["register"] != "kinds" {
+		t.Errorf("a bare register command runs %q", bareRuns["register"])
+	}
+}

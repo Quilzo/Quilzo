@@ -57,12 +57,21 @@ func init() {
 		// the policy, which a role over the site reaches only as
 		// administrator: somebody who may read the site's pages does not
 		// thereby read its risks.
-		needs: map[string]need{"register": {action: auth.ActView},
-			// Erasing a person is a decision about the register, made by
-			// somebody who may approve its records; expiring early what
-			// retention ends writes what the server would.
-			"register erase":  {action: auth.ActApprove, hint: "an erasure is decided by somebody who may approve the register's records"},
+		//
+		// The command's own row is the widest of its lines, deciding an
+		// erasure, so a line added later arrives guarded, and each line
+		// that reads narrows it to a view; a bare `quilzo register` lists
+		// the kinds, and is asked as that line is.
+		needs: map[string]need{
+			"register":       {action: auth.ActApprove, hint: "an erasure is decided by somebody who may approve the register's records"},
+			"register kinds": {action: auth.ActView}, "register list": {action: auth.ActView},
+			"register show": {action: auth.ActView}, "register history": {action: auth.ActView},
+			"register export": {action: auth.ActView}, "register inventory": {action: auth.ActView},
+			"register proposals": {action: auth.ActView},
+			"register erase":     {action: auth.ActApprove, hint: "an erasure is decided by somebody who may approve the register's records"},
+			// Expiring early what retention ends writes what the server would.
 			"register expire": {action: auth.ActEditDraft}},
+		bare: "kinds",
 		area: register.Area,
 		reads: [][]string{{"register", "kinds"}, {"register", "list", "Control"}, {"register", "proposals"},
 			{"register", "export", "Control"}, {"register", "inventory"}},
@@ -76,8 +85,10 @@ func init() {
 }
 
 func cmdRegister(root string, args []string) error {
+	// Bare, it runs the line it is asked by (cliModule.bare), so the two
+	// cannot drift apart.
 	if len(args) == 0 {
-		args = []string{"kinds"}
+		args = []string{bareRuns["register"]}
 	}
 	switch args[0] {
 	case "kinds":

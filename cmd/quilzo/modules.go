@@ -72,6 +72,11 @@ type cliModule struct {
 	// calls srv.Register and nothing else when it is called; the work is in
 	// the handlers.
 	ops func(srv *mcp.Server, root string, caller *Caller)
+	// bare is the subcommand the command runs when it is given none, whose
+	// row of the privilege table it is then asked by (bareRuns). Empty, a
+	// bare command is asked by its own row, which is the widest of its
+	// lines: a subcommand's row only ever narrows it.
+	bare string
 	// jobs is the work the module needs done because time passed (a
 	// retention period ending), which the admin server runs on its upkeep
 	// timer with its own (upkeepJobs). Nil is none.
@@ -101,6 +106,9 @@ func registerCLI(m cliModule) {
 	}
 	if m.area != "" {
 		commandAreas[m.command] = m.area
+	}
+	if m.bare != "" {
+		bareRuns[m.command] = m.bare
 	}
 	cliModules = append(cliModules, m)
 	sort.Slice(cliModules, func(i, j int) bool { return cliModules[i].command < cliModules[j].command })
