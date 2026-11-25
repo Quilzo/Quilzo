@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -601,5 +602,45 @@ func TestTheBrowserRefusesAnUnresolvedReferenceToo(t *testing.T) {
 	// link before the page.
 	if f := srv.CheckTypes(map[string]any{"hello": map[string]any{}}); len(f) != 0 {
 		t.Errorf("saving was refused for an unresolved reference: %v", f)
+	}
+}
+
+// A term is not removed while the draft cannot be read. Its use was counted
+// from the draft read as no pages, so with one page object altered on disk
+// a term a page still carried was removed as one that nothing carried.
+func TestATermIsNotRemovedWhileTheDraftCannotBeRead(t *testing.T) {
+	srv, token := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{
+		"index": map[string]any{"title": "Home", "body": "Welcome."},
+		"about": map[string]any{"title": "About", "body": "Who we are.",
+			taxonomy.Field: map[string]any{"topics": []any{"reports"}}},
+	}, "tagged", "test"); err != nil {
+		t.Fatal(err)
+	}
+	vocabs := &taxonomy.Set{}
+	if err := vocabs.Add(taxonomy.Vocabulary{Name: "topics", Label: "Topics",
+		Terms: []taxonomy.Term{{ID: "reports", Label: "Reports"}}}); err != nil {
+		t.Fatal(err)
+	}
+	saved := false
+	srv.Structure = &Structure{
+		Vocabularies:     func() (*taxonomy.Set, error) { return vocabs, nil },
+		SaveVocabularies: func(*taxonomy.Set) error { saved = true; return nil },
+		Menus:            func() (*menu.Set, error) { return &menu.Set{}, nil },
+		SaveMenus:        func(*menu.Set) error { return nil },
+	}
+	ids, err := site.PageIDsAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := ids["index"]
+	p := filepath.Join(srv.Store.Root(), "objects", oid[:2], oid[2:])
+	os.Chmod(p, 0o600)
+	if err := os.WriteFile(p, []byte("blob\x00{\"title\":\"Altered\"}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/structure/term/remove", token, "vocabulary=topics&term=reports")
+	if loc := w.Header().Get("Location"); saved || !strings.Contains(loc, "e=") {
+		t.Errorf("a term was removed with the draft unreadable (saved %v): %q", saved, loc)
 	}
 }

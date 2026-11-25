@@ -2719,7 +2719,10 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	pages, _ := site.PagesAt(s.Store, site.RefDraft)
+	pages, ok := s.readableDraft(w, r, p)
+	if !ok {
+		return
+	}
 
 	// And then the listing is what they may read, page by page. A list that
 	// names pages somebody cannot open is a worse answer than a refusal: it
@@ -2828,6 +2831,34 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// readableDraft is the draft's pages for a screen that lists or opens them:
+// none when there is no draft yet, and a refusal, written to w, naming what
+// cannot be read when there is one that cannot be.
+//
+// The Pages screen and the editor took an unreadable draft for no pages.
+// One page object altered on disk stops the whole draft being read, and the
+// Pages screen said "No pages yet" of a store of twelve, and each editor
+// opened empty, as on a page nobody had written, inviting somebody to write
+// it again. The save refused already (handleSave); these say why first.
+func (s *Server) readableDraft(w http.ResponseWriter, r *http.Request, p principal) (map[string]any, bool) {
+	pages, err := site.PagesAt(s.Store, site.RefDraft)
+	if err == nil {
+		return pages, true
+	}
+	if s.Store.GetRef(site.RefDraft) == "" {
+		return map[string]any{}, true
+	}
+	s.render(w, r, "message.html", map[string]any{"Status": http.StatusInternalServerError,
+		"Nav": "pages", "Title": "The draft cannot be read", "Principal": p,
+		"Heading": "The draft cannot be read",
+		"Body": "Its pages are not shown, rather than shown as though there were none: " + err.Error() +
+			". quilzo verify names each object that does not check, and a backup made before the " +
+			"damage holds them. Nothing is saved over the draft until it can be read.",
+		"Back": crumb{Label: "History", Path: "/history"},
+	})
+	return nil, false
+}
+
 // handleNewPage starts a page: its address, made into a page name, and the
 // editor opened on it. Pages had no way to add one; the editor opened only
 // for a name somebody already knew to type into the address bar.
@@ -2898,7 +2929,10 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// refused rather than silently overwritten.
 	base := s.Store.GetRef(site.RefDraft)
 
-	pages, _ := site.PagesAt(s.Store, site.RefDraft)
+	pages, ok := s.readableDraft(w, r, p)
+	if !ok {
+		return
+	}
 	body, exists := pages[name]
 
 	// Somebody who may only read is shown the page, and an address with no

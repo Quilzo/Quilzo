@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +312,67 @@ func TestAMissingOrOldExploitedCatalogueIsSaid(t *testing.T) {
 	}
 	if got := kevMissing(t, root); len(got) != 0 {
 		t.Errorf("the posture with a current catalogue: %+v", got)
+	}
+}
+
+// A catalogue older than the one kept is refused, as an older Go database
+// is by `self update`. It was kept without a word, so a flaw found
+// exploited since the older one was released went from contained at once
+// to waiting for a person, by somebody giving last month's download.
+func TestAnOlderExploitedCatalogueIsRefused(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+	recent := time.Now().AddDate(0, 0, -2)
+	if err := selfKEV(root, []string{kevFile(t, recent)}); err != nil {
+		t.Fatal(err)
+	}
+	err := selfKEV(root, []string{kevFile(t, recent.AddDate(0, 0, -30))})
+	if err == nil || !strings.Contains(err.Error(), recent.UTC().Format("2 January 2006")) {
+		t.Errorf("an older catalogue: %v", err)
+	}
+	if _, st := loadKEV(root); !st.Of.Equal(recent) {
+		t.Errorf("the catalogue kept is of %s, want %s", st.Of, recent)
+	}
+	// The same one again, and a newer one, are taken.
+	for _, at := range []time.Time{recent, recent.AddDate(0, 0, 1)} {
+		if err := selfKEV(root, []string{kevFile(t, at)}); err != nil {
+			t.Errorf("the catalogue of %s: %v", at, err)
+		}
+	}
+}
+
+// A catalogue that says no date is refused over one that does, as `self
+// update` refuses a database no newer than the one in use. Only a dated
+// catalogue was compared, so one with its dateReleased missing or written
+// some other way replaced the kept one without a word, and every flaw the
+// kept one named and it did not went from contained at once to waiting
+// for a person.
+func TestAnUndatedExploitedCatalogueDoesNotReplaceADatedOne(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+	recent := time.Now().AddDate(0, 0, -2)
+	if err := selfKEV(root, []string{kevFile(t, recent)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"vulnerabilities":[{"cveID":"CVE-2026-0002"}]}`,
+		`{"dateReleased":"last Tuesday","vulnerabilities":[{"cveID":"CVE-2026-0002"}]}`,
+	} {
+		p := filepath.Join(t.TempDir(), "known_exploited_vulnerabilities.json")
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := selfKEV(root, []string{p}); err == nil || !strings.Contains(err.Error(), recent.UTC().Format("2 January 2006")) {
+			t.Errorf("%s: %v", body, err)
+		}
+		if k, _ := loadKEV(root); !slices.Equal(k.IDs, []string{"CVE-2026-0001"}) {
+			t.Errorf("%s replaced the catalogue kept: %v", body, k.IDs)
+		}
 	}
 }

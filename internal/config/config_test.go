@@ -224,6 +224,66 @@ func TestAStoredValueThatDoesNotParseIsRefusedAtLoad(t *testing.T) {
 	}
 }
 
+// A setting written twice is refused at load, naming it. The file loaded
+// with the last one in force and said nothing, so a file that reads
+// "network.mode": "offline" to whoever opens it, with an "open" further
+// down from a merge or a pasted block, ran open; and `config show` showed
+// the open one, beside a file that said otherwise.
+//
+// Also when the second "values" is spelt "Values": encoding/json matches
+// a name to its field without regard to case and adds the second object's
+// settings to the first's, so that file loaded, open, while a check of
+// names spelt the same let it by.
+func TestASettingWrittenTwiceIsRefusedAtLoad(t *testing.T) {
+	for _, body := range []string{
+		`{"values":{"network.mode":"offline","site.name":"A","network.mode":"open"}}`,
+		`{"values":{"network.mode":"offline"},"values":{"network.mode":"open"}}`,
+		`{"values":{"network.mode":"offline"},"Values":{"network.mode":"open"}}`,
+	} {
+		_, err := Parse([]byte(body))
+		if err == nil || !strings.Contains(err.Error(), "more than once") {
+			t.Errorf("%s loaded: %v", body, err)
+		}
+	}
+	if _, err := Parse([]byte(`{"values":{"network.mode":"offline","site.name":"A"}}`)); err != nil {
+		t.Errorf("a file with each setting once: %v", err)
+	}
+}
+
+// What a file Parse refuses says of one setting, where that can be told:
+// the setting itself in a file refused for another reason, and not when the
+// file is not JSON, the value is not a string or the setting is written
+// twice. The network boundary reads it, so a file with one unknown key
+// still says offline.
+//
+// Written twice includes "values" itself written twice, in any case: the
+// second object's settings are added to the first's, so a file whose first
+// "values" said offline was read as the open of its second, and the command
+// line ran open of a file Parse refused for the very repetition.
+func TestOneSettingIsReadFromAFileThatDoesNotLoad(t *testing.T) {
+	for _, c := range []struct {
+		body, want string
+		known      bool
+	}{
+		{`{"values":{"network.mode":"offline","auth.thottle":"false"}}`, "offline", true},
+		{`{"values":{"auth.thottle":"false"}}`, "", true},
+		{`{"accepted":[{"key":"x"}],"values":{"api.page.max":"loads","network.mode":"open"}}`, "open", true},
+		{``, "", true},
+		{`{"values":{"network.mode":"offline","site.na`, "", false},
+		{`{"values":{"network.mode":false}}`, "", false},
+		{`{"values":"offline"}`, "", false},
+		{`{"values":{"network.mode":"offline","network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"offline"},"values":{"network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"offline"},"Values":{"network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"open"},"accepted":[{"key":"a","Key":"b"}]}`, "open", true},
+	} {
+		got, known := ValueIn([]byte(c.body), "network.mode")
+		if got != c.want || known != c.known {
+			t.Errorf("%s: %q %v, want %q %v", c.body, got, known, c.want, c.known)
+		}
+	}
+}
+
 // -- the table itself ---------------------------------------------------------
 
 // Every setting has to be explicable, because `config explain` prints this and

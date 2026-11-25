@@ -15,8 +15,7 @@
    "chatbots",
    "import",
    "mcp",
-   "scim",
-   "uploads"
+   "scim"
   ],
   "cmp": [
    "*"
@@ -29,8 +28,7 @@
   ],
   "compress/zlib": [
    "*",
-   "chatbots",
-   "uploads"
+   "chatbots"
   ],
   "container/heap": [
    "*"
@@ -39,8 +37,7 @@
    "*",
    "chatbots",
    "search-answers",
-   "signals",
-   "uploads"
+   "signals"
   ],
   "crypto": [
    "*"
@@ -88,8 +85,7 @@
    "chatbots",
    "forms",
    "signals",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "crypto/sha512": [
    "*"
@@ -140,8 +136,7 @@
    "signup"
   ],
   "encoding/binary": [
-   "*",
-   "uploads"
+   "*"
   ],
   "encoding/csv": [
    "*"
@@ -154,8 +149,7 @@
    "forms",
    "scim",
    "signals",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "encoding/json": [
    "*",
@@ -167,8 +161,7 @@
    "mcp",
    "scim",
    "signals",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "encoding/pem": [
    "*"
@@ -234,26 +227,22 @@
    "signup"
   ],
   "image": [
-   "*",
-   "uploads"
+   "*"
   ],
   "image/color": [
-   "*",
-   "uploads"
+   "*"
   ],
   "image/draw": [
    "*"
   ],
   "image/gif": [
-   "uploads"
+   "*"
   ],
   "image/jpeg": [
-   "*",
-   "uploads"
+   "*"
   ],
   "image/png": [
-   "*",
-   "uploads"
+   "*"
   ],
   "io": [
    "*",
@@ -267,8 +256,7 @@
    "uploads"
   ],
   "io/fs": [
-   "*",
-   "uploads"
+   "*"
   ],
   "maps": [
    "*"
@@ -337,12 +325,10 @@
    "chatbots",
    "forms",
    "scim",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "os/exec": [
-   "*",
-   "uploads"
+   "*"
   ],
   "os/signal": [
    "*"
@@ -359,8 +345,7 @@
    "boards",
    "chatbots",
    "forms",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "reflect": [
    "*"
@@ -373,8 +358,7 @@
    "forms",
    "mcp",
    "scim",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "runtime": [
    "*"
@@ -433,8 +417,7 @@
    "forms",
    "scim",
    "signals",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "sync/atomic": [
    "*"
@@ -475,8 +458,7 @@
    "boards",
    "chatbots",
    "mcp",
-   "signup",
-   "uploads"
+   "signup"
   ],
   "unsafe": [
    "*"

@@ -47,3 +47,27 @@ func TestAuditlogDirSaysOneThingALine(t *testing.T) {
 		}
 	}
 }
+
+// An empty directory, as an unset shell variable writes one, is refused and
+// moves nothing. filepath.Abs makes the working directory of "", so
+// `quilzo auditlog dir "$AUDIT"` with AUDIT unset pointed every reader at
+// wherever the command happened to run: a new, empty chain that verified
+// intact, with the real log left where nobody read it.
+func TestAuditlogDirRefusesAnEmptyDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	for _, dir := range []string{"", "  "} {
+		_, e, code := cliRun(t, root, "", "auditlog", "dir", dir)
+		if code != 2 || !strings.Contains(e, "no directory") {
+			t.Errorf("auditlog dir %q exited %d, want 2 and why: %s", dir, code, firstLines(e, 3))
+		}
+		if o, _, _ := cliRun(t, root, "", "auditlog", "dir", "--json"); !strings.Contains(o, `"in_store": true`) {
+			t.Errorf("auditlog dir %q moved the log: %s", dir, firstLines(o, 4))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "auditlog.dir")); !os.IsNotExist(err) {
+		t.Errorf("a pointer was written: %v", err)
+	}
+}

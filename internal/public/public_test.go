@@ -9,6 +9,8 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -609,5 +611,33 @@ func TestTheOfflinePagePromisesNoCopyThatIsNotKept(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("the offline page does not say %q:\n%s", want, body)
 		}
+	}
+}
+
+// A published page that cannot be read is not said to be missing. One page
+// object altered on disk was skipped as it was decoded, and its address
+// answered "There is nothing at this address. It may have been moved or
+// removed" to every visitor, which is what a page taken down says. The rest
+// of the site is still served.
+func TestAnUnreadablePageIsNotSaidToBeMissing(t *testing.T) {
+	st, s := setup(t)
+	ids, err := site.PageIDsAt(s, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := ids["about"]
+	p := filepath.Join(s.Root(), "objects", oid[:2], oid[2:])
+	os.Chmod(p, 0o600)
+	if err := os.WriteFile(p, []byte("blob\x00{\"title\":\"Altered\"}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w := get(st, "/about", nil); w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "removed") {
+		t.Errorf("the altered page answered %d: %q", w.Code, w.Body.String())
+	}
+	if w := get(st, "/", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "<h1>Home</h1>") {
+		t.Errorf("the page beside it answered %d", w.Code)
+	}
+	if code := get(st, "/nope", nil).Code; code != http.StatusNotFound {
+		t.Errorf("a page that is not there answered %d", code)
 	}
 }

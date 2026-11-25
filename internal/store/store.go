@@ -736,35 +736,51 @@ func (s *Store) Verify() (int, error) {
 			if err != nil {
 				return checked, err
 			}
-			if vault.IsSealed(body) {
-				if s.keys == nil {
-					return checked, fmt.Errorf(
-						"object %s is encrypted and no key is loaded, so it "+
-							"cannot be checked; supply the keys this store "+
-							"was sealed with", oid)
-				}
-				sealed, uerr := vault.Unmarshal(body)
-				if uerr != nil {
-					return checked, fmt.Errorf("object %s is malformed: %w", oid, uerr)
-				}
-				// The object id as additional authenticated data, which is
-				// what Seal used. A ciphertext moved to a different filename
-				// fails here rather than later.
-				if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
-					return checked, fmt.Errorf("object %s: %w", oid, err)
-				}
-			}
-			i := strings.IndexByte(string(body), 0)
-			if i < 0 {
-				return checked, fmt.Errorf("object %s is malformed", oid)
-			}
-			if ObjectID(string(body[:i]), body[i+1:]) != oid {
-				return checked, fmt.Errorf("object %s does not match its contents", oid)
+			if err := CheckObject(oid, body, s.keys); err != nil {
+				return checked, err
 			}
 			checked++
 		}
 	}
 	return checked, nil
+}
+
+// CheckObject is Verify's check of one object, body as it is filed under
+// oid: that it opens under keys where it is sealed, and hashes to oid.
+//
+// Apart from Verify for a backup, which holds a store's objects as files
+// and has to say whether they would check once restored. It checked only
+// that each file was the one it had read, so `backup create` said "backed
+// up and checked", and `backup verify` that a backup "checks", of a store
+// whose history `quilzo verify` and the restore of that very backup refused.
+func CheckObject(oid string, body []byte, keys *vault.Keyring) error {
+	if vault.IsSealed(body) {
+		if keys == nil {
+			return fmt.Errorf(
+				"object %s is encrypted and no key is loaded, so it "+
+					"cannot be checked; supply the keys this store "+
+					"was sealed with", oid)
+		}
+		sealed, uerr := vault.Unmarshal(body)
+		if uerr != nil {
+			return fmt.Errorf("object %s is malformed: %w", oid, uerr)
+		}
+		// The object id as additional authenticated data, which is
+		// what Seal used. A ciphertext moved to a different filename
+		// fails here rather than later.
+		var err error
+		if body, err = keys.Open(sealed, []byte(oid)); err != nil {
+			return fmt.Errorf("object %s: %w", oid, err)
+		}
+	}
+	i := strings.IndexByte(string(body), 0)
+	if i < 0 {
+		return fmt.Errorf("object %s is malformed", oid)
+	}
+	if ObjectID(string(body[:i]), body[i+1:]) != oid {
+		return fmt.Errorf("object %s does not match its contents", oid)
+	}
+	return nil
 }
 
 // BuildTree stores each page as a blob and gathers them into one tree.

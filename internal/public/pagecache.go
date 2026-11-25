@@ -76,6 +76,22 @@ type pageSet struct {
 	// members is the pages marked members_only. Left out of visibleAt, so
 	// no public read path can reach one; see members.go.
 	members map[string]bool
+	// unreadable is the pages the tree names whose object cannot be read,
+	// altered or cut short on disk. Left out of every read path as before,
+	// and kept so the page's address says it cannot be shown rather than
+	// that it was moved or removed (unreadablePage).
+	unreadable map[string]bool
+}
+
+// unreadablePage reports whether the live content names a page at name
+// whose object cannot be read.
+func (st *Site) unreadablePage(name string) bool {
+	live := st.Store.GetRef(st.ref())
+	if live == "" {
+		return false
+	}
+	set, err := st.decoded(live)
+	return err == nil && set.unreadable[name]
 }
 
 // decoded returns the memo for a commit, building it at most once.
@@ -103,16 +119,21 @@ func (st *Site) decoded(commit string) (*pageSet, error) {
 	}
 
 	set := &pageSet{
-		commit:  commit,
-		bodies:  make(map[string]any, len(tree)),
-		oids:    make(map[string]string, len(tree)),
-		window:  make(map[string]site.Window, len(tree)),
-		hidden:  map[string]bool{},
-		members: map[string]bool{},
+		commit:     commit,
+		bodies:     make(map[string]any, len(tree)),
+		oids:       make(map[string]string, len(tree)),
+		window:     make(map[string]site.Window, len(tree)),
+		hidden:     map[string]bool{},
+		members:    map[string]bool{},
+		unreadable: map[string]bool{},
 	}
 	for name, oid := range tree {
 		var body any
 		if err := st.Store.GetBlob(oid, &body); err != nil {
+			// A tree is a branch of records sharing the store, not a page.
+			if !st.Store.IsTree(oid) {
+				set.unreadable[name] = true
+			}
 			continue
 		}
 		set.bodies[name] = body
