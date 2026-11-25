@@ -33,7 +33,7 @@ func init() {
 			"  quilzo population define NAME --source S --query FILE  define one: its source and the query that selects it\n" +
 			"                                           [--fresh 24h] [--independent] [--title T] [--cross-check S --cross-query FILE]\n" +
 			"  quilzo population count NAME             count a population now, and its cross-check, and record both\n" +
-			"  quilzo population show NAME              one population as last counted, with what disagrees\n" +
+			"  quilzo population show NAME              one population counted now, with what disagrees; nothing is recorded\n" +
 			"  quilzo population link --on ON --a SOURCE[:FACT] --b SOURCE[:FACT]  link two sources on an exact identifier\n",
 		run: cmdPopulation,
 		needs: map[string]need{
@@ -214,8 +214,10 @@ func sideOf(s string) (programme.Side, error) {
 	return programme.Side{Source: id, Fact: fact}, nil
 }
 
-// populationCount is a population as it was last counted, labelled as of
-// now, without counting it again.
+// populationCount is a population counted at the register's head, as of
+// now, with its labels, and recorded nowhere: `population count` is what
+// records a count. The labels are of this count, so a population nobody
+// has recorded a count of is not shown as uncounted here.
 func populationCount(p *programme.Programme, name string) (programme.Count, error) {
 	v, err := headView(p)
 	if err != nil {
