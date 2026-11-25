@@ -110,7 +110,16 @@ func wantsJSON(r *http.Request) bool {
 		return true
 	}
 	a := r.Header.Get("Accept")
-	return strings.Contains(a, "application/json") || strings.Contains(a, "+json")
+	if strings.Contains(a, "application/json") || strings.Contains(a, "+json") {
+		return true
+	}
+	// A request that sends JSON reads JSON back, though it says it accepts
+	// anything, as a page's script using fetch does. The admin's passkey
+	// pages post JSON and read every answer as JSON, and a refusal in text
+	// was shown to the person there as "Unexpected token 'R'" where it says
+	// when to come back.
+	ct := r.Header.Get("Content-Type")
+	return strings.HasPrefix(ct, "application/json") || strings.Contains(ct, "+json")
 }
 
 func wantsHTML(r *http.Request) bool {

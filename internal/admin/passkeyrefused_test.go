@@ -108,3 +108,24 @@ func TestAPasskeySignInThatProvesNobodyIsCountedAgainstItsSource(t *testing.T) {
 		t.Errorf("a key's own holder, asked for a PIN, was counted as a guess")
 	}
 }
+
+// Each page that speaks the passkey ceremony says what a refusal says,
+// whether the admin wrote it ("error") or the shield did, which answers a
+// blocked or slowed address in problem+json ("detail", with when to come
+// back), before the admin sees the request.
+//
+// They read "error" alone, so once the failed passkeys from an address
+// were counted and the address blocked, the person there was told "that
+// did not work" and not when they could try again.
+func TestTheCeremonyPagesSayTheShieldsRefusal(t *testing.T) {
+	for _, page := range []string{"passkeysignin.html", "admin.js", "enrol.html", "passkeys.html"} {
+		b, err := assets.ReadFile("assets/" + page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := string(b); strings.Contains(s, `.error || "that did not work"`) ||
+			!strings.Contains(s, `.detail || "that did not work"`) {
+			t.Errorf("%s says the admin's refusal and not the shield's", page)
+		}
+	}
+}

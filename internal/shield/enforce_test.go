@@ -237,3 +237,41 @@ func TestARefusalAnswersInTheRequestersOwnTerms(t *testing.T) {
 		t.Fatalf("earlier than the rounded end: %d", secs)
 	}
 }
+
+// A request that sends JSON is refused in JSON, blocked or slowed, though
+// it names no type it accepts: a page's script posting to the admin sends
+// its body as JSON and accepts anything, as fetch does unless told.
+//
+// It was refused in text. The passkey sign-in reads every answer as JSON,
+// so once failed passkeys from an address were counted and the address
+// blocked, the person there was shown "Unexpected token 'R', "Requests
+// f"... is not valid JSON" where the refusal says when to come back.
+func TestARequestThatSendsJSONIsRefusedInJSON(t *testing.T) {
+	p := Protection{ID: "sh-1a2b3c4d", Until: t0.Add(47 * time.Minute)}
+	for name, refuse := range map[string]func(http.ResponseWriter, *http.Request){
+		"blocked": func(w http.ResponseWriter, r *http.Request) { Refuse(w, r, p, t0) },
+		"slowed":  func(w http.ResponseWriter, r *http.Request) { RefuseSlow(w, r, time.Second) },
+	} {
+		for _, ct := range []string{"application/json", "application/json; charset=utf-8"} {
+			r := httptest.NewRequest("POST", "/signin/passkey/challenge", strings.NewReader("{}"))
+			r.Header.Set("Content-Type", ct)
+			r.Header.Set("Accept", "*/*")
+			w := httptest.NewRecorder()
+			refuse(w, r)
+			var doc map[string]any
+			if w.Header().Get("Content-Type") != "application/problem+json" || json.Unmarshal(w.Body.Bytes(), &doc) != nil ||
+				doc["status"] != float64(429) || doc["detail"] == "" {
+				t.Errorf("%s, sending %s: %s %q", name, ct, w.Header().Get("Content-Type"), w.Body.String())
+			}
+		}
+	}
+	// A form a browser posts is still answered as a page.
+	r := httptest.NewRequest("POST", "/signin", strings.NewReader("token=x"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Accept", "text/html,application/xhtml+xml")
+	w := httptest.NewRecorder()
+	Refuse(w, r, p, t0)
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("a form was refused as %q", w.Header().Get("Content-Type"))
+	}
+}
