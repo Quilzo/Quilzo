@@ -201,8 +201,19 @@
 // "subject erased" or "text erased" beside it (Named). A label holding an
 // address or a user principal name is refused at Put. The data inventory is
 // generated from the schemas and the policy's roles, never written by hand:
-// which fields name a person, which hold text and files, how long, and who
-// may read each kind.
+// which fields name a person, which hold text and files, how long, who may
+// read each kind, and that the audit log names whoever acted by the name
+// the access policy knows, which an erasure does not reach.
+//
+// An erasure is decided by a person on the command line or in the admin,
+// and its approval is held to every rule Put holds it to before anything
+// is deleted. The agent interface and the API read the Erasure records and
+// say "subject erased" as the screens do, and neither erases anybody: the
+// agent interface's register operations are reads, and the API's module
+// routes are reads until internal/api/modules.go gains what a write needs.
+// Bundles (PLAN theme 17) are not built yet; a bundle of the register
+// carries its Erasure records as it carries any other, and checks as the
+// register does.
 //
 // # Drawing a screen with the security kit
 //
