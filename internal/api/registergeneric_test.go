@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 func init() {
@@ -93,7 +94,7 @@ func TestTheRegisterRoutesFilterExportAndFollowHistory(t *testing.T) {
 	}
 	for _, row := range rows[1:] {
 		for _, cell := range row {
-			if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
+			if sheet.IsFormula(cell) {
 				t.Errorf("the cell %q would run as a formula", cell)
 			}
 		}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // What every surface reads of any kind: a record's history, a kind's
@@ -333,13 +334,11 @@ func ExportRows(spec Spec, entries []Entry) ([]string, [][]string, error) {
 	return ExportColumns(*s), rows, nil
 }
 
-// FormulaSafe is a cell a spreadsheet shows as text and does not run.
-func FormulaSafe(cell string) string {
-	if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
-		return "'" + cell
-	}
-	return cell
-}
+// FormulaSafe is a cell a spreadsheet shows as text and does not run:
+// internal/sheet's guard, the one rule every CSV Quilzo writes is held to,
+// so the register's export agrees with every other on what a formula is
+// and a negative number stays a number.
+func FormulaSafe(cell string) string { return sheet.GuardCell(cell) }
 
 func stamp(t Time) string {
 	if t == 0 {

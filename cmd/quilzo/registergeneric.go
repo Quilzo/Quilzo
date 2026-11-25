@@ -238,6 +238,7 @@ func registerInventory() error {
 	fmt.Printf("\n  %sthe subject map%s  %s\n", bold, reset, inv.SubjectMap)
 	fmt.Printf("  %sthe side store%s   %s\n", bold, reset, inv.SideStore)
 	fmt.Printf("  %san erasure%s       %s\n", bold, reset, inv.Erasure)
+	fmt.Printf("  %sthe audit log%s    %s\n", bold, reset, inv.AuditLog)
 	return nil
 }
 

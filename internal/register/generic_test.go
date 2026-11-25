@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // PLAN theme 28: a record's history is the commits that changed it, newest
@@ -128,13 +130,20 @@ func TestCSVExportIsFormulaSafe(t *testing.T) {
 	}
 	for _, row := range rows[1:] {
 		for i, cell := range row {
-			if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
+			if sheet.IsFormula(cell) {
 				t.Errorf("the %s cell %q would run as a formula", head[i], cell)
 			}
 		}
 	}
 	if !strings.Contains(written, `'=HYPERLINK`) || !strings.Contains(written, `'+cmd`) {
 		t.Errorf("the formulas were not defused:\n%s", written)
+	}
+	// The register's export is guarded by the one rule every CSV Quilzo
+	// writes is, so a negative number stays a number and the rest agree.
+	for _, cell := range []string{"-3", "+4.5", "-3+cmd|' /C calc'!A0", "@SUM(A1)", "\t=1", "\r=1", "plain"} {
+		if FormulaSafe(cell) != sheet.GuardCell(cell) {
+			t.Errorf("the register guards %q as %q, and every other export as %q", cell, FormulaSafe(cell), sheet.GuardCell(cell))
+		}
 	}
 }
 
@@ -238,6 +247,13 @@ func TestDataInventoryIsGeneratedFromTheSchemas(t *testing.T) {
 	}
 	if inv.SubjectMap == "" || inv.SideStore == "" {
 		t.Error("the inventory does not say where the subject map and the side store are")
+	}
+	// The audit log names who acted by the name the access policy knows,
+	// and an erasure does not reach it: the sheet says so, rather than
+	// that nothing but the subject map names a person.
+	if !strings.Contains(inv.AuditLog, "audit log") || !strings.Contains(inv.AuditLog, "erasure") ||
+		strings.Contains(inv.SubjectMap, "Nothing else names a person") {
+		t.Errorf("the inventory says of the audit log %q, and of the subject map %q", inv.AuditLog, inv.SubjectMap)
 	}
 	// A person-free kind lists no one.
 	if len(byKind[KindRequirement].People) != 0 {

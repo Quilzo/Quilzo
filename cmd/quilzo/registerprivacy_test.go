@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
@@ -266,7 +267,7 @@ func TestRegisterHistoryFiltersAndExport(t *testing.T) {
 	}
 	for _, row := range rows[1:] {
 		for _, cell := range row {
-			if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
+			if sheet.IsFormula(cell) {
 				t.Errorf("the cell %q would run as a formula", cell)
 			}
 		}
@@ -306,12 +307,13 @@ func TestRegisterInventoryCommand(t *testing.T) {
 		t.Fatalf("register inventory: %s", e)
 	}
 	var inv register.DataInventory
-	if err := json.Unmarshal([]byte(o), &inv); err != nil || len(inv.Kinds) != len(register.Kinds()) || inv.SubjectMap == "" {
+	if err := json.Unmarshal([]byte(o), &inv); err != nil || len(inv.Kinds) != len(register.Kinds()) || inv.SubjectMap == "" ||
+		inv.AuditLog == "" {
 		t.Fatalf("the inventory is %s (%v)", firstLines(o, 4), err)
 	}
 	human, _, code := cliRun(t, root, token, "register", "inventory")
 	if code != 0 || !strings.Contains(human, "Risk") || !strings.Contains(human, "raised_by") ||
-		!strings.Contains(human, "subject map") {
+		!strings.Contains(human, "subject map") || !strings.Contains(human, "the audit log") {
 		t.Errorf("the inventory reads:\n%s", firstLines(human, 20))
 	}
 }

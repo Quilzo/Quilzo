@@ -32,6 +32,10 @@ type DataInventory struct {
 	SideStore  string `json:"side_store"`
 	// Erasure says what an erasure deletes and what it leaves.
 	Erasure string `json:"erasure"`
+	// AuditLog says how the audit log names the people who wrote the
+	// register, which an erasure does not reach. A sheet that said only
+	// the subject map names a person would say less than is kept.
+	AuditLog string `json:"audit_log"`
 }
 
 // InventoryKind is one kind's lines of the sheet.
@@ -71,13 +75,19 @@ func Inventory() DataInventory {
 	inv := DataInventory{
 		SubjectMap: "side/subjects under the store's directory: one file a person, holding their pseudonym, the name " +
 			"the systems that name them use (an account, a user principal name or an address) and what sort of " +
-			"account it is; sealed with the store's keyring on an encrypted store. Nothing else names a person.",
+			"account it is; sealed with the store's keyring on an encrypted store. Nothing in the register itself " +
+			"names a person.",
 		SideStore: "side/entries under the store's directory: the free text people wrote and the raw files facts " +
 			"were read from, each named by its SHA-256 and checked against it when read, with the kinds that hold " +
 			"it and the pseudonyms of the people it is about; sealed with the store's keyring on an encrypted store.",
 		Erasure: "An erasure deletes the subject map's entry for the person and every side entry about them, and " +
 			"writes a signed Erasure record saying whose pseudonym now names nobody, on what basis and on whose " +
 			"decision. The register itself is not changed, so every record and chain still checks.",
+		AuditLog: "The audit log, beside the register, records every write, every entry kept in the side store and " +
+			"every erasure under the name the access policy knows whoever did it by, with what was done: the kinds, " +
+			"the counts, the digests and the pseudonyms, never the words or the files. It is a hash chain, which a " +
+			"SIEM may hold a copy of, so an erasure does not reach it: it keeps who answered for the security " +
+			"record, not what the record says about the person erased.",
 	}
 	for _, k := range Kinds() {
 		ik := InventoryKind{Kind: k.Kind, Collection: k.Collection, Summary: k.Summary, Class: k.Class,

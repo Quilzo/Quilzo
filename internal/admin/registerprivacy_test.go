@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // accessible fails the test for every blocking finding of the checker on
@@ -92,7 +93,7 @@ func TestTheKindScreenFiltersAndExports(t *testing.T) {
 	}
 	for _, row := range rows[1:] {
 		for _, cell := range row {
-			if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
+			if sheet.IsFormula(cell) {
 				t.Errorf("the cell %q would run as a formula", cell)
 			}
 		}
@@ -236,7 +237,8 @@ func TestTheDataInventoryScreen(t *testing.T) {
 	w := get(t, srv, "/register/inventory", token)
 	body := w.Body.String()
 	if w.Code != http.StatusOK || !strings.Contains(body, "<h1>Data inventory</h1>") || !strings.Contains(body, "raised_by") ||
-		!strings.Contains(body, "the subject map") || !strings.Contains(body, `<th scope="col">`) {
+		!strings.Contains(body, "the subject map") || !strings.Contains(body, `<th scope="col">`) ||
+		!strings.Contains(body, "<dt>The audit log</dt>") {
 		t.Fatalf("the inventory answered %d\n%s", w.Code, firstLines(body, 60))
 	}
 	if strings.Count(body, "<caption>") < len(register.Kinds())/2 {

@@ -6,6 +6,7 @@
 <dt>The subject map</dt><dd>{{.Inventory.SubjectMap}}</dd>
 <dt>The side store</dt><dd>{{.Inventory.SideStore}}</dd>
 <dt>An erasure</dt><dd>{{.Inventory.Erasure}} <a href="/register/erase">Erase a person</a>.</dd>
+<dt>The audit log</dt><dd>{{.Inventory.AuditLog}}</dd>
 </dl>
 <h2>Kind by kind</h2>
 {{range .Tables}}<section aria-labelledby="{{.ID}}-h"><h3 id="{{.ID}}-h">{{.Table.Caption}}</h3>{{template "kit-table" .Table}}</section>
