@@ -13,17 +13,24 @@ itself has gone.
 2. **It is read as hostile.** Each format's reader holds the file to a size
    (64 MB), a nesting depth (64) and a number of records (200,000). A JSON
    document that gives a key twice in one object is refused, because two
-   readers would read two different documents. A workbook is read with the
-   standard library's zip and XML readers alone: a zip bomb, an XML bomb, a
-   document type declaration and a part nested past any real workbook are
-   refused; no formula is worked out; no link is followed.
+   readers would read two different documents; where a format is decoded
+   into structures (SARIF, a DSSE envelope), two keys that differ only in
+   case count as the same key, because that is how the decoder reads them.
+   Two keys of a JSON table's row that become one column heading are
+   refused too. A workbook is read with the standard library's zip and XML
+   readers alone: a zip bomb, an XML bomb, a document type declaration and
+   a part nested past any real workbook are refused, and so are merged
+   ranges and answer lists that would stand for more than two million
+   cells, and defined names over more than 256 wide ranges; no formula is
+   worked out; no link is followed.
 3. **Every fact says where it came from.** Each Observation and Evidence
    record carries its grade, the digest of the file, the place it was read
    from (a cell such as `Devices!B4`, a row, or a JSON pointer such as
    `/1/status_code`) and, when that place is one a person opening the file
-   would not see, a taint: a hidden sheet, row or column, a comment, a
-   formula's cached result, a cell a defined name points at, a link to
-   another workbook.
+   would not see, a taint: a hidden sheet, row or column (a row given no
+   height and a column given no width count as hidden), a comment, a
+   formula's cached result or a CSV cell a spreadsheet would run as one, a
+   cell a defined name points at, a link to another workbook.
 4. **What was read is kept beside the seal.** A list of every record the
    file yielded, each with the hash of its fields, is kept for good, and its
    digest is in the file's `RawFile` record. When the raw file's time to be
@@ -41,7 +48,9 @@ proposals ref, under the name `evidence-clerk`, for a person to decide.
 
 ## Grades
 
-The grade is how the file came in, and nothing in the file changes it.
+The grade is how the file came in, and nothing in the file changes it. A
+signed file is verified against the keys pinned in the register, and never
+against a key that came with the file or with the request.
 
 | Grade | When |
 |---|---|
@@ -80,7 +89,9 @@ write, and a map that reads them from a column is refused.
   draft-map | confirm-map | pin`
 - The admin's **Evidence** screens: the files, one file with whether it
   checks, the import with a preview of every record before anything is
-  written, column maps and pinned keys.
+  written, column maps and pinned keys. Confirming an import writes what
+  the preview showed or nothing: if the file reads otherwise by then (a
+  column map changed in between), it says to look again.
 - The agent interface: `evidence_files`, `evidence_verify`,
   `evidence_expire` and `evidence_ingest`; the last two write, and a model is
   refused them as every write to the register refuses one.
