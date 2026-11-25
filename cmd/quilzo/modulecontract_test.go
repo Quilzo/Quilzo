@@ -203,3 +203,73 @@ func TestAModulesWriteAnswersOneDocument(t *testing.T) {
 		t.Errorf("`quilzo soa show group --csv` exited %d without the CSV: %s %s", code, firstLines(o, 2), firstLines(e, 2))
 	}
 }
+
+// A name nothing can have is a misused command line, 2, in the evidence
+// commands as it is in the programme's, and nothing is kept under it.
+//
+// What the register refuses as not valid is what the command was given:
+// `soa scope "Bad Name!"` and `population define "Bad Name!"` exit 2. The
+// evidence commands answered the same refusal of the same word with 1, the
+// code of a command that ran and failed, so a script retrying failures
+// retried a typo: `ingest FORMAT FILE --source "Bad Name!"`, and
+// `evidence confirm-map` of a map called what no map can be.
+func TestANameNothingCanHaveIsMisusedInTheEvidenceCommands(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	dir := t.TempDir()
+	file := evidenceFixturePath(t, "ocsf/prowler-1.2.0.json")
+	table := filepath.Join(dir, "laptops.csv")
+	if err := os.WriteFile(table, []byte("Serial,Hostname,Encrypted\nC02X1,mac-01,true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o, e, code := cliRun(t, root, "", "--json", "evidence", "draft-map", "csv", table, "--kind", "Observation", "--name", "laptops")
+	var draft struct {
+		Map map[string]any `json:"map"`
+	}
+	if code != 0 || json.Unmarshal([]byte(o), &draft) != nil || draft.Map["name"] != "laptops" {
+		t.Fatalf("draft-map exited %d: %s %s", code, firstLines(o, 3), firstLines(e, 3))
+	}
+	mapCalled := func(name string) string {
+		t.Helper()
+		draft.Map["name"] = name
+		b, err := json.Marshal(draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, "map.json")
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	for _, name := range []string{"Bad Name!", "../../etc", " "} {
+		for _, line := range [][]string{
+			{"ingest", "ocsf", file, "--source", name},
+			{"ingest", "ocsf", file, "--source", name, "--preview"},
+			{"evidence", "confirm-map", mapCalled(name)},
+		} {
+			if _, e, code := cliRun(t, root, "", line...); code != out.ExitUsage {
+				t.Errorf("`quilzo %s` with the name %q exited %d, want %d (%s): %s", strings.Join(line[:2], " "), name, code,
+					out.ExitUsage, out.Describe(out.ExitUsage), firstLines(e, 2))
+			}
+		}
+	}
+	for _, line := range [][]string{{"evidence", "list"}, {"evidence", "maps"}} {
+		o, e, code := cliRun(t, root, "", append([]string{"--json"}, line...)...)
+		var kept struct{ Total *int }
+		if code != 0 || json.Unmarshal([]byte(o), &kept) != nil || kept.Total == nil || *kept.Total != 0 {
+			t.Errorf("what was refused was kept, by `quilzo %s`: %s %s", strings.Join(line, " "), firstLines(o, 4), firstLines(e, 2))
+		}
+	}
+	// A name a source and a map can have is taken as before.
+	for _, line := range [][]string{
+		{"ingest", "ocsf", file, "--source", "cloud.posture_2026-q1"},
+		{"evidence", "confirm-map", mapCalled("laptops")},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 2))
+		}
+	}
+}

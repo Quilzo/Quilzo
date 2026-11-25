@@ -122,6 +122,12 @@ func evidenceReader(root string) (*evidence.Ingester, error) {
 // answers it: a file that cannot be read or a map that is not confirmed is
 // misused (2), a file signed by no pinned key is refused (3), and the
 // register's own errors are answered as registerError answers them.
+//
+// What the register refuses as not valid is what the command was given, a
+// source or a map called what none can be, so misused (2) as the
+// programme's commands answer the same refusal (programmeError): `ingest
+// FORMAT FILE --source "Bad Name!"` and `evidence confirm-map` of a map
+// named so exited 1, the code of a command that ran and failed.
 func evidenceError(err error) error {
 	switch {
 	case err == nil:
@@ -130,7 +136,7 @@ func evidenceError(err error) error {
 		return errBlocked{err}
 	case errors.Is(err, fs.ErrNotExist):
 		return errNotFound{err}
-	case errors.Is(err, evidence.ErrUnreadable), errors.Is(err, evidence.ErrNoMap):
+	case errors.Is(err, evidence.ErrUnreadable), errors.Is(err, evidence.ErrNoMap), errors.Is(err, register.ErrInvalid):
 		return errMisused{err}
 	}
 	return registerError(err)
@@ -585,7 +591,7 @@ func evidenceConfirmMap(root, path string) error {
 	}
 	rc, err := r.Put(by, "column map "+m.Name+", confirmed", m)
 	if err != nil {
-		return registerError(err)
+		return evidenceError(err)
 	}
 	if w.JSON(rc) {
 		return nil
@@ -612,7 +618,7 @@ func evidencePin(root, name, path, keyid, title string) error {
 	// asked for it, so it waits; the approvals module decides it.
 	rc, err := r.Propose(by, "key "+k.Name+", to be pinned", k)
 	if err != nil {
-		return registerError(err)
+		return evidenceError(err)
 	}
 	id, _ := register.IDOf(k)
 	m, err := approvalsOn(root, r)
