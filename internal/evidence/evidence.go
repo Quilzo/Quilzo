@@ -54,6 +54,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -146,6 +147,10 @@ var (
 	ErrNoMap = errors.New("a table is read through a column map a person has confirmed")
 	// ErrUnpinned is a signed file no pinned key verifies.
 	ErrUnpinned = errors.New("no pinned key verifies the signature")
+	// ErrChanged is a file that no longer reads as it did when a person
+	// was shown what it would write: its column map, a pinned key or the
+	// source it is filed under has changed since.
+	ErrChanged = errors.New("the file reads otherwise than it did when it was shown")
 )
 
 // Input is a file as it arrives, and what is known about how it came.
@@ -160,8 +165,15 @@ type Input struct {
 	By audit.Kind
 	// Map is the confirmed column map a table is read with.
 	Map *register.ColumnMap
-	// Keys are the pinned keys a signed file is verified against.
+	// Keys are the pinned keys a signed file is verified against. An import
+	// reads them from the register itself, whatever a caller gives here,
+	// so only a preview reads with the keys it is handed.
 	Keys []register.PinnedKey
+	// Shown is the digest of the list of what a person was shown a file
+	// would write, as a preview's RawFile.Yield. An import given one writes
+	// nothing unless the file reads to the same list now: what is written
+	// is what the person saw, and not what a map changed in between makes.
+	Shown register.Digest
 	// Received is when the file was first sealed. Zero is now.
 	Received time.Time
 }
@@ -585,7 +597,11 @@ func scalarOf(s string) register.Scalar {
 	case "false", "FALSE", "False":
 		return register.BoolValue(false)
 	}
-	if n, err := strconv.ParseFloat(s, 64); err == nil && strconv.FormatFloat(n, 'f', -1, 64) == s {
+	// NaN and +Inf read as numbers and are none a fact may hold: as
+	// numbers they refused the whole file, and as text they are what the
+	// cell said.
+	if n, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) &&
+		strconv.FormatFloat(n, 'f', -1, 64) == s {
 		return register.NumberValue(n)
 	}
 	return register.TextValue(label(s))

@@ -151,6 +151,16 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 			return Result{}, err
 		}
 	}
+	// A signed file counts only by a key a person pinned, so the keys are
+	// the register's, and never ones the caller brought.
+	in.Keys = nil
+	if in.Format == FormatDSSE {
+		keys, err := g.PinnedKeys()
+		if err != nil {
+			return Result{}, err
+		}
+		in.Keys = keys
+	}
 	// Nothing is sealed for a write the audit log could not record.
 	if g.Reg.Ready != nil {
 		if err := g.Reg.Ready(); err != nil {
@@ -167,6 +177,9 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 	b, err := Read(in)
 	if err != nil {
 		return Result{Sealed: sealed}, err
+	}
+	if in.Shown != "" && b.Raw.Yield != in.Shown {
+		return Result{Batch: b, Sealed: sealed}, fmt.Errorf("%w: nothing was written; look at what it would write again", ErrChanged)
 	}
 	recs, err := g.withSource(b)
 	if err != nil {

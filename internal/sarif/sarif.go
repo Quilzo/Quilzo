@@ -67,6 +67,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Version is the only version of the format this reads.
@@ -474,8 +475,30 @@ func firstOf(vals ...string) string {
 	return ""
 }
 
+// foldKey is a key as encoding/json matches it to a field: each letter
+// folded to the least of the letters Unicode folds it with, so that
+// "Results", "RESULTS" and "reſults" are one key.
+func foldKey(k string) string {
+	var b strings.Builder
+	for _, r := range k {
+		for {
+			next := unicode.SimpleFold(r)
+			if next <= r {
+				r = next
+				break
+			}
+			r = next
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // hostile walks a log once before it is decoded, and refuses one nested
-// deeper than MaxDepth or giving a key twice in an object.
+// deeper than MaxDepth or giving a key twice in an object. Twice means as
+// the decoder matches keys to fields, which ignores case: "Results" after
+// "results" is the same field to it and the last one is kept, while every
+// reader that goes by the format's own spelling reads the first.
 func hostile(in []byte) error {
 	d := json.NewDecoder(bytes.NewReader(in))
 	type frame struct {
@@ -496,10 +519,10 @@ func hostile(in []byte) error {
 		}
 		top := len(stack) - 1
 		if k, ok := tok.(string); ok && top >= 0 && stack[top].object && stack[top].key {
-			if stack[top].keys[k] {
+			if stack[top].keys[foldKey(k)] {
 				return fmt.Errorf("this log gives the key %q twice in one object, and two readers would read two logs", firstOf(k, "(blank)"))
 			}
-			stack[top].keys[k], stack[top].key = true, false
+			stack[top].keys[foldKey(k)], stack[top].key = true, false
 			continue
 		}
 		if delim, ok := tok.(json.Delim); ok {

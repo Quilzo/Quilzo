@@ -11,6 +11,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // JSON from a file, read as hostile.
@@ -23,12 +24,24 @@ import (
 // document is decoded it is walked once, token by token: it is refused if it
 // nests deeper than MaxDepth, if any object gives a key twice, if it holds
 // more than maxValues values, or if anything follows its end.
+//
+// Twice is as the decoder that reads the document sees it. Read as a
+// generic value, its keys are exact, as every other reader's are. Decoded
+// into a structure, encoding/json matches a key to a field whatever its
+// case, and keeps the last: "Payload" after "payload" is the same field to
+// it, while a reader that goes by the format's spelling reads the first.
+// So a document decoded into a structure is refused for two keys that
+// fold to one.
 
 const maxValues = 4_000_000
 
 // checkJSON walks one JSON document, or with lines set a document on each
 // line, and refuses what a hostile file would use.
-func checkJSON(b []byte, lines bool) error {
+func checkJSON(b []byte, lines bool) error { return walkJSON(b, lines, false) }
+
+// walkJSON is checkJSON, and with fold set it takes two keys that differ
+// only in case for one, as decoding into a structure does.
+func walkJSON(b []byte, lines, fold bool) error {
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.UseNumber()
 	type frame struct {
@@ -61,10 +74,14 @@ func checkJSON(b []byte, lines bool) error {
 		}
 		top := len(stack) - 1
 		if k, isKey := tok.(string); isKey && top >= 0 && stack[top].object && stack[top].key {
-			if stack[top].keys[k] {
+			name := k
+			if fold {
+				name = foldKey(k)
+			}
+			if stack[top].keys[name] {
 				return fmt.Errorf("an object gives the key %q twice, and two readers would read different values", label(k))
 			}
-			stack[top].keys[k] = true
+			stack[top].keys[name] = true
 			stack[top].key = false
 			continue
 		}
@@ -91,9 +108,32 @@ func checkJSON(b []byte, lines bool) error {
 	return nil
 }
 
-// decodeJSON checks a document and decodes it into v.
+// foldKey is a key as encoding/json matches it to a field: each letter
+// folded to the least of the letters Unicode folds it with, so that
+// "Payload", "PAYLOAD" and a "payload" spelled with any letter Unicode
+// takes for one of its letters are one key.
+func foldKey(k string) string {
+	var b strings.Builder
+	for _, r := range k {
+		for {
+			next := unicode.SimpleFold(r)
+			if next <= r {
+				r = next
+				break
+			}
+			r = next
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// decodeJSON checks a document and decodes it into v: as a generic value
+// when v is one, by exact keys, and into a structure by keys folded as the
+// decoder folds them.
 func decodeJSON(b []byte, v any) error {
-	if err := checkJSON(b, false); err != nil {
+	_, generic := v.(*any)
+	if err := walkJSON(b, false, !generic); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnreadable, err)
 	}
 	d := json.NewDecoder(bytes.NewReader(b))

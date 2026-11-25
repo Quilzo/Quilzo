@@ -394,3 +394,17 @@ func TestHostileLogsRefused(t *testing.T) {
 		t.Errorf("a log larger than the limit: %v", err)
 	}
 }
+
+// A key given twice in two spellings that Go's decoder takes for one is
+// refused as a key given twice is: the decoder keeps the last of the two,
+// and every other reader of the log the one the format spells, so a run
+// whose "Results" is empty after "results" was read as finding nothing.
+func TestCaseVariantKeysRefused(t *testing.T) {
+	for _, key := range []string{"Results", "RESULTS", "reſults"} {
+		src := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"semgrep"}},` +
+			`"results":[{"ruleId":"r1","level":"error","message":{"text":"exec"}}],"` + key + `":[]}]}`
+		if l, err := Read([]byte(src)); err == nil {
+			t.Errorf("a log giving results as %q too is read, with %d results", key, len(l.Runs[0].Results))
+		}
+	}
+}

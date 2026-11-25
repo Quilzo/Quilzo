@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/xlsx"
@@ -304,7 +306,7 @@ func typed(f register.Field, c cell) (any, error) {
 		return n, nil
 	case "number":
 		n, err := strconv.ParseFloat(strings.TrimSpace(c.text), 64)
-		if err != nil {
+		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 			return nil, fmt.Errorf("%q is not a number", label(c.text))
 		}
 		return n, nil
@@ -437,9 +439,11 @@ func csvTable(b []byte, header int) (*table, error) {
 			}
 			c := cell{text: strings.TrimSpace(v), place: colName(i+1) + strconv.Itoa(line)}
 			c.value = scalarOf(c.text)
-			if sheet.IsFormula(v) {
+			if sheet.IsFormula(v) || sheet.IsFormula(c.text) {
 				// A spreadsheet would run it; nothing here does, and the
 				// value is marked as one a person reading it did not see.
+				// It is the cell as it is kept, without the spaces it
+				// began with, that a spreadsheet would run later.
 				c.taint, c.value = register.Taint(xlsx.Formula), register.TextValue(label(c.text))
 			}
 			row.cells[t.headings[i]] = c
@@ -597,12 +601,26 @@ func jsonTable(b []byte, rows string, wanted []string) (*table, error) {
 			return nil, fmt.Errorf("%w: %s is not an object", ErrUnreadable, place)
 		}
 		row := tableRow{place: place, cells: map[string]cell{}}
+		// Two keys that are one heading once each is a label would be read
+		// in whichever order the object was walked, which is not the same
+		// twice, and one of them can be a key nobody reading the file
+		// would tell from the other.
+		keyOf := map[string]string{}
 		for k, val := range o {
 			ok, text, native := scalarJSON(val)
 			if !ok {
 				continue
 			}
 			h := label(k)
+			if was, twice := keyOf[h]; twice {
+				a, b := was, k
+				if b < a {
+					a, b = b, a
+				}
+				return nil, fmt.Errorf("%w: %s gives the keys %q and %q, which read as the one column %q", ErrUnreadable,
+					place, plaintext.Clip(a, 60, "…"), plaintext.Clip(b, 60, "…"), h)
+			}
+			keyOf[h] = k
 			if !seen[h] {
 				seen[h] = true
 				t.headings = append(t.headings, h)

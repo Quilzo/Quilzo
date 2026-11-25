@@ -33,7 +33,9 @@ import (
 func init() { readers[FormatSARIF] = readSARIF }
 
 func readSARIF(rd *reader) error {
-	if err := checkJSON(rd.in.Body, false); err != nil {
+	// The log is decoded into structures, whose fields match keys of any
+	// case.
+	if err := walkJSON(rd.in.Body, false, true); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnreadable, err)
 	}
 	l, err := sarif.Read(rd.in.Body)
