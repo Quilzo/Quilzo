@@ -193,8 +193,10 @@ func TestMapDraftedConfirmedAndUsed(t *testing.T) {
 	}
 }
 
-// A person pins a key on the screen, and its fingerprint is shown to check
-// against what its owner published.
+// A person asks on the screen for a key to be pinned, and its fingerprint
+// is shown to check against what its owner published. The pin is a
+// decision: it waits on Sign-off for somebody other than them, asked for
+// by their pseudonym, and verifies nothing until then.
 func TestKeyPinnedFromTheScreen(t *testing.T) {
 	srv, token := setup(t)
 	recording(t)
@@ -202,8 +204,19 @@ func TestKeyPinnedFromTheScreen(t *testing.T) {
 	der, _ := x509.MarshalPKIXPublicKey(pub)
 	key := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 	w := postForm(t, srv, "/evidence/keys", token, url.Values{"name": {"release-signing"}, "title": {"the build service"}, "key": {key}}.Encode())
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Pinned release-signing, with the fingerprint sha256:") {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Asked for release-signing to be pinned, with the fingerprint sha256:") {
 		t.Fatalf("pinning answered %d\n%s", w.Code, firstLines(w.Body.String(), 40))
+	}
+	reg := register.Open(srv.Store)
+	waiting, err := reg.Proposals()
+	if err != nil || len(waiting) != 1 || waiting[0].Kind != register.KindPinnedKey {
+		t.Fatalf("the pin does not wait for its approval: %+v (%v)", waiting, err)
+	}
+	if me, ok, _ := reg.Side().Lookup("editor"); !ok || waiting[0].Subject != register.ID(me) {
+		t.Errorf("the pin was asked for by %q, and the subject map names the person signed in %q", waiting[0].Subject, me)
+	}
+	if n, _ := reg.Counts(); n[register.KindPinnedKey] != 0 {
+		t.Error("the key is pinned before anybody approved it")
 	}
 	accessible(t, "/evidence/keys (pinned)", w.Body.String())
 	bad := postForm(t, srv, "/evidence/keys", token, url.Values{"name": {"x"}, "key": {"not a key"}}.Encode())

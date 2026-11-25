@@ -602,19 +602,38 @@ func evidencePin(root, name, path, keyid, title string) error {
 	if err != nil {
 		return errMisused{err}
 	}
-	r, by, err := registerWriter(root, resolveCaller(root, flagToken))
+	caller := resolveCaller(root, flagToken)
+	r, by, err := registerWriter(root, caller)
 	if err != nil {
 		return err
 	}
-	rc, err := r.Put(by, "key "+k.Name+", pinned", k)
+	// Pinning a key is a decision, approved by somebody other than whoever
+	// asked for it, so it waits; the approvals module decides it.
+	rc, err := r.Propose(by, "key "+k.Name+", to be pinned", k)
 	if err != nil {
 		return registerError(err)
 	}
-	if w.JSON(map[string]any{"key": k, "receipt": rc}) {
+	id, _ := register.IDOf(k)
+	m, err := approvalsOn(root, r)
+	if err != nil {
+		return err
+	}
+	a, err := m.Ask(id)
+	if err != nil {
+		return approvalErr(err)
+	}
+	yours := a.Yours(caller.Name, by.Subject)
+	if w.JSON(map[string]any{"key": k, "id": id, "waits": true, "surface": a.Hash, "yours": yours, "receipt": rc}) {
 		return nil
 	}
-	fmt.Printf("  pinned %s, %s, with the fingerprint\n    %s\n", k.Name, k.Algorithm, k.Fingerprint)
-	fmt.Printf("  %scheck it against what the key's owner published; a signed file is read only if this key verifies it%s\n", dim, reset)
+	fmt.Printf("  asked for %s, %s, to be pinned, with the fingerprint\n    %s\n", k.Name, k.Algorithm, k.Fingerprint)
+	fmt.Printf("  %scheck it against what the key's owner published; a signed file is read only once this key is pinned "+
+		"and verifies it%s\n", dim, reset)
+	who := "somebody else who may approve it, on Sign-off in the admin or at the console"
+	if yours {
+		who = "you alone, as the only person who may approve it, marked so, with a review by somebody else due"
+	}
+	fmt.Printf("  it %swaits%s to be approved by %s:\n    quilzo approval approve %s --surface %s\n", bold, reset, who, id, a.Hash)
 	return nil
 }
 

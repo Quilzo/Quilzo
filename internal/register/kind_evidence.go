@@ -311,7 +311,9 @@ var _ = define[PinnedKey]("A third party's public key, pinned by a person, that 
 // Validate holds a record to its kind's field rules and its Check, as Put
 // will, without writing anything: an importer asks it of each record it
 // read, so a preview names the row that would be refused before a person
-// is asked to confirm anything.
+// is asked to confirm anything. A decision that has not been given its
+// approval yet is held to every rule but that one, as a proposal is: it is
+// what a person is asked to approve.
 func Validate(rec Record) error {
 	if rec == nil {
 		return fmt.Errorf("%w: an empty record", ErrInvalid)
@@ -319,7 +321,7 @@ func Validate(rec Record) error {
 	if _, err := specFor(rec.Kind()); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if err := validate(rec); err != nil {
+	if err := validate(awaitingApproval(ProposalsRef, rec)); err != nil {
 		return err
 	}
 	_, err := IDOf(rec)

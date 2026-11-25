@@ -102,6 +102,15 @@ func (s *Server) evidenceWriter(p principal) (*evidence.Ingester, register.Actor
 			}
 			return nil
 		}}
+	// Named in the record by their pseudonym from the subject map, as
+	// every writer names its caller: what they import, confirm or ask to
+	// pin is theirs, and a decision they ask for is one the approvals know
+	// them as the raiser of, wherever they try to approve it.
+	id, err := reg.SubjectFor(p.Name, "person")
+	if err != nil {
+		return nil, register.Actor{}, err
+	}
+	by.Subject = id
 	return evidence.New(reg), by, nil
 }
 
@@ -602,14 +611,17 @@ func (s *Server) handleEvidenceKeys(w http.ResponseWriter, r *http.Request) {
 			}
 			problems = append(problems, seckit.Problem{Field: field, Label: label, Message: err.Error()})
 		} else {
+			// Pinning a key is a decision, approved on Sign-off by somebody
+			// other than whoever asked for it, so it waits there.
 			wr, by, err := s.evidenceWriter(p)
 			if err == nil {
-				_, err = wr.Reg.Put(by, "key "+k.Name+", pinned", k)
+				_, err = wr.Reg.Propose(by, "key "+k.Name+", to be pinned", k)
 			}
 			if err != nil {
 				problems = append(problems, seckit.Problem{Field: "key-key", Label: "The public key", Message: err.Error()})
 			} else {
-				said = "Pinned " + k.Name + ", with the fingerprint " + string(k.Fingerprint) + "."
+				said = "Asked for " + k.Name + " to be pinned, with the fingerprint " + string(k.Fingerprint) +
+					". It is pinned once somebody who may approve it, other than you, approves it on Sign-off."
 				form = map[string]string{}
 			}
 		}

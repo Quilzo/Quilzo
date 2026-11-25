@@ -95,7 +95,11 @@ func (g *Ingester) Prepare(in *Input, mapName string) error {
 	return nil
 }
 
-// PinnedKeys is every key a person has pinned.
+// PinnedKeys is every key pinned with the approval of somebody other than
+// whoever asked for it. A key pinned before a pin was a decision carries no
+// approval, and verifies nothing until it is pinned again: a key a person
+// pinned for themselves let them grade their own envelopes as signed by a
+// third party.
 func (g *Ingester) PinnedKeys() ([]register.PinnedKey, error) {
 	var out []register.PinnedKey
 	for offset := 0; ; {
@@ -104,7 +108,9 @@ func (g *Ingester) PinnedKeys() ([]register.PinnedKey, error) {
 			return nil, err
 		}
 		for _, e := range entries {
-			out = append(out, e.Record.(register.PinnedKey))
+			if k := e.Record.(register.PinnedKey); k.Approval != nil {
+				out = append(out, k)
+			}
 		}
 		offset += len(entries)
 		if offset >= total || len(entries) == 0 {

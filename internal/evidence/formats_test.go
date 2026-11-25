@@ -342,6 +342,49 @@ func pinned(t testing.TB, name string, pub any) register.PinnedKey {
 	return k
 }
 
+// pin writes a key to the register as pinned: approved by somebody other
+// than the person who asked for it, as a pin is, over what it shows.
+func (w *world) pin(t testing.TB, k register.PinnedKey) {
+	t.Helper()
+	id, err := register.IDOf(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, err := w.reg.Surface(k, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.Approval = &register.Approval{Atom: "approve", Rule: "pinned-key", Needed: 1, Of: 2, Surface: shown, Raised: person.Subject,
+		Signers: []register.Signer{{Subject: "1ee00000000000000000000000000002", At: register.TimeOf(day0),
+			Assertion: register.Digest("sha256:" + strings.Repeat("0", 64))}}}
+	if _, err := w.reg.Put(person, "a key, pinned", k); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Pinning a key is a decision: the register refuses a key written with no
+// approval, and refuses one its asker approved themselves while somebody
+// else could, so nobody pins their own key and has their own envelopes
+// graded as signed by a third party.
+func TestAKeyIsPinnedOnlyWithSomebodyElsesApproval(t *testing.T) {
+	w := newWorld(t, false)
+	seed := sha256.Sum256([]byte("a key somebody pins for themselves"))
+	k := pinned(t, "mine", ed25519.NewKeyFromSeed(seed[:]).Public())
+	if _, err := w.reg.Put(person, "a key, pinned by its asker", k); !errors.Is(err, register.ErrInvalid) {
+		t.Fatalf("a key written with no approval was answered %v", err)
+	}
+	id, _ := register.IDOf(k)
+	shown, _ := w.reg.Surface(k, id)
+	k.Approval = &register.Approval{Atom: "approve", Rule: "pinned-key", Needed: 1, Of: 2, Surface: shown, Raised: person.Subject,
+		Signers: []register.Signer{{Subject: person.Subject, At: register.TimeOf(day0), Assertion: register.Digest("sha256:" + strings.Repeat("0", 64))}}}
+	if _, err := w.reg.Put(person, "a key, approved by its asker", k); !errors.Is(err, register.ErrInvalid) {
+		t.Fatalf("a key its asker approved with somebody else eligible was answered %v", err)
+	}
+	if keys, err := w.g.PinnedKeys(); err != nil || len(keys) != 0 {
+		t.Errorf("the register holds pinned keys %v (%v)", keys, err)
+	}
+}
+
 // A DSSE envelope signed by a key a person pinned is read, Ed25519 or ECDSA,
 // and everything in it is graded signed, the statement's subject and the
 // bill of materials in its predicate alike; the seal's record names the key.
@@ -361,9 +404,7 @@ func TestDSSEPinnedVerifies(t *testing.T) {
 	} {
 		w := newWorld(t, false)
 		key := pinned(t, "build-"+name, tc.pub)
-		if _, err := w.reg.Put(person, "a key, pinned", key); err != nil {
-			t.Fatal(err)
-		}
+		w.pin(t, key)
 		in := Input{Format: FormatDSSE, Body: signed(t, tc.sign, "")}
 		if err := w.g.Prepare(&in, ""); err != nil {
 			t.Fatal(err)
@@ -403,9 +444,7 @@ func TestDSSEUnpinnedRefused(t *testing.T) {
 	if _, err := w.g.Ingest(person, "", Input{Format: FormatDSSE, Body: env}); !errors.Is(err, ErrUnpinned) {
 		t.Fatalf("with no key pinned: %v", err)
 	}
-	if _, err := w.reg.Put(person, "another key, pinned", pinned(t, "someone-else", other.Public())); err != nil {
-		t.Fatal(err)
-	}
+	w.pin(t, pinned(t, "someone-else", other.Public()))
 	in := Input{Format: FormatDSSE, Body: env}
 	if err := w.g.Prepare(&in, ""); err != nil {
 		t.Fatal(err)
@@ -419,9 +458,7 @@ func TestDSSEUnpinnedRefused(t *testing.T) {
 	}
 
 	// The right key pinned, and the payload changed after it was signed.
-	if _, err := w.reg.Put(person, "the build key, pinned", pinned(t, "build", priv.Public())); err != nil {
-		t.Fatal(err)
-	}
+	w.pin(t, pinned(t, "build", priv.Public()))
 	var e map[string]any
 	json.Unmarshal(env, &e)
 	payload, _ := base64.StdEncoding.DecodeString(e["payload"].(string))

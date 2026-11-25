@@ -113,9 +113,7 @@ func TestIngestReadsOnlyPinnedKeys(t *testing.T) {
 		t.Error("a file signed by a key nobody pinned wrote facts")
 	}
 	key := pinned(t, "build", priv.Public())
-	if _, err := w.reg.Put(person, "a key, pinned", key); err != nil {
-		t.Fatal(err)
-	}
+	w.pin(t, key)
 	if res, err := w.g.Ingest(person, "", Input{Format: FormatDSSE, Body: body}); err != nil || res.Batch.Raw.Signer != "build" {
 		t.Fatalf("a file signed by a pinned key, with no keys handed over, reads as %v", err)
 	}

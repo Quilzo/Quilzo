@@ -4,6 +4,9 @@
 package approval
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/register/side"
 	"github.com/quilzo/quilzo/internal/store"
@@ -85,5 +89,56 @@ func TestTheApprovalsMapOfPeopleMovesIntoTheSubjectMap(t *testing.T) {
 	}
 	if err := MigratePeople(r); err != nil {
 		t.Errorf("moving a map that was moved already: %v", err)
+	}
+}
+
+// The evidence an approval at the console leaves says that it was the
+// console and whether the program proved who was at it, and nothing that
+// names them: no name, no token's name. It is kept for good, beside the
+// record, and the name of a token is often its person's. Evidence kept
+// before it stopped naming the token still reads, and checks, without it.
+func TestTheConsolesEvidenceNamesNobody(t *testing.T) {
+	b := newBench(t, holds("dana@example.com", auth.ActAcceptRisk))
+	id := b.propose("lee", b.risk("R-1", "lee", 2))
+	a, err := b.m.Ask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	console := b.person("dana@example.com")
+	console.Console, console.Methods = true, nil
+	out, err := b.m.Sign(console, id, Proof{Console: &ConsoleProof{Typed: a.Hash, Verified: true}})
+	if err != nil || !out.Done {
+		t.Fatalf("the console's approval: %+v %v", out, err)
+	}
+	path, _ := evidencePath(b.root, out.Evidence)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, named := range []string{"dana", "credential", "token"} {
+		if strings.Contains(strings.ToLower(string(raw)), named) {
+			t.Errorf("the console's evidence holds %q: %s", named, raw)
+		}
+	}
+	ev, err := LoadEvidence(b.root, out.Evidence)
+	if err != nil || ev.Console == nil || !ev.Console.Verified || ev.Check() != nil {
+		t.Errorf("the console's evidence reads as %+v (%v)", ev.Console, err)
+	}
+
+	// Evidence written the way it was before, naming the token.
+	old := []byte(`{"method":"console","purpose":"approve","subject":"` + string(b.subject("dana@example.com")) +
+		`","for":"` + string(a.Hash) + `","at":1,"console":{"typed":"` + string(a.Hash) + `","credential":"dana-laptop"}}`)
+	sum := sha256.Sum256(old)
+	d := register.Digest("sha256:" + hex.EncodeToString(sum[:]))
+	p, _ := evidencePath(b.root, d)
+	if err := os.WriteFile(p, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := LoadEvidence(b.root, d)
+	if err != nil || legacy.Check() != nil {
+		t.Fatalf("evidence kept before the console stopped naming its token does not read: %v", err)
+	}
+	if again, _ := json.Marshal(legacy); strings.Contains(string(again), "dana-laptop") {
+		t.Errorf("evidence read back still names the token: %s", again)
 	}
 }
