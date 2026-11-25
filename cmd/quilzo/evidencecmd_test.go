@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 func evidenceFixturePath(t *testing.T, name string) string {
@@ -217,5 +218,38 @@ func TestIngestThroughTheAgentInterface(t *testing.T) {
 	}
 	if all, _ := g.Raw.List(); len(all) != 1 {
 		t.Errorf("the raw store holds %d files; a model's was sealed", len(all))
+	}
+}
+
+// Somebody who may read the register reads the evidence under every
+// spelling, the bare command included, and is refused what changes it or
+// what is kept beside it: a confirmed map, a pinned key, an erasure, an
+// import. A subcommand the table does not name is asked as the parent,
+// which is the widest of them.
+func TestEvidenceReadsNarrowToAReader(t *testing.T) {
+	root, token := accessStore(t)
+	if _, e, code := cliRun(t, root, token, "auth", "grant", "aud", "reader", "--on", auth.AreaCompliance); code != 0 {
+		t.Fatal(e)
+	}
+	o, _, _ := cliRun(t, root, token, "token", "issue", "aud", "--principal", "aud", "--role", "reader", "--json")
+	var tok struct{ Token string }
+	if err := json.Unmarshal([]byte(o), &tok); err != nil || tok.Token == "" {
+		t.Fatalf("no token: %s", o)
+	}
+	for _, line := range [][]string{{"evidence"}, {"evidence", "list"}, {"evidence", "verify"}, {"evidence", "maps"},
+		{"evidence", "keys"}, {"ingest", "formats"}} {
+		if _, e, code := cliRun(t, root, tok.Token, append([]string{"--json"}, line...)...); code != 0 {
+			t.Errorf("a reader of the register ran `quilzo %s` and it exited %d: %s", strings.Join(line, " "), code, e)
+		}
+	}
+	key := filepath.Join(t.TempDir(), "key.pem")
+	if err := os.WriteFile(key, []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range [][]string{{"evidence", "expire"}, {"evidence", "pin", "vendor", key}, {"evidence", "confirm-map", key},
+		{"evidence", "a-subcommand-added-later"}, {"ingest", "osquery", evidenceFixturePath(t, "osquery/results.log")}} {
+		if _, e, code := cliRun(t, root, tok.Token, line...); code != 3 {
+			t.Errorf("a reader of the register ran `quilzo %s` and it exited %d, not 3: %s", strings.Join(line, " "), code, e)
+		}
 	}
 }

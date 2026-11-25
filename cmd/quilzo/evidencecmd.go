@@ -68,7 +68,17 @@ func init() {
 			"  quilzo evidence pin NAME KEYFILE [--keyid ID] [--title TEXT]  pin a third party's public key, which\n" +
 			"                                            signed files are verified against\n",
 		run: cmdEvidence,
-		needs: map[string]need{"evidence": {action: auth.ActView},
+		// The command asks for the most any of its lines needs, and the
+		// lines that read narrow it, so a line added later and named nowhere
+		// here is asked as a write until somebody says it reads.
+		needs: map[string]need{
+			"evidence":             {action: auth.ActEditDraft, hint: "a line of evidence that is not named as a read may write"},
+			"evidence list":        {action: auth.ActView},
+			"evidence show":        {action: auth.ActView},
+			"evidence verify":      {action: auth.ActView},
+			"evidence maps":        {action: auth.ActView},
+			"evidence keys":        {action: auth.ActView},
+			"evidence draft-map":   {action: auth.ActView},
 			"evidence expire":      {action: auth.ActEditDraft, hint: "erasing raw files changes what is kept beside the register"},
 			"evidence confirm-map": {action: auth.ActEditDraft, hint: "a confirmed column map is written to the register"},
 			"evidence pin":         {action: auth.ActEditDraft, hint: "a pinned key is written to the register"}},
@@ -77,6 +87,8 @@ func init() {
 		absent:     []string{"evidence", "show", "sha256:" + strings.Repeat("0", 64)},
 		notForRuns: why,
 	})
+	// Run bare, the command lists, and is asked as the list it runs.
+	bareRuns["evidence"] = "list"
 	// The admin and the API open the register themselves; this is how
 	// their writes are recorded where the command line's are.
 	evidence.Recorder = func(reg *register.Register) {
@@ -246,7 +258,7 @@ func printBatch(b *evidence.Batch, res *evidence.Result) error {
 
 func cmdEvidence(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["evidence"]}
 	}
 	switch args[0] {
 	case "list":
