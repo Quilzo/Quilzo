@@ -431,10 +431,12 @@ func TestABareRegisterCommandIsAskedAsTheListItRuns(t *testing.T) {
 // stayed undone after the decider was erased in turn.
 func TestAnErasureIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
 	for _, c := range []*Caller{
-		{Name: "dana.decider@example.com", Kind: audit.KindHuman, Verified: true, Credential: "laptop"},
+		{Name: "dana.decider@example.com", Kind: audit.KindHuman, Verified: true, Credential: "dana-laptop"},
 		{Name: "dana", Kind: audit.KindHuman, Why: "no token was presented"},
 	} {
-		if ev := string(consoleEvidence(c)); strings.Contains(ev, c.Name) {
+		// Nor by the token's name, which is a label an administrator types
+		// and is often the person's.
+		if ev := string(consoleEvidence(c)); strings.Contains(ev, c.Name) || strings.Contains(ev, "dana") {
 			t.Errorf("the evidence of %s's decision at the command line is %q", c.Name, ev)
 		}
 	}

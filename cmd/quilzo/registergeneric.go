@@ -327,17 +327,18 @@ func registerEraseCmd(root string, args []string) error {
 }
 
 // consoleEvidence is the authentication evidence a decision made at the
-// command line is bound to: the credential the program proved the caller
-// by, and whether it proved them. It is weaker than a passkey's assertion
-// over the record's hash, and the approval's rule says which it was.
+// command line is bound to: that it was made there, and whether the program
+// proved who made it. It is weaker than a passkey's assertion over the
+// record's hash, and the approval's rule says which it was.
 //
-// It names the decider by nothing else: the assertion binds it to their
+// It names the decider by nothing: the assertion binds it to their
 // pseudonym, and the assertion is in the register for good. It held their
-// name too, and with nothing else in it that a guess could not supply, a
-// list of the organisation's addresses found which of them had decided,
-// before and after they were erased themselves.
+// name and their token's, which is often their name too, and with nothing
+// else in it that a guess could not supply, a list of the organisation's
+// addresses found which of them had decided, before and after they were
+// erased themselves.
 func consoleEvidence(c *Caller) []byte {
-	return []byte("console\x00" + c.Credential + "\x00" + strconv.FormatBool(c.Verified))
+	return []byte("console\x00" + strconv.FormatBool(c.Verified))
 }
 
 // registerExpireCmd is `quilzo register expire`.
