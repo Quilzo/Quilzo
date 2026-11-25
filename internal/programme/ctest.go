@@ -255,6 +255,13 @@ func Evaluate(v *register.View, testID register.ID, at time.Time) (Run, error) {
 		run.Record.Snapshot = readDigest()
 		return run, nil
 	}
+	// An approval lapses at the end of its rule's term, and a test whose
+	// approval lapsed is a decision nobody holds until a person approves
+	// it again.
+	if test.Approval.Lapsed(register.TimeOf(at)) {
+		return fail("its approval lapsed on " + test.Approval.Expires.At().Format("2 January 2006") +
+			", so the test runs again once a person approves it again")
+	}
 	q, err := queryAt(v, test.Query)
 	if err != nil {
 		return fail("the query the test runs is not in the register")

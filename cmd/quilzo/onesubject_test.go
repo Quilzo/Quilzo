@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/register"
@@ -287,5 +288,38 @@ func TestAfterAnErasureNothingBesideTheStoreNamesThePerson(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "approvals", "people.json")); !os.IsNotExist(err) {
 		t.Errorf("the approvals' old map of people is still beside the store: %v", err)
+	}
+}
+
+// The program holds every approval to one surface: the approvals module's,
+// installed in the register at start, so the hash a raising command says, the
+// hash `quilzo approval show` gives, and the hash the register holds the
+// record to at its one write path are one hash, and the register's stand-in
+// for a program without the module is never asked.
+func TestTheProgramHoldsEveryApprovalToOneSurface(t *testing.T) {
+	if !register.SurfaceInstalled() {
+		t.Fatal("the program holds approvals to the register's stand-in, not to what an approver is shown")
+	}
+	root, owner := accessStore(t)
+	o, e, code := cliRun(t, root, owner, "--json", "requirement", "install", "nis2")
+	if code != 0 {
+		t.Fatalf("requirement install: %d %s", code, e)
+	}
+	id, shown := waitingID(t, o), shownOf(t, o)
+	r := registerOn(t, root)
+	waiting, err := r.Proposals()
+	if err != nil || len(waiting) != 1 {
+		t.Fatalf("%d proposals wait (%v)", len(waiting), err)
+	}
+	held, err := r.Surface(waiting[0].Record, register.ID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, err := approval.SurfaceOf(r, waiting[0].Record, register.ID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(held) != shown || string(module.Digest()) != shown || surfaceOf(t, root, owner, id) != shown {
+		t.Errorf("the install says %s, the register holds it to %s, and the approvals module shows %s", shown, held, module.Digest())
 	}
 }

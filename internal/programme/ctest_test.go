@@ -500,3 +500,26 @@ func TestATestOverWhatIsNotAPopulationDoesNotStopTheScheduler(t *testing.T) {
 		t.Errorf("a test over a control came out %s", run.Record.Outcome)
 	}
 }
+
+// A test's approval lapses at the end of its rule's term, as every
+// approval the engine gives does, and a test whose approval lapsed is a
+// decision nobody holds: the scheduler does not run it, and run by hand it
+// could not finish, saying why, until a person approves it again.
+func TestALapsedApprovalStopsTheTest(t *testing.T) {
+	b := newBench(t)
+	b.facts(t, 3, 3)
+	tid := b.approvedTest(t, dana)
+	e := must(b.Reg.Get(tid))
+	a := e.Record.(register.ControlTest).Approval
+	if a.Expires == 0 || a.Rule != "control-test" {
+		t.Fatalf("the test's approval does not lapse: %+v", a)
+	}
+	b.clock.t = a.Expires.At().Add(time.Hour)
+	if due := must(b.Due()); len(due) != 0 {
+		t.Errorf("a test whose approval lapsed is due: %v", due)
+	}
+	run, _ := must2(b.RunTest(Scheduler(), tid))
+	if run.Record.Outcome != register.Errored || !strings.Contains(run.Problem, "lapsed") {
+		t.Errorf("a test whose approval lapsed came out %s (%q)", run.Record.Outcome, run.Problem)
+	}
+}
