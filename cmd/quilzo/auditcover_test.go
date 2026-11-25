@@ -172,5 +172,11 @@ func dispatchTargets(t *testing.T) map[string]string {
 		}
 		return true
 	})
+	// A module's command is dispatched to the function it registered, as
+	// commandHandlers reads it, so a module that changes something is held
+	// to reaching the log as a command in main's switch is.
+	for _, m := range cliModules {
+		out[m.command] = funcName(m.run)
+	}
 	return out
 }
