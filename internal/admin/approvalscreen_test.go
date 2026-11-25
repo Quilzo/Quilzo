@@ -7,6 +7,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/saml"
 )
 
 // approvalBench is the admin with somebody who may accept risks and has a
@@ -604,6 +607,48 @@ func TestABatchRefusedSaysWhyBesideItsButton(t *testing.T) {
 	for _, f := range a11y.Check("refused", body).Findings {
 		if f.Severity == a11y.Blocking {
 			t.Errorf("the refusal: %s", f)
+		}
+	}
+}
+
+// The single sign-on screen takes the SAML classes that mean a method that
+// cannot be phished, as quilzo saml add does, and each provider's card says
+// when it is taken as one; a sign-in in one of those classes is phishing-
+// resistant, and one merely in a two-factor class is not.
+func TestTheSSOScreenTakesThePhishingResistantClasses(t *testing.T) {
+	srv, token := samlServer(t, nil)
+	_, der := testIdP(t)
+	cert, _ := x509.ParseCertificate(der)
+	meta := `<md:EntityDescriptor xmlns:md="` + saml.NSMetadata + `" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://strong-idp.example"><md:IDPSSODescriptor protocolSupportEnumeration="` + saml.NSProtocol + `"><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>` +
+		base64.StdEncoding.EncodeToString(der) + `</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:SingleSignOnService Binding="` + saml.BindingRedirect + `" Location="https://strong-idp.example/sso"/></md:IDPSSODescriptor></md:EntityDescriptor>`
+	form := url.Values{"do": {"add"}, "name": {"strong"}, "url": {tAdmin}, "metadata": {meta},
+		"fingerprint": {saml.Fingerprint(cert)}, "phishing_contexts": {"urn:example:ac:phr, urn:example:ac:hwk"}}
+	req := httptest.NewRequest("POST", "/sso/act", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: token})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("adding the provider answered %d\n%s", w.Code, firstLines(w.Body.String(), 30))
+	}
+	c, err := srv.samlProvider("strong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(c.PhishingContexts, " ") != "urn:example:ac:phr urn:example:ac:hwk" {
+		t.Fatalf("the classes were not taken: %q", c.PhishingContexts)
+	}
+	if !samlProof(c, &saml.Assertion{AuthnContext: "urn:example:ac:hwk"}).PhishingResistant ||
+		samlProof(c, &saml.Assertion{AuthnContext: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"}).PhishingResistant {
+		t.Error("a sign-in is not read by the classes the screen took")
+	}
+	page := get(t, srv, "/sso", token).Body.String()
+	if !strings.Contains(page, `name="phishing_contexts"`) || !strings.Contains(page, "<code>urn:example:ac:phr</code>") {
+		t.Errorf("the screen does not offer or show the classes\n%s", firstLines(page, 80))
+	}
+	for _, f := range a11y.Check("/sso", page).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("/sso: %s", f)
 		}
 	}
 }

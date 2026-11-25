@@ -687,6 +687,13 @@ func (s *Server) samlFromForm(r *http.Request) (saml.Config, *saml.IdPMetadata, 
 	for _, b := range strings.Fields(r.FormValue("break_glass")) {
 		c.BreakGlass = append(c.BreakGlass, strings.ToLower(b))
 	}
+	// The classes that mean a method that cannot be phished, which whoever
+	// approves a decision here needs, as quilzo saml add takes them.
+	for _, v := range strings.Split(r.FormValue("phishing_contexts"), ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			c.PhishingContexts = append(c.PhishingContexts, v)
+		}
+	}
 	raw := []byte(r.FormValue("metadata"))
 	if addr := strings.TrimSpace(r.FormValue("metadata_url")); addr != "" {
 		if s.SAML.Fetch == nil {
