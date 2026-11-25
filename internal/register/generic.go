@@ -285,9 +285,9 @@ func ExportColumns(spec Spec) []string {
 // begins with an equals sign is a formula to a spreadsheet that opens the
 // file: it can fetch an address with the cells beside it in the query, or
 // start a program. Every cell that begins with =, +, -, @, a tab or a
-// carriage return is written after an apostrophe, which a spreadsheet
-// shows as text and does not run, as OWASP's advice on CSV injection has
-// it. Free text is its digest here, as in the record: the words are in the
+// carriage return, and is not a plain number, is written after an
+// apostrophe, which a spreadsheet shows as text and does not run, as
+// OWASP's advice on CSV injection has it (FormulaSafe). Free text is its digest here, as in the record: the words are in the
 // side store, where they can be erased, and an export copied to a laptop
 // cannot be.
 func WriteCSV(w io.Writer, spec Spec, entries []Entry) error {

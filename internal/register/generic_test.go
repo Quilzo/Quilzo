@@ -95,7 +95,8 @@ func TestFindFiltersByField(t *testing.T) {
 
 // PLAN theme 28: the CSV export of a kind has a column per field of its
 // schema, and no cell a spreadsheet would run: a value beginning with =, +,
-// -, @, a tab or a carriage return is written after an apostrophe.
+// -, @, a tab or a carriage return, and not a plain number, is written
+// after an apostrophe.
 func TestCSVExportIsFormulaSafe(t *testing.T) {
 	b := newBench(t)
 	dangerous := control("AC-01")

@@ -45,8 +45,8 @@ func init() {
 		param("top", "query", "only the N rated highest, for a kind with a rating (risks)", false, posInt),
 		param("format", "query", "csv for the table as CSV; otherwise JSON", false, str)}, nil,
 		map[string]any{"200": answer("A column per field of the kind's schema and a row per record, every cell safe "+
-			"for a spreadsheet: one beginning with =, +, -, @, a tab or a carriage return is written after an "+
-			"apostrophe. Free text is its digest.", map[string]any{"type": "object"})}, "400", "404")
+			"for a spreadsheet: one beginning with =, +, -, @, a tab or a carriage return that is not a plain "+
+			"number is written after an apostrophe. Free text is its digest.", map[string]any{"type": "object"})}, "400", "404")
 	inventory := op("The data inventory of the security register", "registerInventory", nil, nil,
 		map[string]any{"200": answer("For every kind, the fields that name a person, the free text and files kept "+
 			"in the side store, their retention and who may read them; generated from the schemas.",
