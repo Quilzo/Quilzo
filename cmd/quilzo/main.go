@@ -1724,7 +1724,7 @@ func cmdAdd(root string, args []string) error {
 	for _, spec := range fs.Args() {
 		name, path, ok := strings.Cut(spec, "=")
 		if !ok {
-			return fmt.Errorf("expected NAME=FILE.json, got %q", spec)
+			return errMisused{fmt.Errorf("expected NAME=FILE.json, got %q", spec)}
 		}
 		// NAME=- is the page piped in. Standard input is read once, so a
 		// second would be an empty page.

@@ -268,7 +268,7 @@ func shieldApply(root, kind string, args []string) error {
 		case strings.HasPrefix(strings.ToUpper(target), "AS"):
 			p.Target = "asn:" + strings.TrimPrefix(strings.ToUpper(target), "AS")
 		default:
-			return errors.New("block a source by its handle (p_…, from the audit log), a network (203.0.113.0/24) or a provider (AS64500)")
+			return errMisused{errors.New("block a source by its handle (p_…, from the audit log), a network (203.0.113.0/24) or a provider (AS64500)")}
 		}
 	case "feature":
 		p.Kind, p.Target, p.Level = shield.Feature, target, *level
@@ -404,6 +404,11 @@ func shieldTrust(root string, args []string) error {
 		// worth a line in the log; a network that was not on the list is not.
 		if add {
 			shieldAudit(root, c, "shield.trust-add", audit.Denied, map[string]string{"network": network, "error": err.Error()})
+		}
+		// A word that is not a network is the command line's mistake, as
+		// `shield block` refuses one: it exited 1, a failure.
+		if _, perr := shield.Network(args[1]); perr != nil && add {
+			return errMisused{err}
 		}
 		return err
 	}

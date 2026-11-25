@@ -164,8 +164,8 @@ func inboxUsage() error {
 func splitConversation(arg string) (string, string, error) {
 	name, id, ok := strings.Cut(arg, "/")
 	if !ok || !handoff.ValidID(id) {
-		return "", "", fmt.Errorf("%q is not a conversation; they are named "+
-			"ASSISTANT/ID, as `quilzo inbox list` shows them", arg)
+		return "", "", errMisused{fmt.Errorf("%q is not a conversation; they are named "+
+			"ASSISTANT/ID, as `quilzo inbox list` shows them", arg)}
 	}
 	return name, id, nil
 }

@@ -314,8 +314,8 @@ func signalsConnect(root string, args []string) error {
 		return signalsUsage()
 	}
 	if *provider == "" {
-		return errors.New("--provider names the sign-in whose sessions the events end: oidc, or saml:NAME for a " +
-			"SAML provider (quilzo saml list)")
+		return errMisused{errors.New("--provider names the sign-in whose sessions the events end: oidc, or saml:NAME for a " +
+			"SAML provider (quilzo saml list)")}
 	}
 	caller := resolveCaller(root, "")
 	now := time.Now().UTC()

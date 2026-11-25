@@ -496,8 +496,8 @@ func complianceSSP(root string, args []string) error {
 		return err
 	}
 	if *impact == "" {
-		return errors.New("say the system's impact level: quilzo compliance ssp --impact low|moderate|high " +
-			"(FIPS 199; it chooses the NIST baseline the plan is held to)")
+		return errMisused{errors.New("say the system's impact level: quilzo compliance ssp --impact low|moderate|high " +
+			"(FIPS 199; it chooses the NIST baseline the plan is held to)")}
 	}
 	id, err := systemID(root)
 	if err != nil {

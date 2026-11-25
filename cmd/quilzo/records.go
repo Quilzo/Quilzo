@@ -277,12 +277,12 @@ func recordsAdd(root string, args []string) error {
 	for _, kv := range rest[1:] {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
-			return fmt.Errorf("%q is not field=value", kv)
+			return errMisused{fmt.Errorf("%q is not field=value", kv)}
 		}
 		fields[k] = typed(v)
 	}
 	if len(fields) == 0 {
-		return fmt.Errorf("a record with no fields is not a record")
+		return errMisused{fmt.Errorf("a record with no fields is not a record")}
 	}
 
 	s, err := open(root)

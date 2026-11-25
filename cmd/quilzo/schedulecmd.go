@@ -99,8 +99,8 @@ func scheduleAdd(root string, args []string) error {
 	case *forceUnmarked:
 		waiver = *reason
 	case strings.TrimSpace(*reason) != "":
-		return fmt.Errorf("--reason is the reason for --force-unmarked, and is " +
-			"given with it")
+		return errMisused{fmt.Errorf("--reason is the reason for --force-unmarked, and is " +
+			"given with it")}
 	}
 	if len(pos) != 1 {
 		return errMisused{fmt.Errorf(
@@ -108,9 +108,11 @@ func scheduleAdd(root string, args []string) error {
 				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")}
 	}
 
+	// ParseWhen reads the word and nothing else, so what it refuses is the
+	// command line: misused, exit 2, as a when left out is.
 	when, err := schedule.ParseWhen(pos[0], time.Now())
 	if err != nil {
-		return err
+		return errMisused{err}
 	}
 
 	s, err := open(root)

@@ -380,9 +380,9 @@ func agentNew(root string, args []string) error {
 	}
 	name, kind := args[0], *kindFlag
 	if kind == "" {
-		return fmt.Errorf("which kind? one of %s, or a kind this store's "+
+		return errMisused{fmt.Errorf("which kind? one of %s, or a kind this store's "+
 			"templates declare\n  quilzo agent templates — what each one is for",
-			strings.Join(agent.KindNames(), ", "))
+			strings.Join(agent.KindNames(), ", "))}
 	}
 
 	set, err := loadAgents(root)

@@ -231,7 +231,7 @@ func menuItemSet(root string, args []string) error {
 	}
 	name := pos[0]
 	if strings.TrimSpace(*label) == "" {
-		return fmt.Errorf("an entry with no label is an entry nobody can read")
+		return errMisused{fmt.Errorf("an entry with no label is an entry nobody can read")}
 	}
 
 	caller := resolveCaller(root, flagToken)

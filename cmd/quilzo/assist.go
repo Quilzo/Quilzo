@@ -51,10 +51,14 @@ func cmdAssist(root string, args []string) error {
 	// Required, and not defaulted to a username. Article 50 puts the obligation
 	// on a person or organisation; a record naming "cli" would satisfy the
 	// struct and nobody at all.
+	//
+	// Refused by the provenance gate, exit 3, as media generate, film, speak
+	// and transcribe refuse the same omission: it exited 1 here, so the one
+	// rule had two codes.
 	if strings.TrimSpace(*author) == "" {
-		return fmt.Errorf(
+		return errBlocked{fmt.Errorf(
 			"--author is required: someone has to be accountable for what the " +
-				"model writes, and that is never the tool")
+				"model writes, and that is never the tool")}
 	}
 
 	caller := resolveCaller(root, flagToken)

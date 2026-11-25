@@ -633,7 +633,7 @@ func reservedInput(name string) bool {
 // checkScript validates a script path's shape and returns its extension.
 func checkScript(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return "", fmt.Errorf("a path is required")
+		return "", errMisused{fmt.Errorf("a path is required")}
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	if _, ok := interpreters[ext]; !ok {

@@ -715,9 +715,11 @@ func reviewRequire(root string, args []string) error {
 	if len(pos) != 1 {
 		return errMisused{fmt.Errorf("usage: quilzo review require <n> [--approvers a,b]")}
 	}
-	var n int
-	if _, err := fmt.Sscanf(pos[0], "%d", &n); err != nil || n < 0 {
-		return fmt.Errorf("the number of approvals must be zero or more")
+	// The whole word, as a number: Sscanf took the digits it found first,
+	// so `review require 2x` required two.
+	n, err := strconv.Atoi(pos[0])
+	if err != nil || n < 0 {
+		return errMisused{fmt.Errorf("the number of approvals must be zero or more")}
 	}
 
 	if *people > n {

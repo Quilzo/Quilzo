@@ -566,7 +566,7 @@ func siteFillCmd(root string, args []string) error {
 		what, value, ok := strings.Cut(pair, "=")
 		what = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(what), "[["), "]]"))
 		if !ok || what == "" {
-			return fmt.Errorf("%q is not WHAT=VALUE; `quilzo site fill` lists what there is", pair)
+			return errMisused{fmt.Errorf("%q is not WHAT=VALUE; `quilzo site fill` lists what there is", pair)}
 		}
 		values[what] = strings.TrimSpace(value)
 	}

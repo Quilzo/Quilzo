@@ -518,6 +518,75 @@ func TestEveryRuleOfTwoAndEveryMissingThingHasItsCode(t *testing.T) {
 	want(out.ExitBlocked, "policy", "approve", id("policy", "propose", "ac-12_odp=4 hours", "--reason", "shorter still"))
 }
 
+// A command line that is wrong exits 2 wherever its words are read: a word
+// that is not of the kind the command takes, a word it does not take, and a
+// flag it needs left out.
+//
+// `auditlog show ab` exited 2 and `auditlog prove ab` 1, as a command that
+// ran and failed does, and so did some thirty others that read their own
+// words: an id of the wrong shape (`feature approve`, `agent receipt`,
+// `apps receipt`, `inbox show`), a NAME=VALUE without its = (`add`, `site
+// fill`, `policy propose`, `records add`), a time or a number that is not
+// one (`schedule add`, `engagement open --until`, `review require`), and a
+// flag a command cannot go without (`token issue` without --principal,
+// `agent new` without --kind, `menu add` without --label, `compliance ssp`
+// without --impact). A script retrying failures retried each typo. Two read
+// a number by its first digits: `auditlog prove 3x` proved entry 3, and
+// `review require 2x` required two approvals and exited 0.
+//
+// And one rule, one code: `assist` without --author exited 1 where `media
+// generate`, `film`, `speak` and `transcribe` refuse the same omission by
+// the provenance gate, 3.
+func TestAWrongCommandLineExitsTwoWhereverItIsRead(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, c := range []struct {
+		want int
+		line []string
+	}{
+		{out.ExitUsage, []string{"add", "ab"}},
+		{out.ExitUsage, []string{"agent", "new", "b1"}},
+		{out.ExitUsage, []string{"agent", "receipt", "ab"}},
+		{out.ExitUsage, []string{"apps", "receipt", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "export", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "prove", "ab"}},
+		{out.ExitUsage, []string{"auditlog", "prove", "3x"}},
+		{out.ExitUsage, []string{"compliance", "ssp"}},
+		{out.ExitUsage, []string{"engagement", "open", "ab"}},
+		{out.ExitUsage, []string{"engagement", "open", "ab", "--until", "tomorrow"}},
+		{out.ExitUsage, []string{"evolve", "run"}},
+		{out.ExitUsage, []string{"feature", "approve", "ab"}},
+		{out.ExitUsage, []string{"feature", "decline", "ab"}},
+		{out.ExitUsage, []string{"inbox", "show", "ab"}},
+		{out.ExitUsage, []string{"menu", "add", "main"}},
+		{out.ExitUsage, []string{"newsletter", "remove", "ab"}},
+		{out.ExitUsage, []string{"policy", "propose", "ab"}},
+		{out.ExitUsage, []string{"posture", "suppress", "f1"}},
+		{out.ExitUsage, []string{"records", "add", "ab"}},
+		{out.ExitUsage, []string{"records", "add", "ab", "x"}},
+		{out.ExitUsage, []string{"review", "require", "ab"}},
+		{out.ExitUsage, []string{"review", "require", "2x"}},
+		{out.ExitUsage, []string{"schedule", "add", "ab"}},
+		{out.ExitUsage, []string{"schedule", "add", "48h", "--reason", "x"}},
+		{out.ExitUsage, []string{"shield", "block", "ab"}},
+		{out.ExitUsage, []string{"shield", "trust", "add", "ab"}},
+		{out.ExitUsage, []string{"signals", "connect"}},
+		{out.ExitUsage, []string{"site", "fill", "ab"}},
+		{out.ExitUsage, []string{"token", "issue", "ab"}},
+
+		{out.ExitBlocked, []string{"assist", "ab"}},
+	} {
+		_, e, code := cliRun(t, root, "", c.line...)
+		if code != c.want {
+			t.Errorf("`quilzo %s` exited %d, want %d (%s): %s", strings.Join(c.line, " "),
+				code, c.want, out.Describe(c.want), firstLines(e, 2))
+		}
+	}
+}
+
 // A colour decided by stdout is written only to stdout.
 //
 // What is written to stderr is coloured as stderr is (noteRed and the

@@ -928,7 +928,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		return errMisused{fmt.Errorf("usage: quilzo token issue <name> --principal <who> --role <role>")}
 	}
 	if strings.TrimSpace(*principal) == "" {
-		return fmt.Errorf("--principal is required: a token acts as somebody")
+		return errMisused{fmt.Errorf("--principal is required: a token acts as somebody")}
 	}
 
 	// Without --role, the token acts as the principal actually can.
