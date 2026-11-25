@@ -229,10 +229,16 @@ func TestAStoredValueThatDoesNotParseIsRefusedAtLoad(t *testing.T) {
 // "network.mode": "offline" to whoever opens it, with an "open" further
 // down from a merge or a pasted block, ran open; and `config show` showed
 // the open one, beside a file that said otherwise.
+//
+// Also when the second "values" is spelt "Values": encoding/json matches
+// a name to its field without regard to case and adds the second object's
+// settings to the first's, so that file loaded, open, while a check of
+// names spelt the same let it by.
 func TestASettingWrittenTwiceIsRefusedAtLoad(t *testing.T) {
 	for _, body := range []string{
 		`{"values":{"network.mode":"offline","site.name":"A","network.mode":"open"}}`,
 		`{"values":{"network.mode":"offline"},"values":{"network.mode":"open"}}`,
+		`{"values":{"network.mode":"offline"},"Values":{"network.mode":"open"}}`,
 	} {
 		_, err := Parse([]byte(body))
 		if err == nil || !strings.Contains(err.Error(), "more than once") {
@@ -249,6 +255,11 @@ func TestASettingWrittenTwiceIsRefusedAtLoad(t *testing.T) {
 // file is not JSON, the value is not a string or the setting is written
 // twice. The network boundary reads it, so a file with one unknown key
 // still says offline.
+//
+// Written twice includes "values" itself written twice, in any case: the
+// second object's settings are added to the first's, so a file whose first
+// "values" said offline was read as the open of its second, and the command
+// line ran open of a file Parse refused for the very repetition.
 func TestOneSettingIsReadFromAFileThatDoesNotLoad(t *testing.T) {
 	for _, c := range []struct {
 		body, want string
@@ -262,6 +273,9 @@ func TestOneSettingIsReadFromAFileThatDoesNotLoad(t *testing.T) {
 		{`{"values":{"network.mode":false}}`, "", false},
 		{`{"values":"offline"}`, "", false},
 		{`{"values":{"network.mode":"offline","network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"offline"},"values":{"network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"offline"},"Values":{"network.mode":"open"}}`, "", false},
+		{`{"values":{"network.mode":"open"},"accepted":[{"key":"a","Key":"b"}]}`, "open", true},
 	} {
 		got, known := ValueIn([]byte(c.body), "network.mode")
 		if got != c.want || known != c.known {

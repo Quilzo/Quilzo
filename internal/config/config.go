@@ -265,6 +265,13 @@ func Parse(body []byte) (*Config, error) {
 // duplicated is every name an object in a JSON document gives more than
 // once, in the order each is first repeated; nothing for a document that is
 // not JSON, which Unmarshal has refused before this is asked.
+//
+// Names are compared without regard to case, as encoding/json matches a
+// name to a struct's field. Compared as spelt, "values" followed by
+// "Values" passed as two names, and Unmarshal added the second object's
+// settings to the first's: a file that said "network.mode": "offline"
+// first loaded open. Every setting's name is lower case, so two spellings
+// of one in "values" are a mistake either way.
 func duplicated(body []byte) []string {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	var twice []string
@@ -276,17 +283,18 @@ func duplicated(body []byte) []string {
 		}
 		switch t {
 		case json.Delim('{'):
-			seen := map[string]bool{}
+			var seen []string
 			for dec.More() {
 				k, err := dec.Token()
 				if err != nil {
 					return err
 				}
 				name, _ := k.(string)
-				if seen[name] && !slices.Contains(twice, name) {
+				again := slices.ContainsFunc(seen, func(n string) bool { return strings.EqualFold(n, name) })
+				if again && !slices.Contains(twice, name) {
 					twice = append(twice, name)
 				}
-				seen[name] = true
+				seen = append(seen, name)
 				if err := walk(); err != nil {
 					return err
 				}
@@ -313,7 +321,10 @@ func duplicated(body []byte) []string {
 // ValueIn is what a stored configuration says of one setting when the file
 // as a whole does not load: the value written, "" for one not written, and
 // whether that can be told. It cannot be when the file is not JSON (one cut
-// off by a full disk), the value is not a string, or it is written twice.
+// off by a full disk), the value is not a string, or it is written twice,
+// "values" itself included: Unmarshal adds a second "values" object's
+// settings to the first's, so the first's offline was read as the second's
+// open.
 //
 // For the network boundary, which has to know whether the deployment is
 // offline before any command runs, including a command whose own reading of
@@ -329,8 +340,13 @@ func ValueIn(body []byte, key string) (string, bool) {
 	var f struct {
 		Values map[string]json.RawMessage `json:"values"`
 	}
-	if err := json.Unmarshal(body, &f); err != nil || slices.Contains(duplicated(body), key) {
+	if err := json.Unmarshal(body, &f); err != nil {
 		return "", false
+	}
+	for _, name := range duplicated(body) {
+		if strings.EqualFold(name, key) || strings.EqualFold(name, "values") {
+			return "", false
+		}
 	}
 	raw, set := f.Values[key]
 	if !set {

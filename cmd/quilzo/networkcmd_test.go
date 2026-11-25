@@ -17,7 +17,9 @@ import (
 // value of the wrong type or a file cut off by a full disk ran every command
 // at an offline deployment with the network on, and `quilzo network` said
 // open. A file refused for something else still says what the mode is; one
-// that cannot say holds the command offline, and says why.
+// that cannot say holds the command offline, and says why. A file that
+// writes "values" twice cannot say: the second's open was read over the
+// first's offline, and spelt "Values" the file even loaded.
 func TestABrokenConfigurationDoesNotTurnTheNetworkBackOn(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "st")
 	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
@@ -31,6 +33,8 @@ func TestABrokenConfigurationDoesNotTurnTheNetworkBackOn(t *testing.T) {
 		{"a value of the wrong type", `{"values":{"network.mode":"offline","api.page.max":5}}`, "offline", false},
 		{"a truncated file", `{"values":{"network.mode":"offline","site.na`, "offline", true},
 		{"the mode written twice", `{"values":{"network.mode":"offline","network.mode":"open"}}`, "offline", true},
+		{"the values written twice", `{"values":{"network.mode":"offline"},"values":{"network.mode":"open"}}`, "offline", true},
+		{"the values written twice, in two cases", `{"values":{"network.mode":"offline"},"Values":{"network.mode":"open"}}`, "offline", true},
 		{"the mode of the wrong type", `{"values":{"network.mode":false}}`, "offline", true},
 		{"an unknown key, open", `{"values":{"network.mode":"open","auth.thottle":"false"}}`, "open", false},
 	} {
