@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/audit"
 )
 
 func evidenceFixturePath(t *testing.T, name string) string {
@@ -170,5 +172,50 @@ func TestSignedIngestNeedsAPinnedKey(t *testing.T) {
 	}
 	if code != 0 || json.Unmarshal([]byte(o), &signed) != nil || signed.Batch.Grade != "signed" || signed.Batch.Raw.Signer != "build" {
 		t.Fatalf("a pinned envelope exited %d: %s %s", code, e, firstLines(o, 5))
+	}
+}
+
+// An agent's client brings a file in through the agent interface as the
+// person it works for, previews it first, and reads the file back with its
+// check; a call made for a model is refused, and nothing is sealed for it.
+func TestIngestThroughTheAgentInterface(t *testing.T) {
+	root, _ := accessStore(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(evidenceFixturePath(t, "osquery/results.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("owner"), "templates")
+	out, e := callTool(t, srv, "quilzo_write", "evidence_ingest", map[string]any{"format": "osquery", "content": string(body), "preview": true})
+	if e != nil || !strings.Contains(out, `"preview": true`) && !strings.Contains(out, `"preview":true`) {
+		t.Fatalf("the preview answered %v: %s", e, firstLines(out, 5))
+	}
+	if out, _ := callTool(t, srv, "quilzo_read", "evidence_files", map[string]any{}); !strings.Contains(out, `"total": 0`) && !strings.Contains(out, `"total":0`) {
+		t.Fatalf("the preview wrote something: %s", firstLines(out, 5))
+	}
+	if _, e := callTool(t, srv, "quilzo_write", "evidence_ingest", map[string]any{"format": "osquery", "content": string(body)}); e != nil {
+		t.Fatalf("the import answered %v", e.Message)
+	}
+	if out, e := callTool(t, srv, "quilzo_read", "evidence_verify", map[string]any{}); e != nil || !strings.Contains(out, `"seal": "checks"`) &&
+		!strings.Contains(out, `"seal":"checks"`) {
+		t.Fatalf("the check answered %v: %s", e, firstLines(out, 10))
+	}
+
+	model := &Caller{Name: "owner", Kind: audit.KindAI, Model: "mcp-client", Verified: true, Role: "admin"}
+	ai := buildMCP(root, s, model, "templates")
+	other := []byte(strings.Replace(string(body), "mac-01", "mac-09", 1))
+	out, e = callTool(t, ai, "quilzo_write", "evidence_ingest", map[string]any{"format": "osquery", "content": string(other)})
+	if e == nil && !strings.Contains(out, "a model") {
+		t.Fatalf("a model's import was not refused: %s", firstLines(out, 5))
+	}
+	g, err := evidenceReader(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := g.Raw.List(); len(all) != 1 {
+		t.Errorf("the raw store holds %d files; a model's was sealed", len(all))
 	}
 }
