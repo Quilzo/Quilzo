@@ -228,7 +228,7 @@ func registerInventory() error {
 	for _, k := range inv.Kinds {
 		keep := "until a person erases them"
 		if k.RetainDays > 0 {
-			keep = fmt.Sprintf("%d days after a record last names them", k.RetainDays)
+			keep = fmt.Sprintf("%d days after they were last kept for a record of the kind", k.RetainDays)
 		}
 		fmt.Printf("  %s%s%s (%s), %s\n", bold, k.Kind, reset, k.Collection, k.Class)
 		fmt.Printf("    people:  %s\n    text:    %s\n    files:   %s\n    kept:    %s\n", names(k.People), names(k.Text),

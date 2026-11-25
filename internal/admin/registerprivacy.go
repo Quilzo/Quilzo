@@ -120,7 +120,7 @@ func (s *Server) handleRegisterInventory(w http.ResponseWriter, r *http.Request)
 	for _, k := range inv.Kinds {
 		keep := "Until a person erases them"
 		if k.RetainDays > 0 {
-			keep = fmt.Sprintf("%d days after a record last names them", k.RetainDays)
+			keep = fmt.Sprintf("%d days after they were last kept for a record of the kind", k.RetainDays)
 		}
 		t, err := seckit.NewTable(fmt.Sprintf("%s (%s): %s", k.Kind, k.Class, k.Summary), []string{"What", "Fields or rule"},
 			[]seckit.Row{

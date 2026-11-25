@@ -55,8 +55,9 @@ type Spec struct {
 	// document. No figure, status or coverage is ever drawn from it.
 	Unconfirmed bool `json:"unconfirmed,omitempty"`
 	// RetainDays is how many days the free text and files its records
-	// name are kept in the side store after a record of it last named
-	// them. Zero keeps them until a person erases them (retention.go).
+	// name are kept in the side store after they were last kept for a
+	// record of it. Zero keeps them until a person erases them
+	// (retention.go).
 	RetainDays int `json:"retain_days,omitempty"`
 
 	typ reflect.Type

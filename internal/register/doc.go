@@ -195,8 +195,8 @@
 //	ExpireSide()                        what every kind holding it has kept for its retention, deleted
 //
 // Retention is declared per kind in retention.go, counted from the last time
-// a record of the kind named the entry, and enforced by the register's
-// upkeep job. An erasure changes nothing in the register, so every record,
+// the entry was kept for a record of the kind, and enforced by the
+// register's upkeep job. An erasure changes nothing in the register, so every record,
 // commit and chain still checks; every surface that shows a record says
 // "subject erased" or "text erased" beside it (Named). A label holding an
 // address or a user principal name is refused at Put. The data inventory is

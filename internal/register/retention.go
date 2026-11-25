@@ -15,8 +15,9 @@ import "time"
 // long as it says, the server's upkeep deletes it (ExpireSide), and the
 // record says its words are gone.
 //
-// A period is counted from the last time a record of the kind named the
-// entry, so a fact read again today keeps today's raw file. A kind with no
+// A period is counted from the last time the entry was kept for a record
+// of the kind (PutText, PutRaw), so a fact read again today, whose module
+// keeps its raw file again as it writes the fact, keeps today's file. A kind with no
 // period keeps what it names until a person erases it: a decision's words
 // and a risk's description are the record of why, and an organisation
 // decides when those go, not a timer.
