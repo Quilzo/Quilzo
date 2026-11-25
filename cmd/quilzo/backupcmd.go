@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/backup"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/upkeep"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // Backups of the whole store (internal/backup).
@@ -62,13 +63,20 @@ func backupKey() ([]byte, error) {
 // backupSources are the files a backup of this store holds: the store, its
 // history's objects last (after the pointers to them, so every pointer
 // taken points at an object taken too), and the layouts beside it.
+//
+// Not a backup kept among them, which is no part of the store. Each was
+// collected with the rest, so with backup.dir inside the store, or a backup
+// written into it by hand, every backup held all the earlier ones, and the
+// daily backup doubled in size each day until the disk was full.
 func backupSources(root, templates string) ([]backup.Source, error) {
 	skip := func(rel string) bool {
 		switch rel {
 		case "tmp", "connect-pending":
 			return true
 		}
-		return false
+		// The history's objects are the store's own format, never a backup,
+		// and are not opened twice to be told so.
+		return !strings.HasPrefix(rel, "objects/") && isBackupFile(filepath.Join(root, filepath.FromSlash(rel)))
 	}
 	srcs, err := backup.Collect(root, "store", skip, "objects")
 	if err != nil {
@@ -76,7 +84,9 @@ func backupSources(root, templates string) ([]backup.Source, error) {
 	}
 	if templates != "" {
 		if fi, err := os.Stat(templates); err == nil && fi.IsDir() {
-			more, err := backup.Collect(templates, "templates", nil)
+			more, err := backup.Collect(templates, "templates", func(rel string) bool {
+				return isBackupFile(filepath.Join(templates, filepath.FromSlash(rel)))
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -86,21 +96,85 @@ func backupSources(root, templates string) ([]backup.Source, error) {
 	return srcs, nil
 }
 
+// isBackupFile reports whether the file at p is a backup, by the magic
+// every backup begins with.
+func isBackupFile(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, len(backup.Magic))
+	_, err = io.ReadFull(f, head)
+	return err == nil && string(head) == backup.Magic
+}
+
+// backupHistory is what checking the history a backup holds came to: the
+// objects that hash to their names, the sealed ones no key here could open
+// to check, and the first that does not check.
+type backupHistory struct {
+	checked, sealed int
+	damaged         error
+}
+
+// verifyBackup reads a whole backup as backup.Verify does, and checks each
+// object of the history it holds as `quilzo verify` checks a store's, with
+// keys for the sealed ones where there are keys. A restore checked the
+// history and the backup itself did not: a backup of a store whose objects
+// no longer hashed to their names was "backed up and checked", and "checks"
+// to `backup verify`, and only its restore said it was damaged.
+func verifyBackup(r io.Reader, key []byte, keys *vault.Keyring) (backup.Manifest, backupHistory, error) {
+	var h backupHistory
+	m, err := backup.VerifyEach(r, key, func(f backup.File, body io.Reader) error {
+		oid, ok := backupObject(f.Path)
+		if !ok || h.damaged != nil {
+			return nil
+		}
+		b, err := io.ReadAll(body)
+		if err != nil {
+			return err
+		}
+		if keys == nil && vault.IsSealed(b) {
+			h.sealed++
+			return nil
+		}
+		if h.damaged = store.CheckObject(oid, b, keys); h.damaged == nil {
+			h.checked++
+		}
+		return nil
+	})
+	return m, h, err
+}
+
+// backupObject is the object of the history a backup's file is, where it is
+// one: store/objects/SHARD/REST, walked as store.Verify walks them.
+func backupObject(p string) (string, bool) {
+	rest, ok := strings.CutPrefix(p, "store/objects/")
+	if !ok {
+		return "", false
+	}
+	shard, name, ok := strings.Cut(rest, "/")
+	if !ok || name == "" || strings.Contains(name, "/") || strings.HasPrefix(name, ".") {
+		return "", false
+	}
+	return shard + name, true
+}
+
 // makeBackup writes a backup to file, through a file beside it that is put
-// in place only once it checks.
-func makeBackup(root, templates, file string, now time.Time) (backup.Manifest, string, error) {
+// in place only once it checks, its history included.
+func makeBackup(root, templates, file string, now time.Time) (backup.Manifest, backupHistory, string, error) {
 	key, err := backupKey()
 	if err != nil {
-		return backup.Manifest{}, "", err
+		return backup.Manifest{}, backupHistory{}, "", err
 	}
 	srcs, err := backupSources(root, templates)
 	if err != nil {
-		return backup.Manifest{}, "", err
+		return backup.Manifest{}, backupHistory{}, "", err
 	}
 	tmp := file + ".part"
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return backup.Manifest{}, "", err
+		return backup.Manifest{}, backupHistory{}, "", err
 	}
 	defer os.Remove(tmp)
 	h := sha256.New()
@@ -109,23 +183,43 @@ func makeBackup(root, templates, file string, now time.Time) (backup.Manifest, s
 		err = cerr
 	}
 	if err != nil {
-		return m, "", err
+		return m, backupHistory{}, "", err
 	}
 	// Checked before it is called a backup: read back whole, every part
-	// decrypted and every file compared with the manifest.
+	// decrypted, every file compared with the manifest, and every object of
+	// the history hashed to its name, with the store's keys where it has
+	// them. Without them a sealed object is checked only as a file, and
+	// said to be.
 	in, err := os.Open(tmp)
 	if err != nil {
-		return m, "", err
+		return m, backupHistory{}, "", err
 	}
-	_, verr := backup.Verify(in, key)
+	kr, _ := loadKeyring(root)
+	_, hist, verr := verifyBackup(in, key, kr)
 	in.Close()
 	if verr != nil {
-		return m, "", fmt.Errorf("the backup did not check: %w", verr)
+		return m, hist, "", fmt.Errorf("the backup did not check: %w", verr)
+	}
+	// Not kept, as no backup that does not check is, so the daily backup
+	// does not let go of one made before the damage for one made after it.
+	if hist.damaged != nil {
+		return m, hist, "", fmt.Errorf("the store's history does not check (%w), so no backup of it "+
+			"is kept: quilzo verify shows the damage, and the backups made before it are as they were", hist.damaged)
 	}
 	if err := os.Rename(tmp, file); err != nil {
-		return m, "", err
+		return m, hist, "", err
 	}
-	return m, hex.EncodeToString(h.Sum(nil)), nil
+	return m, hist, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// saySealedUnchecked says how many objects of a backup's history are sealed
+// and were checked only as files, when there are some, so "checked" does
+// not claim more than was.
+func saySealedUnchecked(h backupHistory) {
+	if h.sealed > 0 {
+		w.Human("  %s%d sealed object(s) of the history were checked as files only: no key here opens them%s\n",
+			dim, h.sealed, reset)
+	}
 }
 
 func absPath(p string) string {
@@ -182,7 +276,7 @@ func cmdBackup(root string, args []string) error {
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return err
 		}
-		m, sum, err := makeBackup(root, *templates, rest[0], time.Now())
+		m, hist, sum, err := makeBackup(root, *templates, rest[0], time.Now())
 		if err != nil {
 			record(root, caller.auditRecord("backup.failed", "/", audit.Failure, map[string]string{"error": clip(err.Error(), 200)}))
 			return err
@@ -194,6 +288,7 @@ func cmdBackup(root string, args []string) error {
 		}
 		w.Human("%sbacked up and checked%s: %d files, %d bytes, in %s\n  %ssha256 %s%s\n", green, reset,
 			len(m.Files), m.Bytes, rest[0], dim, sum, reset)
+		saySealedUnchecked(hist)
 		return nil
 	case "verify":
 		if len(args) != 2 {
@@ -211,15 +306,21 @@ func cmdBackup(root string, args []string) error {
 			return err
 		}
 		defer f.Close()
-		m, err := backup.Verify(f, key)
+		// Without keys: the backup may be another store's, and is read as
+		// on the day the store is gone.
+		m, hist, err := verifyBackup(f, key, nil)
 		if err != nil {
 			return err
+		}
+		if hist.damaged != nil {
+			return fmt.Errorf("%s is whole, but the history it holds does not check: %w", args[1], hist.damaged)
 		}
 		if w.JSON(m) {
 			return nil
 		}
 		w.Human("%s%s checks%s: %d files, %d bytes, made %s\n", green, args[1], reset, len(m.Files), m.Bytes,
 			m.Created.Local().Format("2 Jan 2006 15:04"))
+		saySealedUnchecked(hist)
 		return nil
 	case "restore":
 		fs := flag.NewFlagSet("backup restore", flag.ContinueOnError)
@@ -288,7 +389,7 @@ func backupJob(root string) upkeep.Job {
 				}
 			}
 			file := filepath.Join(dir, "quilzo-"+now.UTC().Format("20060102-150405")+".qzb")
-			m, sum, err := makeBackup(root, "templates", file, now)
+			m, _, sum, err := makeBackup(root, "templates", file, now)
 			if err != nil {
 				record(root, audit.Record{Action: "backup.failed", Resource: "/", Outcome: audit.Failure,
 					Principal: "quilzo", Kind: audit.KindService, Verified: true,

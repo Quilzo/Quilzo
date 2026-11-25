@@ -417,6 +417,14 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // with the manifest. Nothing is written.
 func Verify(r io.Reader, key []byte) (Manifest, error) { return walk(r, key, nil) }
 
+// VerifyEach is Verify, handing each file to each as it is read, for a
+// caller that has to check what the files hold as well as that they are
+// whole: whatever each leaves unread is read and hashed after it. An error
+// from each ends the walk.
+func VerifyEach(r io.Reader, key []byte, each func(File, io.Reader) error) (Manifest, error) {
+	return walk(r, key, each)
+}
+
 // Restore writes a backup's files into dir, which must not exist or be
 // empty, and checks them against the manifest. On an error what was
 // written stays, and is said to be incomplete.
