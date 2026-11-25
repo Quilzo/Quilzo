@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
@@ -630,5 +631,36 @@ func TestOverdueCompensatingReviewIsPostureProblem(t *testing.T) {
 	skipped := strings.Join(rep.Skipped, " ")
 	if !strings.Contains(skipped, "approval.review-overdue") || !strings.Contains(skipped, "approval.lapsed") {
 		t.Errorf("approvals nobody looked at were taken for none owed: %v", rep.Skipped)
+	}
+}
+
+// An agent the access policy grants the atom is not somebody who could
+// approve, whichever way its principal is spelt: the access policy names an
+// agent agent/NAME (agent.PrincipalPrefix), and a team of one beside its
+// agent is still a team of one. Counted as eligible, the agent made the one
+// person two, who could then approve nothing they raised, and was told
+// "1 other people may" of somebody who never can.
+func TestAnAgentGrantedTheAtomIsNotEligible(t *testing.T) {
+	for _, name := range []string{agent.Principal("triage"), "agent:triage"} {
+		b := newBench(t, holds("solo", auth.ActAcceptRisk), holds(name, auth.ActAcceptRisk))
+		id := b.propose("solo", b.risk("R-40", "solo", 2))
+		a, err := b.m.Ask(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Of != 1 || !a.AloneFor(b.subject("solo")) || a.Eligible(name) {
+			t.Fatalf("%s is counted among the people who may approve: %d eligible", name, a.Of)
+		}
+		out, err := b.sign("solo", id)
+		if err != nil || !out.Done || !out.Alone {
+			t.Fatalf("the team of one beside %s could not approve alone: %+v %v", name, out, err)
+		}
+		// Nor does an agent approve under a person's kind.
+		id2 := b.propose("solo", b.risk("R-41", "solo", 2))
+		a2, _ := b.m.Ask(id2)
+		if _, err := b.m.Sign(b.person(name), id2, b.proofFor(name, ForApproval, a2.Hash)); !errors.Is(err, ErrRefused) ||
+			!strings.Contains(err.Error(), "a person's") {
+			t.Fatalf("%s approved as a person: %v", name, err)
+		}
 	}
 }

@@ -61,7 +61,8 @@ type Approvals struct {
 	// back.
 	Settling func(now time.Time) (*dual.Removal, error)
 	// IsAgent says a principal of the access policy is an agent, which is
-	// never eligible to approve. Nil takes "agent:" names for agents.
+	// never eligible to approve. Nil takes the names agents are given for
+	// agents (agentPrefixes).
 	IsAgent func(name string) bool
 	// Audit records each signature and refusal. Nil records nothing, and
 	// then nothing is signed: an approval nobody can show was given is
@@ -226,11 +227,27 @@ func (m *Approvals) people() People {
 	return PeopleAt(m.Root)
 }
 
+// agentPrefixes begin the names an agent goes by: agent/NAME in the access
+// policy and the log (internal/agent's PrincipalPrefix, spelt out here so
+// the approvals do not take in the agent runtime to read two characters),
+// and agent:NAME where the gateway and the fleet name one. Only "agent:"
+// was read, so an agent the access policy granted accept-risk was counted
+// among the people who could approve: a team of one beside its agent was
+// two, and the one person was refused what they raised, told that somebody
+// who never can approve it might.
+var agentPrefixes = []string{"agent/", "agent:"}
+
 func (m *Approvals) isAgent(name string) bool {
 	if m.IsAgent != nil {
 		return m.IsAgent(name)
 	}
-	return strings.HasPrefix(name, "agent:")
+	key := auth.PersonKey(name)
+	for _, p := range agentPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // Waiting is every proposal a rule of the separation policy decides, oldest
