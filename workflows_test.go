@@ -270,9 +270,16 @@ func TestCIRacesEveryConcurrentPackageOnEveryPullRequest(t *testing.T) {
 		t.Fatal("ci.yml no longer runs on pull requests")
 	}
 	jobs := workflowJobs(t, "ci.yml", wf)
-	// The plain run stays: the race detector is in addition to it.
-	if job, _ := stepRunning(t, "ci.yml", jobs, "go test -count=1 ./..."); job != "test" {
+	// The plain run stays: the race detector is in addition to it. It is
+	// given longer than go test's ten minutes a package: the command line's
+	// tests alone take most of that on a quiet machine, and a run that
+	// outlives the default ends in a panic that reads like a hang.
+	job, plain := stepRunning(t, "ci.yml", jobs, "go test -count=1 ", " ./...")
+	if job != "test" {
 		t.Errorf("the plain run of the whole suite moved from the test job to %s", job)
+	}
+	if run, _ := plain["run"].(string); !strings.Contains(run, "-timeout=30m") {
+		t.Errorf("the plain run is `%s`, which leaves a package go test's default of ten minutes", run)
 	}
 	job, step := stepRunning(t, "ci.yml", jobs, "go test -race")
 	if jobs[job]["if"] != nil || step["if"] != nil {
