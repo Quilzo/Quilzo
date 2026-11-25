@@ -121,6 +121,13 @@ var Purposes = []Purpose{
 		Without: "webhooks are not delivered. Nothing is queued or retried",
 	},
 	{
+		Name: "public-transfer",
+		What: "sending the public instance what was published to it, as a signed " +
+			"transfer posted to its intake: outbound only, and only from the internal instance",
+		Without: "the public instance is sent nothing over the network; a transfer is written " +
+			"to a directory instead and carried to it (quilzo public import)",
+	},
+	{
 		Name: "timestamp",
 		What: "asking a time-stamping authority to attest that a value existed " +
 			"at a moment (RFC 3161)",

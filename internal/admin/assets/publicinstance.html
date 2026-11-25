@@ -1,0 +1,126 @@
+{{/*
+  The public instance, from the internal side: where it is, the key it
+  pins, the attestations it is to show, and their publication. Publishing
+  is two people's: one proposes here, another approves on People. Every
+  field that can be wrong is named beside itself when it is, and the
+  problem is summarised at the top with a link to the field.
+*/}}
+{{template "head" .}}
+<h1>Public instance</h1>
+<p class="lead">The organisation's public faces are served by a separate instance on a host of its own, which
+  holds no admin, no record and no secret. It is sent what is published here, one way, as a transfer signed
+  with this store's head keys, and it takes nothing signed by any other key.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}
+<div class="notice bad" role="alert">
+  <h2>There is a problem</h2>
+  <p>{{if .Field}}<a href="#{{.Field}}">{{.Error}}</a>{{else}}{{.Error}}{{end}}</p>
+</div>
+{{end}}
+
+{{if .Off}}
+<p>This build has no public instance.</p>
+{{else}}
+<h2>Where it is</h2>
+<p>{{if .View.Target}}Transfers go to <code>{{.View.Target}}</code>.{{else}}Nowhere yet: say where the public instance is.{{end}}</p>
+{{if .CanChange}}
+<form method="post" action="/security/public/act" class="card">
+  <input type="hidden" name="op" value="target">
+  <div class="field"><label for="to">The public instance's address, or an absolute directory to carry transfers from {{template "req"}}</label>
+    <input id="to" name="to" required value="{{.View.Target}}" aria-describedby="to-help{{if eq .Field "to"}} to-error{{end}}"{{if eq .Field "to"}} aria-invalid="true"{{end}}>
+    <p id="to-help" class="help">An https address is posted to; a directory is written to, for a person or a one-way link to carry.</p>
+    {{if eq .Field "to"}}<p id="to-error" class="hint warn">Error: {{.Error}}</p>{{end}}
+  </div>
+  <button type="submit">Save where it is</button>
+</form>
+{{end}}
+
+<h2>The key it pins</h2>
+{{if .View.KeyID}}
+<p>It takes transfers signed by key <code>{{.View.KeyID}}</code> and no other.
+  <a href="/security/public/key.json" download>Download the public half</a> and pin it on the public host with
+  <code>quilzo init --profile public --pin head.pub.json</code>.</p>
+{{else}}
+<p>This store's head keys cannot be read, so there is no key to pin.</p>
+{{end}}
+
+<h2>Attestations to publish</h2>
+{{if .View.Problem}}<p class="notice bad"><span class="wf-icon">{{icon "warning"}}</span> The draft is not publishable: {{.View.Problem}}</p>{{end}}
+{{with .View.Draft}}
+<p>For {{.Organisation}}{{if $.Published}}, as published{{end}}. The page shows these and nothing else: no operational figure.</p>
+<div class="table-wrap">
+<table>
+  <caption>Reports and certificates held</caption>
+  <thead><tr><th scope="col">What is held</th><th scope="col">Against</th><th scope="col">Period</th><th scope="col">Issued by</th><th scope="col">Issued</th></tr></thead>
+  <tbody>
+  {{range .Attestations}}<tr><th scope="row">{{.Title}}<div class="hint">{{.Kind}}</div></th><td>{{.Framework}}</td><td>{{.PeriodStart}} to {{.PeriodEnd}}</td><td>{{.Issuer}}</td><td>{{.Issued}}</td></tr>
+  {{else}}<tr><td colspan="5">None is listed.</td></tr>{{end}}
+  </tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+  <caption>Policies in force</caption>
+  <thead><tr><th scope="col">Policy</th><th scope="col">Version</th><th scope="col">Approved</th></tr></thead>
+  <tbody>
+  {{range .Policies}}<tr><th scope="row">{{.Title}}</th><td>{{.Version}}</td><td>{{.Approved}}</td></tr>
+  {{else}}<tr><td colspan="3">None is listed.</td></tr>{{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+{{if not .View.Problem}}<p>No draft yet.</p>{{end}}
+{{end}}
+{{if .CanChange}}
+<form method="post" action="/security/public/act" class="card">
+  <input type="hidden" name="op" value="draft">
+  <div class="field"><label for="draft">The attestations, as a file of format 1 {{template "req"}}</label>
+    <textarea id="draft" name="draft" rows="14" required aria-describedby="draft-help{{if eq .Field "draft"}} draft-error{{end}}"{{if eq .Field "draft"}} aria-invalid="true"{{end}}>
+{{.View.DraftText}}</textarea>
+    <p id="draft-help" class="help">The organisation, each report or certificate held (its kind, title, framework, period,
+      issuer and date of issue) and each policy in force with its version and the date it was approved. A figure,
+      a field the format does not have, and the words compliant or certified that no attestation backs are refused.</p>
+    {{if eq .Field "draft"}}<p id="draft-error" class="hint warn">Error: {{.Error}}</p>{{end}}
+  </div>
+  <button type="submit">Check it and keep it as the draft</button>
+</form>
+{{end}}
+
+<h2>Publishing</h2>
+{{if .View.Waiting}}
+<p class="notice"><span class="wf-icon">{{icon "info"}}</span> A publication waits for a second administrator:
+  request <code>{{.View.Waiting}}</code>. Another administrator approves it on <a href="/people">People</a>, or with
+  <code>quilzo pending approve {{.View.Waiting}}</code>.</p>
+{{end}}
+{{with .View.Sent}}
+<p>Last sent {{.At.Format "2 January 2006 at 15:04 MST"}} to <code>{{.To}}</code>, approved by {{.ApprovedBy}},
+  with the head of the record at {{.Head}} entries.
+  {{if .Alone}}<span class="wf-band warning"><span class="wf-icon">{{icon "warning"}}</span>Approved alone</span>{{else}}<span class="wf-band good"><span class="wf-icon">{{icon "check_circle"}}</span>Approved by two people</span>{{end}}</p>
+{{else}}
+<p>Nothing has been sent yet.</p>
+{{end}}
+{{if .CanChange}}
+<form method="post" action="/security/public/act" class="card">
+  <input type="hidden" name="op" value="publish">
+  <div class="field"><label for="reason">Why it is published {{template "req"}}</label>
+    <input id="reason" name="reason" required maxlength="300" aria-describedby="reason-help{{if eq .Field "reason"}} reason-error{{end}}"{{if eq .Field "reason"}} aria-invalid="true"{{end}}>
+    <p id="reason-help" class="help">Publishing is two people's: this proposes the draft as it is now, and a second
+      administrator approves it before anything leaves. A draft changed meanwhile is not what the approval sends.</p>
+    {{if eq .Field "reason"}}<p id="reason-error" class="hint warn">Error: {{.Error}}</p>{{end}}
+  </div>
+  <button type="submit">Propose publication</button>
+</form>
+{{if .View.Sent}}
+<form method="post" action="/security/public/act" class="card">
+  <input type="hidden" name="op" value="resend">
+  <div class="field"><label for="why">Why it is sent again</label>
+    <input id="why" name="why" maxlength="300" value="a fresh head of the record" aria-describedby="why-help{{if eq .Field "why"}} why-error{{end}}"{{if eq .Field "why"}} aria-invalid="true"{{end}}>
+    <p id="why-help" class="help">Sends what was published, unchanged, with a fresh signed head of the record.</p>
+    {{if eq .Field "why"}}<p id="why-error" class="hint warn">Error: {{.Error}}</p>{{end}}
+  </div>
+  <button type="submit" class="btn-tonal">Send again</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{template "foot" .}}

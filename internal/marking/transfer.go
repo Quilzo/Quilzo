@@ -89,7 +89,7 @@ func RecordTransfer(dir string, t Transfer, now time.Time) (*Transfer, error) {
 		}
 	}
 
-	t.Created = now.UTC().Format(time.RFC3339)
+	t.Created = now.UTC().Format(time.RFC3339Nano)
 	t.Algorithm = "sha256"
 	t.Files = map[string]string{}
 	t.Bytes = 0
@@ -107,8 +107,8 @@ func RecordTransfer(dir string, t Transfer, now time.Time) (*Transfer, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		// The manifest does not hash itself, which it cannot: writing it
-		// changes it.
-		if rel == TransferName {
+		// changes it. Nor its signature, which is made after it.
+		if rel == TransferName || rel == TransferSigName {
 			return nil
 		}
 		body, rerr := os.ReadFile(path)
@@ -176,7 +176,7 @@ func VerifyTransfer(dir string) (*Transfer, []string, error) {
 			return rerr
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == TransferName {
+		if rel == TransferName || rel == TransferSigName {
 			return nil
 		}
 		seen[rel] = true

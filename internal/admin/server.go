@@ -66,6 +66,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/lockout"
+	"github.com/quilzo/quilzo/internal/oscal"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
@@ -171,6 +172,20 @@ type Server struct {
 	Settings *Settings
 	// Parameters is the organisation's policy (parameters.go).
 	Parameters *Parameters
+	// SecurityProfile is which features this installation runs, and the
+	// signed manifest that records it (secprofile.go).
+	SecurityProfile *SecurityProfile
+	// PublicInstance is where the public instance is and what it is sent
+	// (publicinstance.go).
+	PublicInstance *PublicInstance
+	// SwitchedOff reports whether a screen belongs to a feature the
+	// security profile switches off, so the menu does not offer a door
+	// that answers "switched off". Nil switches nothing off.
+	SwitchedOff func(path string) bool
+	// ComponentEvidence adds what this store holds as evidence to the OSCAL
+	// component the Controls screen hands out: the signed feature manifest
+	// on CM-7. Nil adds nothing.
+	ComponentEvidence func(*oscal.ComponentDefinition)
 	// Version is the build's version, for documents the admin exports.
 	Version string
 	// Told tells the webhooks what happened to the live site — published,
@@ -1542,6 +1557,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/controls/component", s.handleControlsComponent)
 	mux.HandleFunc("/security/controls/ssp", s.handleControlsSSP)
 	mux.HandleFunc("/security/controls/ksi", s.handleControlsKSI)
+	mux.HandleFunc("/security/profile", s.handleSecurityProfile)
+	mux.HandleFunc("/security/profile/act", s.handleSecurityProfileAct)
+	mux.HandleFunc("/security/profile/manifest.json", s.handleSecurityProfileManifest)
+	mux.HandleFunc("/security/public", s.handlePublicInstance)
+	mux.HandleFunc("/security/public/act", s.handlePublicInstanceAct)
+	mux.HandleFunc("/security/public/key.json", s.handlePublicInstanceKeys)
 	mux.HandleFunc("/security/integrity", s.handleIntegrityScreen)
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)

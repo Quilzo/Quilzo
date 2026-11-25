@@ -155,6 +155,12 @@ func newRunBrowser(root string, m agent.Manifest, sess *agent.Session, caller *C
 		}
 	}
 	d.Launch = func(ctx context.Context) (*cdp.Browser, error) {
+		// Browser hands are one of the features the security profile
+		// switches off, and a run is refused its browser while they are:
+		// asked before a place is taken, and whatever would launch it.
+		if err := featureRefused(root, "browser-hands"); err != nil {
+			return nil, err
+		}
 		rb.mu.Lock()
 		held := rb.slot != nil
 		rb.mu.Unlock()

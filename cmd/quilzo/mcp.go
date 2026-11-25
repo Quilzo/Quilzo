@@ -182,6 +182,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return fmt.Errorf("the machine interface is turned off until about %s: %s",
 				p.Until.UTC().Format("15:04 UTC"), p.Reason)
 		}
+		// An operation of a feature the security profile switches off is
+		// refused as its command is (profilecmd.go).
+		if err := profileRefusesOperation(root, op.Name); err != nil {
+			return err
+		}
 		// A change made through this interface is an agent's, and is
 		// refused while its record could not be written (auditReady).
 		// Reads go on, and their records are what tell this process the
@@ -784,6 +789,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	registerSiteOps(srv, root, caller)
 	registerAnalyticsOps(srv, root, caller)
 	registerExperimentOps(srv, root, caller)
+	registerProfileOps(srv, root, caller)
 	// And the security modules' own, each registered from its own file
 	// (modules.go), so that two modules built side by side edit no list.
 	registerModuleOps(srv, root, caller)

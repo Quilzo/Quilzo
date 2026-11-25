@@ -31,6 +31,8 @@ var notForAgents = map[string]string{
 	"policy_status":  "an administrator's report",
 	"scan_content":   "an administrator's report",
 	"shield_status":  "an administrator's report",
+	"profile_status": "an administrator's report: which features run, and the manifest that records it",
+	"public_status":  "an administrator's report: what the public instance is sent, and by whom",
 	"site_report":    "an administrator's report",
 	"verify_store":   "an administrator's report",
 	"export_site":    "the whole site at once; a run reads it page by page",

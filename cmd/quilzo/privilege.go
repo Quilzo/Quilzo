@@ -869,6 +869,24 @@ var commandNeeds = map[string]need{
 	"-h":        {why: "prints usage"},
 	"--help":    {why: "prints usage"},
 
+	// Which features run is read by anybody who may read the store, and
+	// changed by an administrator only, with a reason (profilecmd.go). The
+	// command is an administrator's and its reads are narrower, so a
+	// subcommand added later asks the most until somebody decides
+	// otherwise; bare, it shows (bareRuns).
+	"profile":          {action: auth.ActGrant},
+	"profile show":     {action: auth.ActView},
+	"profile manifest": {action: auth.ActView},
+	"profile verify":   {action: auth.ActView},
+	// What the public instance shows is read by anybody who may read the
+	// store; setting it, saying where it goes and sending it are an
+	// administrator's, and publishing is two (attestcmd.go).
+	"attest":        {action: auth.ActGrant},
+	"attest show":   {action: auth.ActView},
+	"public":        {action: auth.ActGrant},
+	"public status": {action: auth.ActView},
+	"public key":    {action: auth.ActView},
+
 	// -- read-only subcommands of otherwise privileged commands, so that
 	// somebody locked out can still find out why.
 	"auth explain": {action: auth.ActView},
@@ -1661,7 +1679,8 @@ func commandArea(cmd string, args []string) (string, bool) {
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
 	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
-	"template": "list", "templates": "list", "assistant": "list"}
+	"template": "list", "templates": "list", "assistant": "list",
+	"profile": "show", "public": "status", "attest": "show"}
 
 // layoutHint is said after a refusal to write a layout.
 const layoutHint = "a layout is the markup every page that names it renders through, " +

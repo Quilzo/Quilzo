@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/personalise"
+	"github.com/quilzo/quilzo/internal/profile"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
@@ -44,6 +45,11 @@ import (
 // the internet at. Running both on one port would mean one misconfiguration
 // exposes the editing interface.
 func cmdSite(root string, args []string) error {
+	// A public instance's root serves only what it was sent, with its own
+	// server (outpostcmd.go).
+	if isPublicInstance(root) {
+		return errPublicInstance(root, "serves its own page and not a site")
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "new":
@@ -390,7 +396,11 @@ func cmdSite(root string, args []string) error {
 	// Who each request came from is decided once, at the edge, for the
 	// site, the API and everything else on this listener (internal/clientip).
 	// Then the shield's guard, so a blocked source reaches nothing.
-	handler = edge(root, "site.trusted_proxy", sh.guard.Wrap(shield.Site, handler))
+	//
+	// And the security profile's gate: an address of a feature it switches
+	// off is not served (profilecmd.go).
+	handler = edge(root, "site.trusted_proxy", sh.guard.Wrap(shield.Site,
+		profileGate(root, profile.SiteSurface, handler)))
 
 	srv := &http.Server{Addr: *addr, Handler: handler}
 
@@ -400,7 +410,9 @@ func cmdSite(root string, args []string) error {
 	// nothing — until this started them. It runs only when an operator has set
 	// up an actor and a sender exists to send with; otherwise it returns at
 	// once and the site serves exactly as before.
-	if st.Federation != nil && st.Federation.Sender != nil {
+	// Not with social posting switched off by the security profile, whose
+	// addresses the gate above refuses as well.
+	if st.Federation != nil && st.Federation.Sender != nil && profileState(root).On("social") {
 		fedCtx, stopFed := context.WithCancel(context.Background())
 		defer stopFed()
 		go st.Federate(fedCtx, st.Federation.Sender, func(err error) {
@@ -695,10 +707,20 @@ func (run siteRun) dress(st *public.Site) {
 		st.Analytics = run.counter
 		// Read per request, so starting or stopping a test from the admin
 		// takes effect on the next visitor rather than on the next restart.
+		//
+		// With experiments or personalisation switched off by the security
+		// profile, the set is empty, and every visitor is served the same
+		// page (profilecmd.go).
 		st.Experiments = func() (*experiment.Set, error) {
+			if !profileState(root).On("experiments") {
+				return &experiment.Set{}, nil
+			}
 			return experiment.Load(experimentsPath(root))
 		}
 		st.Personalise = func() (*personalise.Set, error) {
+			if !profileState(root).On("personalisation") {
+				return &personalise.Set{}, nil
+			}
 			return personalise.Load(personalisePath(root))
 		}
 	}

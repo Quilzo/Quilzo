@@ -301,6 +301,13 @@ var coverage = map[string]surfaces{
 		NoMCP: "a transfer manifest names the people accountable for moving " +
 			"content between networks, and an agent that could write one " +
 			"could name somebody who never approved anything"},
+	// Which features run, and the signed manifest that says so: read by an
+	// agent, switched by a person with a reason.
+	"profile": {GUI: "/security/profile", MCP: []string{"profile_status"}},
+	// The public instance and what it is sent: read by an agent, set and
+	// published by people, two of them.
+	"attest": {GUI: "/security/public", MCP: []string{"public_status"}},
+	"public": {GUI: "/security/public", MCP: []string{"public_status"}},
 	"marking": {GUI: "/security",
 		NoMCP: "a classification scheme is the boundary a marked deployment " +
 			"is built on, and a model that could read it could tell you " +

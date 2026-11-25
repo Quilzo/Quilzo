@@ -67,7 +67,7 @@ already pay for.
 git clone https://github.com/quilzo/quilzo && cd quilzo
 go build -o quilzo ./cmd/quilzo      # Go 1.27 or later, nothing to fetch
 
-./quilzo init                        # a store in the current directory
+./quilzo init --profile security     # a store in the current directory, as a security install
 ./quilzo demo                        # something for agents to work on
 ./quilzo agent new helper --kind retrieval
 ./quilzo agent run helper            # walks its declaration; needs no model
@@ -96,6 +96,39 @@ export QUILZO_MODEL=llama3.1
 No release is published yet; everything below is on `main`.
 [Install](#install) says how to build the container image, and what each
 release will carry.
+
+## The security install
+
+A security install starts from the security profile, which switches off at
+runtime what a security programme's record has no use for (payments,
+social posting, the desktop portal, browser hands, experiments,
+personalisation and member boards), and signs a feature manifest of it as
+CM-7 evidence. Nothing is removed: `quilzo profile enable FEATURE --reason
+WHY` switches one back on, on the record.
+
+```bash
+./quilzo profile                     # which features run, and the signed manifest
+./quilzo profile enable commerce --reason "the conference sells tickets"
+```
+
+The store the Quickstart makes is the internal instance: it belongs on an
+internal network, and `quilzo serve` warns when it listens where the
+internet could reach it.
+
+The public faces are served by a public instance on a host of its own,
+which holds no admin, no record and no secret, and takes only transfers
+signed by the internal instance's key:
+
+```bash
+# on the public host, with head.pub.json copied from the internal instance
+./quilzo --root /srv/public init --profile public --pin head.pub.json
+./quilzo --root /srv/public serve --profile public --addr 0.0.0.0:8090
+
+# on the internal instance
+./quilzo public target https://trust.example.org
+./quilzo attest set attestations.json  # the reports and certificates held, and the policies
+./quilzo attest publish --reason "the 2026 report is in"   # a second administrator approves
+```
 
 ## Why Quilzo
 
@@ -312,6 +345,8 @@ access to every other system belongs with the tool that reviews those.
 | **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, and a provenance attestation for each binary a release publishes. | `quilzo compliance sbom\|crypto` |
 | **The published site** | What the law asks of it: accessibility (and a draft statement and conformance report), forms' lawful basis, personal data held back from publishing, AI disclosure, browser protections. | `quilzo compliance site`, `compliance acr` |
 | **Assurance, auditors, groups** | Evidence over a period and the days nobody can speak to; scoped auditor engagements as one verifiable file; controls across a group of companies. | `quilzo assurance`, `engagement`, `entity` |
+| **Security profile** | The security install switches off, at runtime, the features with no security use, and records them in a feature manifest signed with the log's head keys, attached to CM-7 in Quilzo's own OSCAL component. Any feature is switched back on with a reason, kept in the log and the manifest. | Security → Security profile; `quilzo init --profile security`, `quilzo profile` |
+| **Public attestation page** | The reports and certificates held, their periods and issuers, and the policies in force, with the signed heads of the record, served by a public instance of its own. No operational figures; "compliant" and "certified" are refused where no attestation backs them; publishing takes two administrators. | Security → Public instance; `quilzo attest`, `quilzo public` |
 
 ### Identity and access
 
@@ -388,6 +423,7 @@ not yet a product of their own.
 | **Settings that explain themselves** | Every setting with what it is for and what it costs; one that weakens security needs a stated reason. | `quilzo config explain KEY`, `config set … --accept-risk "why"` |
 | **What a situation can hand somebody** | What a role can be handed by a situation, and what it cannot. | `quilzo standing list` |
 | **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record\|verify` |
+| **Public instance** | A second process on a host of its own for the public faces: it holds no admin, no register and no secret, runs offline, and takes only transfers signed by the internal instance's pinned key, posted to it or carried. The internal instance warns when it listens on a public address. | `quilzo serve --profile public`, `quilzo public import` |
 | **Find anything** | A command palette over every screen, page, setting and type. | Ctrl K in the admin; `quilzo find WORDS` |
 | **Exit codes** | 3 when a gate refused, distinct from 1 when the command failed. | `--json` on every command |
 
