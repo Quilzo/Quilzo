@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/approval"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/programme"
 	"github.com/quilzo/quilzo/internal/register"

@@ -277,7 +277,7 @@ func (s *Server) handleScopes(w http.ResponseWriter, r *http.Request) {
 	sections := []programmeSection{sec}
 	if waiting, decide := s.waitingFor(p, register.KindScope, register.KindApplicability); len(waiting) > 0 {
 		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting, Decide: decide,
-			Lead: "Each waits for a person who did not raise it. It is decided on Sign-off, with a passkey bound to its hash.",
+			Lead:    "Each waits for a person who did not raise it. It is decided on Sign-off, with a passkey bound to its hash.",
 			Command: "quilzo soa approve ID --surface HASH"})
 	}
 	s.renderProgramme(w, r, p, "applicability", seckit.Header{Title: "Applicability",
