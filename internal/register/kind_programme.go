@@ -459,7 +459,7 @@ const KindStarter Kind = "Starter"
 
 func (Starter) Kind() Kind              { return KindStarter }
 func (s Starter) Key() (string, string) { return Local, s.Framework }
-func (Starter) Check() error { return nil }
+func (Starter) Check() error            { return nil }
 func (s Starter) index(r *Row) {
 	r.N, r.M = clamp32(s.Requirements), clamp32(s.Mappings)
 	if s.Installed {
