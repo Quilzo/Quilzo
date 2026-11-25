@@ -110,6 +110,11 @@ never acted, or a figure nothing computed, for good.
   refused them as every write to the register refuses one.
 - The content API reads: `/api/v1/evidence/formats`, `/files`,
   `/files/{id}` and `/verify`.
+- Column maps and pinned keys are confirmed and pinned by a person, on the
+  command line or the Evidence screens. The agent interface and the content
+  API read them as the register records they are (`register_list` with the
+  kind `ColumnMap` or `PinnedKey`, and `/api/v1/register/...`), and have no
+  operation that confirms a map or pins a key.
 
 ## What is and is not verified here
 
@@ -124,7 +129,13 @@ never acted, or a figure nothing computed, for good.
   not read, and are refused rather than misread.
 - Importers for particular GRC tools' exports are not built: their formats
   cannot be checked here. A GRC tool's CSV, workbook or JSON export comes in
-  through a column map that names the tool.
+  through a column map that names the tool. Nothing checks that a table
+  came from the tool its map names: "imported" rather than "uploaded" is the
+  word of the person who confirmed the map.
+- A preview on the command line (`--preview`) or through the agent
+  interface (`preview: true`) is not bound to the import that follows it, as
+  the Import screen's is: read the preview, then import, knowing that a map
+  changed in between reads the file through the change.
 - The SARIF reader came, with its tests, from a security team's own tools;
   a digest of its shared fixture is held in its tests. A severity is the
   tool's `security-severity` on the published bands (9.0 critical, 7.0 high,
