@@ -1,0 +1,1 @@
+{"name": "main", "commit": {"sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}, "protected": true, "protection": {"enabled": true, "required_status_checks": {"enforcement_level": "non_admins", "contexts": ["ci"]}}, "protection_url": "https://api.github.com/repos/octo-example/api/branches/main/protection"}

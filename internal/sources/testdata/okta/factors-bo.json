@@ -1,0 +1,4 @@
+[
+  {"id": "sms1bo00000000000001", "factorType": "sms", "provider": "OKTA", "status": "ACTIVE", "profile": {"phoneNumber": "+44 20 7946 0001"}},
+  {"id": "pfd1bo00000000000002", "factorType": "push", "provider": "OKTA", "status": "PENDING_ACTIVATION"}
+]

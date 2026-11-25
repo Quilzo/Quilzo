@@ -67,6 +67,10 @@ type Session struct {
 	static  string
 	token   string
 	expires time.Time
+	// refused is a token refused for reaching further than declared. It is
+	// not asked for again in this session: the answer would be the same
+	// token, and each request for it is one the tool counts.
+	refused error
 }
 
 // Page is one response a run read, as Keep is handed it.
@@ -171,6 +175,9 @@ func (x *Session) spend(ctx context.Context, e *Endpoint) error {
 func (x *Session) credential(ctx context.Context) (string, error) {
 	if !x.m.Auth.Kind.oauth() {
 		return x.static, nil
+	}
+	if x.refused != nil {
+		return "", x.refused
 	}
 	if x.token != "" && x.now().Before(x.expires) {
 		return x.token, nil
@@ -301,7 +308,8 @@ func (x *Session) exchange(ctx context.Context) (string, error) {
 	}
 	if len(t.Roles) > 0 {
 		if err := checkRoles(got.AccessToken, t.Roles); err != nil {
-			return "", fmt.Errorf("%s: %w", x.m.Name, err)
+			x.refused = fmt.Errorf("%s: %w", x.m.Name, err)
+			return "", x.refused
 		}
 	}
 	life := time.Hour

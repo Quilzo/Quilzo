@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,userPrincipalName,accountEnabled,userType)",
+  "value": [
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000003", "userPrincipalName": "cat_fabrikam.example#EXT#@contoso.example", "accountEnabled": false, "userType": "Guest", "displayName": "Cat (guest)"}
+  ]
+}

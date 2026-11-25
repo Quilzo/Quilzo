@@ -1,0 +1,9 @@
+{
+  "kind": "admin#directory#users",
+  "etag": "\"WqVPCFeRnMr-uxZJUh7k1DKNUVZgYY4sJuIUMhFsJI0/abc\"",
+  "users": [
+    {"kind": "admin#directory#user", "id": "111111111111111111111", "primaryEmail": "ann.lee@fabrikam.example", "name": {"givenName": "Ann", "familyName": "Lee", "fullName": "Ann Lee"}, "isAdmin": true, "isDelegatedAdmin": false, "lastLoginTime": "2026-11-24T08:00:00.000Z", "suspended": false, "archived": false, "isEnrolledIn2Sv": true, "isEnforcedIn2Sv": true, "orgUnitPath": "/"},
+    {"kind": "admin#directory#user", "id": "222222222222222222222", "primaryEmail": "bo.chen@fabrikam.example", "name": {"fullName": "Bo Chen"}, "isAdmin": false, "isDelegatedAdmin": true, "suspended": false, "archived": false, "isEnrolledIn2Sv": false, "isEnforcedIn2Sv": false, "orgUnitPath": "/Sales"}
+  ],
+  "nextPageToken": "Q0FFU0Z3b1JZMjl1ZEdGcGJtVnlYM1Z6WlhJ"
+}

@@ -234,12 +234,14 @@ func (x *Session) signedExchange(ctx context.Context) (string, error) {
 	if x.m.Auth.Kind == GitHubApp {
 		token = got.Token
 		if err := checkPermissions(got.Permissions, t.Scopes); err != nil {
-			return "", fmt.Errorf("%s: %w", x.m.Name, err)
+			x.refused = fmt.Errorf("%s: %w", x.m.Name, err)
+			return "", x.refused
 		}
 	}
 	if got.Scope != "" {
 		if err := checkScopes(got.Scope, t.Scopes); err != nil {
-			return "", fmt.Errorf("%s: %w", x.m.Name, err)
+			x.refused = fmt.Errorf("%s: %w", x.m.Name, err)
+			return "", x.refused
 		}
 	}
 	if !usableToken(token) {

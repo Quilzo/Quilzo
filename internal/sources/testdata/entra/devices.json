@@ -1,0 +1,7 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/managedDevices(id,deviceName,serialNumber,operatingSystem,isEncrypted,complianceState)",
+  "value": [
+    {"id": "d0e1f2a3-0000-4000-8000-000000000001", "deviceName": "ANN-LAPTOP", "serialNumber": "PF3ABC12", "operatingSystem": "Windows", "isEncrypted": true, "complianceState": "compliant", "emailAddress": "ann.lee@contoso.example"},
+    {"id": "d0e1f2a3-0000-4000-8000-000000000002", "deviceName": "BO-MAC", "serialNumber": "C02ZK1X9MD6T", "operatingSystem": "macOS", "isEncrypted": false, "complianceState": "noncompliant"}
+  ]
+}

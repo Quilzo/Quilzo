@@ -1,0 +1,6 @@
+[
+  {"type": "pull_request", "ruleset_source_type": "Organization", "ruleset_source": "octo-example", "ruleset_id": 42, "parameters": {"dismiss_stale_reviews_on_push": true, "require_code_owner_review": false, "require_last_push_approval": true, "required_approving_review_count": 2, "required_review_thread_resolution": false}},
+  {"type": "non_fast_forward", "ruleset_source_type": "Organization", "ruleset_source": "octo-example", "ruleset_id": 42},
+  {"type": "deletion", "ruleset_source_type": "Repository", "ruleset_source": "octo-example/web", "ruleset_id": 43},
+  {"type": "required_status_checks", "ruleset_source_type": "Repository", "ruleset_source": "octo-example/web", "ruleset_id": 43, "parameters": {"required_status_checks": [{"context": "build"}], "strict_required_status_checks_policy": true}}
+]

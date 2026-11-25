@@ -1,0 +1,8 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#reports/authenticationMethods/userRegistrationDetails",
+  "value": [
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000001", "userPrincipalName": "ann.lee@contoso.example", "userDisplayName": "Ann Lee", "userType": "member", "isAdmin": true, "isSsprRegistered": true, "isSsprEnabled": true, "isSsprCapable": true, "isMfaRegistered": true, "isMfaCapable": true, "isPasswordlessCapable": true, "methodsRegistered": ["microsoftAuthenticatorPush", "fido2"], "isSystemPreferredAuthenticationMethodEnabled": true, "lastUpdatedDateTime": "2026-11-20T09:12:00Z"},
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000002", "userPrincipalName": "bo.chen@contoso.example", "userDisplayName": "Bo Chen", "userType": "member", "isAdmin": false, "isSsprRegistered": false, "isSsprEnabled": true, "isSsprCapable": false, "isMfaRegistered": true, "isMfaCapable": true, "isPasswordlessCapable": false, "methodsRegistered": ["microsoftAuthenticatorPush", "mobilePhone"], "lastUpdatedDateTime": "2026-11-18T16:40:00Z"},
+    {"id": "4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000003", "userPrincipalName": "cat_fabrikam.example#EXT#@contoso.example", "userDisplayName": "Cat (guest)", "userType": "guest", "isAdmin": false, "isMfaRegistered": false, "isMfaCapable": false, "isPasswordlessCapable": false, "methodsRegistered": [], "lastUpdatedDateTime": "2026-10-01T08:00:00Z"}
+  ]
+}
