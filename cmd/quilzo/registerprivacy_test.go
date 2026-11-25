@@ -361,14 +361,17 @@ func TestTheUpkeepJobEnforcesRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Found among the jobs the admin server runs, and not only among the
+	// ones modules register: a job registered and never run is a period
+	// nobody enforces.
 	var job upkeep.Job
-	for _, j := range moduleJobs(root) {
+	for _, j := range upkeepJobs(root, upkeep.Job{Name: "posture"}) {
 		if j.Name == "register-retention" {
 			job = j
 		}
 	}
 	if job.Do == nil {
-		t.Fatal("no module registers the register's retention job with the server's upkeep")
+		t.Fatal("the server's upkeep does not run the register's retention job")
 	}
 	if n, err := job.Do(start.Add(399 * 24 * time.Hour)); err != nil || n != 0 {
 		t.Fatalf("inside its period the sweep deleted %d (%v)", n, err)
@@ -415,5 +418,57 @@ func TestABareRegisterCommandIsAskedAsTheListItRuns(t *testing.T) {
 	}
 	if bareRuns["register"] != "kinds" {
 		t.Errorf("a bare register command runs %q", bareRuns["register"])
+	}
+}
+
+// An erasure's approval names its decider by their pseudonym alone. Its
+// assertion is a hash over the record as shown, the decider's pseudonym
+// and the evidence the decision was made on, and it is in the register for
+// good. With the decider's address in that evidence, and nothing else in
+// it that a guess could not supply (a token's name, whether it was
+// proved), a list of the organisation's addresses found which of them
+// decided: the pseudonym was undone for whoever read the record, and
+// stayed undone after the decider was erased in turn.
+func TestAnErasureIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
+	for _, c := range []*Caller{
+		{Name: "dana.decider@example.com", Kind: audit.KindHuman, Verified: true, Credential: "laptop"},
+		{Name: "dana", Kind: audit.KindHuman, Why: "no token was presented"},
+	} {
+		if ev := string(consoleEvidence(c)); strings.Contains(ev, c.Name) {
+			t.Errorf("the evidence of %s's decision at the command line is %q", c.Name, ev)
+		}
+	}
+}
+
+// The sweep of what retention ends is recorded as whoever ran it, proved
+// or not. It was recorded as proved whoever ran it, so the sweep of an
+// account at a store's own terminal, which presented no token, went into
+// the log as a verified act.
+func TestTheSweepIsRecordedAsWhoeverRanIt(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	r := registerOn(t, root)
+	r.Now = func() time.Time { return time.Now().Add(-500 * 24 * time.Hour) }
+	if _, err := r.PutRaw(testPerson, register.KindObservation, "application/json", []byte(`{"user":"a fact as it came"}`)); err != nil {
+		t.Fatal(err)
+	}
+	o, e, code := cliRun(t, root, "", "register", "expire", "--json")
+	if code != 0 || !strings.Contains(o, `"expired": 1`) {
+		t.Fatalf("register expire: %d %s %s", code, o, firstLines(e, 3))
+	}
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, ev := range events {
+		if ev.Action == "register.expire" {
+			found = true
+			if ev.Verified {
+				t.Errorf("a sweep by somebody who presented no token is recorded as proved: %+v", ev)
+			}
+		}
+	}
+	if !found {
+		t.Error("the sweep is not in the audit log")
 	}
 }

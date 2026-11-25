@@ -319,11 +319,17 @@ func registerEraseCmd(root string, args []string) error {
 }
 
 // consoleEvidence is the authentication evidence a decision made at the
-// command line is bound to: who the program proved the caller to be, and
-// by which credential. It is weaker than a passkey's assertion over the
-// record's hash, and the approval's rule says which it was.
+// command line is bound to: the credential the program proved the caller
+// by, and whether it proved them. It is weaker than a passkey's assertion
+// over the record's hash, and the approval's rule says which it was.
+//
+// It names the decider by nothing else: the assertion binds it to their
+// pseudonym, and the assertion is in the register for good. It held their
+// name too, and with nothing else in it that a guess could not supply, a
+// list of the organisation's addresses found which of them had decided,
+// before and after they were erased themselves.
 func consoleEvidence(c *Caller) []byte {
-	return []byte("console\x00" + c.Name + "\x00" + c.Credential + "\x00" + strconv.FormatBool(c.Verified))
+	return []byte("console\x00" + c.Credential + "\x00" + strconv.FormatBool(c.Verified))
 }
 
 // registerExpireCmd is `quilzo register expire`.
@@ -333,7 +339,7 @@ func registerExpireCmd(root string) error {
 	if err != nil {
 		return err
 	}
-	n, err := expireSide(root, r, by.Name, by.Kind)
+	n, err := expireSide(root, r, by.Name, by.Kind, by.Verified)
 	if err != nil {
 		return err
 	}
@@ -345,16 +351,17 @@ func registerExpireCmd(root string) error {
 }
 
 // expireSide runs the side store's retention sweep and records what it
-// deleted in the audit log, as who ran it. A sweep that found nothing is
-// not recorded: it ran every quarter of an hour, and did nothing.
-func expireSide(root string, r *register.Register, who string, kind audit.Kind) (int, error) {
+// deleted in the audit log, as who ran it and as proved as they were. A
+// sweep that found nothing is not recorded: it ran every quarter of an
+// hour, and did nothing.
+func expireSide(root string, r *register.Register, who string, kind audit.Kind, verified bool) (int, error) {
 	if _, err := os.Stat(r.Side().Dir()); errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
 	n, err := r.ExpireSide()
 	if n > 0 {
 		if aerr := recordE(root, audit.Record{Action: "register.expire", Resource: register.Area,
-			Outcome: audit.Success, Principal: who, Kind: kind, Verified: true,
+			Outcome: audit.Success, Principal: who, Kind: kind, Verified: verified,
 			Detail: map[string]string{"entries": strconv.Itoa(n), "basis": "retention"}}); aerr != nil && err == nil {
 			err = aerr
 		}
@@ -377,7 +384,8 @@ func registerJobs(root string) []upkeep.Job {
 		// The upkeep loop's moment is the sweep's, so the sweep is the
 		// same on a test's clock as on the server's.
 		r.Now = func() time.Time { return now }
-		return expireSide(root, r, "upkeep", audit.KindService)
+		// The server's own timer, which nobody has to prove.
+		return expireSide(root, r, "upkeep", audit.KindService, true)
 	}}}
 }
 

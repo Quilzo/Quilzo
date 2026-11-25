@@ -203,6 +203,16 @@ func TestTheErasureScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Somebody who may not decide an erasure is not shown the form to ask
+	// for one, nor a link to it.
+	if w := get(t, srv, "/register/erase", rita); w.Code != http.StatusForbidden {
+		t.Errorf("a reader's erasure form answered %d", w.Code)
+	}
+	for _, page := range []string{"/register", "/register/inventory"} {
+		if w := get(t, srv, page, rita); w.Code != http.StatusOK || strings.Contains(w.Body.String(), `href="/register/erase"`) {
+			t.Errorf("a reader's %s answered %d, offering the erasure", page, w.Code)
+		}
+	}
 	full := url.Values{"subject": {"ada.lovelace@example.com"}, "basis": {"request"}, "requested": {"subject"},
 		"confirm": {"yes"}}.Encode()
 	if w := postForm(t, srv, "/register/erase", rita, full); w.Code != http.StatusForbidden {
@@ -250,5 +260,16 @@ func TestTheDataInventoryScreen(t *testing.T) {
 		if !strings.Contains(front, want) {
 			t.Errorf("/register does not link %q", want)
 		}
+	}
+}
+
+// An erasure's approval names its decider by their pseudonym alone, as the
+// command line's does (TestAnErasureIsBoundToItsDeciderByPseudonymAlone in
+// cmd/quilzo): the session's evidence holds no name a guess could find in
+// the hash the record keeps for good.
+func TestAnErasureHereIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
+	p := principal{Name: "dana.decider@example.com", TokenID: "5f0c", Methods: []string{"passkey"}}
+	if ev := string(sessionEvidence(p)); strings.Contains(ev, p.Name) {
+		t.Errorf("the evidence of a decision in the admin is %q", ev)
 	}
 }

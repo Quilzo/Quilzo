@@ -137,7 +137,7 @@ func (s *Server) handleRegisterInventory(w http.ResponseWriter, r *http.Request)
 		tables = append(tables, kindTable{ID: "kind-" + strings.TrimPrefix(k.Collection, register.Prefix), Table: t})
 	}
 	s.render(w, r, "register_inventory.html", map[string]any{"Title": "Data inventory", "Nav": "register",
-		"Principal": p, "Inventory": inv, "Tables": tables,
+		"Principal": p, "Inventory": inv, "Tables": tables, "MayErase": s.allows(p, auth.ActApprove, erasureResource()),
 		"Header": seckit.Header{Title: "Data inventory", Lead: "What the register holds about people, kind by kind, " +
 			"generated from the kinds' schemas and the access policy's roles for a record of processing. A field " +
 			"added to a kind is here the next time this page is drawn."}})
@@ -305,9 +305,14 @@ func (s *Server) registerWriter(p principal) (*register.Register, register.Actor
 }
 
 // sessionEvidence is the authentication evidence a decision made here is
-// bound to: who the session is, the credential, and how it was signed in.
-// A passkey's assertion over the record's own hash is the approvals
-// module's, and stronger; the approval's rule says which this was.
+// bound to: the session's credential and how it was signed in. A passkey's
+// assertion over the record's own hash is the approvals module's, and
+// stronger; the approval's rule says which this was.
+//
+// It names the decider by nothing else, as the command line's does
+// (consoleEvidence in cmd/quilzo): the assertion binds it to their
+// pseudonym, and is in the register for good, where the name in it was a
+// thing to guess at.
 func sessionEvidence(p principal) []byte {
-	return []byte("admin session\x00" + p.Name + "\x00" + p.TokenID + "\x00" + strings.Join(p.Methods, ","))
+	return []byte("admin session\x00" + p.TokenID + "\x00" + strings.Join(p.Methods, ","))
 }
