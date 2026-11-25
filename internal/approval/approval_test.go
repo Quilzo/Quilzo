@@ -718,3 +718,40 @@ func TestTheRegisterHoldsAnApprovalToItsRule(t *testing.T) {
 		t.Fatalf("the decision was not approved by two people in time: %+v %v", out, err)
 	}
 }
+
+// A review counts only when its evidence holds: somebody else's passkey
+// over the hash of what was approved, for a review. A Review record put
+// together by hand, naming evidence that is not there or is the approver's
+// own approval, leaves the decision owing its review, and the posture still
+// says so.
+func TestAReviewCountsOnlyWithItsEvidence(t *testing.T) {
+	b := newBench(t, holds("solo", auth.ActAcceptRisk))
+	id := b.propose("solo", b.risk("R-43", "solo", 2))
+	out, err := b.sign("solo", id)
+	if err != nil || !out.Alone {
+		t.Fatalf("the team of one could not approve alone: %+v %v", out, err)
+	}
+	e, _ := b.reg.Get(id)
+	ap := register.ApprovalOf(e.Record)
+	b.clock = b.clock.Add(31 * 24 * time.Hour)
+	allow := func(auth.Action, string) error { return nil }
+	forge := func(reviewer register.ID, assertion register.Digest) {
+		t.Helper()
+		rv := register.Review{About: id, Surface: ap.Surface, Reviewer: reviewer, At: register.TimeOf(b.clock),
+			Outcome: "upheld", Assertion: assertion}
+		if _, err := b.reg.Put(register.Actor{Name: "solo", Subject: b.subject("solo"), Kind: audit.KindHuman, May: allow},
+			"a test's write", rv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The approver's own evidence, of their approval, named as a review by
+	// somebody else.
+	forge(b.subject("stranger"), ap.Signers[0].Assertion)
+	overdue, _, err := b.m.Problems()
+	if err != nil || len(overdue) != 1 {
+		t.Fatalf("a review put together by hand cleared the decision made alone: %+v %v", overdue, err)
+	}
+	if held, _ := b.m.Held(); held[0].Review != nil {
+		t.Errorf("a review whose evidence does not hold is shown as the review: %+v", held[0].Review)
+	}
+}

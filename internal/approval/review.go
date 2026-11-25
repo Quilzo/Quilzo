@@ -64,7 +64,7 @@ func (m *Approvals) Held() ([]Held, error) {
 			}
 			h := Held{Record: e.ID, Kind: e.Kind, Label: register.Label(e.Record), Approval: a, Lapsed: a.Lapsed(now)}
 			if a.Alone {
-				rv, err := m.reviewOf(e.ID, a.Surface)
+				rv, err := m.reviewOf(e.ID, a)
 				if err != nil {
 					return nil, err
 				}
@@ -95,8 +95,15 @@ func (m *Approvals) Problems() (overdue, lapsed []Held, err error) {
 	return overdue, lapsed, nil
 }
 
-// reviewOf is the review of an approval, or nil when there is none.
-func (m *Approvals) reviewOf(id register.ID, surface register.Digest) (*register.Review, error) {
+// reviewOf is the review of an approval, or nil when there is none that
+// counts. A review counts when its evidence holds: kept beside the store,
+// somebody's passkey or console over the hash of what was approved, for a
+// review, by the reviewer it names, who is neither who raised the decision
+// nor who made it. The register holds a Review as it was written, and one
+// put together by hand, naming the approver's own evidence or none, would
+// otherwise have cleared the posture of a decision nobody else looked at.
+func (m *Approvals) reviewOf(id register.ID, a *register.Approval) (*register.Review, error) {
+	surface := a.Surface
 	rid, err := register.IDOf(register.Review{About: id, Surface: surface})
 	if err != nil {
 		return nil, err
@@ -109,10 +116,34 @@ func (m *Approvals) reviewOf(id register.ID, surface register.Digest) (*register
 		return nil, err
 	}
 	rv, ok := e.Record.(register.Review)
-	if !ok {
+	if !ok || reviewHolds(m.Root, rv, a) != nil {
 		return nil, nil
 	}
 	return &rv, nil
+}
+
+// reviewHolds is nil when a review's evidence is what reviewOf counts.
+func reviewHolds(root string, rv register.Review, a *register.Approval) error {
+	if rv.Reviewer == a.Raised {
+		return fmt.Errorf("the review is by the person who raised the decision")
+	}
+	for _, s := range a.Signers {
+		if s.Subject == rv.Reviewer {
+			return fmt.Errorf("the review is by the person who made the decision")
+		}
+	}
+	ev, err := LoadEvidence(root, rv.Assertion)
+	if err != nil {
+		return err
+	}
+	method := rv.Method
+	if method == "" {
+		method = "passkey"
+	}
+	if ev.Purpose != ForReview || ev.For != rv.Surface || ev.Subject != rv.Reviewer || ev.Method != method {
+		return fmt.Errorf("the evidence %s is not the reviewer's review of this approval", rv.Assertion)
+	}
+	return ev.Check()
 }
 
 // Review is somebody else's compensating review of a decision made alone,
@@ -161,7 +192,7 @@ func (m *Approvals) Review(by Person, id register.ID, outcome register.ReviewOut
 		return register.Receipt{}, errRefused("a review is made by somebody who holds %s, or whom the separation policy "+
 			"names as a second approver, and you are neither", a.Atom)
 	}
-	if rv, err := m.reviewOf(id, a.Surface); err != nil {
+	if rv, err := m.reviewOf(id, a); err != nil {
 		return register.Receipt{}, err
 	} else if rv != nil {
 		return register.Receipt{}, errRefused("this decision has been reviewed already")
