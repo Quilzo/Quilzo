@@ -200,6 +200,13 @@ func cmdControl(root string, args []string) error {
 		if *due == (len(pos) == 1) {
 			return errMisused{fmt.Errorf("usage: quilzo control run TEST | --due")}
 		}
+		var test register.ID
+		if !*due {
+			var err error
+			if test, err = identifierWord(pos[0], "a test", "control tests"); err != nil {
+				return err
+			}
+		}
 		p, by, err := programmeWriter(root, resolveCaller(root, flagToken))
 		if err != nil {
 			return err
@@ -212,7 +219,7 @@ func cmdControl(root string, args []string) error {
 			fmt.Printf("  ran %s\n", count(n, "test"))
 			return registerError(err)
 		}
-		run, rc, err := p.RunTest(by, register.ID(pos[0]))
+		run, rc, err := p.RunTest(by, test)
 		if err != nil {
 			return registerError(err)
 		}
@@ -231,10 +238,16 @@ func cmdControl(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		if _, err := identifierWord(id, "a run", "control tests"); err != nil {
+			return err
+		}
 		return controlExplain(root, id)
 	case "replay":
 		id, err := one("quilzo control replay RUN")
 		if err != nil {
+			return err
+		}
+		if _, err := identifierWord(id, "a run", "control tests"); err != nil {
 			return err
 		}
 		p, err := openProgramme(root)

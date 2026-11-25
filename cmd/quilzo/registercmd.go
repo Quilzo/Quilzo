@@ -127,7 +127,11 @@ func cmdRegister(root string, args []string) error {
 		if len(pos) != 1 {
 			return errMisused{fmt.Errorf("usage: quilzo register show ID")}
 		}
-		return registerShow(root, pos[0])
+		id, err := identifierWord(pos[0], "a record", "register list KIND")
+		if err != nil {
+			return err
+		}
+		return registerShow(root, string(id))
 	case "proposals":
 		if err := noArguments(args[1:]); err != nil {
 			return err
@@ -228,6 +232,28 @@ func mayReadRegisterAt(root string, s *store.Store, ref string) error {
 		return errBlocked{err}
 	}
 	return nil
+}
+
+// identifierWord is a word of the command line as a record's identifier,
+// and a word no record can be called refused as the command line's mistake,
+// exit 2: of names what the identifier is of, and listed the line that
+// shows the ones there are.
+//
+// `quilzo evidence show ab` refuses the word so (fileName), the built-in
+// commands refuse an id of the wrong shape so (`agent receipt ab`, `feature
+// approve ab`), and the agent interface refuses it as an argument. Every
+// other line of the modules looked the word up: `register show ab` said "no
+// such record in the register: "ab" is not a record's identifier" and
+// exited 4, the code of a record that is not there, and so did `register
+// history`, the approvals' show, check, reject, approve and review, and the
+// programme's approve, run, explain and replay. An identifier of the right
+// shape that names nothing is still not found, 4.
+func identifierWord(word, of, listed string) (register.ID, error) {
+	if id := register.ID(word); id.Valid() {
+		return id, nil
+	}
+	return "", errMisused{fmt.Errorf("%q is not %s's identifier, which is 32 hexadecimal characters; `quilzo %s` shows them",
+		clip(word, 40), of, listed)}
 }
 
 // registerError is an error of the register as the command line answers

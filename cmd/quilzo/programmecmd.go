@@ -140,6 +140,11 @@ func approveDecision(root string, args []string, command string, kinds ...regist
 		return errMisused{fmt.Errorf("usage: quilzo %s approve ID --surface HASH; `quilzo approval show ID` shows what "+
 			"it approves and the hash to type back", command)}
 	}
+	// A word no decision can be called is the line's mistake, as `quilzo
+	// approval approve` refuses it, and not a decision that is not waiting.
+	if _, err := identifierWord(pos[0], "a decision", "approval list"); err != nil {
+		return err
+	}
 	id := pos[0]
 	caller := resolveCaller(root, flagToken)
 	p, _, err := programmeWriter(root, caller)

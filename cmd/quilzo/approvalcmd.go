@@ -94,6 +94,9 @@ func cmdApproval(root string, args []string) error {
 		if len(pos) != 1 {
 			return errMisused{fmt.Errorf("usage: quilzo approval %s ID", args[0])}
 		}
+		if _, err := identifierWord(pos[0], "a decision", "approval list"); err != nil {
+			return err
+		}
 		switch args[0] {
 		case "show":
 			return approvalShow(root, pos[0])
@@ -117,6 +120,9 @@ func cmdApproval(root string, args []string) error {
 				return errMisused{fmt.Errorf("usage: quilzo approval review ID upheld|challenged --surface HASH")}
 			}
 			return errMisused{fmt.Errorf("usage: quilzo approval approve ID --surface HASH; quilzo approval show ID gives the hash")}
+		}
+		if _, err := identifierWord(pos[0], "a decision", "approval list"); err != nil {
+			return err
 		}
 		if args[0] == "review" {
 			return approvalReview(root, pos[0], pos[1], *surface)

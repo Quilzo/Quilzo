@@ -97,11 +97,15 @@ func registerHistoryCmd(root string, args []string) error {
 	if *limit < 0 {
 		return errMisused{fmt.Errorf("--limit is 0 or more")}
 	}
+	id, err := identifierWord(pos[0], "a record", "register list KIND")
+	if err != nil {
+		return err
+	}
 	r, err := openRegister(root)
 	if err != nil {
 		return err
 	}
-	changes, err := r.History(register.ID(pos[0]), *limit)
+	changes, err := r.History(id, *limit)
 	if err != nil {
 		return registerError(err)
 	}

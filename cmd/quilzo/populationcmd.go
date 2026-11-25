@@ -135,6 +135,12 @@ func cmdPopulation(root string, args []string) error {
 		if len(pos) != 1 {
 			return errMisused{fmt.Errorf("usage: quilzo population show NAME")}
 		}
+		// A name no population can have is the line's mistake, as `quilzo
+		// population count` refuses it: `population show ""` exited 4, as
+		// though a population called nothing were only not there.
+		if _, err := register.DeriveID(register.KindPopulation, register.Local, pos[0]); err != nil {
+			return errMisused{err}
+		}
 		p, err := openProgramme(root)
 		if err != nil {
 			return err
