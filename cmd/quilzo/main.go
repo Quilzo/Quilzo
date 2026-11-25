@@ -954,16 +954,22 @@ func main() {
 	// boundary that only the server honoured would be one somebody steps over
 	// by running a command.
 	//
-	// A mode that cannot be read leaves the default. Refusing to run because
-	// a config file is unreadable would make an unrelated fault look like a
-	// network policy.
-	if cfg, cerr := loadConfig(root); cerr == nil {
-		if m := strings.TrimSpace(cfg.Raw("network.mode")); m != "" {
-			if serr := egress.SetMode(egress.Mode(m)); serr != nil {
-				fmt.Fprintf(os.Stderr,
-					"network.mode is %q; it is open or offline\n", m)
-				os.Exit(2)
-			}
+	// A configuration that does not load still says the mode where it can,
+	// and one that cannot say holds the command offline and says so. The
+	// mode used to be read only from a configuration that loaded, and the
+	// default, open, taken otherwise: one unknown key, a value of the wrong
+	// type or a file cut off by a full disk ran every command at an offline
+	// deployment with the network on. The command still runs, because
+	// refusing to would make an unrelated fault look like a network policy;
+	// it runs without the network, which is what the file may have said.
+	if m, merr := configuredNetworkMode(root); merr != nil {
+		_ = egress.SetMode(egress.Offline)
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", noteYellow, merr, noteReset)
+	} else if m != "" {
+		if serr := egress.SetMode(egress.Mode(m)); serr != nil {
+			fmt.Fprintf(os.Stderr,
+				"network.mode is %q; it is open or offline\n", m)
+			os.Exit(2)
 		}
 	}
 

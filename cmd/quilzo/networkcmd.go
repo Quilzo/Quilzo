@@ -5,7 +5,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/egress"
 )
 
@@ -52,4 +55,27 @@ func cmdNetwork(root string, args []string) error {
 		w.Human("    quilzo config set network.mode offline\n")
 	}
 	return nil
+}
+
+// configuredNetworkMode is network.mode as the store's configuration says it,
+// "" where it is not written, and an error when the configuration cannot say,
+// which holds the command offline.
+//
+// From the file itself when it does not load, because the boundary is asked
+// before any command runs and has to hold for the command whose own reading
+// of the configuration then fails. Taking the default whenever the file did
+// not load turned an offline deployment open on the command line for one
+// unknown key, a value of the wrong type or a truncated file.
+func configuredNetworkMode(root string) (string, error) {
+	cfg, err := loadConfig(root)
+	if err == nil {
+		return strings.TrimSpace(cfg.Raw("network.mode")), nil
+	}
+	if body, rerr := os.ReadFile(configPath(root)); rerr == nil {
+		if m, known := config.ValueIn(body, "network.mode"); known {
+			return strings.TrimSpace(m), nil
+		}
+	}
+	return "", fmt.Errorf("network.mode cannot be read (%v), so this command is held offline "+
+		"until the configuration loads", err)
 }
