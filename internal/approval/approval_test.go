@@ -664,3 +664,57 @@ func TestAnAgentGrantedTheAtomIsNotEligible(t *testing.T) {
 		}
 	}
 }
+
+// The register holds an approval to the separation policy as well as to its
+// evidence: put together by hand from genuine signatures, an approval that
+// says it needs fewer people than the rule asks, names another rule, or
+// counts a signature from a request that lapsed, is refused at the one
+// write path, as one of another surface is.
+func TestTheRegisterHoldsAnApprovalToItsRule(t *testing.T) {
+	b := newBench(t, holds("ciso", auth.ActAcceptRisk), holds("cfo", auth.ActAcceptRisk))
+	id := b.propose("dana", b.risk("R-42", "dana", 4))
+	if out, err := b.sign("ciso", id); err != nil || out.Done {
+		t.Fatalf("one approver of two: %+v %v", out, err)
+	}
+	a, _ := b.m.Ask(id)
+	signer := func(s Signed) register.Signer {
+		return register.Signer{Subject: s.Subject, At: s.At, Assertion: s.Evidence, Method: s.Method}
+	}
+	allow := func(auth.Action, string) error { return nil }
+	put := func(ap *register.Approval) error {
+		rec := b.risk("R-42", "dana", 4)
+		rec.Approval = ap
+		_, err := b.reg.Put(register.Actor{Name: "dana", Subject: b.subject("dana"), Kind: audit.KindHuman, May: allow},
+			"a test's write", rec)
+		return err
+	}
+	one := &register.Approval{Atom: "accept-risk", Rule: "risk-acceptance", Needed: 1, Of: 2, Surface: a.Hash,
+		Raised: b.subject("dana"), Expires: register.TimeOf(b.clock.Add(24 * time.Hour)), Signers: []register.Signer{signer(a.Signed[0])}}
+	if err := put(one); !errors.Is(err, register.ErrInvalid) || !strings.Contains(err.Error(), "asks 2") {
+		t.Fatalf("an approval of one person, of a decision that takes two, was written: %v", err)
+	}
+	other := *one
+	other.Rule, other.Needed = "decision", 2
+	if err := put(&other); !errors.Is(err, register.ErrInvalid) {
+		t.Fatalf("an approval under another rule was written: %v", err)
+	}
+
+	// The first signature lapses with its request; the second, given
+	// after, starts a request of its own. Both are genuine, and the first
+	// is no longer anybody's agreement.
+	b.clock = b.clock.Add(15 * 24 * time.Hour)
+	if out, err := b.sign("cfo", id); err != nil || out.Done || out.Signed != 1 {
+		t.Fatalf("the second signature after the first lapsed: %+v %v", out, err)
+	}
+	now, _ := b.m.Ask(id)
+	stale := &register.Approval{Atom: "accept-risk", Rule: "risk-acceptance", Needed: 2, Of: 2, Surface: a.Hash,
+		Raised: b.subject("dana"), Expires: register.TimeOf(b.clock.Add(24 * time.Hour)),
+		Signers: []register.Signer{signer(a.Signed[0]), signer(now.Signed[0])}}
+	if err := put(stale); !errors.Is(err, register.ErrInvalid) || !strings.Contains(err.Error(), "lapsed") {
+		t.Fatalf("an approval counting a lapsed signature was written: %v", err)
+	}
+	// And the two people approving it in time still do.
+	if out, err := b.sign("ciso", id); err != nil || !out.Done {
+		t.Fatalf("the decision was not approved by two people in time: %+v %v", out, err)
+	}
+}

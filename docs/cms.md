@@ -2607,7 +2607,10 @@ evidence (the assertion as the browser sent it, the public key, the site and
 the challenge) is kept beside the store under its digest, which is what the
 record holds, and `quilzo approval check ID` checks it again with nothing
 but those files. The register checks every approval written to it the same
-way, whichever surface wrote it. Several decisions are approved by one
+way, whichever surface wrote it, and holds it to the separation policy as
+well: an approval put together by hand that names another rule, asks fewer
+people than the rule does, or counts a signature from a request that has
+lapsed, is refused. Several decisions are approved by one
 assertion over the RFC 6962 Merkle root of their hashes in the order shown,
 once the approver has opened the spot-checks the batch chose at random
 (about the square root of how many); a batch shown again, in any order or
