@@ -103,10 +103,12 @@ func Embed(f *Form) string {
     <input id="%s" name="%s" type="text" tabindex="-1" autocomplete="off">
   </p>
 
-  <!-- Required. When the form was shown, as a unix timestamp. A submission
-       arriving less than %d seconds after this, or without it at all, is
-       refused — so removing the field is not a way around the check. -->
-  <input type="hidden" name="%s" value="UNIX_TIMESTAMP_WHEN_RENDERED">
+  <!-- Required. When the page was shown, signed by the site as it renders
+       the page: keep the value as it is. A submission arriving less than %d
+       seconds after it, without it, or with a time written anywhere but by
+       the site, is refused, so neither removing the field nor writing the
+       time yourself is a way around the check. -->
+  <input type="hidden" name="%s" value="{{ stamp }}">
 `,
 		esc(Honeypot), esc(Honeypot), esc(Honeypot),
 		MinFillSeconds, esc(StampField))

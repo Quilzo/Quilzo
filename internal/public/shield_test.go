@@ -118,7 +118,7 @@ func TestAFormTheShieldTurnedOffRestsAndSpamIsTold(t *testing.T) {
 		t.Fatalf("the spammer was told something new: %s", w.Body.String())
 	}
 	fast := good()
-	fast.Set(form.StampField, fmt.Sprint(time.Now().Unix()))
+	fast.Set(form.StampField, signed(time.Now()))
 	post(t, st, "/form/contact", fast)
 	// An ordinary mistake is not spam.
 	bad := good()

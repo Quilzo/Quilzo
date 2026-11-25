@@ -52,7 +52,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"strings"
@@ -332,10 +331,11 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil || !s.mayWrite(tok, pol) {
+		// In the throttle's own words, which say how long in words: Go's
+		// rendering of the wait was "try again in 1s", and "59m32s" at
+		// the ceiling.
 		if throttled != nil {
-			http.Error(w, fmt.Sprintf(
-				"too many attempts; try again in %s", throttled.RetryAfter.Round(time.Second)),
-				http.StatusTooManyRequests)
+			http.Error(w, "too many attempts: "+throttled.Why, http.StatusTooManyRequests)
 			return
 		}
 		if s.Throttle != nil {

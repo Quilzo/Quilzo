@@ -4,7 +4,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/quilzo/quilzo/internal/admin"
@@ -33,6 +35,27 @@ func openMedia(root string) (*medialib.Library, error) {
 
 func formsPath(root string) string     { return filepath.Join(root, "forms.json") }
 func submissionDir(root string) string { return filepath.Join(root, "submissions") }
+
+// formStampKeyPath is the key the site signs its forms' timing stamps with
+// (form.Stamp): read by the site, made before it is confined (prepareSite),
+// written by nobody once made.
+func formStampKeyPath(root string) string { return filepath.Join(root, "forms.key") }
+
+// formStampKey is that key, made the first time where the store can be
+// written, as the newsletter's is (openNewsletter): a site that is not
+// confined never runs prepareSite. Nil when it can be neither read nor
+// made, and the site then signs with a key of its own run (public.Site's
+// StampKey).
+func formStampKey(root string) []byte {
+	key, err := form.LoadStampKey(formStampKeyPath(root))
+	if errors.Is(err, fs.ErrNotExist) && form.MakeStampKey(formStampKeyPath(root)) == nil {
+		key, err = form.LoadStampKey(formStampKeyPath(root))
+	}
+	if err != nil {
+		return nil
+	}
+	return key
+}
 
 func loadForms(root string) (*form.Set, error) {
 	s := &form.Set{}

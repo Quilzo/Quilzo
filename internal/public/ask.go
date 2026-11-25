@@ -727,7 +727,7 @@ func (st *Site) offerFor(p assistant.Proposal) *askOffer {
 		if o.Label == "" {
 			o.Label = f.Name
 		}
-		o.Stamp = strconv.FormatInt(time.Now().Unix(), 10)
+		o.Stamp = st.stamp(time.Now())
 		o.Multipart = f.HasFiles()
 		for _, fl := range f.Fields {
 			v := p.Args[fl.Name]

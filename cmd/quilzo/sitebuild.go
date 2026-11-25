@@ -176,6 +176,12 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			},
 		}
 	}
+	// The key the timing stamps of its forms, bookings and sign-up are
+	// signed with, so a stamp that comes back is one this store's site gave
+	// out, whichever process serves it and across restarts. Without one
+	// (a read-only store nobody prepared) the site signs with a key of its
+	// own, which a restart forgets; prepareSite says so.
+	st.StampKey = formStampKey(root)
 	// Bookings: the setup read per request, the calendar written by the
 	// site, who booked written once and read only by the admin.
 	st.Bookings = publicBookings(root)

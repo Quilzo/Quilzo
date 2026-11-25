@@ -6,6 +6,7 @@ package form
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -26,11 +27,14 @@ func contact() *Form {
 	}
 }
 
+// testKey is the key the tests' stamps are signed with, as a site's are.
+var testKey = []byte("a key for signing the tests' stamps")
+
 func filled(extra map[string]string) map[string]string {
 	v := map[string]string{
 		"name": "Dana", "email": "dana@example.org", "topic": "sales",
 		"message": "Hello", "consent": "yes",
-		StampField: fmt.Sprint(time.Now().Add(-10 * time.Second).Unix()),
+		StampField: Stamp(testKey, time.Now().Add(-10*time.Second)),
 	}
 	for k, val := range extra {
 		v[k] = val
@@ -39,7 +43,7 @@ func filled(extra map[string]string) map[string]string {
 }
 
 func TestAValidSubmissionIsAccepted(t *testing.T) {
-	got, err := Accept(contact(), filled(nil), "203.0.113.7", time.Now())
+	got, err := Accept(contact(), filled(nil), "203.0.113.7", time.Now(), testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +59,7 @@ func TestAValidSubmissionIsAccepted(t *testing.T) {
 func TestTheHoneypotRefusesWithoutSayingWhy(t *testing.T) {
 	_, err := Accept(contact(), filled(map[string]string{
 		Honeypot: "http://spam.example",
-	}), "", time.Now())
+	}), "", time.Now(), testKey)
 	if err == nil {
 		t.Fatal("accepted a submission with the hidden field filled in")
 	}
@@ -71,19 +75,26 @@ func TestTheHoneypotRefusesWithoutSayingWhy(t *testing.T) {
 func TestAnImpossiblyFastSubmissionIsRefused(t *testing.T) {
 	now := time.Now()
 	_, err := Accept(contact(), filled(map[string]string{
-		StampField: fmt.Sprint(now.Unix()),
-	}), "", now)
+		StampField: Stamp(testKey, now),
+	}), "", now, testKey)
 	if err == nil {
 		t.Error("accepted a form answered in under a second")
 	}
 }
 
-// Removing the timing field must not bypass the timing check.
+// Removing the timing field must not bypass the timing check, and nor must
+// writing it: a time the sender wrote, whether alone, signed with another
+// key, or carrying the signature of another time, is refused like none.
 func TestAMissingOrForgedStampIsRefused(t *testing.T) {
-	for _, stamp := range []string{"", "not a number", "-1", "99999999999999"} {
+	ago := time.Now().Add(-time.Minute)
+	sig := Stamp(testKey, time.Now())[strings.Index(Stamp(testKey, time.Now()), "."):]
+	for _, stamp := range []string{"", "not a number", "-1", "99999999999999",
+		Stamp(testKey, time.Unix(-1, 0)), Stamp(testKey, time.Unix(99999999999999, 0)),
+		fmt.Sprint(ago.Unix()), Stamp([]byte("somebody else's key"), ago), fmt.Sprint(ago.Unix()) + sig,
+		fmt.Sprint(ago.Unix()) + "."} {
 		v := filled(nil)
 		v[StampField] = stamp
-		if _, err := Accept(contact(), v, "", time.Now()); err == nil {
+		if _, err := Accept(contact(), v, "", time.Now(), testKey); err == nil {
 			t.Errorf("accepted a submission with a stamp of %q; deleting the "+
 				"field would be how the timing check is bypassed", stamp)
 		}
@@ -94,9 +105,9 @@ func TestAMissingOrForgedStampIsRefused(t *testing.T) {
 func TestAStaleFormIsRefused(t *testing.T) {
 	now := time.Now()
 	v := filled(map[string]string{
-		StampField: fmt.Sprint(now.Add(-48 * time.Hour).Unix()),
+		StampField: Stamp(testKey, now.Add(-48*time.Hour)),
 	})
-	if _, err := Accept(contact(), v, "", now); err == nil {
+	if _, err := Accept(contact(), v, "", now, testKey); err == nil {
 		t.Error("accepted a form opened two days ago")
 	}
 }
@@ -108,7 +119,7 @@ func TestAStaleFormIsRefused(t *testing.T) {
 // and from a person.
 func TestCheckHumanTellsAScriptFromAnOldPageFromAPerson(t *testing.T) {
 	now := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
-	ago := func(d time.Duration) string { return fmt.Sprint(now.Add(-d).Unix()) }
+	ago := func(d time.Duration) string { return Stamp(testKey, now.Add(-d)) }
 	for _, c := range []struct {
 		what, honeypot, stamp string
 		oldest                time.Duration
@@ -121,7 +132,10 @@ func TestCheckHumanTellsAScriptFromAnOldPageFromAPerson(t *testing.T) {
 		{"a stamp that is not a number", "", "soon", OldestPage, ErrSpam},
 		{"a stamp of a second ago", "", ago(time.Second), OldestPage, ErrSpam},
 		{"a stamp from the future", "", ago(-time.Minute), OldestPage, ErrSpam},
-		{"the smallest stamp there is", "", "-9223372036854775808", OldestPage, ErrSpam},
+		{"the smallest stamp there is", "", Stamp(testKey, time.Unix(math.MinInt64, 0)), OldestPage, ErrSpam},
+		{"a time the sender wrote", "", fmt.Sprint(now.Add(-time.Minute).Unix()), OldestPage, ErrSpam},
+		{"a time the sender wrote, with no upper bound", "", fmt.Sprint(now.Add(-time.Minute).Unix()), 0, ErrSpam},
+		{"a stamp signed with another key", "", Stamp([]byte("another key"), now.Add(-time.Minute)), OldestPage, ErrSpam},
 		{"a stamp of two seconds ago", "", ago(2 * time.Second), OldestPage, nil},
 		{"a stamp in spaces", "", " " + ago(time.Minute) + " ", OldestPage, nil},
 		{"a stamp of a day ago", "", ago(24 * time.Hour), OldestPage, nil},
@@ -129,9 +143,13 @@ func TestCheckHumanTellsAScriptFromAnOldPageFromAPerson(t *testing.T) {
 		{"a stamp of a year ago, with no upper bound", "", ago(365 * 24 * time.Hour), 0, nil},
 		{"a stamp of a second ago, with no upper bound", "", ago(time.Second), 0, ErrSpam},
 	} {
-		if got := CheckHuman(c.honeypot, c.stamp, now, c.oldest); got != c.want {
+		if got := CheckHuman(c.honeypot, c.stamp, testKey, now, c.oldest); got != c.want {
 			t.Errorf("%s: %v, not %v", c.what, got, c.want)
 		}
+	}
+	// With no key nothing was signed, so nothing is taken.
+	if got := CheckHuman("", Stamp(nil, now.Add(-time.Minute)), nil, now, OldestPage); got != ErrSpam {
+		t.Errorf("a check with no key took a stamp: %v", got)
 	}
 }
 
@@ -140,8 +158,8 @@ func TestCheckHumanTellsAScriptFromAnOldPageFromAPerson(t *testing.T) {
 func TestAStaleFormSaysItWasOpenedMoreThanADayAgo(t *testing.T) {
 	now := time.Now()
 	_, err := Accept(contact(), filled(map[string]string{
-		StampField: fmt.Sprint(now.Add(-48 * time.Hour).Unix()),
-	}), "", now)
+		StampField: Stamp(testKey, now.Add(-48*time.Hour)),
+	}), "", now, testKey)
 	if !errors.Is(err, ErrOld) || errors.Is(err, ErrSpam) {
 		t.Fatalf("a form opened two days ago was answered %v", err)
 	}
@@ -158,7 +176,7 @@ func TestValuesAreCheckedAgainstTheirKinds(t *testing.T) {
 		"topic": "something-not-offered",
 	} {
 		if _, err := Accept(contact(), filled(map[string]string{field: bad}),
-			"", time.Now()); err == nil {
+			"", time.Now(), testKey); err == nil {
 			t.Errorf("accepted %q for %s", bad, field)
 		}
 	}
@@ -168,7 +186,7 @@ func TestValuesAreCheckedAgainstTheirKinds(t *testing.T) {
 func TestAnUndeclaredFieldIsDropped(t *testing.T) {
 	got, err := Accept(contact(), filled(map[string]string{
 		"admin": "true", "role": "administrator", "__proto__": "x",
-	}), "", time.Now())
+	}), "", time.Now(), testKey)
 	if err != nil {
 		t.Fatalf("an extra field broke a valid submission: %v", err)
 	}
@@ -183,7 +201,7 @@ func TestAnUndeclaredFieldIsDropped(t *testing.T) {
 func TestControlCharactersAreRefused(t *testing.T) {
 	for _, bad := range []string{"Dana\x00", "Dana\x1b[31m", "Dana\rSet-Cookie: x"} {
 		if _, err := Accept(contact(), filled(map[string]string{"name": bad}),
-			"", time.Now()); err == nil {
+			"", time.Now(), testKey); err == nil {
 			t.Errorf("accepted %q, which breaks out of whatever renders it "+
 				"later — a CSV, a terminal, a log line", bad)
 		}
@@ -194,13 +212,13 @@ func TestControlCharactersAreRefused(t *testing.T) {
 func TestALineFieldCannotBeMultiline(t *testing.T) {
 	if _, err := Accept(contact(),
 		filled(map[string]string{"name": "Dana\nBcc: someone@else"}),
-		"", time.Now()); err == nil {
+		"", time.Now(), testKey); err == nil {
 		t.Error("accepted a newline in a single-line field")
 	}
 	// And a paragraph field may.
 	if _, err := Accept(contact(),
 		filled(map[string]string{"message": "line one\nline two"}),
-		"", time.Now()); err != nil {
+		"", time.Now(), testKey); err != nil {
 		t.Errorf("refused a newline in a paragraph field: %v", err)
 	}
 }
@@ -217,7 +235,7 @@ func TestAParagraphFromABrowserKeepsItsLineBreaks(t *testing.T) {
 		"We would like 40 boxes.\rAlso a price list, please.",
 	} {
 		got, err := Accept(contact(), filled(map[string]string{"message": sent}),
-			"", time.Now())
+			"", time.Now(), testKey)
 		if err != nil {
 			t.Fatalf("refused %q, a two-line message as a browser sends it: %v", sent, err)
 		}
@@ -228,18 +246,18 @@ func TestAParagraphFromABrowserKeepsItsLineBreaks(t *testing.T) {
 	// The limit counts the message as it is kept, one character a break.
 	long := strings.Repeat("a\r\n", MaxValue/2)
 	if _, err := Accept(contact(), filled(map[string]string{"message": long}),
-		"", time.Now()); err != nil {
+		"", time.Now(), testKey); err != nil {
 		t.Errorf("refused %d characters of lines as over the limit of %d: %v",
 			len(strings.ReplaceAll(long, "\r\n", "\n")), MaxValue, err)
 	}
 	for _, bad := range []string{"line one\r\nline two\x00", "line one\r\n\x1b[31m"} {
 		if _, err := Accept(contact(), filled(map[string]string{"message": bad}),
-			"", time.Now()); err == nil {
+			"", time.Now(), testKey); err == nil {
 			t.Errorf("accepted %q; only the line break is let through", bad)
 		}
 	}
 	if _, err := Accept(contact(), filled(map[string]string{"name": "Dana\r\nBcc: x"}),
-		"", time.Now()); err == nil {
+		"", time.Now(), testKey); err == nil {
 		t.Error("accepted a CR LF in a single-line field")
 	}
 }
@@ -298,7 +316,7 @@ func TestSubmissionsCanBeDeletedAndExpire(t *testing.T) {
 	old := Submission{ID: strings.Repeat("a", 32), Form: "contact",
 		At:     now.Add(-60 * 24 * time.Hour).Unix(),
 		Values: map[string]string{"name": "Older"}}
-	recent, err := Accept(f, filled(nil), "", now)
+	recent, err := Accept(f, filled(nil), "", now, testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,9 +351,9 @@ func TestSearchFindsWhatAnErasureRequestNames(t *testing.T) {
 	st, _ := Open(t.TempDir())
 	f := contact()
 	set := &Set{Forms: []Form{*f}}
-	mine, _ := Accept(f, filled(nil), "", time.Now())
+	mine, _ := Accept(f, filled(nil), "", time.Now(), testKey)
 	theirs, _ := Accept(f, filled(map[string]string{
-		"email": "someone@example.net"}), "", time.Now())
+		"email": "someone@example.net"}), "", time.Now(), testKey)
 	_ = st.Put(mine)
 	_ = st.Put(theirs)
 
@@ -369,7 +387,7 @@ func TestATraversalInAnIdentifierIsRefused(t *testing.T) {
 func TestAClosedFormAcceptsNothing(t *testing.T) {
 	f := contact()
 	f.Closed = true
-	if _, err := Accept(f, filled(nil), "", time.Now()); err == nil {
+	if _, err := Accept(f, filled(nil), "", time.Now(), testKey); err == nil {
 		t.Error("a closed form accepted a submission")
 	}
 }

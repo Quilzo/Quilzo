@@ -85,6 +85,11 @@ type Sources struct {
 	Listings *listing.Resolver
 	// Now is the clock the stamp comes from. Nil means time.Now.
 	Now func() time.Time
+	// Stamp writes a form's timing stamp for a page rendered at a time,
+	// signed by whoever answers the form (form.Stamp): a time alone is one a
+	// script writes as easily, and no form takes it. Nil writes the time
+	// alone, for a render nobody answers, as a static copy is.
+	Stamp func(at time.Time) string
 	// Form resolves a declared form into what a template renders. Nil means a
 	// page naming one gets no form data and its layout renders nothing, which
 	// is what every deployment did before the declaration was the only list.
@@ -177,7 +182,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// as nothing at all: value="" in the markup and every submission
 		// refused, which is the same failure by a different route. The form
 		// parses this field as text anyway.
-		"stamp": strconv.FormatInt(s.now().Unix(), 10),
+		"stamp": s.stamp(),
 	}
 	// The form this page carries, from the declaration rather than from a copy
 	// of the questions in the page. See formdata.go.
@@ -240,6 +245,14 @@ func (s Sources) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
+}
+
+// stamp is the form's timing stamp for this render (Stamp).
+func (s Sources) stamp() string {
+	if s.Stamp != nil {
+		return s.Stamp(s.now())
+	}
+	return strconv.FormatInt(s.now().Unix(), 10)
 }
 
 // menuItem is one navigation entry, in the shape the template language walks:

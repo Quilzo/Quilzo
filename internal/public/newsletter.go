@@ -218,7 +218,7 @@ func (st *Site) newsletterSubscribe(w http.ResponseWriter, r *http.Request) {
 	// name can have. It was "newsletter", and the shield took that for a
 	// form of that name: a flood here closed a form called newsletter, if
 	// there was one, and left this open.
-	if form.CheckHuman(r.PostFormValue(form.Honeypot), r.PostFormValue(form.StampField), now, 0) != nil {
+	if form.CheckHuman(r.PostFormValue(form.Honeypot), r.PostFormValue(form.StampField), st.stampKey(), now, 0) != nil {
 		st.signal(FormSpam, "newsletter:signup", r)
 		fail("refused")
 		return

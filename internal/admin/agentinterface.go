@@ -326,6 +326,15 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 		if s.OnBadToken != nil {
 			s.OnBadToken(r, token, err)
 		}
+		// A real credential refused during a lockdown is told so, with
+		// when it ends, and is not counted: it guessed nothing, as the
+		// content API and the screens already answer it. Counted, a
+		// client polling with a token made before the lockdown throttled
+		// its own address within six calls, and was told "too many
+		// failed attempts from this address" from then on.
+		if errors.Is(err, auth.ErrLockedDown) {
+			return nil, err
+		}
 		// Refused for trying too often, and not counted again: the
 		// address is already being slowed down.
 		if throttled != nil {

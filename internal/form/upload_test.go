@@ -47,22 +47,22 @@ func TestAFileIsTakenByWhatItIs(t *testing.T) {
 	}
 	now := time.Now()
 	vals := sent(map[string]string{"name": "Ana"})
-	if _, err := AcceptWithFiles(f, vals, nil, "", now); err == nil || !strings.Contains(err.Error(), "photograph") {
+	if _, err := AcceptWithFiles(f, vals, nil, "", now, testKey); err == nil || !strings.Contains(err.Error(), "photograph") {
 		t.Fatalf("a required file missing: %v", err)
 	}
-	if _, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "receipt.pdf", Data: []byte(aPDF)}}, "", now); err == nil {
+	if _, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "receipt.pdf", Data: []byte(aPDF)}}, "", now, testKey); err == nil {
 		t.Fatal("a PDF taken where only images are")
 	}
-	if _, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "photo.png", Data: []byte("MZ\x90\x00 not a picture")}}, "", now); err == nil {
+	if _, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "photo.png", Data: []byte("MZ\x90\x00 not a picture")}}, "", now, testKey); err == nil {
 		t.Fatal("a program called photo.png taken")
 	}
 	if _, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "x.png", Data: pngBytes(t)},
-		"receipt": {Name: "r.pdf", Data: []byte("%PDF-1.4 /JavaScript (app.alert(1)) %%EOF")}}, "", now); err == nil {
+		"receipt": {Name: "r.pdf", Data: []byte("%PDF-1.4 /JavaScript (app.alert(1)) %%EOF")}}, "", now, testKey); err == nil {
 		t.Fatal("a PDF that runs script taken")
 	}
 	pic := pngBytes(t)
 	s, err := AcceptWithFiles(f, vals, map[string]Upload{"photo": {Name: "../../etc/damage.png", Data: pic},
-		"receipt": {Name: "receipt.pdf", Data: []byte(aPDF)}}, "", now)
+		"receipt": {Name: "receipt.pdf", Data: []byte(aPDF)}}, "", now, testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestUploadsAreBounded(t *testing.T) {
 	f := claimForm()
 	big := append(pngBytes(t), make([]byte, MaxFileBytes)...)
 	if _, err := AcceptWithFiles(f, sent(map[string]string{"name": "Ana"}),
-		map[string]Upload{"photo": {Name: "x.png", Data: big}}, "", time.Now()); err == nil {
+		map[string]Upload{"photo": {Name: "x.png", Data: big}}, "", time.Now(), testKey); err == nil {
 		t.Fatal("a file over the limit")
 	}
 	f.Fields[1].Accept = []string{"executable"}
@@ -133,7 +133,7 @@ func TestTheFilesKeptHaveACeiling(t *testing.T) {
 	put := func() error {
 		t.Helper()
 		sub, err := AcceptWithFiles(f, sent(map[string]string{"name": "Ana"}),
-			map[string]Upload{"photo": {Name: "x.png", Data: pic}}, "", time.Now())
+			map[string]Upload{"photo": {Name: "x.png", Data: pic}}, "", time.Now(), testKey)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +156,7 @@ func TestTheFilesKeptHaveACeiling(t *testing.T) {
 	}
 	// What carries no file is not held up by the files.
 	note := &Form{Name: "note", Notice: "Kept 30 days.", Fields: []Field{{Name: "text", Label: "Text", Kind: Para}}}
-	sub, err := Accept(note, sent(map[string]string{"text": "Hello"}), "", time.Now())
+	sub, err := Accept(note, sent(map[string]string{"text": "Hello"}), "", time.Now(), testKey)
 	if err != nil {
 		t.Fatal(err)
 	}

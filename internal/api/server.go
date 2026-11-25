@@ -292,6 +292,23 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 		tok, err := s.authenticate(r)
 		if err != nil {
+			// A real credential refused during a lockdown is told so, and
+			// what to do, before the throttle is asked: it guessed nothing.
+			// It was answered "not authenticated ... send a token", which
+			// sent a program that had sent a valid token looking for what
+			// was wrong with it, while the admin's screens said it was the
+			// lockdown and when it ends. Saying so tells nobody a token is
+			// real who could not already find out at the sign-in form.
+			if errors.Is(err, auth.ErrLockedDown) {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo", error="invalid_token"`)
+				writeError(w, http.StatusUnauthorized, Error{
+					Error:  "locked down: this token was made before the lockdown began",
+					Detail: err.Error(),
+					Fix: "send a token made since the lockdown began, or wait until it ends; " +
+						"an administrator can end it on the Shield screen",
+				})
+				return
+			}
 			if throttled {
 				retryAfter(w, tdec)
 				writeError(w, http.StatusTooManyRequests, Error{

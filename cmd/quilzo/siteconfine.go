@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/sandbox"
 	"github.com/quilzo/quilzo/internal/shield"
@@ -64,8 +65,8 @@ func siteWritable(root string) (dirs, files []string) {
 
 // prepareSite makes what the confined site writes to and may not make
 // itself, because making it takes writing at the store's root: the audit
-// key, the provenance key, the newsletter's key, its directories and the
-// audit log's files. It returns the paths the site writes, for a service
+// key, the provenance key, the newsletter's key, the key its forms' stamps
+// are signed with, its directories and the audit log's files. It returns the paths the site writes, for a service
 // manager that makes the store read-only to be told (`quilzo site
 // --prepare`).
 //
@@ -87,6 +88,18 @@ func prepareSite(root string, strict bool) ([]string, error) {
 		}
 		fmt.Fprintf(os.Stderr, "  %sthe newsletter takes no sign-ups until its key is made: run quilzo site "+
 			"--prepare as the store's owner (%v)%s\n", noteYellow, err, noteReset)
+	}
+	// The key forms' timing stamps are signed with (form.Stamp), the same
+	// way. Without it the site signs with a key of its own, which a restart
+	// forgets: a form on a page opened before one is refused as a script's
+	// is, because nothing tells a stamp signed with a key since forgotten
+	// from one the sender wrote.
+	if err := form.MakeStampKey(formStampKeyPath(root)); err != nil {
+		if strict {
+			return nil, fmt.Errorf("making the key for forms' stamps: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "  %sforms are signed with a key that lasts until the site restarts, until "+
+			"forms.key is made: run quilzo site --prepare as the store's owner (%v)%s\n", noteYellow, err, noteReset)
 	}
 	dirs, files := siteWritable(root)
 	var made []string

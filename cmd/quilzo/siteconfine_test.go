@@ -12,12 +12,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/sandbox"
 )
@@ -110,9 +110,15 @@ func TestThePublicSiteRunsConfined(t *testing.T) {
 	if err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("the home page: %v %v", res, err)
 	}
-	form := url.Values{"shop": {"Paper Co"}, "contact": {"Ola"}, "email": {"ola@example.com"},
-		"city": {"Leeds"}, "detail": {"hello"}, "form_started": {strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10)}}
-	req, _ := http.NewRequest(http.MethodPost, base+"/form/wholesale", strings.NewReader(form.Encode()))
+	// Signed with the key the site was given before it was confined, as
+	// the page it serves is: a time alone is refused as a script's.
+	key, err := form.LoadStampKey(formStampKeyPath(root))
+	if err != nil {
+		t.Fatalf("the site was confined without the key for its forms' stamps: %v", err)
+	}
+	sent := url.Values{"shop": {"Paper Co"}, "contact": {"Ola"}, "email": {"ola@example.com"},
+		"city": {"Leeds"}, "detail": {"hello"}, "form_started": {form.Stamp(key, time.Now().Add(-time.Minute))}}
+	req, _ := http.NewRequest(http.MethodPost, base+"/form/wholesale", strings.NewReader(sent.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", base)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")

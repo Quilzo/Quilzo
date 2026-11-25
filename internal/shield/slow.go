@@ -90,10 +90,18 @@ func speculative(r *http.Request) bool {
 
 // RefuseSlow answers a request past a slowed budget: at once, with the
 // seconds until one would be allowed.
+//
+// Said with the count and its noun in agreement. A read past the burst
+// waits a second, the commonest refusal a slowed source is given, and it
+// was "Try again in 1 seconds."
 func RefuseSlow(w http.ResponseWriter, r *http.Request, wait time.Duration) {
 	secs := int((wait + time.Second - 1) / time.Second)
 	if secs < 1 {
 		secs = 1
+	}
+	again := strconv.Itoa(secs) + " seconds"
+	if secs == 1 {
+		again = "1 second"
 	}
 	h := w.Header()
 	h.Set("Retry-After", strconv.Itoa(secs))
@@ -104,10 +112,10 @@ func RefuseSlow(w http.ResponseWriter, r *http.Request, wait time.Duration) {
 	case wantsJSON(r):
 		h.Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/shield/","title":"Too many requests from this address just now","status":429,"detail":"Try again in %d seconds."}`+"\n", secs)
+		fmt.Fprintf(w, `{"type":"https://quilzo.github.io/shield/","title":"Too many requests from this address just now","status":429,"detail":"Try again in %s."}`+"\n", again)
 	default:
 		h.Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprintf(w, "Too many requests from your address just now. Try again in %d seconds.\n", secs)
+		fmt.Fprintf(w, "Too many requests from your address just now. Try again in %s.\n", again)
 	}
 }

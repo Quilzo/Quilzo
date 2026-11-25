@@ -136,8 +136,8 @@ func checkUpload(fl Field, u Upload, now time.Time) (FileRef, error) {
 // AcceptWithFiles is Accept for a form that takes files: files are what
 // arrived for its file fields, by field name.
 func AcceptWithFiles(f *Form, values map[string]string, files map[string]Upload, source string,
-	now time.Time) (Submission, error) {
-	return acceptAll(f, values, files, source, now, true)
+	now time.Time, key []byte) (Submission, error) {
+	return acceptAll(f, values, files, source, now, key, true)
 }
 
 // filesDir is where a submission's files are kept.

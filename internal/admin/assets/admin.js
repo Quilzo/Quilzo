@@ -340,7 +340,7 @@
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
         .then(function (r) {
           return r.json().then(function (d) {
-            if (!r.ok) { throw new Error(d.error || "that did not work"); }
+            if (!r.ok) { throw new Error(d.error || d.detail || "that did not work"); }
             return d;
           });
         });

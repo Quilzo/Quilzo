@@ -268,6 +268,52 @@ func (h *shieldHost) badToken(r *http.Request, presented string, err error) {
 	}
 }
 
+// decoyAtCommandLine is a token the command line refused, checked against
+// the decoys: one presented here is recorded, with where it was planted,
+// the account that ran the command and where the token came from (from:
+// --token, the token file or QUILZO_TOKEN), and told to the shield as
+// coming from this machine. Its playbook tells the security contact and
+// opens a case, and blocks nothing, because this machine is never blocked:
+// the command line is the way out of anything the shield does. The
+// command is refused as for any unknown token, so nothing tells a decoy
+// apart but this.
+//
+// The command line built no shield, so a decoy planted in a laptop's
+// configuration, the one place it is most likely to be tried, was "no such
+// token" to whoever tried it and to everybody else.
+//
+// Once a process for each decoy: a command asks who is running it more
+// than once, and one try is one touch.
+func decoyAtCommandLine(root, presented, from string) {
+	h := shieldFor(root)
+	d, ok := h.guard.Decoy(presented, time.Now())
+	if !ok {
+		return
+	}
+	if _, told := decoysTold.LoadOrStore(root+"\x00"+d.ID, true); told {
+		return
+	}
+	record(root, audit.Record{Action: "shield.decoy-touched", Resource: "/",
+		Outcome: audit.Denied, Principal: osUser(), Kind: audit.KindUnknown,
+		Detail: map[string]string{"decoy": d.ID, "planted": d.Note, "surface": "command line", "from": from}})
+	h.engine.Observe(shield.Signal{Name: "decoy", Subject: d.ID, Source: thisMachine})
+}
+
+// decoysTold are the decoys this process has told of (decoyAtCommandLine).
+var decoysTold sync.Map
+
+// thisMachine is the source of what the command line raises: it runs here.
+const thisMachine = "127.0.0.1"
+
+// failedSignIn is a passkey sign-in that proved nobody: a credential the
+// store does not know, or one whose signature does not verify. Counted as
+// a guessed token is, by where it came from (admin.Server.OnFailedSignIn):
+// only tokens reached the shield, so guessing at the passkey ceremony from
+// one address was slowed by the throttle and never stopped.
+func (h *shieldHost) failedSignIn(r *http.Request) {
+	h.signal("signin-failures", "", r)
+}
+
 // admit is the lockdown and the suspended tokens, as the token stores the
 // servers load ask them.
 func (h *shieldHost) admit(c auth.Credential) error {

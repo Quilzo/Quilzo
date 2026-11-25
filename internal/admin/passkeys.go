@@ -659,9 +659,25 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	// refuse answers a sign-in that did not prove anybody: counted, or, from
 	// an address already throttled, refused for trying too often.
+	//
+	// Told to the shield either way, as a guessed token is whether its
+	// address is throttled or not (OnFailedSignIn).
+	//
+	// Refused in JSON, with when to come back, as the ceremony answers
+	// everything: the sign-in page's script reads the answer as JSON, and
+	// the HTML page tooManyAttempts renders was shown to the person as
+	// "Unexpected token '<'" where the throttle says how long to wait.
 	refuse := func() {
+		if s.OnFailedSignIn != nil {
+			s.OnFailedSignIn(r)
+		}
 		if throttled != nil {
-			s.tooManyAttempts(w, r, *throttled)
+			secs := int(throttled.RetryAfter.Seconds())
+			if secs < 1 {
+				secs = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			writeJSONError(w, http.StatusTooManyRequests, errors.New(throttled.Why))
 			return
 		}
 		if s.Throttle != nil {

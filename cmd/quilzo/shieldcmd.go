@@ -159,8 +159,8 @@ func precisionWords(r shield.Record) string {
 	case r.Right+r.Mistakes == 0:
 		s += "; none judged yet"
 	case !enough:
-		s += fmt.Sprintf("; %d right, %d mistakes: not enough verdicts to say (%d needed)",
-			r.Right, r.Mistakes, shield.MinVerdicts)
+		s += fmt.Sprintf("; %d right, %s: not enough verdicts to say (%d needed)",
+			r.Right, countWord(r.Mistakes, "mistake", "mistakes"), shield.MinVerdicts)
 	default:
 		s += fmt.Sprintf("; right %.0f%% of the time (95%%: %.0f–%.0f%%)", rate*100, low*100, high*100)
 	}
@@ -766,7 +766,7 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 		}
 		n, _ := strconv.Atoi(e.Detail["count"])
 		distinct, _ := strconv.Atoi(e.Detail["distinct"])
-		name, where := "", shield.Site
+		name, where, handle := "", shield.Site, e.Principal
 		switch e.Action {
 		case "site.admin-hunt", "site.conversation-guess", "site.chatbot-injection", "site.form-spam", "site.foreign-probe":
 			name = strings.TrimPrefix(e.Action, "site.")
@@ -778,6 +778,12 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 			}
 		case "shield.decoy-touched":
 			name, n = "decoy", 1
+			// Presented to the command line, which runs on this machine:
+			// no source a playbook blocks, and its record names the
+			// account that ran it, which is not one either.
+			if e.Detail["surface"] == "command line" {
+				handle = ""
+			}
 		case "agent.evaluated":
 			if h, _ := strconv.Atoi(e.Detail["hijacked"]); h > 0 {
 				out = append(out, shield.Signal{Name: "agent-hijacked", Subject: e.Detail["agent"], At: at})
@@ -805,7 +811,7 @@ func history(root string, days int, now time.Time) ([]shield.Signal, error) {
 			if wdw.subject < distinct {
 				wdw.subject++
 			}
-			out = append(out, shield.Signal{Name: name, Handle: e.Principal, Subject: subject, At: at, Where: where})
+			out = append(out, shield.Signal{Name: name, Handle: handle, Subject: subject, At: at, Where: where})
 		}
 		wdw.count = n
 	}
@@ -862,7 +868,12 @@ func shieldDryRun(root string, args []string) error {
 		"note": "the log holds each source once per ten minutes with a count, so this is close to what the playbooks would have seen, not the same"}) {
 		return nil
 	}
-	w.Human("%sover the last %d days%s: %s in the log\n", bold, *days, reset, countWord(len(sigs), "signal", "signals"))
+	// "the last day" for one: it said "over the last 1 days".
+	back := countWord(*days, "day", "days")
+	if *days == 1 {
+		back = "day"
+	}
+	w.Human("%sover the last %s%s: %s in the log\n", bold, back, reset, countWord(len(sigs), "signal", "signals"))
 	w.Human("%sthe log keeps each source once per ten minutes, with a count: close to what the playbooks would have seen, not the same%s\n\n", dim, reset)
 	for _, r := range runs {
 		w.Human("  %s%-24s%s %s\n", bold, r.Playbook, reset, r.Summary)

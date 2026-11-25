@@ -5,7 +5,6 @@ package admin
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -16,6 +15,10 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/form"
 )
+
+// stampKey signs the stamps of the submissions these tests make, as the
+// site that took them would have.
+var stampKey = []byte("the site's key for its forms' stamps")
 
 func submittedPhoto(t *testing.T, srv *Server) (form.Submission, []byte) {
 	t.Helper()
@@ -28,8 +31,8 @@ func submittedPhoto(t *testing.T, srv *Server) (form.Submission, []byte) {
 	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 3, 3)))
 	f, _ := set.Get("claim")
 	sub, err := form.AcceptWithFiles(f, map[string]string{"name": "Ana",
-		form.StampField: fmt.Sprint(time.Now().Add(-10 * time.Second).Unix())},
-		map[string]form.Upload{"photo": {Name: "<script>.png", Data: pic.Bytes()}}, "", time.Now())
+		form.StampField: form.Stamp(stampKey, time.Now().Add(-10*time.Second))},
+		map[string]form.Upload{"photo": {Name: "<script>.png", Data: pic.Bytes()}}, "", time.Now(), stampKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +91,8 @@ func TestASensitiveFileTakesTheAuthorityToEraseIt(t *testing.T) {
 	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 3, 3)))
 	f, _ := set.Get("claim")
 	sub, err := form.AcceptWithFiles(f, map[string]string{"name": "Ana",
-		form.StampField: fmt.Sprint(time.Now().Add(-10 * time.Second).Unix())},
-		map[string]form.Upload{"proof": {Name: "passport.png", Data: pic.Bytes()}}, "", time.Now())
+		form.StampField: form.Stamp(stampKey, time.Now().Add(-10*time.Second))},
+		map[string]form.Upload{"proof": {Name: "passport.png", Data: pic.Bytes()}}, "", time.Now(), stampKey)
 	if err != nil {
 		t.Fatal(err)
 	}

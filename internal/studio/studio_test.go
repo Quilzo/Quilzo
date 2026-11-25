@@ -348,6 +348,31 @@ func TestTheRightTokenIsLetInFromAThrottledAddress(t *testing.T) {
 	}
 }
 
+// A throttled sign-in is told how long to wait as the throttle says it, in
+// words. It was Go's own rendering of the wait, "try again in 1s", and
+// "try again in 59m32s" at the ceiling.
+func TestAThrottledSignInIsToldHowLongInWords(t *testing.T) {
+	srv, _ := wired(t)
+	stopped := time.Now()
+	srv.Throttle = throttle.New(throttle.Default()).WithClock(func() time.Time { return stopped })
+	for i := 0; i < 30; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token=not-a-real-token"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "10.1.2.3:5555"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusTooManyRequests {
+			continue
+		}
+		if b := rec.Body.String(); regexp.MustCompile(`[0-9](ms|s|m[0-9]+s|h[0-9]+m[0-9]+s)\b`).MatchString(b) ||
+			!strings.Contains(b, "Try again in 1 second.") {
+			t.Fatalf("a throttled sign-in was told %q", b)
+		}
+		return
+	}
+	t.Fatal("thirty wrong tokens were never throttled")
+}
+
 // Each request is decided by the store as it is now.
 //
 // The studio read its tokens and its policy once, at start, so a revoked

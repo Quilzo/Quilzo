@@ -275,8 +275,8 @@ func sentenceCase(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// shieldTrigger is a playbook's trigger in words: "When 5 guessed tokens
-// come from one source within an hour."
+// shieldTrigger is a playbook's trigger in words: "5 failed sign-ins from
+// one source within an hour."
 func shieldTrigger(pb shield.Playbook) string {
 	nouns, ok := shield.Counted[pb.On.Signal]
 	if !ok {
@@ -352,8 +352,8 @@ func shieldPrecision(r shield.Record, fired int, last time.Time) string {
 	case r.Right+r.Mistakes == 0:
 		s += " None judged yet."
 	case !enough:
-		s += fmt.Sprintf(" %d judged right, %d a mistake: %d verdicts are needed to say how often it is right.",
-			r.Right, r.Mistakes, shield.MinVerdicts)
+		s += fmt.Sprintf(" %d judged right, %s: %d verdicts are needed to say how often it is right.",
+			r.Right, counted(r.Mistakes, "judged a mistake", "judged mistakes"), shield.MinVerdicts)
 	default:
 		s += fmt.Sprintf(" Right %.0f%% of the time (95%% interval %.0f–%.0f%%).", rate*100, low*100, high*100)
 	}

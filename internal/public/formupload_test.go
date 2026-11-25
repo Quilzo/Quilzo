@@ -56,7 +56,7 @@ func TestAFormTakesAFileOnThePublicSite(t *testing.T) {
 	}
 	var pic bytes.Buffer
 	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
-	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	stamp := signed(time.Now().Add(-5 * time.Second))
 	if w := multipartPost(t, st, "/form/contact", map[string]string{"name": "Ana", form.StampField: stamp},
 		map[string][]byte{"photo": []byte("#!/bin/sh\nrm -rf /\n")}); w.Code < 400 {
 		t.Fatalf("a script taken as a photo: %d", w.Code)
@@ -94,7 +94,7 @@ func TestAFormSaysWhenItCannotKeepMoreFiles(t *testing.T) {
 	var pic bytes.Buffer
 	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
 	fs.FileCeiling = int64(pic.Len())
-	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	stamp := signed(time.Now().Add(-5 * time.Second))
 	send := func() *httptest.ResponseRecorder {
 		return multipartPost(t, st, "/form/contact", map[string]string{"name": "Ana", form.StampField: stamp},
 			map[string][]byte{"photo": pic.Bytes()})

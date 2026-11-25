@@ -741,6 +741,23 @@ func roughly(d time.Duration) string {
 	return d.Round(time.Second).String()
 }
 
+// inWords is one of the shield's limits as a person says it: "a day", "a
+// week", "3 days", and below a day as a history says a span (roughly).
+// The refusals that name a limit printed Go's own rendering, "ends within
+// 168h0m0s", which is exact and is not English.
+func inWords(d time.Duration) string {
+	const day = 24 * time.Hour
+	switch {
+	case d == day:
+		return "a day"
+	case d == 7*day:
+		return "a week"
+	case d > day && d%day == 0:
+		return strconv.Itoa(int(d/day)) + " days"
+	}
+	return roughly(d)
+}
+
 // Describe is a protection in words.
 func Describe(p Protection) string { return describe(p) }
 

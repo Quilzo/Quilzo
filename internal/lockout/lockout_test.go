@@ -6,6 +6,7 @@ package lockout
 import (
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +158,40 @@ func TestAnIPv6ClientHasAPlace(t *testing.T) {
 	// A source that cannot be placed at all is not familiar either.
 	if d, _ := s.Check("dana", "unknown", now); d.Allowed {
 		t.Errorf("an unplaceable source was let through a lockout: %+v", d)
+	}
+}
+
+// How long a place is locked out is said as a person says it, and never
+// shorter than it is: it was Go's own rendering, "locked out of it for
+// 30m0s", and "24h0m0s" once the doubling reached its ceiling.
+func TestHowLongALockoutLastsIsSaidInWords(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	now := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < Threshold; i++ {
+		s.Fail("dana", away, now)
+	}
+	for _, c := range []struct {
+		after time.Duration
+		want  string
+	}{
+		{0, "for 30 minutes"},
+		{29*time.Minute + 30*time.Second, "for 1 minute"},
+		{10*time.Minute + time.Second, "for 20 minutes"},
+	} {
+		d, _ := s.Check("dana", away, now.Add(c.after))
+		if !strings.Contains(d.Why, c.want) || strings.Contains(d.Why, "0s") {
+			t.Errorf("%s in: %q, not %q", c.after, d.Why, c.want)
+		}
+	}
+	for _, c := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{time.Hour, "an hour"}, {2 * time.Hour, "2 hours"}, {90 * time.Minute, "an hour and 30 minutes"},
+		{MaxLock, "24 hours"}, {25*time.Hour + time.Minute, "25 hours and 1 minute"}, {time.Second, "1 minute"},
+	} {
+		if got := inWords(c.d); got != c.want {
+			t.Errorf("%s is %q, not %q", c.d, got, c.want)
+		}
 	}
 }

@@ -286,7 +286,7 @@ func (st *Site) bookingMake(w http.ResponseWriter, r *http.Request, service stri
 	// seconds (form.CheckHuman). A page opened yesterday is asked to choose
 	// a time again, and is not told to the shield.
 	switch err := form.CheckHuman(r.PostFormValue(form.Honeypot), r.PostFormValue(form.StampField),
-		now, form.OldestPage); {
+		st.stampKey(), now, form.OldestPage); {
 	case errors.Is(err, form.ErrOld):
 		fail("old")
 		return

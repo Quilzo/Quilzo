@@ -53,9 +53,9 @@ var Signals = map[string]string{
 }
 
 // Counted is what a trigger counts of each signal, singular and plural, for
-// saying a playbook in words: "5 guessed tokens from one source".
+// saying a playbook in words: "5 failed sign-ins from one source".
 var Counted = map[string][2]string{
-	"signin-failures":    {"guessed token", "guessed tokens"},
+	"signin-failures":    {"failed sign-in", "failed sign-ins"},
 	"admin-hunt":         {"admin address asked for on the public site", "admin addresses asked for on the public site"},
 	"conversation-guess": {"wrong chatbot-conversation address", "wrong chatbot-conversation addresses"},
 	"chatbot-injection":  {"prompt-injection attempt", "prompt-injection attempts"},
@@ -90,8 +90,9 @@ type Trait struct {
 // on a connection the server itself accepted, so it cannot be raised in
 // another's name: Spoofable 0.
 var Traits = map[string]Trait{
-	// A secret shaped like a token that was never issued here: one is a
-	// typo, five in an hour is somebody guessing.
+	// A secret shaped like a token that was never issued here, or a passkey
+	// sign-in that proves nobody: one is a typo or the wrong key, five in an
+	// hour is somebody guessing.
 	"signin-failures": {Confidence: 1},
 	// Three distinct admin addresses is somebody looking; one is somebody
 	// on the wrong host, which the trigger's Distinct is for.
@@ -292,7 +293,7 @@ func (s Step) validate(on Trigger) error {
 	}
 	timed := s.Action != "notify" && s.Action != "open-case"
 	if timed && (time.Duration(s.For) < time.Minute || time.Duration(s.For) > MaxAuto) {
-		return fmt.Errorf("%s lasts a minute to %s", s.Action, MaxAuto)
+		return fmt.Errorf("%s lasts a minute to %s", s.Action, inWords(MaxAuto))
 	}
 	if !timed && s.For != 0 {
 		return fmt.Errorf("%s has no duration", s.Action)
@@ -349,7 +350,7 @@ func Builtins() []Playbook {
 	h := func(d time.Duration) Duration { return Duration(d) }
 	return []Playbook{
 		{Name: "signin-attack", Title: "Repeated failed sign-ins from one source", Mode: "act", Builtin: true,
-			Why: "Guessing tokens: five secrets never issued here within an hour, which is where ASVS asks for a reaction. A token mistyped once, or one that expired, is not counted. The throttle slows it; this stops it on the admin, for longer each time it comes back, and everywhere on the third.",
+			Why: "Guessing a way in: five tokens never issued here, or passkey sign-ins that prove nobody, within an hour, which is where ASVS asks for a reaction. A token that expired, or a key whose holder was not asked for a PIN, is not counted. The throttle slows it; this stops it on the admin, for longer each time it comes back, and everywhere on the third.",
 			On:  Trigger{Signal: "signin-failures", Per: "source", Count: 5, Within: h(time.Hour)},
 			Stages: []Stage{
 				{Do: []Step{{Action: "block-source", Where: Admin, For: h(time.Hour)}}},

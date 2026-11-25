@@ -59,7 +59,7 @@
       body: JSON.stringify(body || {})
     }).then(function (response) {
       return response.json().then(function (data) {
-        if (!response.ok) { throw new Error(data.error || "that did not work"); }
+        if (!response.ok) { throw new Error(data.error || data.detail || "that did not work"); }
         return data;
       });
     });

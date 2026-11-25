@@ -283,6 +283,11 @@ type Site struct {
 	// Forms appends a submission, to a store that is not the content store,
 	// and cannot read one back. Nil means /form/ 404s.
 	Forms *Forms
+	// StampKey signs the timing stamp each page carries for its forms, a
+	// booking and the newsletter's sign-up (form.Stamp), so the stamp that
+	// comes back is one this site gave out. Nil is a key this process
+	// makes for itself, which a restart forgets.
+	StampKey []byte
 	// ToolsOff stops marking the site's forms as tools for visitors'
 	// browser agents (WebMCP); see webmcp.go. ToolsTrial is Chrome's origin
 	// trial token, sent while WebMCP is not yet on by default.
@@ -2058,6 +2063,9 @@ func (st *Site) sourcesFor(r *http.Request) render.Sources {
 			at = time.Unix(c.At, 0)
 		}
 		src.Now = func() time.Time { return at }
+		// And unsigned: the copy's bytes are its identifier, and a key
+		// is this server's, not the content's. Nothing answers its forms.
+		src.Stamp = nil
 	}
 	return src
 }
@@ -2079,7 +2087,7 @@ func (st *Site) Sources(pages map[string]any) render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Scheme: st.Scheme, Listings: st.Listings, Pages: pages,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
-		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
+		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData, Stamp: st.stamp}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial

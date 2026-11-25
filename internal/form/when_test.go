@@ -4,7 +4,6 @@
 package form
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ func returnsForm() *Form {
 }
 
 func sent(v map[string]string) map[string]string {
-	v[StampField] = fmt.Sprint(time.Now().Add(-10 * time.Second).Unix())
+	v[StampField] = Stamp(testKey, time.Now().Add(-10*time.Second))
 	return v
 }
 
@@ -32,10 +31,10 @@ func TestAQuestionIsAskedOnlyOnItsAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	if _, err := Accept(f, sent(map[string]string{"topic": "Returns"}), "", now); err == nil {
+	if _, err := Accept(f, sent(map[string]string{"topic": "Returns"}), "", now, testKey); err == nil {
 		t.Fatal("asked and not answered")
 	}
-	s, err := Accept(f, sent(map[string]string{"topic": "Question", "order": "smuggled in", "giver": "x"}), "", now)
+	s, err := Accept(f, sent(map[string]string{"topic": "Question", "order": "smuggled in", "giver": "x"}), "", now, testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +44,10 @@ func TestAQuestionIsAskedOnlyOnItsAnswer(t *testing.T) {
 	if _, kept := s.Values["giver"]; kept {
 		t.Fatal("kept an answer behind an unticked box")
 	}
-	if _, err := Accept(f, sent(map[string]string{"topic": "Question", "gift": "true"}), "", now); err == nil {
+	if _, err := Accept(f, sent(map[string]string{"topic": "Question", "gift": "true"}), "", now, testKey); err == nil {
 		t.Fatal("a ticked box did not ask its question")
 	}
-	s, err = Accept(f, sent(map[string]string{"topic": "Returns", "order": "A-17", "gift": "on", "giver": "Ana"}), "", now)
+	s, err = Accept(f, sent(map[string]string{"topic": "Returns", "order": "A-17", "gift": "on", "giver": "Ana"}), "", now, testKey)
 	if err != nil || s.Values["order"] != "A-17" || s.Values["giver"] != "Ana" {
 		t.Fatalf("%+v %v", s.Values, err)
 	}
