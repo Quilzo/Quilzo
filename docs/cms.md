@@ -2640,7 +2640,10 @@ sign-on whose provider said the method cannot be phished: an `amr` of `hwk`,
 --phishing-resistant-acr`, or a SAML class named with `quilzo saml add
 --phishing-resistant-context` or on the Single sign-on screen, whose card for
 each provider says when its sign-ins are taken as phishing-resistant. An `amr` of `mfa` alone is two factors and can
-be phished, so such a session is asked for the passkey first. The policy's
+be phished, so such a session is asked for the passkey first; somebody with
+no passkey here is given one by an administrator's enrolment link
+(`quilzo auth enrol WHO`), since no administrator can let such a session
+in. The policy's
 `phishing_resistant` setting turns this off, and the change is in the audit
 log as `approval.policy`; every approval is still a fresh passkey signature.
 
