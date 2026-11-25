@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/connector"
 	"github.com/quilzo/quilzo/internal/evidence"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/untrusted"
 )
 
 // Recipe is one tool a connector's source can read: its manifest in the
@@ -300,6 +301,12 @@ func gap(to evidence.PullTo, about register.ID, what, why string, status int) er
 	to.Note("licence gap: %s answered %d, and is not read. %s", what, status, why)
 	return to.Observe(about, "report."+what, register.TextValue("licence gap"), "/pages")
 }
+
+// named is a name a tool's user wrote (a policy's, a device's), as a label
+// holds it: what draws nothing taken out, and the marks a model's prompt is
+// fenced with gone, because a crew may later read the register and the
+// name is the tool's user's words, not the record's.
+func named(s string) string { return untrusted.Tame(s, register.MaxLabel) }
 
 // errRefusedGrant is a credential that holds more than its recipe needs.
 var errRefusedGrant = errors.New("the credential holds more than the recipe needs, and is not used")

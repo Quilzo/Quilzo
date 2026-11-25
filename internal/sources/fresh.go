@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/register"
 	"github.com/quilzo/quilzo/internal/seckit"
 )
@@ -313,11 +314,7 @@ func message(st Standing) string {
 }
 
 func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 300 {
-		s = s[:297] + "..."
-	}
-	return s
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), 300, "…")
 }
 
 func (a *Alerts) load() (alerted, error) {

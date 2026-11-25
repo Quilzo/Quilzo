@@ -203,7 +203,7 @@ func pullEntra(r *Run, to evidence.PullTo) error {
 	}
 	everyone, everyoneResistant := false, false
 	for _, p := range policies.Records {
-		id, err := to.Asset("other", "conditional-access/"+p.Fields["id"], p.Fields["name"], p.Place)
+		id, err := to.Asset("other", "conditional-access/"+p.Fields["id"], named(p.Fields["name"]), p.Place)
 		if err != nil {
 			return err
 		}
@@ -249,7 +249,7 @@ func pullEntra(r *Run, to evidence.PullTo) error {
 		if ref == "" {
 			ref = "intune/" + d.Fields["id"]
 		}
-		id, err := to.Asset("device", ref, d.Fields["name"], d.Place)
+		id, err := to.Asset("device", ref, named(d.Fields["name"]), d.Place)
 		if err != nil {
 			return err
 		}

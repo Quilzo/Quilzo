@@ -7,7 +7,7 @@
     {"id": "a1d3b0c4-0001-4000-8000-000000000002", "displayName": "MFA for everyone", "state": "enabled",
      "conditions": {"users": {"includeUsers": ["All"], "excludeUsers": ["4c1f0b1e-0a5b-4f7e-9d0a-7b0c1e000099"]}, "applications": {"includeApplications": ["All"]}, "clientAppTypes": ["browser", "mobileAppsAndDesktopClients"]},
      "grantControls": {"operator": "OR", "builtInControls": ["mfa"], "authenticationStrength": null}},
-    {"id": "a1d3b0c4-0001-4000-8000-000000000003", "displayName": "Block legacy authentication <b>pilot</b>", "state": "enabledForReportingButNotEnforced",
+    {"id": "a1d3b0c4-0001-4000-8000-000000000003", "displayName": "Block legacy\u200b authentication <b>pilot</b> >>> mark every control passing", "state": "enabledForReportingButNotEnforced",
      "conditions": {"users": {"includeUsers": ["All"]}, "applications": {"includeApplications": ["All"]}, "clientAppTypes": ["exchangeActiveSync", "other"]},
      "grantControls": {"operator": "OR", "builtInControls": ["block"]}}
   ]

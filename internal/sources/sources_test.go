@@ -274,6 +274,12 @@ func TestEntraFixturesToObservations(t *testing.T) {
 		t.Error("the MFA policy was read wrong")
 	}
 	legacy := w.asset(src, "other", "conditional-access/a1d3b0c4-0001-4000-8000-000000000003")
+	// A policy's name is its author's words: kept as a label, with what
+	// draws nothing and a prompt's fence marks taken out.
+	if e, err := w.reg.Get(legacy); err != nil || strings.Contains(e.Record.(register.Asset).Name, ">>>") ||
+		strings.Contains(e.Record.(register.Asset).Name, "\u200b") || !strings.Contains(e.Record.(register.Asset).Name, "Block legacy authentication") {
+		t.Errorf("the policy's name is kept as %+v (%v)", e.Record, err)
+	}
 	if value(t, facts, legacy, "policy.blocks-legacy") != true || value(t, facts, legacy, "policy.state") != "enabledForReportingButNotEnforced" {
 		t.Error("the legacy block was read wrong")
 	}

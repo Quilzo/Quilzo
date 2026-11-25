@@ -64,8 +64,16 @@ against a key that came with the file or with the request.
 | uploaded | Any other file a person brought: a scanner's output, a bill of materials, a table of their own |
 
 The connector and CI grades are given by the modules that pull and push
-facts, never by an import. No importer here gives the screenshot grade: a
-picture is a person's statement, and is recorded as one.
+facts (see [Sources](sources.md)), never by an import: a connector's run is
+sealed and read the way a file is, through `Ingester.Collect`, and a
+pipeline's push through `Ingester.Push`, and neither can be named on the
+command line or in an import. No importer here gives the screenshot grade:
+a picture is a person's statement, and is recorded as one.
+
+A source belongs to the kind of actor that made it, a person or a service,
+and takes facts from that kind alone. A table a person uploads under a
+connector's or a service's source is refused, so it cannot overwrite what
+the connector observed, whose records it would otherwise share.
 
 ## Formats
 
@@ -109,7 +117,11 @@ never acted, or a figure nothing computed, for good.
   `evidence_expire` and `evidence_ingest`; the last two write, and a model is
   refused them as every write to the register refuses one.
 - The content API reads: `/api/v1/evidence/formats`, `/files`,
-  `/files/{id}` and `/verify`.
+  `/files/{id}` and `/verify`; and `POST /api/v1/evidence/import?format=`
+  brings a file in under the checks `quilzo ingest` holds it to (the
+  caller's policy, the grade by how it came, the audit log), with `source`
+  and `map` as `ingest` takes them. A pipeline pushes through the same
+  route (see [Sources](sources.md)).
 - Column maps and pinned keys are confirmed and pinned by a person, on the
   command line or the Evidence screens. The agent interface and the content
   API read them as the register records they are (`register_list` with the
@@ -122,9 +134,8 @@ never acted, or a figure nothing computed, for good.
   written from each format's published specification and the documented
   output of the tools named. They have not been checked against exports
   from live accounts. Report a file that reads wrongly.
-- A file is brought in through the content API by no route yet: the API
-  reads. Import on the command line, on the Import screen or through the
-  agent interface.
+- The content API's import writes what it reads at once: it has no
+  preview. Look at a file on the command line or the Import screen first.
 - CycloneDX in XML, SPDX 3 (JSON-LD) and Sigstore's keyless signatures are
   not read, and are refused rather than misread.
 - Importers for particular GRC tools' exports are not built: their formats

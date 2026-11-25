@@ -133,7 +133,7 @@ func pullOkta(r *Run, to evidence.PullTo) error {
 		return err
 	}
 	for _, p := range policies.Records {
-		id, err := to.Asset("other", "okta-policy/"+p.Fields["id"], p.Fields["name"], p.Place)
+		id, err := to.Asset("other", "okta-policy/"+p.Fields["id"], named(p.Fields["name"]), p.Place)
 		if err != nil {
 			return err
 		}
