@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -517,6 +518,92 @@ func TestSpotChecksLabelled(t *testing.T) {
 	for _, f := range a11y.Check("held", held).Findings {
 		if f.Severity == a11y.Blocking {
 			t.Errorf("the held decision: %s", f)
+		}
+	}
+}
+
+// An administrator of the register declares the separation policy in the
+// admin: one that cannot be applied is refused with the reason beside the
+// field and at the top, and kept as typed; one that can is saved and in
+// the audit log. A reader is shown the policy and no way to change it.
+func TestTheSeparationPolicyIsDeclaredInTheAdmin(t *testing.T) {
+	b := newApprovalBench(t)
+	admin, _, err := b.srv.Tokens.IssueSession("test", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(t, b.srv, "/register/approvals/policy", admin)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `<textarea id="policy" name="policy"`) {
+		t.Fatalf("the administrator is offered no way to declare the policy: %d\n%s", page.Code, firstLines(page.Body.String(), 60))
+	}
+	pol := approval.Default()
+	pol.Rules[0].Level = 7
+	bad, _ := json.Marshal(pol)
+	w := postFormAuth(t, b.srv, admin, "/register/approvals/policy", url.Values{"policy": {string(bad)}})
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `href="#policy"`) || !strings.Contains(body, `id="policy-error"`) ||
+		!strings.Contains(body, "level 7") || !strings.Contains(body, `aria-invalid="true"`) {
+		t.Fatalf("a policy at level 7 was not refused beside its field: %d\n%s", w.Code, firstLines(body, 80))
+	}
+	if _, declared, _ := approval.LoadPolicy(b.srv.Store.Root()); declared {
+		t.Fatal("a policy that cannot be applied was declared")
+	}
+	for _, f := range a11y.Check("refused", body).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the refusal: %s", f)
+		}
+	}
+
+	pol = approval.Default()
+	pol.Seconds = []approval.Second{{Principal: "head-of-risk", As: "risk"}}
+	good, _ := json.Marshal(pol)
+	w = postFormAuth(t, b.srv, admin, "/register/approvals/policy", url.Values{"policy": {string(good)}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("declaring a policy answered %d\n%s", w.Code, firstLines(w.Body.String(), 40))
+	}
+	got, declared, err := approval.LoadPolicy(b.srv.Store.Root())
+	if err != nil || !declared || len(got.Seconds) != 1 {
+		t.Fatalf("the policy was not declared: %v %v %+v", declared, err, got)
+	}
+	if rec := b.logged("approval.policy"); len(rec) != 1 || rec[0]["by"] != "editor" {
+		t.Errorf("declaring the policy is not in the audit log as the administrator's: %v", rec)
+	}
+	shown := get(t, b.srv, w.Header().Get("Location"), admin).Body.String()
+	if !strings.Contains(shown, "head-of-risk") {
+		t.Errorf("the declared policy is not shown\n%s", firstLines(shown, 60))
+	}
+	for _, f := range a11y.Check("policy", shown).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the policy: %s", f)
+		}
+	}
+
+	// The ciso of the bench reads the register and administers nothing.
+	if strings.Contains(get(t, b.srv, "/register/approvals/policy", b.token).Body.String(), "<textarea") {
+		t.Error("a reader is offered the policy to change")
+	}
+	if w := postFormAuth(t, b.srv, b.token, "/register/approvals/policy", url.Values{"policy": {string(good)}}); w.Code != http.StatusForbidden {
+		t.Errorf("a reader's policy answered %d", w.Code)
+	}
+}
+
+// A batch that cannot be shown says why at the top of the page and beside
+// its button, and each decision's box is named for the decision.
+func TestABatchRefusedSaysWhyBesideItsButton(t *testing.T) {
+	b := newApprovalBench(t)
+	list := get(t, b.srv, "/register/approvals", b.token).Body.String()
+	if !strings.Contains(list, `Add <span class="visually-hidden">R-21`) {
+		t.Errorf("a decision's box in the batch is not named for it\n%s", firstLines(list, 60))
+	}
+	w := postFormAuth(t, b.srv, b.token, "/register/approvals/batch", url.Values{"id": {string(b.risk)}})
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `href="#batch"`) || !strings.Contains(body, `id="batch-error"`) ||
+		!strings.Contains(body, "2 to 200") {
+		t.Fatalf("a batch of one was not refused beside its button: %d\n%s", w.Code, firstLines(body, 80))
+	}
+	for _, f := range a11y.Check("refused", body).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the refusal: %s", f)
 		}
 	}
 }

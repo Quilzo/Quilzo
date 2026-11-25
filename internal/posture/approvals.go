@@ -63,7 +63,7 @@ func init() {
 					out = append(out, Finding{Resource: f.Record,
 						Detail: fmt.Sprintf("%s was approved alone, and its review by somebody else was due on %s",
 							f.named(), f.Due.UTC().Format("2 Jan 2006")),
-						Fix: "quilzo approval review " + f.Record + " upheld --surface HASH  # by somebody else, or in the admin under Register › Approvals"})
+						Fix: "quilzo approval review " + f.Record + " upheld --surface HASH  # by somebody else, or in the admin under Sign-off"})
 				}
 				return out
 			},

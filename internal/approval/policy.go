@@ -4,6 +4,8 @@
 package approval
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -331,16 +333,47 @@ func LoadPolicy(root string) (*Policy, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	p, err := ParsePolicy(raw)
+	if err != nil {
+		return nil, true, err
+	}
+	return p, true, nil
+}
+
+// ParsePolicy reads a separation policy as it is declared, in JSON, and
+// refuses one with a field it does not know, so that a misspelt rule is an
+// error and not a rule quietly left out, and one that cannot be applied.
+// The command line and the admin declare a policy through it, as the store
+// reads one back.
+func ParsePolicy(raw []byte) (*Policy, error) {
 	var p Policy
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&p); err != nil {
-		return nil, true, fmt.Errorf("the separation policy does not read as one: %w", err)
+		return nil, fmt.Errorf("the separation policy does not read as one: %w", err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("the separation policy does not read as one: there is more after it")
 	}
 	if err := p.Validate(); err != nil {
-		return nil, true, fmt.Errorf("the separation policy cannot be applied: %w", err)
+		return nil, fmt.Errorf("the separation policy cannot be applied: %w", err)
 	}
-	return &p, true, nil
+	return &p, nil
+}
+
+// AuditPolicy is the name a declared separation policy is recorded under.
+const AuditPolicy = "approval.policy"
+
+// PolicyDetail is what the audit log records of a policy declared: how many
+// rules and seconds it has, what it asks of signing in, its days, and the
+// hash of all of it, so that the entry names exactly the policy that was
+// declared and a later one can be told from it.
+func PolicyDetail(p *Policy) map[string]string {
+	raw, _ := json.Marshal(p)
+	sum := sha256.Sum256(raw)
+	return map[string]string{"rules": fmt.Sprint(len(p.Rules)), "seconds": fmt.Sprint(len(p.Seconds)),
+		"phishing_resistant": fmt.Sprint(p.PhishingResistant), "review_days": fmt.Sprint(p.ReviewDays),
+		"wait_days": fmt.Sprint(p.WaitDays), "policy": "sha256:" + hex.EncodeToString(sum[:])}
 }
 
 // SavePolicy writes a store's separation policy, refusing one that could

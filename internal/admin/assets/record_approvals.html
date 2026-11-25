@@ -8,8 +8,9 @@
 <div class="table-wrap"><table class="kit-table">
 <caption>Decisions waiting for their approvers, oldest first</caption>
 <thead><tr><th scope="col">Decision</th><th scope="col">Kind</th><th scope="col">Approvals</th><th scope="col">Rule</th><th scope="col">Hash of what it shows</th><th scope="col">In a batch</th></tr></thead>
-<tbody>{{range .Waiting}}<tr><th scope="row"><a href="{{.Href}}">{{.Label}}</a></th><td>{{.Kind}}</td><td>{{.Signed}} of {{.Needed}} given, {{.Of}} eligible{{with .Over}}<br><span class="hint">Above the threshold: {{.}}</span>{{end}}</td><td>{{.Rule}}</td><td>{{template "kit-hash" .Hash}}</td><td>{{if .Batchable}}<span class="choice"><input type="checkbox" name="id" value="{{.ID}}" id="batch-{{.ID}}"> <label for="batch-{{.ID}}">Add to the batch</label></span>{{else}}<span class="hint">{{.NotBatchable}}</span>{{end}}</td></tr>{{end}}</tbody>
+<tbody>{{range .Waiting}}<tr><th scope="row"><a href="{{.Href}}">{{.Label}}</a></th><td>{{.Kind}}</td><td>{{.Signed}} of {{.Needed}} given, {{.Of}} eligible{{with .Over}}<br><span class="hint">Above the threshold: {{.}}</span>{{end}}</td><td>{{.Rule}}</td><td>{{template "kit-hash" .Hash}}</td><td>{{if .Batchable}}<span class="choice"><input type="checkbox" name="id" value="{{.ID}}" id="batch-{{.ID}}"> <label for="batch-{{.ID}}">Add <span class="visually-hidden">{{.Label}} </span>to the batch</label></span>{{else}}<span class="hint">{{.NotBatchable}}</span>{{end}}</td></tr>{{end}}</tbody>
 </table></div>
+{{template "kit-field-error" .BatchProblem}}
 <p><button type="submit">Show the chosen decisions as one batch</button> <span class="hint">You open the ones the batch chooses for you, and then one passkey signature approves them all.</span></p>
 </form>
 {{else}}{{template "kit-empty" .EmptyWaiting}}{{end}}

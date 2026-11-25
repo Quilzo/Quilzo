@@ -6,6 +6,7 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -307,12 +308,24 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 			"the security record, each approved by the people the separation policy names, with a passkey bound to the " +
 			"hash of exactly what they were shown."},
 		"Waiting": rows, "Held": len(heldRows) > 0, "HeldTable": table, "Problems": problems, "Said": said,
+		"BatchProblem": batchProblem(problems),
 		"EmptyWaiting": seckit.Empty{Title: "Nothing is waiting for an approval",
 			Body: "A decision somebody raises, or a crew proposes, waits here for the people who may approve it."},
 		"EmptyHeld": seckit.Empty{Title: "The register holds no approved decisions yet",
 			Body: "Once a decision is approved it is listed here with where it stands: reviewed, owing a review, or lapsed."},
 	}
 	s.render(w, r, "record_approvals.html", data)
+}
+
+// batchProblem is what was wrong with the batch asked for, shown beside
+// its button as well as at the top of the page.
+func batchProblem(problems []seckit.Problem) seckit.Problem {
+	for _, p := range problems {
+		if p.Field == "batch" {
+			return p
+		}
+	}
+	return seckit.Problem{}
 }
 
 // kindResource is the resource a kind's records are asked about.
@@ -963,15 +976,87 @@ func (s *Server) handleApprovalReview(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// policyForm is the separation policy as an administrator edits it: the
+// JSON as it stands, or as they typed it when it was refused, and what was
+// wrong with it.
+type policyForm struct {
+	Action, Text string
+	Problem      seckit.Problem
+}
+
+// maxPolicy is the most a declared policy may be, in bytes: room for every
+// kind the register has, twice over, and not a body that ties the server
+// up reading it.
+const maxPolicy = 256 << 10
+
 func (s *Server) handleApprovalPolicy(w http.ResponseWriter, r *http.Request) {
 	p, _, ok := s.approvalsReady(w, r)
 	if !ok {
 		return
 	}
-	pol, declared, err := approval.LoadPolicy(s.Store.Root())
+	if r.Method == http.MethodPost {
+		s.declarePolicy(w, r, p)
+		return
+	}
+	s.renderPolicy(w, r, p, nil, r.URL.Query().Get("said"))
+}
+
+// declarePolicy is an administrator of the register declaring who may
+// approve what. It asks what the command line asks: whoever can rewrite
+// the separation policy can make themselves the only person it needs, so it
+// is an administrator's, and it is in the audit log before it is said to be
+// done.
+func (s *Server) declarePolicy(w http.ResponseWriter, r *http.Request, p principal) {
+	if !s.can(w, r, p, auth.ActGrant, register.Area) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPolicy)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "the form could not be read, or is longer than a policy is", http.StatusBadRequest)
+		return
+	}
+	text := r.PostForm.Get("policy")
+	refuse := func(msg string) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.renderPolicy(w, r, p, &policyForm{Text: text,
+			Problem: seckit.Problem{Field: "policy", Label: "The separation policy", Message: msg}}, "")
+	}
+	pol, err := approval.ParsePolicy([]byte(text))
 	if err != nil {
+		refuse(err.Error())
+		return
+	}
+	if s.AuditReady != nil {
+		if err := s.AuditReady(); err != nil {
+			refuse("It was not declared, because the audit log cannot record it: " + err.Error())
+			return
+		}
+	}
+	if err := approval.SavePolicy(s.Store.Root(), pol); err != nil {
+		refuse(err.Error())
+		return
+	}
+	if err := s.recordRegister(audit.Record{Action: approval.AuditPolicy, Resource: register.Area, Outcome: audit.Success,
+		Principal: p.Name, Kind: audit.KindHuman, Verified: true, Detail: approval.PolicyDetail(pol)}); err != nil {
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusInternalServerError, "Title": "Separation policy",
+			"Principal": p, "Heading": "The policy was declared and not recorded",
+			"Body": "It applies from now, and the audit log could not take its entry: " + err.Error()})
+		return
+	}
+	http.Redirect(w, r, "/register/approvals/policy?said="+url.QueryEscape(fmt.Sprintf(
+		"Declared: a separation policy of %d rules, which applies from now.", len(pol.Rules))), http.StatusSeeOther)
+}
+
+// renderPolicy draws the separation policy, and for an administrator of the
+// register the form that declares it; form is what was refused, or nil.
+func (s *Server) renderPolicy(w http.ResponseWriter, r *http.Request, p principal, form *policyForm, said string) {
+	pol, declared, err := approval.LoadPolicy(s.Store.Root())
+	if err != nil && form == nil {
 		s.registerUnreadable(w, r, p, err)
 		return
+	}
+	if err != nil {
+		pol = approval.Default()
 	}
 	var rows []seckit.Row
 	for _, rule := range pol.Rules {
@@ -997,6 +1082,18 @@ func (s *Server) handleApprovalPolicy(w http.ResponseWriter, r *http.Request) {
 	if !declared {
 		lead = "The default separation policy: this store has not declared its own."
 	}
-	s.render(w, r, "record_approval_policy.html", map[string]any{"Title": "Separation policy", "Nav": "signoff",
-		"Principal": p, "Header": seckit.Header{Title: "Separation policy", Lead: lead}, "Table": table, "Policy": pol})
+	data := map[string]any{"Title": "Separation policy", "Nav": "signoff", "Said": said,
+		"Principal": p, "Header": seckit.Header{Title: "Separation policy", Lead: lead}, "Table": table, "Policy": pol}
+	if s.allows(p, auth.ActGrant, register.Area) {
+		if form == nil {
+			raw, _ := json.MarshalIndent(pol, "", "  ")
+			form = &policyForm{Text: string(raw)}
+		}
+		form.Action = "/register/approvals/policy"
+		data["Form"] = form
+		if form.Problem.Message != "" {
+			data["Problems"] = []seckit.Problem{form.Problem}
+		}
+	}
+	s.render(w, r, "record_approval_policy.html", data)
 }

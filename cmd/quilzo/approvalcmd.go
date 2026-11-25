@@ -533,22 +533,20 @@ func approvalPolicySet(root, path string) error {
 	if err != nil {
 		return err
 	}
-	var p approval.Policy
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
-		return fmt.Errorf("%s is not a separation policy: %w", path, err)
+	p, err := approval.ParsePolicy(raw)
+	if err != nil {
+		return errMisused{fmt.Errorf("%s: %w", path, err)}
 	}
 	if err := auditReady(root); err != nil {
 		return fmt.Errorf("the policy was not declared, because the audit log cannot record it: %w", err)
 	}
-	if err := approval.SavePolicy(root, &p); err != nil {
+	if err := approval.SavePolicy(root, p); err != nil {
 		return errMisused{err}
 	}
 	c := resolveCaller(root, flagToken)
-	if err := recordE(root, audit.Record{Action: "approval.policy", Resource: register.Area, Outcome: audit.Success,
+	if err := recordE(root, audit.Record{Action: approval.AuditPolicy, Resource: register.Area, Outcome: audit.Success,
 		Principal: c.Name, Kind: c.Kind, Model: c.Model, Verified: c.Verified,
-		Detail: map[string]string{"rules": fmt.Sprint(len(p.Rules)), "seconds": fmt.Sprint(len(p.Seconds))}}); err != nil {
+		Detail: approval.PolicyDetail(p)}); err != nil {
 		return err
 	}
 	if w.JSON(map[string]any{"declared": true, "policy": p}) {

@@ -1,5 +1,7 @@
 {{template "head" .}}
 {{template "kit-header" .Header}}
+{{with .Said}}{{template "kit-live" .}}{{end}}
+{{template "kit-errors" .Problems}}
 {{template "kit-table" .Table}}
 <h2>What no policy changes</h2>
 <ul>
@@ -13,5 +15,13 @@
 <h2>Signing in</h2>
 <p>{{if .Policy.PhishingResistant}}Whoever may approve, accept a risk, publish outside the organisation or administer signs in with a passkey, or a single sign-on whose provider said it used a method that cannot be phished; anybody else is asked for their passkey before they go on.{{else}}The policy does not ask for a sign-in that cannot be phished; every approval is still a fresh passkey signature.{{end}}</p>
 <p>A request that has gathered some of its approvals waits {{.Policy.WaitDays}} days for the rest, and then lapses with them.</p>
-<p class="hint">The policy is declared at the store's console: <code>quilzo approval policy</code> shows it, and <code>quilzo approval policy set FILE</code> declares it.</p>
+{{with .Form}}<h2 id="declare">Declare the policy</h2>
+<form method="post" action="{{.Action}}">
+<p><label for="policy">The separation policy, as JSON</label><br>
+<span class="hint" id="policy-hint">Each rule names a kind of record, the permission that makes somebody eligible, the level (3, or 4 for two people), the thresholds above which a second approver is needed, and how many days the approval counts. A policy that asks for fewer people than the rules above allow is refused. It applies from the moment it is declared, and the audit log records it.</span></p>
+{{template "kit-field-error" .Problem}}
+<textarea id="policy" name="policy" class="code" rows="24" spellcheck="false" autocapitalize="off" aria-describedby="policy-hint{{if .Problem.Message}} policy-error{{end}}"{{if .Problem.Message}} aria-invalid="true"{{end}}>{{.Text}}</textarea>
+<p><button type="submit">Declare this policy</button></p>
+</form>{{end}}
+<p class="hint">At the store's console <code>quilzo approval policy</code> shows it, and <code>quilzo approval policy set FILE</code> declares it.</p>
 {{template "foot" .}}
