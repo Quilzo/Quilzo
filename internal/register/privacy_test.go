@@ -391,10 +391,8 @@ func TestErasureIsSignedRecord(t *testing.T) {
 		rec.Decider != dana.Subject || rec.Subject != ada || !rec.Map || rec.Entries != 1 {
 		t.Fatalf("the erasure record is %+v with %+v", rec, a)
 	}
-	shown := rec
-	shown.Approval = nil
-	if a.Surface != SurfaceOf(shown) {
-		t.Errorf("the approval is over %s and the record as shown is %s", a.Surface, SurfaceOf(shown))
+	if want := shown(t, b, rec); a.Surface != want {
+		t.Errorf("the approval is over %s and the record as shown is %s", a.Surface, want)
 	}
 	// Written once: changed, it is refused; asked for again, the person
 	// is already erased.

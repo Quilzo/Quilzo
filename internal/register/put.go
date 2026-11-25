@@ -230,8 +230,11 @@ func (r *Register) gate(by Actor, act auth.Action, resource string) error {
 	return nil
 }
 
-// approved holds a record that is a decision to its approval. On the
-// proposals ref a decision waits for its approval, so none is asked there.
+// approved holds a record that is a decision to its approval: given for
+// this record as it would be written (Register.Surface), and, where the
+// approvals module is in the program, on authentication evidence that
+// holds (Register.Approvals). On the proposals ref a decision waits for
+// its approval, so none is asked there.
 func (r *Register) approved(ref string, spec *Spec, rec Record, id ID) error {
 	a := approvalOf(rec)
 	if a == nil {
@@ -241,7 +244,27 @@ func (r *Register) approved(ref string, spec *Spec, rec Record, id ID) error {
 		}
 		return nil
 	}
-	if r.Approvals != nil && ref == Ref {
+	if ref != Ref {
+		return nil
+	}
+	// The record as the register holds it, approval and all, was held to
+	// its surface when it was written, and writing it again unchanged
+	// writes nothing. Its surface now would show no change, so held to the
+	// one it was approved over it was refused, and a run re-asserting what
+	// it found failed on every approved record.
+	if e, err := r.Get(id); err == nil && sameFields(e.Record, rec) {
+		return nil
+	}
+	want, err := r.Surface(rec, id)
+	if err != nil {
+		return fmt.Errorf("what an approver of the %s is shown could not be worked out: %w", strings.ToLower(string(spec.Kind)), err)
+	}
+	if a.Surface != want {
+		return fmt.Errorf("%w: %s: its approval does not hold: it approves %s, and this record as it would be written is "+
+			"%s: what was approved is not what is being written; a decision that changed is approved again",
+			ErrInvalid, strings.ToLower(string(spec.Kind)), a.Surface, want)
+	}
+	if r.Approvals != nil {
 		if err := r.Approvals(rec, id, a); err != nil {
 			return fmt.Errorf("%w: %s: its approval does not hold: %v", ErrInvalid, strings.ToLower(string(spec.Kind)), err)
 		}

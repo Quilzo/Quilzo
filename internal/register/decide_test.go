@@ -39,7 +39,7 @@ func TestADecisionWaitsWithoutAnApprovalAndIsAcceptedWithWhatItBrings(t *testing
 	req := Requirement{Framework: "iso-27001", Ref: "A.5.1", Title: "Security policies are written and kept"}
 	id := mustID(t, starter)
 	a := signedBy(dana.Subject, lee.Subject)
-	a.Surface = SurfaceOf(starter)
+	a.Surface = shown(t, b, starter)
 	rc, err := b.AcceptWith(lee, id, a, req)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestADecisionWaitsWithoutAnApprovalAndIsAcceptedWithWhatItBrings(t *testing
 	nis2 := sent
 	nis2.Approval = nil
 	b2 := signedBy(dana.Subject, lee.Subject)
-	b2.Surface = SurfaceOf(nis2)
+	b2.Surface = shown(t, b, nis2)
 	other := Requirement{Framework: "nis2", Ref: "Art. 21(2)(a)", Title: "Risk analysis and security policies"}
 	if _, err := b.AcceptWith(noEdit, mustID(t, nis2), b2, other); !errors.Is(err, ErrRefused) {
 		t.Errorf("an accepter who may not write requirements wrote one: %v", err)

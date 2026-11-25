@@ -123,7 +123,11 @@ func (s *Server) waitingFor(reg *register.Register, eligible string, kinds ...re
 			}
 			what := decisionWhat(pr.Record) + ", raised " + seckit.When(pr.At.At())
 			spec, _ := register.SpecOf(string(k))
-			out = append(out, seckit.Approval{What: what, Hash: register.SurfaceOf(pr.Record), Who: eligible,
+			hash, err := reg.Surface(pr.Record, pr.ID)
+			if err != nil {
+				return nil
+			}
+			out = append(out, seckit.Approval{What: what, Hash: hash, Who: eligible,
 				Needed: 1, Of: s.eligible(spec.Resource())})
 		}
 	}

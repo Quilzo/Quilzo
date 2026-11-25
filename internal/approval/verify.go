@@ -38,6 +38,16 @@ func init() {
 			return Verify(r, rec, id, a)
 		}
 	})
+	// What an approver is shown is this module's surface, for every
+	// register in the program: the hash the register holds a record to at
+	// Put is the hash the screen showed and the passkey signed.
+	register.SurfaceWith(func(r *register.Register, rec register.Record, id register.ID) (register.Digest, error) {
+		s, err := SurfaceOf(r, rec, id)
+		if err != nil {
+			return "", err
+		}
+		return s.Digest(), nil
+	})
 }
 
 // Verify checks an approval's authentication evidence against the record it

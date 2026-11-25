@@ -157,6 +157,7 @@ func Default() *Policy {
 			{Name: "decision", Kind: register.KindDecision, Atom: auth.ActApprove, Level: L3},
 			{Name: "write-scope", Kind: register.KindSource, Atom: auth.ActManageConnectors, Level: L4, TermDays: 365},
 			{Name: "control-test", Kind: register.KindControlTest, Atom: auth.ActApprove, Level: L3, TermDays: 365},
+			{Name: "starter", Kind: register.KindStarter, Atom: auth.ActApprove, Level: L3},
 			{Name: "scope", Kind: register.KindScope, Atom: auth.ActApprove, Level: L3, TermDays: 366},
 			{Name: "applicability", Kind: register.KindApplicability, Atom: auth.ActApprove, Level: L3, TermDays: 366},
 			{Name: "ai-system", Kind: register.KindAISystem, Atom: auth.ActApprove, Level: L3, TermDays: 365},

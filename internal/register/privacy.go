@@ -381,7 +381,7 @@ func (r *Register) erasureApproval(rec Erasure, req ErasureRequest) *Approval {
 	if raised == "" {
 		raised = rec.Decider
 	}
-	surface := SurfaceOf(rec)
+	surface, _ := r.Surface(rec, ErasureID(rec.Subject))
 	a := &Approval{Atom: "erase-personal-data", Rule: "requester-is-not-decider", Needed: 1, Of: max(req.Eligible, 1),
 		Surface: surface, Raised: raised,
 		Signers: []Signer{{Subject: rec.Decider, At: rec.At, Assertion: assertionOf(surface, rec.Decider, req.Evidence)}}}

@@ -81,7 +81,7 @@ type Decided struct {
 }
 
 // approvalOf is a person's approval of a record that somebody raised.
-func approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time) (*register.Approval, error) {
+func (p *Programme) approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time) (*register.Approval, error) {
 	if d.By.Kind != audit.KindHuman || !d.By.Subject.Valid() {
 		return nil, fmt.Errorf("%w: a decision is a person's, named by their pseudonym", register.ErrModel)
 	}
@@ -89,7 +89,14 @@ func approvalOf(rec register.Record, raised register.ID, d Decider, at time.Time
 	if eligible < 1 {
 		eligible = 1
 	}
-	surface := register.SurfaceOf(rec)
+	id, err := register.IDOf(rec)
+	if err != nil {
+		return nil, err
+	}
+	surface, err := p.Reg.Surface(rec, id)
+	if err != nil {
+		return nil, err
+	}
 	h := sha256.New()
 	h.Write([]byte("quilzo/approval evidence v1\n" + string(surface) + "\n" + d.Proof))
 	a := &register.Approval{Atom: string(auth.ActApprove), Rule: "raiser-is-not-approver", Needed: 1, Of: eligible,
@@ -117,7 +124,7 @@ func (p *Programme) Raise(d Decider, why string, rec register.Record) (Decided, 
 	if err != nil {
 		return Decided{}, err
 	}
-	a, err := approvalOf(rec, d.By.Subject, d, p.now())
+	a, err := p.approvalOf(rec, d.By.Subject, d, p.now())
 	if errors.Is(err, ErrWaits) {
 		rc, err := p.Reg.Propose(d.By, why, rec)
 		return Decided{ID: id, Waits: true, Receipt: rc}, err
@@ -171,7 +178,7 @@ func (p *Programme) Approve(d Decider, id register.ID) (Decided, error) {
 			follows = append(follows, *q)
 		}
 	}
-	a, err := approvalOf(rec, raised, d, p.now())
+	a, err := p.approvalOf(rec, raised, d, p.now())
 	if errors.Is(err, ErrWaits) || err == nil && raised == d.By.Subject {
 		return Decided{}, fmt.Errorf("%w: whoever raised a decision is not the one who approves it", register.ErrRefused)
 	}

@@ -203,6 +203,42 @@ func CheckApprovalsWith(make func(*Register) func(rec Record, id ID, a *Approval
 	approvalCheck = make
 }
 
+// surfaceOf is what a person approving a record is shown, as the hash
+// their passkey signs: the approvals module's (internal/approval's
+// SurfaceOf), the record as it will be written, the evidence it cites and
+// the change from the record as the register holds it. The module sets it
+// once, at start (SurfaceWith), as it sets approvalCheck.
+//
+// There is one of these in the program. The screen that shows the hash,
+// the command that prints it, the passkey's challenge, the receipt, the
+// audit entry and every check of a record against its approval read it
+// through Register.Surface, so the hash a person was shown is the hash the
+// register holds the record to. Two ways of working it out, one for the
+// screen and one for the check, were two hashes of one record, and every
+// approval made the one way was refused the other.
+var surfaceOf func(r *Register, rec Record, id ID) (Digest, error)
+
+// SurfaceWith sets what an approver is shown, for every register in the
+// program. It is called from the approvals module's init and nowhere else.
+func SurfaceWith(f func(r *Register, rec Record, id ID) (Digest, error)) { surfaceOf = f }
+
+// SurfaceInstalled reports whether the approvals module's surface is the
+// one the register holds approvals to. The program's own test holds that it
+// is: the stand-in is for the register's tests alone.
+func SurfaceInstalled() bool { return surfaceOf != nil }
+
+// Surface is the hash of what a person approving rec, whose identifier is
+// id, is shown, against the register as it stands. An approval whose
+// Surface is this hash was given for this record as it would be written
+// now, and no other. Without the approvals module in the program, the hash
+// of the record's own fields stands in (recordSurface).
+func (r *Register) Surface(rec Record, id ID) (Digest, error) {
+	if surfaceOf != nil {
+		return surfaceOf(r, rec, id)
+	}
+	return recordSurface(rec), nil
+}
+
 // awaitingApproval is the record a write is held to: the record itself,
 // except that a decision proposed without its approval is held to every
 // rule but the approval it has not yet been given. A proposal waits for its
@@ -224,11 +260,10 @@ func awaitingApproval(ref string, rec Record) Record {
 	if other == raised {
 		other = "00000000000000000000000000000003"
 	}
-	// The stand-in is over the record as it waits, as the approval it will
-	// be given must be: a kind whose Check holds its approval to the
-	// record's surface (SurfaceOf) is held to it while waiting too.
+	// The stand-in's hashes are none: what an approval is bound to is held
+	// at Put, when the record is written with the approval it was given.
 	none := Digest("sha256:" + strings.Repeat("0", 64))
-	return withApproval(rec, &Approval{Atom: "awaiting", Rule: "awaiting", Needed: 1, Of: 2, Surface: SurfaceOf(rec), Raised: raised,
+	return withApproval(rec, &Approval{Atom: "awaiting", Rule: "awaiting", Needed: 1, Of: 2, Surface: none, Raised: raised,
 		Signers: []Signer{{Subject: other, At: 1, Assertion: none}}})
 }
 

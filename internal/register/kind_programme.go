@@ -116,7 +116,7 @@ const KindScope Kind = "Scope"
 
 func (Scope) Kind() Kind              { return KindScope }
 func (s Scope) Key() (string, string) { return Local, s.Name }
-func (s Scope) Check() error          { return boundTo(s, s.Approval, "scope") }
+func (Scope) Check() error            { return nil }
 
 var _ = define[Scope]("What the programme covers: domains, populations and frameworks.", ClassInternal, signed)
 
@@ -137,9 +137,7 @@ func (Applicability) Kind() Kind { return KindApplicability }
 func (a Applicability) Key() (string, string) {
 	return Local, string(a.Scope) + "/" + string(a.Requirement)
 }
-func (a Applicability) Check() error {
-	return boundTo(a, a.Approval, "line of the statement of applicability")
-}
+func (Applicability) Check() error { return nil }
 func (a Applicability) index(r *Row) {
 	r.About, r.Via = a.Requirement.bytes(), a.Scope.bytes()
 	if a.Applicable {
@@ -163,10 +161,11 @@ func (Assertion) Values() []string { return []string{"all", "none"} }
 // decides whether the control passes.
 //
 // The approval is bound to the test it approves: its Surface is the hash of
-// the test as the approver was shown it (SurfaceOf), the query's digest
-// among it. A test whose query changed under an approval given for another
-// is refused by its own Check, wherever it is written from, so the only way
-// to run a changed query is for a person to approve it again.
+// the test as the approver was shown it (Register.Surface), the query's
+// digest and the population's definition among it. A test whose query
+// changed under an approval given for another is refused at Put, the one
+// way anything is written, so the only way to run a changed query is for a
+// person to approve it again.
 type ControlTest struct {
 	Control    ID     `json:"control" reg:"required,ref=Control" about:"the control it checks"`
 	Name       string `json:"name" reg:"required,slug" about:"its machine name, which with the control is its natural key"`
@@ -195,13 +194,7 @@ func (ControlTest) Kind() Kind { return KindControlTest }
 func (c ControlTest) Key() (string, string) {
 	return Local, string(c.Control) + "/" + c.Name
 }
-func (c ControlTest) Check() error {
-	if c.Approval != nil && c.Approval.Surface != SurfaceOf(c) {
-		return fmt.Errorf("the approval is of another test: a test whose query, population, its definition, " +
-			"assertion or schedule changed is approved again before it runs")
-	}
-	return nil
-}
+func (ControlTest) Check() error { return nil }
 func (c ControlTest) index(r *Row) {
 	r.About, r.Via, r.State = c.Control.bytes(), c.Population.bytes(), ordinal(c.Assertion)
 }
@@ -317,28 +310,17 @@ func (e Evidence) index(r *Row) {
 
 var _ = define[Evidence]("How a control stood at a moment, from a test run or a person's statement.", ClassInternal)
 
-// boundTo holds a decision to an approval given for it: one whose Surface
-// is the hash of this record as its approvers were shown it. An approval
-// moved onto a changed record, or onto another, is the approval of
-// something else, wherever it is written from.
-func boundTo(rec Record, a *Approval, what string) error {
-	if a != nil && a.Surface != SurfaceOf(rec) {
-		return fmt.Errorf("the approval is of another %s: a decision that changed is approved again", what)
-	}
-	return nil
-}
-
-// SurfaceOf is the hash of a decision as its approvers are shown it: the
-// kind, and the record's fields with its approval left out, since an
-// approval cannot be part of what it approves. An approval whose Surface is
-// this hash was given for this record and no other; change any field and
-// the hash changes with it.
+// recordSurface is the hash of a decision's own fields, with its approval
+// left out: what stands in for what an approver is shown (Register.Surface)
+// only in a program without the approvals module, which is the register's
+// own tests and nothing that ships. The program's one surface is the
+// approvals module's, the record with the evidence it cites and its
+// change, installed at start (SurfaceWith); this is never a second one
+// beside it, because it is asked only when that one is not there.
 //
 // The bytes hashed are a domain line, the kind, a line break and the
-// record's fields as canonical JSON (canonicalFields), so the hash is the
-// same whoever computes it and wherever: the screen that asks, the command
-// that approves and the check that holds a record to it.
-func SurfaceOf(rec Record) Digest {
+// record's fields as canonical JSON (canonicalFields).
+func recordSurface(rec Record) Digest {
 	fields, err := canonicalFields(withApproval(rec, nil))
 	if err != nil {
 		return ""
@@ -351,7 +333,7 @@ func SurfaceOf(rec Record) Digest {
 	return Digest("sha256:" + hex.EncodeToString(h.Sum(nil)))
 }
 
-// surfaceDomain separates the hash of a decision from every other use of
+// surfaceDomain separates the stand-in's hash from every other use of
 // SHA-256 in the program.
 const surfaceDomain = "quilzo/decision surface v1\n"
 
@@ -477,12 +459,7 @@ const KindStarter Kind = "Starter"
 
 func (Starter) Kind() Kind              { return KindStarter }
 func (s Starter) Key() (string, string) { return Local, s.Framework }
-func (s Starter) Check() error {
-	if s.Approval != nil && s.Approval.Surface != SurfaceOf(s) {
-		return fmt.Errorf("the approval is of another decision about the starter")
-	}
-	return nil
-}
+func (Starter) Check() error { return nil }
 func (s Starter) index(r *Row) {
 	r.N, r.M = clamp32(s.Requirements), clamp32(s.Mappings)
 	if s.Installed {
