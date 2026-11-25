@@ -65,7 +65,7 @@ func init() {
 					"One source, and how fresh it is", "sourceShow", []any{name}, nil,
 					map[string]any{"200": answer("The source, how it stands and a connector's last run.", object)}, "404")}}},
 			{path: "/api/v1/evidence/import", handle: (*Server).evidenceImportHow, post: (*Server).evidenceImport,
-				proved: true,
+				proved:   true,
 				describe: map[string]map[string]any{"/api/v1/evidence/import": {"get": importGet, "post": importPost}}},
 		},
 	})
