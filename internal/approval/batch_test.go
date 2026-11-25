@@ -237,3 +237,70 @@ func TestTwoApproversBatchTheSameDecisions(t *testing.T) {
 		}
 	}
 }
+
+// The sample is forced: showing the batch again, in the same order or
+// another, or with a decision added, does not choose again until the items
+// it chose are ones the approver does not have to open. Each showing chose
+// afresh, so a decision somebody did not want to open was left out of the
+// sample by asking for the batch until it was.
+func TestABatchShownAgainKeepsItsSample(t *testing.T) {
+	b := newBench(t, holds("ciso", auth.ActApproveException))
+	ids := b.exceptions(10)
+	first, err := b.m.StartBatch(b.person("ciso"), ids[:9])
+	if err != nil {
+		t.Fatal(err)
+	}
+	chosen := map[register.ID]bool{}
+	for _, it := range first.Items {
+		if it.Sampled {
+			chosen[it.Record] = true
+		}
+	}
+	reversed := make([]register.ID, 9)
+	for i, id := range ids[:9] {
+		reversed[8-i] = id
+	}
+	for n, again := range [][]register.ID{ids[:9], reversed, ids, ids[:9], reversed, ids, ids[:9], reversed} {
+		batch, err := b.m.StartBatch(b.person("ciso"), again)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range batch.Items {
+			if chosen[it.Record] && !it.Sampled {
+				t.Fatalf("showing the batch again (%d) let %s, which it chose to be opened, go unopened", n+1, it.Record)
+			}
+		}
+	}
+	// Somebody else's batch of the same decisions chooses its own.
+	b.access.Grant(holds("cfo", auth.ActApproveException))
+	if _, err := b.m.StartBatch(b.person("cfo"), ids[:9]); err != nil {
+		t.Fatal(err)
+	}
+	// Once the approver has opened what was chosen, the batch is theirs
+	// to approve, and what it was chosen from is recorded as chosen.
+	batch, err := b.m.StartBatch(b.person("ciso"), ids[:9])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range batch.Items {
+		if it.Sampled {
+			if _, _, err := b.m.OpenInBatch(b.person("ciso"), batch.Root, it.Record); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	out, err := b.m.SignBatch(b.person("ciso"), batch.Root, b.proofFor("ciso", ForBatch, batch.Root))
+	if err != nil || len(out.Items) != 9 {
+		t.Fatalf("the batch was not approved once its sample was opened: %v", err)
+	}
+	bid, _ := register.IDOf(register.ApprovalBatch{Root: batch.Root, Approver: b.subject("ciso")})
+	e, err := b.reg.Get(bid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range e.Record.(register.ApprovalBatch).Items {
+		if chosen[it.Record] && !(it.Sampled && it.Opened) {
+			t.Errorf("the batch's record does not hold %s as a spot-check that was opened", it.Record)
+		}
+	}
+}

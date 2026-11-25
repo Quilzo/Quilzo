@@ -2605,8 +2605,11 @@ but those files. The register checks every approval written to it the same
 way, whichever surface wrote it. Several decisions are approved by one
 assertion over the RFC 6962 Merkle root of their hashes in the order shown,
 once the approver has opened the spot-checks the batch chose at random
-(about the square root of how many); the batch's record holds which were
-opened and the seconds spent on each, and every decision it approved says
+(about the square root of how many); a batch shown again, in any order or
+beside other decisions, still asks for the spot-checks an earlier showing
+chose and nobody has opened, so the sample cannot be asked for until it
+leaves one out. The batch's record holds which were opened and the seconds
+spent on each, and every decision it approved says
 whether it was a spot-check opened or was approved beside them unopened. Two
 people who each approve the same decisions, as one that takes two of them
 asks, are each shown the batch with a sample of their own, sign the same

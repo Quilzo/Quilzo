@@ -144,11 +144,38 @@ func (m *Approvals) StartBatch(by Person, ids []register.ID) (*Batch, error) {
 	}
 	err = atomicfile.Update(m.batchesPath(), func(f *batchesFile) error {
 		f.prune(now)
+		owed := f.owed(b.By)
+		for i, it := range b.Items {
+			if owed[string(it.Record)+" "+string(it.Surface)] {
+				b.Items[i].Sampled = true
+			}
+		}
 		f.drop(b.Root, b.By)
 		f.Batches = append(f.Batches, b)
 		return nil
 	})
 	return &b, err
+}
+
+// owed is what a person's batches still waiting chose for them to open and
+// they have not, as each record and the surface it was chosen at. A batch
+// shown again chooses these again besides its own: the sample is forced, and
+// asking for the batch until it left out the one decision somebody did not
+// want to open, in the same order, another order or beside another
+// decision, was a way round it.
+func (f *batchesFile) owed(by string) map[string]bool {
+	out := map[string]bool{}
+	for _, b := range f.Batches {
+		if !auth.SamePerson(b.By, by) {
+			continue
+		}
+		for _, it := range b.Items {
+			if it.Sampled && it.Opened == 0 {
+				out[string(it.Record)+" "+string(it.Surface)] = true
+			}
+		}
+	}
+	return out
 }
 
 // pick chooses k of n indexes at random.
