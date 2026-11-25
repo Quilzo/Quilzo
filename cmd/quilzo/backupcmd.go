@@ -96,9 +96,20 @@ func backupSources(root, templates string) ([]backup.Source, error) {
 	return srcs, nil
 }
 
-// isBackupFile reports whether the file at p is a backup, by the magic
-// every backup begins with.
+// isBackupFile reports whether the file at p is a backup: named as one,
+// NAME.qzb or the NAME.qzb.part it is written through, and beginning with
+// the magic every backup begins with.
+//
+// Both, because the magic alone is only the first line of a file. A text
+// file in the media library that began with those words was left out of
+// every backup as one, and a store restored from them had lost it. The
+// media library names a file by its hash and a form a file sent to it by
+// its field, never NAME.qzb, the name the daily backup and the
+// documentation give a backup.
 func isBackupFile(p string) bool {
+	if !strings.HasSuffix(strings.TrimSuffix(p, ".part"), ".qzb") {
+		return false
+	}
 	f, err := os.Open(p)
 	if err != nil {
 		return false

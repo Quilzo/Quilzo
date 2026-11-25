@@ -285,3 +285,40 @@ func TestABackupOfADamagedHistoryDoesNotCheck(t *testing.T) {
 		t.Errorf("backup verify of a damaged history: %v", err)
 	}
 }
+
+// A file of the store's own that begins as a backup does is still held by
+// a backup. Leaving out every file that began with a backup's magic, so
+// that no backup held an earlier one, also left out a text file somebody
+// had put in the media library beginning with those words, and the store
+// restored from the backup had lost it, its record left naming nothing.
+func TestABackupHoldsAFileThatOnlyBeginsLikeOne(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	note := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(note, []byte(backup.Magic+"is the first line of every backup, for the team\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if o, e, code := cliRun(t, root, "", "media", "add", note); code != 0 {
+		t.Fatalf("media add: %s%s", o, e)
+	}
+	var kept []string
+	filepath.WalkDir(filepath.Join(root, "media"), func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() && !strings.HasSuffix(p, ".json") {
+			rel, _ := filepath.Rel(root, p)
+			kept = append(kept, "store/"+filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if len(kept) != 1 {
+		t.Fatalf("the library keeps %v", kept)
+	}
+	srcs, err := backupSources(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(srcs, func(s backup.Source) bool { return s.Path == kept[0] }) {
+		t.Errorf("a backup leaves out %s, a file of the media library", kept[0])
+	}
+}
