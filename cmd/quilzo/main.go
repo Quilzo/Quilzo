@@ -926,8 +926,12 @@ func main() {
 		commandHelp(cmd, cmdArgs[:1])
 		return
 	}
+	// Not for help itself, which answers `help --help` with its own lines
+	// below. The version is asked like any command: `quilzo version --help`
+	// went to the version, which takes nothing, and its flag set's "flag:
+	// help requested" was all it said, exit 1.
 	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
-		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
+		!strings.HasPrefix(cmd, "__") && cmd != "help" && cmd != "--help" {
 		asked = true
 		commandHelp(cmd, cmdArgs)
 		if !helpGoesToTheCommand(cmd, cmdArgs) {

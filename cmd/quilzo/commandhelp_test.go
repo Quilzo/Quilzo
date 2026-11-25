@@ -618,3 +618,23 @@ func TestEverySpellingOfHelpIsHelp(t *testing.T) {
 		}
 	}
 }
+
+// The version is asked for its help like any command.
+//
+// `quilzo version --help`, and `-V --help` and `--version --help`, went
+// to the version, which takes nothing: its flag set's "flag: help
+// requested" was all it said, on stderr, and it exited 1, so a script
+// asking whether the command exists was told it had failed. `quilzo
+// version help` already answered with its line.
+func TestTheVersionAnswersItsHelp(t *testing.T) {
+	for _, cmd := range []string{"version", "--version", "-V"} {
+		for _, asked := range []string{"--help", "-h", "help"} {
+			line := []string{cmd, asked}
+			o, e, code := cliRun(t, "", "", line...)
+			if code != 0 || !strings.Contains(o, "quilzo "+cmd+" ") || strings.Contains(e, "help requested") {
+				t.Errorf("`quilzo %s` exited %d without its help line: %q %q", strings.Join(line, " "),
+					code, firstLines(o, 2), firstLines(e, 2))
+			}
+		}
+	}
+}
