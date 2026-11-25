@@ -168,11 +168,20 @@ func (Assertion) Values() []string { return []string{"all", "none"} }
 // is refused by its own Check, wherever it is written from, so the only way
 // to run a changed query is for a person to approve it again.
 type ControlTest struct {
-	Control    ID        `json:"control" reg:"required,ref=Control" about:"the control it checks"`
-	Name       string    `json:"name" reg:"required,slug" about:"its machine name, which with the control is its natural key"`
-	Population ID        `json:"population" reg:"required,ref=Population" about:"the population it is run over"`
-	Query      Digest    `json:"query" reg:"required" about:"the digest of the typed query it runs"`
-	Assertion  Assertion `json:"assertion" reg:"required" about:"what the query must find across the population"`
+	Control    ID     `json:"control" reg:"required,ref=Control" about:"the control it checks"`
+	Name       string `json:"name" reg:"required,slug" about:"its machine name, which with the control is its natural key"`
+	Population ID     `json:"population" reg:"required,ref=Population" about:"the population it is run over"`
+	Query      Digest `json:"query" reg:"required" about:"the digest of the typed query it runs"`
+	// Denominator is the population as it was defined when the test was
+	// drafted: the digest of the source its members are read from and the
+	// query that selects them. Redefining a population changes what a test
+	// is counted over as surely as a new query changes what it finds, and a
+	// population is defined by somebody who need not be the one who
+	// approves tests, so the approval covers this too, and a test whose
+	// population was redefined since runs over nothing until a person
+	// approves it over the population as it now is.
+	Denominator Digest    `json:"denominator,omitempty" about:"the digest of its population's source and query, as they were when it was approved"`
+	Assertion   Assertion `json:"assertion" reg:"required" about:"what the query must find across the population"`
 	// Every is how often the scheduler runs the test once it is approved.
 	// A test is never run more often than hourly: a control's status
 	// moving every minute is noise, and a run is a record kept for good.
@@ -188,8 +197,8 @@ func (c ControlTest) Key() (string, string) {
 }
 func (c ControlTest) Check() error {
 	if c.Approval != nil && c.Approval.Surface != SurfaceOf(c) {
-		return fmt.Errorf("the approval is of another test: a test whose query, population, assertion or " +
-			"schedule changed is approved again before it runs")
+		return fmt.Errorf("the approval is of another test: a test whose query, population, its definition, " +
+			"assertion or schedule changed is approved again before it runs")
 	}
 	return nil
 }

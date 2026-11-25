@@ -29,8 +29,10 @@ import (
 // schema (DraftSchema), and the draft is a proposal: it waits on the
 // register's proposals ref, where nothing runs it, until a person who did
 // not draft it approves it (Programme.Approve). Its approval is bound to the
-// test, the query's digest among it, so a test whose query changed is
-// refused until somebody approves it again. Once approved the scheduler
+// test, the query's digest among it and its population as it was defined
+// (DenominatorOf), so a test whose query changed is refused, and one whose
+// population was redefined runs over nothing, until somebody approves it
+// again. Once approved the scheduler
 // runs it (schedule.go), and each run writes a TestRun and an Evidence in
 // one commit: a control's status moves on a run, and on nothing else.
 
@@ -128,12 +130,18 @@ func (p *Programme) ProposeDraft(by register.Actor, d Draft) (Proposed, error) {
 	if err != nil {
 		return Proposed{}, err
 	}
+	pe, err := v.Get(pop)
+	if err != nil {
+		return Proposed{}, err
+	}
 	q, err := CheckQuery(register.Query{Of: d.Query.Of, Member: d.Query.Member, Terms: d.Query.Terms})
 	if err != nil {
 		return Proposed{}, err
 	}
+	// The test names its population as it is defined now, so the person
+	// who approves it approves the denominator too (DenominatorOf).
 	test := register.ControlTest{Control: control, Name: d.Name, Population: pop, Query: q.Digest,
-		Assertion: register.Assertion(d.Assertion), Every: d.Every}
+		Denominator: DenominatorOf(pe.Record.(register.Population)), Assertion: register.Assertion(d.Assertion), Every: d.Every}
 	id, err := register.IDOf(test)
 	if err != nil {
 		return Proposed{}, err
@@ -167,6 +175,23 @@ func named(v *register.View, kind register.Kind, source, natural string) (regist
 func has(v *register.View, id register.ID) bool {
 	_, err := v.Get(id)
 	return err == nil
+}
+
+// sameDenominator refuses to approve a test drafted over its population as
+// it was defined before it was redefined: approved, it would run over
+// nothing, and the person approving would have approved a denominator that
+// is no longer the population's.
+func (p *Programme) sameDenominator(t register.ControlTest) error {
+	e, err := p.Reg.Get(t.Population)
+	if err != nil {
+		return fmt.Errorf("%w: the population the test is run over is not in the register", register.ErrNotFound)
+	}
+	pop, ok := e.Record.(register.Population)
+	if !ok || t.Denominator != DenominatorOf(pop) {
+		return fmt.Errorf("%w: the population was redefined after the test was drafted; draft it again over the "+
+			"population as it now is", register.ErrInvalid)
+	}
+	return nil
 }
 
 // waitingQuery is the query a test that waits names: in the register
@@ -240,6 +265,10 @@ func Evaluate(v *register.View, testID register.ID, at time.Time) (Run, error) {
 	}
 	pop := pe.Record.(register.Population)
 	run.Population = pop
+	if test.Denominator != DenominatorOf(pop) {
+		return fail("the population was redefined after the test was approved, so the test runs again once a person " +
+			"approves it over the population as it now is")
+	}
 	pq, err := queryAt(v, pop.Query)
 	if err != nil {
 		return fail("the query that selects the population is not in the register")
@@ -277,6 +306,15 @@ func Evaluate(v *register.View, testID register.ID, at time.Time) (Run, error) {
 	run.Circular = selected.Sources[pop.Source]
 	run.Grade = weakest(v, pop.Source, selected.Grades)
 	return run, nil
+}
+
+// DenominatorOf is what a test binds of its population: the digest of the
+// source its members are read from and the query that selects them, which
+// together decide who is counted. The population's name, its title, its
+// cross-check and its last count are left out: none of them changes who a
+// test is run over.
+func DenominatorOf(p register.Population) register.Digest {
+	return digestOf("quilzo/programme denominator v1\n", []string{string(p.Source), string(p.Query)})
 }
 
 // queryAt is the query a digest names, at a view.

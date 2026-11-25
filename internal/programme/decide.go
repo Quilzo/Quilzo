@@ -160,6 +160,9 @@ func (p *Programme) Approve(d Decider, id register.ID) (Decided, error) {
 		return Decided{}, err
 	}
 	if t, ok := rec.(register.ControlTest); ok {
+		if err := p.sameDenominator(t); err != nil {
+			return Decided{}, err
+		}
 		q, err := p.waitingQuery(waiting, t.Query)
 		if err != nil {
 			return Decided{}, err

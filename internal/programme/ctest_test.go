@@ -364,3 +364,58 @@ func must2[A, B any](a A, b B, err error) (A, B) {
 	}
 	return a, b
 }
+
+// A test is approved over its population as it was defined then: the
+// source its members are read from and the query that selects them, which
+// decide the denominator as much as the test's own query decides the
+// numerator. Redefined afterwards, by somebody who may define populations
+// and not approve tests, the test runs over nothing until a person
+// approves it over the population as it now is, and the control's status
+// does not move on the redefinition.
+func TestARedefinedPopulationNeedsReapproval(t *testing.T) {
+	b := newBench(t)
+	id := b.facts(t, 4, 2)
+	tid := b.approvedTest(t, dana)
+	if run, _ := must2(b.RunTest(Scheduler(), tid)); run.Record.Outcome != register.Fail {
+		t.Fatalf("over every enabled account the test came out %s", run.Record.Outcome)
+	}
+	// Narrowed to the accounts that have a second factor, the population
+	// would make the test pass every time.
+	narrowed := must(CheckQuery(register.Query{Of: "Observation", Member: "about", Terms: []register.Term{
+		{Field: "fact", Op: register.OpEquals, Values: []register.Scalar{register.TextValue("mfa.registered")}},
+		{Field: "value", Op: register.OpEquals, Values: []register.Scalar{register.BoolValue(true)}}}}))
+	must2(b.Define(dana, Definition{Name: "accounts", Title: "Enabled accounts", Source: "entra", Query: narrowed,
+		Fresh: 24 * time.Hour}))
+	b.clock.forward(time.Hour)
+	run, _ := must2(b.RunTest(Scheduler(), tid))
+	if run.Record.Outcome != register.Errored || !strings.Contains(run.Problem, "redefined") {
+		t.Errorf("over a population redefined since its approval the test came out %s (%q)", run.Record.Outcome, run.Problem)
+	}
+	if s := must(Standings(b.view(t)))[id.control]; s.Outcome != register.Fail {
+		t.Errorf("redefining the population moved the control to %+v", s)
+	}
+	// A draft that waits over the old definition is refused, not approved
+	// into a test that cannot run.
+	stale := Draft{Control: "AC-01", Name: "stale", Population: "accounts", Assertion: "all",
+		Query: DraftQuery{Of: "Observation", Member: "about", Terms: narrowed.Terms}}
+	waiting := must(b.ProposeDraft(dana, stale))
+	must2(b.Define(dana, Definition{Name: "accounts", Title: "Enabled accounts", Source: "entra", Query: id.popQuery,
+		Fresh: 24 * time.Hour}))
+	if _, err := b.Approve(asLee(), waiting.TestID); !errors.Is(err, register.ErrInvalid) {
+		t.Errorf("approving a draft over a population redefined since was answered %v", err)
+	}
+	// Drafted again over the population as it is, and approved, it runs.
+	must2(b.Define(dana, Definition{Name: "accounts", Title: "Enabled accounts", Source: "entra", Query: narrowed,
+		Fresh: 24 * time.Hour}))
+	again := Draft{Control: "AC-01", Name: "weekly-mfa", Population: "accounts", Assertion: "all",
+		Query: DraftQuery{Of: "Observation", Member: "about", Terms: narrowed.Terms}}
+	p := must(b.ProposeDraft(dana, again))
+	if p.TestID != tid {
+		t.Fatal("the redrafted test is another test")
+	}
+	must(b.Approve(asLee(), tid))
+	b.clock.forward(time.Hour)
+	if run, _ := must2(b.RunTest(Scheduler(), tid)); run.Record.Outcome != register.Pass {
+		t.Errorf("approved again over the narrowed population the test came out %s (%q)", run.Record.Outcome, run.Problem)
+	}
+}
