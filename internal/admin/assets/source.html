@@ -31,7 +31,7 @@
 <input type="hidden" name="name" value="{{.Standing.Source.Name}}">
 <label for="source-credential">Which credential</label>
 <select id="source-credential" name="credential">{{range .Credentials}}<option value="{{.Name}}">{{.Name}}</option>{{end}}</select>
-<label for="source-credential-value">Its value</label>
+<label for="source-credential-value">Its value {{template "req"}}</label>
 <input id="source-credential-value" name="value" type="password" autocomplete="off" aria-describedby="source-credential-hint" required>
 <p class="hint" id="source-credential-hint">It is sealed under the store's keyring and never shown again. A store with no keyring keeps none.</p>
 <div class="auto-controls"><button type="submit">Keep the credential</button></div>
