@@ -263,7 +263,9 @@ func (s *Server) renderApprovals(w http.ResponseWriter, r *http.Request, p princ
 		switch {
 		case a.Raisers(me) && !a.AloneFor(me):
 			row.NotBatchable = "You raised it"
-		case !s.allows(p, a.Rule.Atom, kindResource(a.Proposal.Kind)):
+		case !s.allows(p, a.Rule.Atom, kindResource(a.Proposal.Kind)) && !a.Eligible(p.Name):
+			// Neither holding the atom through this session nor named as
+			// the second the decision asks for.
 			row.NotBatchable = "Not yours to approve"
 		default:
 			row.Batchable = true

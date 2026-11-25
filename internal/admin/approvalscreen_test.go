@@ -423,6 +423,9 @@ func TestASecondApproverWithNoRoleApprovesInTheAdmin(t *testing.T) {
 	if strings.Contains(list.Body.String(), "/register/approvals/item/"+string(b.risk)) {
 		t.Error("the head of risk is shown a decision that takes no second approver")
 	}
+	if !strings.Contains(list.Body.String(), `name="id" value="`+string(big)+`"`) {
+		t.Error("the head of risk is not offered to batch what they may approve")
+	}
 	if w := get(t, b.srv, "/register/approvals/item/"+string(b.risk), head); w.Code != http.StatusNotFound {
 		t.Errorf("the head of risk opened a decision that is not theirs to approve: %d", w.Code)
 	}
