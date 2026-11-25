@@ -213,3 +213,30 @@ func TestLowConfidencePublicSignalsSlowBeforeTheyBlock(t *testing.T) {
 }
 
 func clientipSource(a netip.Addr) string { return clientip.Source(a) }
+
+// A slowed source past its budget is told how long to wait with the count
+// and its noun in agreement, to a program and to anybody else. A read past
+// the burst waits a second at most, the commonest refusal there is, and it
+// was "Try again in 1 seconds."
+func TestASlowedSourceIsToldHowLongInWords(t *testing.T) {
+	for _, c := range []struct {
+		wait   time.Duration
+		accept string
+		want   string
+	}{
+		{time.Second, "", "Try again in 1 second."},
+		{300 * time.Millisecond, "application/json", "Try again in 1 second."},
+		{9*time.Second + time.Millisecond, "", "Try again in 10 seconds."},
+		{2 * time.Second, "application/json", "Try again in 2 seconds."},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		if c.accept != "" {
+			r.Header.Set("Accept", c.accept)
+		}
+		w := httptest.NewRecorder()
+		RefuseSlow(w, r, c.wait)
+		if body := w.Body.String(); !strings.Contains(body, c.want) {
+			t.Errorf("waiting %s (%q): %q, not %q", c.wait, c.accept, body, c.want)
+		}
+	}
+}
