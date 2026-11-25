@@ -1,0 +1,504 @@
+// SPDX-FileCopyrightText: 2026 Rashik Adhikari
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"encoding/csv"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/sheet"
+	"github.com/quilzo/quilzo/internal/upkeep"
+)
+
+// PLAN theme 7: registerWriter names the caller in the record by their
+// pseudonym from the subject map, the same pseudonym every time and a
+// different one for somebody else, so a person's proposal is decided by
+// somebody the register can tell apart from them. Their name is in the
+// subject map and in no object of the store.
+func TestRegisterWriterNamesTheCallerByPseudonym(t *testing.T) {
+	root, token := accessStore(t)
+	// Two people with the compliance job, which is the register's.
+	for _, who := range []string{"ada.lovelace@example.com", "lee"} {
+		if _, e, code := cliRun(t, root, token, "auth", "grant", who, "compliance"); code != 0 {
+			t.Fatalf("auth grant: %s", e)
+		}
+	}
+	ada := &Caller{Name: "ada.lovelace@example.com", Role: auth.RoleAdmin, Scope: auth.AreaCompliance, Kind: audit.KindHuman, Verified: true}
+	lee := &Caller{Name: "lee", Role: auth.RoleAdmin, Scope: auth.AreaCompliance, Kind: audit.KindHuman, Verified: true}
+	r, byAda, err := registerWriter(root, ada)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !byAda.Subject.Valid() {
+		t.Fatalf("the writer names ada by %q", byAda.Subject)
+	}
+	_, again, _ := registerWriter(root, ada)
+	_, byLee, _ := registerWriter(root, lee)
+	if again.Subject != byAda.Subject || byLee.Subject == byAda.Subject || !byLee.Subject.Valid() {
+		t.Fatalf("ada is %s then %s, and lee %s", byAda.Subject, again.Subject, byLee.Subject)
+	}
+	if p, err := r.Person(byAda.Subject); err != nil || p.Name != ada.Name || p.Type != "person" {
+		t.Errorf("the subject map has ada as %+v (%v)", p, err)
+	}
+
+	rc, err := r.Propose(byAda, "a control ada proposes",
+		register.Control{Ref: "AC-21", Title: "Access reviewed every quarter", Domain: "identity", Owner: byAda.Subject})
+	if err != nil || len(rc.Written) != 1 {
+		t.Fatalf("propose: %v", err)
+	}
+	id := rc.Written[0].ID
+	if _, err := r.Accept(again, id, nil); !errors.Is(err, register.ErrRefused) {
+		t.Errorf("ada accepted her own proposal: %v", err)
+	}
+	if _, err := r.Accept(byLee, id, nil); err != nil {
+		t.Errorf("lee could not accept ada's proposal: %v", err)
+	}
+	c, err := r.Store.GetCommit(r.Head())
+	if err != nil || c.Author != string(byLee.Subject) {
+		t.Errorf("the commit is authored %q (%v)", c.Author, err)
+	}
+	if hit := scanFor(t, filepath.Join(root, "objects"), ada.Name); hit != "" {
+		t.Errorf("ada's address is in the store at %s", hit)
+	}
+}
+
+// scanFor is the first file under dir whose bytes hold s, or "".
+func scanFor(t *testing.T, dir, s string) string {
+	t.Helper()
+	var hit string
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || hit != "" {
+			return nil
+		}
+		if b, _ := os.ReadFile(path); strings.Contains(string(b), s) {
+			hit = path
+		}
+		return nil
+	})
+	return hit
+}
+
+// PLAN theme 7: `quilzo register erase` erases a person from beside the
+// register and writes the signed Erasure record; the record that named
+// them still reads and says the subject and the text are erased; somebody
+// who may not decide an erasure is refused, exit 3, and erases nothing;
+// and a person erased already is not erased twice.
+func TestRegisterEraseCommand(t *testing.T) {
+	root, token := accessStore(t)
+	owner := &Caller{Name: "owner", Role: auth.RoleAdmin, Scope: "/", Kind: audit.KindHuman, Verified: true}
+	r, by, err := registerWriter(root, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	words, err := r.PutText(by, register.KindRisk, "Ada Lovelace raised this after the breach", ada)
+	if err != nil {
+		t.Fatal(err)
+	}
+	risk := register.Risk{Ref: "R-1", Title: "Shared administrator accounts", Description: words, Owner: ada,
+		Raised: ada, Likelihood: 3, Impact: 4, Status: "open"}
+	if _, err := r.Put(by, "a risk", risk); err != nil {
+		t.Fatal(err)
+	}
+	riskID, _ := register.IDOf(risk)
+
+	// A reader of the whole site may not decide an erasure.
+	if _, e, code := cliRun(t, root, token, "auth", "grant", "rita", "reader"); code != 0 {
+		t.Fatalf("auth grant: %s", e)
+	}
+	o, e, code := cliRun(t, root, token, "token", "issue", "rita", "--principal", "rita", "--role", "reader", "--json")
+	if code != 0 {
+		t.Fatalf("token issue: %s", e)
+	}
+	var rita struct{ Token string }
+	_ = json.Unmarshal([]byte(o), &rita)
+	if _, e, code := cliRun(t, root, rita.Token, "register", "erase", "--subject", string(ada), "--basis", "request",
+		"--yes"); code != 3 {
+		t.Errorf("a reader's erasure exited %d: %s", code, firstLines(e, 3))
+	}
+	if r.SubjectState(ada).State != register.SubjectHeld {
+		t.Fatal("a refused erasure erased the person")
+	}
+
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "whim", "--yes"); code != 2 {
+		t.Errorf("a basis that is none exited %d: %s", code, firstLines(e, 3))
+	}
+	o, e, code = cliRun(t, root, token, "register", "erase", "--name", "ada.lovelace@example.com", "--basis", "request",
+		"--requested-by", "subject", "--yes", "--json")
+	if code != 0 {
+		t.Fatalf("register erase: %d %s", code, e)
+	}
+	var erased struct {
+		Erasure register.ID
+		Receipt register.Receipt
+	}
+	if err := json.Unmarshal([]byte(o), &erased); err != nil || erased.Erasure != register.ErasureID(ada) || erased.Receipt.Commit == "" {
+		t.Fatalf("register erase answered %s (%v)", firstLines(o, 4), err)
+	}
+	if st := r.SubjectState(ada); st.State != register.SubjectErased {
+		t.Errorf("after the erasure the subject is %+v", st)
+	}
+	if held := r.TextOf(words); held.State != register.TextErased {
+		t.Errorf("after the erasure the words are %+v", held)
+	}
+	show, e, code := cliRun(t, root, token, "register", "show", string(riskID))
+	if code != 0 || !strings.Contains(show, "subject erased") || !strings.Contains(show, "text erased") ||
+		strings.Contains(show, "Ada Lovelace") {
+		t.Errorf("the risk after the erasure shows %d %s %s", code, show, e)
+	}
+	js, _, _ := cliRun(t, root, token, "register", "show", string(riskID), "--json")
+	if !strings.Contains(js, `"subject erased"`) {
+		t.Errorf("the risk's JSON does not say the subject is erased: %s", firstLines(js, 6))
+	}
+	// The Erasure record is in the register, signed, under the pseudonym.
+	e2, err := r.Get(erased.Erasure)
+	if err != nil || e2.Kind != register.KindErasure {
+		t.Fatalf("the erasure record: %v", err)
+	}
+	if rec := e2.Record.(register.Erasure); rec.Approval == nil || rec.Approval.Raised != ada || rec.Basis != "request" {
+		t.Errorf("the erasure is %+v", rec)
+	}
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request", "--yes"); code == 0 {
+		t.Errorf("a person erased twice: %s", e)
+	}
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--name", "nobody@example.com", "--basis", "request", "--yes"); code != 4 {
+		t.Errorf("an erasure of somebody nobody named exited %d: %s", code, firstLines(e, 3))
+	}
+	// What the audit log holds of it names the pseudonym, pseudonymised
+	// again as every subject in the log is, and never the person.
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, ev := range events {
+		if ev.Action == register.EraseAction && ev.Outcome == audit.Success && ev.Detail["basis"] == "request" &&
+			ev.Detail["subject"] != "" {
+			found = true
+		}
+		for _, v := range ev.Detail {
+			if strings.Contains(v, "ada.lovelace") || strings.Contains(v, "Ada Lovelace") {
+				t.Errorf("an audit entry names the person: %+v", ev)
+			}
+		}
+	}
+	if !found {
+		t.Error("the erasure is not in the audit log")
+	}
+}
+
+// PLAN theme 28: `quilzo register history` is a record's commits, newest
+// first; `quilzo register list --filter` filters a kind by a field's value;
+// and `quilzo register export` writes the kind as CSV with every cell safe
+// for a spreadsheet, filtered as the list is, or the top risks by rating.
+func TestRegisterHistoryFiltersAndExport(t *testing.T) {
+	root, token := accessStore(t)
+	owner := &Caller{Name: "owner", Role: auth.RoleAdmin, Scope: "/", Kind: audit.KindHuman, Verified: true}
+	r, by, err := registerWriter(root, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := register.Control{Ref: "AC-01", Title: "=HYPERLINK(\"https://attacker.example\",\"x\")", Domain: "identity", Owner: by.Subject}
+	if _, err := r.Put(by, "the first control", first,
+		register.Control{Ref: "AC-02", Title: "Encrypted disks", Domain: "endpoints", Owner: by.Subject}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := first
+	renamed.Title = "Second factor on every account"
+	if _, err := r.Put(by, "renamed", renamed); err != nil {
+		t.Fatal(err)
+	}
+	for i, li := range []int64{1, 5, 3} {
+		if _, err := r.Put(by, "a risk", register.Risk{Ref: "R-" + string(rune('1'+i)), Title: "A risk", Owner: by.Subject,
+			Raised: by.Subject, Likelihood: li, Impact: 4, Status: "open"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id, _ := register.IDOf(first)
+
+	o, e, code := cliRun(t, root, token, "register", "history", string(id), "--json")
+	if code != 0 {
+		t.Fatalf("register history: %s", e)
+	}
+	var h struct {
+		ID      register.ID
+		Changes []register.Change
+	}
+	if err := json.Unmarshal([]byte(o), &h); err != nil || len(h.Changes) != 2 || h.Changes[0].Why != "renamed" ||
+		!h.Changes[1].New || h.Changes[0].By != by.Subject {
+		t.Fatalf("the history is %s (%v)", firstLines(o, 8), err)
+	}
+	if _, e, code := cliRun(t, root, token, "register", "history", "ffffffffffffffffffffffffffffffff"); code != 4 {
+		t.Errorf("the history of nothing exited %d: %s", code, firstLines(e, 2))
+	}
+
+	o, e, code = cliRun(t, root, token, "register", "list", "Control", "--filter", "domain=endpoints", "--json")
+	if code != 0 {
+		t.Fatalf("register list --filter: %s", e)
+	}
+	var list struct {
+		Total   int
+		Filters []register.Filter
+	}
+	if err := json.Unmarshal([]byte(o), &list); err != nil || list.Total != 1 || len(list.Filters) != 1 {
+		t.Errorf("the filtered list is %s", firstLines(o, 4))
+	}
+	if _, e, code := cliRun(t, root, token, "register", "list", "Control", "--filter", "colour=red"); code != 2 {
+		t.Errorf("a filter on a field the kind lacks exited %d: %s", code, firstLines(e, 2))
+	}
+
+	o, e, code = cliRun(t, root, token, "register", "export", "Control")
+	if code != 0 {
+		t.Fatalf("register export: %s", e)
+	}
+	rows, err := csv.NewReader(strings.NewReader(o)).ReadAll()
+	if err != nil || len(rows) != 3 || rows[0][0] != "id" {
+		t.Fatalf("the export is %v (%v):\n%s", rows, err, o)
+	}
+	for _, row := range rows[1:] {
+		for _, cell := range row {
+			if sheet.IsFormula(cell) {
+				t.Errorf("the cell %q would run as a formula", cell)
+			}
+		}
+	}
+	o, _, _ = cliRun(t, root, token, "register", "export", "Control", "--filter", "domain=identity")
+	if rows, _ := csv.NewReader(strings.NewReader(o)).ReadAll(); len(rows) != 2 {
+		t.Errorf("the filtered export is %d rows", len(rows))
+	}
+	out := filepath.Join(t.TempDir(), "risks.csv")
+	if _, e, code := cliRun(t, root, token, "register", "export", "Risk", "--top", "2", "--out", out); code != 0 {
+		t.Fatalf("register export --top: %s", e)
+	}
+	b, _ := os.ReadFile(out)
+	rows, _ = csv.NewReader(strings.NewReader(string(b))).ReadAll()
+	if len(rows) != 3 || rows[0][len(rows[0])-1] != "rating" || rows[1][len(rows[1])-1] != "20" || rows[2][len(rows[2])-1] != "12" {
+		t.Errorf("the top two risks are %v", rows)
+	}
+	if _, e, code := cliRun(t, root, token, "register", "export", "Control", "--top", "2"); code != 2 {
+		t.Errorf("the top of controls exited %d: %s", code, firstLines(e, 2))
+	}
+	o, _, code = cliRun(t, root, token, "register", "export", "Control", "--json")
+	var js struct {
+		Columns []string
+		Rows    [][]string
+	}
+	if code != 0 || json.Unmarshal([]byte(o), &js) != nil || len(js.Rows) != 2 || js.Columns[0] != "id" {
+		t.Errorf("the export as JSON is %s", firstLines(o, 4))
+	}
+}
+
+// PLAN theme 7: `quilzo register inventory` is the data inventory made
+// from the schemas, for a privacy officer's record of processing.
+func TestRegisterInventoryCommand(t *testing.T) {
+	root, token := accessStore(t)
+	o, e, code := cliRun(t, root, token, "register", "inventory", "--json")
+	if code != 0 {
+		t.Fatalf("register inventory: %s", e)
+	}
+	var inv register.DataInventory
+	if err := json.Unmarshal([]byte(o), &inv); err != nil || len(inv.Kinds) != len(register.Kinds()) || inv.SubjectMap == "" ||
+		inv.AuditLog == "" {
+		t.Fatalf("the inventory is %s (%v)", firstLines(o, 4), err)
+	}
+	human, _, code := cliRun(t, root, token, "register", "inventory")
+	if code != 0 || !strings.Contains(human, "Risk") || !strings.Contains(human, "raised_by") ||
+		!strings.Contains(human, "subject map") || !strings.Contains(human, "the audit log") {
+		t.Errorf("the inventory reads:\n%s", firstLines(human, 20))
+	}
+}
+
+// PLAN theme 28 and STRATEGY 7.4: the register's operations on the agent
+// interface are off for an app connected through OAuth until a recorded
+// setting switches them on, and read for a person's own client as before.
+func TestRegisterOperationsAreOffForOutsideApps(t *testing.T) {
+	root, token := accessStore(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := remoteCaller(appToken("owner", auth.RoleAdmin))
+	for _, op := range []string{"register_kinds", "register_inventory"} {
+		if _, rerr := callTool(t, buildMCP(root, s, app, "templates"), "quilzo_read", op, nil); rerr == nil ||
+			!strings.Contains(rerr.Message, "mcp.register_for_apps") {
+			t.Errorf("an app's %s was answered %v", op, rerr)
+		}
+	}
+	person := &Caller{Name: "owner", Role: auth.RoleAdmin, Scope: "/", Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true}
+	if _, rerr := callTool(t, buildMCP(root, s, person, "templates"), "quilzo_read", "register_kinds", nil); rerr != nil {
+		t.Errorf("a person's own client was refused the register: %s", rerr.Message)
+	}
+	if _, e, code := cliRun(t, root, token, "config", "set", "mcp.register_for_apps", "true", "--accept-risk",
+		"the organisation's assistant reads the register"); code != 0 {
+		t.Fatalf("config set: %s", e)
+	}
+	if _, rerr := callTool(t, buildMCP(root, s, app, "templates"), "quilzo_read", "register_kinds", nil); rerr != nil {
+		t.Errorf("with the setting on, the app was refused: %s", rerr.Message)
+	}
+}
+
+// PLAN theme 7: retention is enforced by the server's upkeep. The
+// register's job, which the admin server runs every quarter of an hour
+// with its own, deletes the raw file a fact was read from once its kind's
+// period has passed on the clock it is given, records that in the audit
+// log, and leaves a file inside its period alone.
+func TestTheUpkeepJobEnforcesRetention(t *testing.T) {
+	root, _ := accessStore(t)
+	r := registerOn(t, root)
+	start := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return start }
+	raw, err := r.PutRaw(testPerson, register.KindObservation, "application/json", []byte(`{"user":"a fact as it came"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Found among the jobs the admin server runs, and not only among the
+	// ones modules register: a job registered and never run is a period
+	// nobody enforces.
+	var job upkeep.Job
+	for _, j := range upkeepJobs(root, upkeep.Job{Name: "posture"}) {
+		if j.Name == "register-retention" {
+			job = j
+		}
+	}
+	if job.Do == nil {
+		t.Fatal("the server's upkeep does not run the register's retention job")
+	}
+	if n, err := job.Do(start.Add(399 * 24 * time.Hour)); err != nil || n != 0 {
+		t.Fatalf("inside its period the sweep deleted %d (%v)", n, err)
+	}
+	if r.RawOf(raw).State != register.TextHeld {
+		t.Fatal("a raw file inside its period went")
+	}
+	if n, err := job.Do(start.Add(401 * 24 * time.Hour)); err != nil || n != 1 {
+		t.Fatalf("past its period the sweep deleted %d (%v)", n, err)
+	}
+	if st := r.RawOf(raw); st.State != register.TextErased || st.Erased.Basis != "retention" {
+		t.Errorf("past its period the raw file is %+v", st)
+	}
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, ev := range events {
+		if ev.Action == "register.expire" && ev.Detail["entries"] == "1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the sweep is not in the audit log")
+	}
+}
+
+// The register's own row of the privilege table is its widest line,
+// deciding an erasure, so a line added later arrives guarded; each line
+// that reads narrows it to a view. A bare `quilzo register` lists the
+// kinds, and is asked as that line is: a reader of the compliance area
+// runs it and every read, and is refused the erasure and the expiry.
+func TestABareRegisterCommandIsAskedAsTheListItRuns(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: auth.AreaCompliance})
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{nil, {"kinds"}, {"list", "Risk"}, {"show", "00000000000000000000000000000000"},
+		{"history", "00000000000000000000000000000000"}, {"export", "Risk"}, {"inventory"}, {"proposals"}} {
+		if err := authoriseCommand(root, "register", args); err != nil {
+			t.Errorf("a reader of the compliance area running register %v: %v", args, err)
+		}
+	}
+	for _, args := range [][]string{{"erase", "--subject", "x"}, {"expire"}, {"a-line-added-later"}} {
+		if err := authoriseCommand(root, "register", args); err == nil {
+			t.Errorf("a reader of the compliance area ran register %v", args)
+		}
+	}
+	if bareRuns["register"] != "kinds" {
+		t.Errorf("a bare register command runs %q", bareRuns["register"])
+	}
+}
+
+// An erasure's approval names its decider by their pseudonym alone. Its
+// assertion is a hash over the record as shown, the decider's pseudonym
+// and the evidence the decision was made on, and it is in the register for
+// good. With the decider's address in that evidence, and nothing else in
+// it that a guess could not supply (a token's name, whether it was
+// proved), a list of the organisation's addresses found which of them
+// decided: the pseudonym was undone for whoever read the record, and
+// stayed undone after the decider was erased in turn.
+func TestAnErasureIsBoundToItsDeciderByPseudonymAlone(t *testing.T) {
+	for _, c := range []*Caller{
+		{Name: "dana.decider@example.com", Kind: audit.KindHuman, Verified: true, Credential: "dana-laptop"},
+		{Name: "dana", Kind: audit.KindHuman, Why: "no token was presented"},
+	} {
+		// Nor by the token's name, which is a label an administrator types
+		// and is often the person's.
+		if ev := string(consoleEvidence(c)); strings.Contains(ev, c.Name) || strings.Contains(ev, "dana") {
+			t.Errorf("the evidence of %s's decision at the command line is %q", c.Name, ev)
+		}
+	}
+}
+
+// The sweep of what retention ends is recorded as whoever ran it, proved
+// or not. It was recorded as proved whoever ran it, so the sweep of an
+// account at a store's own terminal, which presented no token, went into
+// the log as a verified act.
+func TestTheSweepIsRecordedAsWhoeverRanIt(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	r := registerOn(t, root)
+	r.Now = func() time.Time { return time.Now().Add(-500 * 24 * time.Hour) }
+	if _, err := r.PutRaw(testPerson, register.KindObservation, "application/json", []byte(`{"user":"a fact as it came"}`)); err != nil {
+		t.Fatal(err)
+	}
+	o, e, code := cliRun(t, root, "", "register", "expire", "--json")
+	if code != 0 || !strings.Contains(o, `"expired": 1`) {
+		t.Fatalf("register expire: %d %s %s", code, o, firstLines(e, 3))
+	}
+	events, _ := audit.Read(auditPath(root))
+	found := false
+	for _, ev := range events {
+		if ev.Action == "register.expire" {
+			found = true
+			if ev.Verified {
+				t.Errorf("a sweep by somebody who presented no token is recorded as proved: %+v", ev)
+			}
+		}
+	}
+	if !found {
+		t.Error("the sweep is not in the audit log")
+	}
+}
+
+// An erasure nobody else asked for is decided by somebody other than the
+// person raising it when anybody else may decide one, as every approval
+// is. Asked for so at the command line, it is a line misused, exit 2,
+// that says what to add, and nothing is erased; it was a failure, exit 1,
+// that named the rule and not the flag.
+func TestAnErasureRaisedByItsDeciderSaysWhoMustAsk(t *testing.T) {
+	root, token := accessStore(t)
+	if _, e, code := cliRun(t, root, token, "auth", "grant", "lee", "admin"); code != 0 {
+		t.Fatalf("auth grant: %s", e)
+	}
+	r := registerOn(t, root)
+	ada, err := r.SubjectFor("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "no-longer-needed", "--yes")
+	if code != 2 || !strings.Contains(e, "--requested-by") {
+		t.Errorf("an erasure raised by its decider with another eligible exited %d: %s", code, firstLines(e, 4))
+	}
+	if r.SubjectState(ada).State != register.SubjectHeld {
+		t.Fatal("the refused erasure erased the person")
+	}
+	if _, e, code := cliRun(t, root, token, "register", "erase", "--subject", string(ada), "--basis", "request",
+		"--requested-by", "subject", "--yes"); code != 0 {
+		t.Errorf("the erasure the person asked for exited %d: %s", code, firstLines(e, 4))
+	}
+}

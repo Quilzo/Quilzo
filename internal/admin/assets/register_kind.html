@@ -1,7 +1,18 @@
 {{template "head" .}}
 {{template "kit-header" .Header}}
-{{with .Empty}}{{template "kit-empty" .}}{{else}}{{template "kit-table" .Table}}
+{{template "kit-errors" .Problems}}
+<form method="get" action="{{.Action}}" class="inline" role="search" aria-label="Filter the {{.Spec.Kind}} records">
+<div class="pair"><label for="filter-field">Field</label>
+{{template "kit-field-error" .FieldProblem}}
+<select id="filter-field" name="field"{{if .FieldProblem.Message}} aria-describedby="filter-field-error" aria-invalid="true"{{end}}><option value=""{{if not .Field}} selected{{end}}>Any field</option>{{$at := .Field}}{{range .Fields}}<option value="{{.}}"{{if eq . $at}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div class="pair"><label for="filter-value">Holds exactly</label>
+<input id="filter-value" name="value" type="text" value="{{.Value}}" maxlength="200" autocomplete="off"></div>
+<button type="submit">Filter</button>
+</form>
+{{if .Filters}}<p><a href="{{.Action}}">Show every {{.Spec.Kind}} record</a></p>{{end}}
+{{if .Table}}{{with .Empty}}{{template "kit-empty" .}}{{else}}{{template "kit-table" .Table}}
 {{if or .Previous .Next}}<nav class="paging" aria-label="Pages of records">{{with .Previous}}<a href="{{.}}">Earlier records</a>{{end}} {{with .Next}}<a href="{{.}}">Later records</a>{{end}}</nav>{{end}}{{end}}
+<p><a href="{{.Export}}" download>Download {{if .Filters}}these records{{else}}every {{.Spec.Kind}} record{{end}} as CSV</a>{{with .Top}} · <a href="{{.}}" download>Download the top ten by rating as CSV</a>{{end}}. <span class="hint">A column per field; a cell a spreadsheet would run is written after an apostrophe, and free text is its digest.</span></p>{{end}}
 <h2>Its fields</h2>
 <div class="table-wrap"><table>
 <caption>The schema of a {{.Spec.Kind}} record, which every write is held to</caption>

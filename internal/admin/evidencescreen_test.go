@@ -68,6 +68,8 @@ func postFile(t *testing.T, srv *Server, token, path, filename string, body []by
 	return w
 }
 
+// accessible fails the test for every blocking finding of the checker on
+// a page.
 func accessible(t *testing.T, path, body string) {
 	t.Helper()
 	for _, f := range a11y.Check(path, body).Findings {

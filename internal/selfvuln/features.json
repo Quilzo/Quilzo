@@ -12,6 +12,7 @@
   ],
   "bytes": [
    "*",
+   "api",
    "chatbots",
    "import",
    "mcp",

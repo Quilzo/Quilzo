@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/register"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // A security module's commands and operations, registered from the module's
@@ -71,6 +72,15 @@ type cliModule struct {
 	// calls srv.Register and nothing else when it is called; the work is in
 	// the handlers.
 	ops func(srv *mcp.Server, root string, caller *Caller)
+	// bare is the subcommand the command runs when it is given none, whose
+	// row of the privilege table it is then asked by (bareRuns). Empty, a
+	// bare command is asked by its own row, which is the widest of its
+	// lines: a subcommand's row only ever narrows it.
+	bare string
+	// jobs is the work the module needs done because time passed (a
+	// retention period ending), which the admin server runs on its upkeep
+	// timer with its own (upkeepJobs). Nil is none.
+	jobs func(root string) []upkeep.Job
 	// notForRuns says why an agent's run does not perform the module's
 	// operations through the agent interface, as an outside agent may.
 	// Empty, they are performed for a run like the store's own reads and
@@ -96,6 +106,9 @@ func registerCLI(m cliModule) {
 	}
 	if m.area != "" {
 		commandAreas[m.command] = m.area
+	}
+	if m.bare != "" {
+		bareRuns[m.command] = m.bare
 	}
 	cliModules = append(cliModules, m)
 	sort.Slice(cliModules, func(i, j int) bool { return cliModules[i].command < cliModules[j].command })
@@ -218,6 +231,18 @@ func registerModuleOps(srv *mcp.Server, root string, caller *Caller) {
 			m.ops(srv, root, caller)
 		}
 	}
+}
+
+// moduleJobs is every module's upkeep jobs, in the order of their
+// commands.
+func moduleJobs(root string) []upkeep.Job {
+	var out []upkeep.Job
+	for _, m := range cliModules {
+		if m.jobs != nil {
+			out = append(out, m.jobs(root)...)
+		}
+	}
+	return out
 }
 
 // fullHelp is the help as it is printed: usageText, with each module's

@@ -2,7 +2,10 @@
 {{template "kit-header" .Header}}
 <p>A {{template "kit-cell" .Kind}} record, identified by <code class="kit-hash">{{.Entry.ID}}</code>.</p>
 {{template "kit-table" .Table}}
+{{with .Named}}<h2>What it names beside the register</h2>
+<p class="hint">A person is a pseudonym here and words or a file a digest; who they are and what they say are kept in the side store, where they can be erased. An erasure leaves this record as it was, so it still checks.</p>
+{{template "kit-table" .}}{{end}}
 <h2>Its history</h2>
 {{template "kit-timeline" .Events}}
-<p class="hint">Stored as <code class="kit-hash">{{.Entry.Object}}</code>, the hash of the record as it stands. <code>quilzo register show {{.Entry.ID}}</code> answers the same from a terminal.</p>
+<p class="hint">Stored as <code class="kit-hash">{{.Entry.Object}}</code>, the hash of the record as it stands. <code>quilzo register show {{.Entry.ID}}</code> and <code>quilzo register history {{.Entry.ID}}</code> answer the same from a terminal.</p>
 {{template "foot" .}}

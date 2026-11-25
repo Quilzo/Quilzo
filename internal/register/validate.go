@@ -367,8 +367,29 @@ func validLabel(s, at string) error {
 	if _, hidden := plaintext.Visible(s); hidden > 0 {
 		return fmt.Errorf("%q holds %d character(s) that are not shown; a label is one plain line", at, hidden)
 	}
+	// An address in a label is a person written into a store that cannot
+	// forget them. A person is a Subject's pseudonym, and the address is
+	// kept in the subject map, where it can be erased.
+	if reAddress.MatchString(s) {
+		return fmt.Errorf("%q holds what reads as an address or an account name; a person is a Subject's "+
+			"pseudonym in a record, and who they are is kept in the subject map, where it can be erased", at)
+	}
 	return nil
 }
+
+// reAddress is an email address or a user principal name, which have one
+// shape: a name, an at sign, and a domain whose last part is letters. A
+// version pinned with an at sign (lodash@4.17.21) ends in a number and is
+// not one.
+//
+// The letters are any script's. An address may be written in any (RFC
+// 6531), and a domain is a name of any script too, so one held to ASCII
+// let josé@example.com, anna@bücher.de and an address under .рф through
+// as labels like any other. The end of the domain is a character that is
+// not a letter, a mark, a digit or an underscore, or the end of the label,
+// which is what \b says in ASCII alone.
+var reAddress = regexp.MustCompile(`[\p{L}\p{M}\p{N}._%+'-]+@[\p{L}\p{M}\p{N}-]+(\.[\p{L}\p{M}\p{N}-]+)*` +
+	`\.\p{L}[\p{L}\p{M}]+(?:[^\p{L}\p{M}\p{N}_]|$)`)
 
 // net4 reports whether a host name is four numbers, which is an address and
 // not a name.

@@ -1472,7 +1472,10 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	// day, to prove it still reaches here.
 	jobs = append(jobs, signalsJob(root))
 	// And what agents remember, past its time.
-	return append(jobs, memoryJob(root))
+	jobs = append(jobs, memoryJob(root))
+	// And what the security modules registered, each from its own file
+	// (cliModule.jobs).
+	return append(jobs, moduleJobs(root)...)
 }
 
 // retentionJob sweeps submissions past the retention their form declares.

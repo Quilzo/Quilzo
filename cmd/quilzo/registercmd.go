@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -36,18 +37,47 @@ func init() {
 		heading: "security register (typed records on their own ref, written only through register.Put; read here)",
 		help: "  quilzo register kinds | proposals        the kinds of record it holds and how many of each, or what\n" +
 			"                                            waits on its proposals ref for a person to accept\n" +
-			"  quilzo register list KIND [--offset N] [--limit N]  one kind's records, in the order of their identifiers\n" +
-			"  quilzo register show ID                  one record, with the hash it is stored under\n",
+			"  quilzo register list KIND [--filter FIELD=VALUE]... [--offset N] [--limit N]  one kind's records, in the\n" +
+			"                                            order of their identifiers, those whose field holds the value\n" +
+			"  quilzo register show ID                  one record, with the hash it is stored under and what it names\n" +
+			"                                            beside it: a subject or text erased says so\n" +
+			"  quilzo register history ID [--limit N]   the commits that changed a record, newest first\n" +
+			"  quilzo register export KIND [--filter FIELD=VALUE]... [--top N] [--out FILE]  a kind as CSV, a column per\n" +
+			"                                            field and every cell safe for a spreadsheet; --top N the risks\n" +
+			"                                            rated highest\n" +
+			"  quilzo register inventory                the data inventory: what each kind holds about people, how long\n" +
+			"                                            and who may read it, for a record of processing\n" +
+			"  quilzo register erase --subject ID | --name NAME --basis BASIS  erase a person from beside the register\n" +
+			"                                            and write the signed record of it; the register still checks.\n" +
+			"                                            --requested-by ID, or subject for the person; --yes to go on\n" +
+			"  quilzo register expire                   delete now the text and files each kind's retention has ended,\n" +
+			"                                            as the server does every quarter of an hour\n",
 		run: cmdRegister,
 		// Reading the register is a view of the compliance area's part of
 		// the policy, which a role over the site reaches only as
 		// administrator: somebody who may read the site's pages does not
 		// thereby read its risks.
-		needs:  map[string]need{"register": {action: auth.ActView}},
-		area:   register.Area,
-		reads:  [][]string{{"register", "kinds"}, {"register", "list", "Control"}, {"register", "proposals"}},
+		//
+		// The command's own row is the widest of its lines, deciding an
+		// erasure, so a line added later arrives guarded, and each line
+		// that reads narrows it to a view; a bare `quilzo register` lists
+		// the kinds, and is asked as that line is.
+		needs: map[string]need{
+			"register":       {action: auth.ActApprove, hint: "an erasure is decided by somebody who may approve the register's records"},
+			"register kinds": {action: auth.ActView}, "register list": {action: auth.ActView},
+			"register show": {action: auth.ActView}, "register history": {action: auth.ActView},
+			"register export": {action: auth.ActView}, "register inventory": {action: auth.ActView},
+			"register proposals": {action: auth.ActView},
+			"register erase":     {action: auth.ActApprove, hint: "an erasure is decided by somebody who may approve the register's records"},
+			// Expiring early what retention ends writes what the server would.
+			"register expire": {action: auth.ActEditDraft}},
+		bare: "kinds",
+		area: register.Area,
+		reads: [][]string{{"register", "kinds"}, {"register", "list", "Control"}, {"register", "proposals"},
+			{"register", "export", "Control"}, {"register", "inventory"}},
 		absent: []string{"register", "show", "00000000000000000000000000000000"},
 		ops:    registerRegisterOps,
+		jobs:   registerJobs,
 		notForRuns: "the register holds restricted records, and which of them a run may read is decided by the " +
 			"data classes its model route accepts, which are not yet declared; an outside agent reads them " +
 			"under its person's own grant",
@@ -55,8 +85,10 @@ func init() {
 }
 
 func cmdRegister(root string, args []string) error {
+	// Bare, it runs the line it is asked by (cliModule.bare), so the two
+	// cannot drift apart.
 	if len(args) == 0 {
-		args = []string{"kinds"}
+		args = []string{bareRuns["register"]}
 	}
 	switch args[0] {
 	case "kinds":
@@ -68,17 +100,24 @@ func cmdRegister(root string, args []string) error {
 		fs := flag.NewFlagSet("register list", flag.ContinueOnError)
 		offset := fs.Int("offset", 0, "how many records to skip")
 		limit := fs.Int("limit", 50, "how many records to show")
+		var filters multiFlag
+		fs.Var(&filters, "filter", "FIELD=VALUE: only the records whose field holds the value; more than one are all asked")
 		var pos []string
 		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
-			return errMisused{fmt.Errorf("usage: quilzo register list KIND [--offset N] [--limit N]; `quilzo register kinds` names the kinds")}
+			return errMisused{fmt.Errorf("usage: quilzo register list KIND [--filter FIELD=VALUE]... [--offset N] [--limit N]; " +
+				"`quilzo register kinds` names the kinds")}
 		}
 		if *offset < 0 || *limit < 1 {
 			return errMisused{fmt.Errorf("--offset is 0 or more and --limit 1 or more")}
 		}
-		return registerList(root, pos[0], *offset, *limit)
+		parsed, err := parseFilters(filters)
+		if err != nil {
+			return err
+		}
+		return registerList(root, pos[0], parsed, *offset, *limit)
 	case "show":
 		pos, err := positionals(args[1:], 1)
 		if err != nil {
@@ -93,8 +132,25 @@ func cmdRegister(root string, args []string) error {
 			return err
 		}
 		return registerProposals(root)
+	case "history":
+		return registerHistoryCmd(root, args[1:])
+	case "export":
+		return registerExportCmd(root, args[1:])
+	case "inventory":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+		return registerInventory()
+	case "erase":
+		return registerEraseCmd(root, args[1:])
+	case "expire":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+		return registerExpireCmd(root)
 	default:
-		return errMisused{fmt.Errorf("unknown register command %q; try kinds, list, show or proposals", args[0])}
+		return errMisused{fmt.Errorf("unknown register command %q; try kinds, list, show, history, export, inventory, "+
+			"proposals, erase or expire", args[0])}
 	}
 }
 
@@ -126,7 +182,36 @@ func registerWriter(root string, c *Caller) (*register.Register, register.Actor,
 	r.Ready = func() error { return auditReady(root) }
 	by := register.Actor{Name: c.Name, Kind: c.Kind, Verified: c.Verified, Model: c.Model,
 		May: func(act auth.Action, resource string) error { return authorise(root, c, act, resource) }}
+	// A person or a service is named in the record by their pseudonym,
+	// minted in the subject map the first time they write, so that what
+	// they wrote is theirs without their name in a store that cannot
+	// forget it, and a person's proposal is decided by somebody the
+	// register can tell apart from them. A model proposes under the name
+	// of its agent, and has none.
+	if typ, ok := subjectTypeOf(c); ok {
+		id, err := r.SubjectFor(c.Name, typ)
+		if err != nil {
+			return nil, register.Actor{}, fmt.Errorf("the subject map cannot name the writer: %w", err)
+		}
+		by.Subject = id
+	}
 	return r, by, nil
+}
+
+// subjectTypeOf is what sort of subject a caller is in the subject map: a
+// person, or a service's account. A model, and a caller with no name, is
+// none.
+func subjectTypeOf(c *Caller) (register.SubjectType, bool) {
+	if strings.TrimSpace(c.Name) == "" {
+		return "", false
+	}
+	switch c.Kind {
+	case audit.KindHuman:
+		return "person", true
+	case audit.KindService:
+		return "service-account", true
+	}
+	return "", false
 }
 
 // mayReadRegisterAt is nil unless ref names the register, and then asks
@@ -192,7 +277,7 @@ func specNamed(name string) (register.Spec, error) {
 	return spec, nil
 }
 
-func registerList(root, kind string, offset, limit int) error {
+func registerList(root, kind string, filters []register.Filter, offset, limit int) error {
 	spec, err := specNamed(kind)
 	if err != nil {
 		return err
@@ -201,15 +286,25 @@ func registerList(root, kind string, offset, limit int) error {
 	if err != nil {
 		return err
 	}
-	entries, total, err := r.List(spec.Kind, offset, limit)
+	entries, total, err := r.Find(spec.Kind, filters, offset, limit)
 	if err != nil {
-		return err
+		return registerFindError(err)
+	}
+	if entries == nil {
+		entries = []register.Entry{}
+	}
+	if filters == nil {
+		filters = []register.Filter{}
 	}
 	if w.JSON(map[string]any{"kind": spec.Kind, "total": total, "offset": offset, "limit": limit,
-		"records": entries, "head": r.Head()}) {
+		"filters": filters, "records": entries, "head": r.Head()}) {
 		return nil
 	}
 	if total == 0 {
+		if len(filters) > 0 {
+			fmt.Printf("  the register holds no %s records with %s\n", spec.Kind, printable(filterWords(filters)))
+			return nil
+		}
 		fmt.Printf("  the register holds no %s records\n", spec.Kind)
 		return nil
 	}
@@ -232,7 +327,14 @@ func registerShow(root, id string) error {
 	if err != nil {
 		return registerError(err)
 	}
-	if w.JSON(e) {
+	named := r.Named(e.Record)
+	if named == nil {
+		named = []register.Named{}
+	}
+	if w.JSON(struct {
+		register.Entry
+		Named []register.Named `json:"named"`
+	}{e, named}) {
 		return nil
 	}
 	fields, _ := json.MarshalIndent(e.Record, "  ", "  ")
@@ -240,6 +342,7 @@ func registerShow(root, id string) error {
 	fmt.Printf("  %sstored as %s, written %s, changed %s%s\n", dim, e.Object,
 		e.Created.At().Format(time.RFC3339), e.Updated.At().Format(time.RFC3339), reset)
 	fmt.Printf("  %s\n", printable(string(fields)))
+	printNamed(named)
 	return nil
 }
 
@@ -305,12 +408,7 @@ func registerWaiting(held func() (*store.Store, error)) func() ([]waitlist.Propo
 // registerRegisterOps is the register's operations on the agent interface:
 // the same three reads as the command line, and nothing that writes.
 func registerRegisterOps(srv *mcp.Server, root string, caller *Caller) {
-	may := func() error {
-		if err := authorise(root, caller, auth.ActView, register.Area); err != nil {
-			return &mcp.Refusal{Reason: err.Error()}
-		}
-		return nil
-	}
+	may := func() error { return registerMayRead(root, caller) }
 	srv.Register(mcp.Operation{
 		Name: "register_kinds", NeedsRole: "reader", Area: register.Area,
 		Summary: "the kinds of record the security register holds, each with its schema and how many there are",
@@ -336,7 +434,8 @@ func registerRegisterOps(srv *mcp.Server, root string, caller *Caller) {
 		Name: "register_list", NeedsRole: "reader", Area: register.Area,
 		Summary: "one kind's records in the security register, a page at a time",
 		Args: map[string]string{"kind": "the kind, as register_kinds names it", "offset": "optional, how many to skip",
-			"limit": "optional, how many to return, at most 200"},
+			"limit":  "optional, how many to return, at most 200",
+			"filter": "optional, FIELD=VALUE: only the records whose field holds the value"},
 		Types:    map[string]string{"offset": "number", "limit": "number"},
 		Keywords: []string{"register", "list", "records", "controls", "risks", "evidence"},
 	}, func(a map[string]any) (any, error) {
@@ -352,16 +451,23 @@ func registerRegisterOps(srv *mcp.Server, root string, caller *Caller) {
 		if offset < 0 || limit < 1 || limit > 200 {
 			return nil, &mcp.ArgumentError{Reason: "offset is 0 or more, and limit from 1 to 200"}
 		}
+		filters, ferr := filterArg(a)
+		if ferr != nil {
+			return nil, ferr
+		}
 		r, err := openRegister(root)
 		if err != nil {
 			return nil, err
 		}
-		entries, total, err := r.List(spec.Kind, offset, limit)
+		entries, total, err := r.Find(spec.Kind, filters, offset, limit)
+		if errors.Is(err, register.ErrInvalid) {
+			return nil, &mcp.ArgumentError{Reason: err.Error()}
+		}
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"kind": spec.Kind, "total": total, "offset": offset, "limit": limit,
-			"records": entries, "head": r.Head()}, nil
+			"filters": filters, "records": entries, "head": r.Head()}, nil
 	})
 	srv.Register(mcp.Operation{
 		Name: "register_show", NeedsRole: "reader", Area: register.Area,
@@ -384,8 +490,15 @@ func registerRegisterOps(srv *mcp.Server, root string, caller *Caller) {
 		if errors.Is(err, register.ErrNotFound) {
 			return nil, &mcp.Refusal{Reason: "the register holds no record " + id}
 		}
-		return e, err
+		if err != nil {
+			return nil, err
+		}
+		return struct {
+			register.Entry
+			Named []register.Named `json:"named"`
+		}{e, r.Named(e.Record)}, nil
 	})
+	registerGenericOps(srv, root, caller, may)
 }
 
 // numberArg is a whole-number argument of an operation, or def when it was

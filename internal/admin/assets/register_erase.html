@@ -1,0 +1,24 @@
+{{template "head" .}}
+{{template "kit-header" .Header}}
+{{with .Said}}{{template "kit-live" .}}{{end}}
+{{with .Done}}<p>The record of it is <a href="/register/record/{{.Record}}">the Erasure record {{.Record}}</a>, in commit <code class="kit-hash">{{.Commit}}</code>. From now on the pseudonym <code>{{.Subject}}</code> names nobody, and every record that names it says "subject erased".</p>{{end}}
+{{template "kit-errors" .Form.Problems}}
+<form method="post" action="/register/erase" novalidate>
+<div class="field"><label for="erase-subject">Person {{template "req"}}</label>
+<p class="hint" id="erase-subject-hint">Their pseudonym, as the register's records show it, or the name the subject map holds for them: an account, a user principal name or an address.</p>
+{{template "kit-field-error" (index .Form.ByField "erase-subject")}}
+<input id="erase-subject" name="subject" type="text" value="{{.Form.Subject}}" maxlength="320" autocomplete="off" required aria-describedby="erase-subject-hint{{if (index .Form.ByField "erase-subject").Message}} erase-subject-error{{end}}"{{if (index .Form.ByField "erase-subject").Message}} aria-invalid="true"{{end}}></div>
+<div class="field"><label for="erase-basis">Basis {{template "req"}}</label>
+{{template "kit-field-error" (index .Form.ByField "erase-basis")}}
+<select id="erase-basis" name="basis" required{{if (index .Form.ByField "erase-basis").Message}} aria-describedby="erase-basis-error" aria-invalid="true"{{end}}><option value="">Choose the ground</option>{{$b := .Form.Basis}}{{range .Bases}}<option value="{{.Value}}"{{if eq .Value $b}} selected{{end}}>{{.Words}}</option>{{end}}</select></div>
+<fieldset class="field"{{if (index .Form.ByField "erase-requested").Message}} aria-describedby="erase-requested-error"{{end}}><legend>Who asked for it</legend>
+{{template "kit-field-error" (index .Form.ByField "erase-requested")}}
+<p><label><input id="erase-requested" type="radio" name="requested" value="subject"{{if eq .Form.Requested "subject"}} checked{{end}}> The person themselves</label></p>
+<p><label><input type="radio" name="requested" value=""{{if ne .Form.Requested "subject"}} checked{{end}}> Nobody: I decide it, on the basis above</label></p>
+</fieldset>
+<div class="field">{{template "kit-field-error" (index .Form.ByField "erase-confirm")}}
+<p><input id="erase-confirm" name="confirm" type="checkbox" value="yes"{{if .Form.Confirm}} checked{{end}}{{if (index .Form.ByField "erase-confirm").Message}} aria-describedby="erase-confirm-error" aria-invalid="true"{{end}}> <label for="erase-confirm">I understand that an erasure cannot be undone {{template "req"}}</label></p></div>
+<p><button type="submit">Erase this person</button> <span class="hint">You decide it as yourself, and the record carries your approval.</span></p>
+</form>
+<p class="hint"><code>quilzo register erase</code> does the same from a terminal.</p>
+{{template "foot" .}}

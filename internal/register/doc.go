@@ -97,8 +97,12 @@
 //	rc, err := r.Put(by, "entra users, run of 24 Nov 2026 10:00", recs...)
 //
 // registerWriter wires the store's audit log, refuses to write while it
-// cannot take an entry, and asks the policy as the caller. why is a line
-// code writes. The errors are ErrRefused, ErrModel, ErrInvalid,
+// cannot take an entry, asks the policy as the caller, and names the
+// caller in the record by their pseudonym from the subject map (Actor
+// .Subject, minted the first time they write), so a person's proposal is
+// decided by somebody the register can tell apart from them. The admin's
+// writer (Server.registerWriter, internal/admin/registerprivacy.go) does
+// the same for a person signed in there. why is a line code writes. The errors are ErrRefused, ErrModel, ErrInvalid,
 // ErrImmutable, ErrNotFound and ErrUnrecorded (written, and not recorded);
 // registerError answers them with the command line's exits, 3 for a
 // refusal and 4 for what is not there, and the API answers 403 and 404. A
@@ -140,14 +144,80 @@
 //   - Content API: internal/api/modules.go, registerRoutes: read routes
 //     under /api/v1/, each with its OpenAPI path item, and in a test file of
 //     the module an entry in moduleExamples saying how each is tried.
+//   - Upkeep: cliModule.jobs, the work a module needs done because time
+//     passed, which the admin server runs on its quarter-hour timer with
+//     its own (upkeepJobs, cmd/quilzo/serve.go). Each job is given the
+//     loop's moment, so a test runs it on a fake clock.
 //
 // The register's own module is the example to copy:
-// cmd/quilzo/registercmd.go (quilzo register kinds | list KIND | show ID |
-// proposals, and the register_kinds, register_list and register_show
-// operations), internal/admin/registerscreen.go (/register and below) and
-// internal/api/registerapi.go (/api/v1/register/...). Each asks for view on
-// Area, the compliance area's part of the policy, which a role over the
-// site reaches only as administrator.
+// cmd/quilzo/registercmd.go and registergeneric.go (quilzo register kinds |
+// list KIND | show ID | history ID | export KIND | inventory | proposals |
+// erase | expire, and the register_kinds, register_list, register_show,
+// register_history, register_export and register_inventory operations),
+// internal/admin/registerscreen.go and registerprivacy.go (/register and
+// below) and internal/api/registerapi.go and registergeneric.go
+// (/api/v1/register/...). Each asks for view on Area, the compliance area's
+// part of the policy, which a role over the site reaches only as
+// administrator; an erasure asks for approve on the Erasure kind. On the
+// agent interface the register is read by a person's own client under
+// their grant, and by an app connected through OAuth only once the
+// mcp.register_for_apps setting is switched on, because which restricted
+// records a model route may be sent is not yet declared.
+//
+// # Reading any kind
+//
+// One implementation over every kind, from its schema (generic.go), so a
+// kind added later is on every surface without a line of theirs, which
+// TestEveryKindHasFourSurfaces holds:
+//
+//	History(id, limit)            the commits that changed a record, newest first
+//	Find(kind, filters, off, n)   a page of a kind whose fields hold values (ParseFilter: field=value)
+//	WriteCSV, ExportRows          a column per field, every cell FormulaSafe
+//	Top(entries, n), Rating(rec)  the highest rated first, for a kind with a rating
+//	Named(rec)                    what a record names beside the register, and its state
+//	Inventory()                   the data inventory (inventory.go)
+//
+// A kind gains a rating, the column in its export and a top by having a
+// method rating() int64 worked out by code from its typed fields, as Risk
+// has (likelihood times impact); nobody types one in.
+//
+// # Personal data
+//
+// What would name a person lives beside the register, in its side store
+// (internal/register/side, under the store's directory and sealed with its
+// keyring), never in it (privacy.go):
+//
+//	SubjectFor(name, type)  the pseudonym of a person or an account, minted once; the name goes in the subject map
+//	PutText(by, kind, words, about...)   words a person wrote, kept as the Text a record holds
+//	PutRaw(by, kind, media, file, about...) a raw file, kept as the Digest a record holds (a field called raw)
+//	TextOf, RawOf, SubjectState         what the side store holds under a digest or a pseudonym
+//	Erase(by, ErasureRequest)           a person erased: the map's entry and every entry about them go,
+//	                                    and a signed, immutable Erasure record says so
+//	ExpireSide()                        what every kind holding it has kept for its retention, deleted
+//
+// Retention is declared per kind in retention.go, counted from the last time
+// the entry was kept for a record of the kind, and enforced by the
+// register's upkeep job. An erasure changes nothing in the register, so every record,
+// commit and chain still checks; every surface that shows a record says
+// "subject erased" or "text erased" beside it (Named). A label holding an
+// address or a user principal name is refused at Put. The data inventory is
+// generated from the schemas and the policy's roles, never written by hand:
+// which fields name a person, which hold text and files, how long, who may
+// read each kind, that the audit log names whoever acted by a pseudonym of
+// the name the access policy knows, made with the log's own key, which an
+// erasure does not reach, and that a backup made before an erasure holds
+// the person until it is deleted. Nothing more is kept beside the register
+// about a pseudonym once its person is erased (ErrErased).
+//
+// An erasure is decided by a person on the command line or in the admin,
+// and its approval is held to every rule Put holds it to before anything
+// is deleted. The agent interface and the API read the Erasure records and
+// say "subject erased" as the screens do, and neither erases anybody: the
+// agent interface's register operations are reads, and the API's module
+// routes are reads until internal/api/modules.go gains what a write needs.
+// Bundles (PLAN theme 17) are not built yet; a bundle of the register
+// carries its Erasure records as it carries any other, and checks as the
+// register does.
 //
 // # Drawing a screen with the security kit
 //

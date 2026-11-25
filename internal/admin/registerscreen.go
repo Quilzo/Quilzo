@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -36,13 +37,17 @@ func init() {
 			{path: "/register/kind/", handle: (*Server).handleRegisterKind},
 			{path: "/register/record/", handle: (*Server).handleRegisterRecord},
 			{path: "/register/proposals", handle: (*Server).handleRegisterProposals},
+			{path: "/register/export/", handle: (*Server).handleRegisterExport},
+			{path: "/register/inventory", handle: (*Server).handleRegisterInventory},
+			{path: "/register/erase", handle: (*Server).handleRegisterErase},
 		},
 		nav: []navEntry{{
 			destination: destination{Key: "register", Label: "Register", Path: "/register", Group: "Assurance",
 				Doc: "compliance", Needs: auth.ActView},
 			icon: "verified", area: register.Area,
 			also: []string{"controls", "evidence", "risks", "exceptions", "decisions", "vendors", "ai systems",
-				"incidents", "policies", "security record", "proposals"},
+				"incidents", "policies", "security record", "proposals", "data inventory", "erase a person",
+				"personal data", "export csv", "top risks"},
 		}},
 	})
 }
@@ -119,7 +124,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Register", "Nav": "register", "Principal": p,
 		"Header": seckit.Header{Title: "Register", Lead: "The security record: typed records on a ref of their own, " +
 			"each written one way, through the policy gate and the kind's own rules, into the audit log."},
-		"Table": table, "Head": head, "Waiting": len(proposals)}
+		"Table": table, "Head": head, "Waiting": len(proposals),
+		"MayErase": s.allows(p, auth.ActApprove, erasureResource())}
 	if head == "" {
 		data["Empty"] = seckit.Empty{Title: "Nothing has been written to the register yet",
 			Body: "Records arrive from the modules that own them: sources and their facts, controls and their tests, " +
@@ -138,16 +144,76 @@ func (s *Server) handleRegisterKind(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	q := r.URL.Query()
+	offset, _ := strconv.Atoi(q.Get("offset"))
 	if offset < 0 {
 		offset = 0
 	}
 	const limit = 50
-	entries, total, err := reg.List(spec.Kind, offset, limit)
-	if err != nil {
-		s.registerUnreadable(w, r, p, err)
-		return
+	slug := strings.TrimPrefix(spec.Collection, register.Prefix)
+	filters, problem := filtersOf(q)
+	data := map[string]any{"Title": string(spec.Kind), "Nav": "register", "Principal": p,
+		"Header": seckit.Header{Title: string(spec.Kind), Lead: spec.Summary}, "Spec": spec,
+		"Fields": register.FilterFields(spec), "Field": q.Get("field"), "Value": q.Get("value"),
+		"Action": "/register/kind/" + slug}
+	if problem == "" {
+		entries, total, err := reg.Find(spec.Kind, filters, offset, limit)
+		switch {
+		case errors.Is(err, register.ErrInvalid):
+			problem = err.Error()
+		case err != nil:
+			s.registerUnreadable(w, r, p, err)
+			return
+		default:
+			s.registerKindTable(w, r, p, data, spec, slug, filters, entries, offset, limit, total)
+			if data["Table"] == nil {
+				return
+			}
+			s.render(w, r, "register_kind.html", data)
+			return
+		}
 	}
+	// A filter that is not one is said beside the field and at the top, and
+	// the page is the form again with nothing listed.
+	pr := seckit.Problem{Field: "filter-field", Label: "Field", Message: problem}
+	data["Problems"], data["FieldProblem"] = []seckit.Problem{pr}, pr
+	w.WriteHeader(http.StatusBadRequest)
+	s.render(w, r, "register_kind.html", data)
+}
+
+// filtersOf is the filters a request asks for: each filter=FIELD=VALUE of
+// a link, and the field and value of the form. What is wrong with one is
+// said in words.
+func filtersOf(q url.Values) ([]register.Filter, string) {
+	var out []register.Filter
+	for _, raw := range q["filter"] {
+		f, err := register.ParseFilter(raw)
+		if err != nil {
+			return nil, err.Error()
+		}
+		out = append(out, f)
+	}
+	if field := strings.TrimSpace(q.Get("field")); field != "" {
+		out = append(out, register.Filter{Field: field, Value: q.Get("value")})
+	}
+	return out, ""
+}
+
+// filterQuery is filters as a query, for the links that keep them.
+func filterQuery(filters []register.Filter) url.Values {
+	v := url.Values{}
+	for _, f := range filters {
+		v.Add("filter", f.String())
+	}
+	return v
+}
+
+// registerKindTable puts a page of a kind's records in data, with the
+// links that page through them and export them, filters kept. On a table
+// that cannot be made it writes the page that says so and leaves Table
+// unset.
+func (s *Server) registerKindTable(w http.ResponseWriter, r *http.Request, p principal, data map[string]any,
+	spec register.Spec, slug string, filters []register.Filter, entries []register.Entry, offset, limit, total int) {
 	var rows []seckit.Row
 	for _, e := range entries {
 		label := register.Label(e.Record)
@@ -157,25 +223,54 @@ func (s *Server) handleRegisterKind(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, seckit.Row{Head: seckit.LinkCell("/register/record/"+string(e.ID), label),
 			Cells: []seckit.Cell{seckit.TextCell(string(e.ID)), seckit.TimeCell(e.Updated.At()), seckit.HashCell(e.Object)}})
 	}
-	table, err := seckit.NewTable(fmt.Sprintf("%s records, %d to %d of %d", spec.Kind, min(offset+1, total), offset+len(entries), total),
-		[]string{"Record", "Identifier", "Last changed", "Stored as"}, rows)
+	caption := fmt.Sprintf("%s records, %d to %d of %d", spec.Kind, min(offset+1, total), offset+len(entries), total)
+	if len(filters) > 0 {
+		caption = fmt.Sprintf("%s records with %s, %d to %d of %d", spec.Kind, filterWords(filters),
+			min(offset+1, total), offset+len(entries), total)
+	}
+	table, err := seckit.NewTable(caption, []string{"Record", "Identifier", "Last changed", "Stored as"}, rows)
 	if err != nil {
 		s.registerUnreadable(w, r, p, err)
 		return
 	}
-	data := map[string]any{"Title": string(spec.Kind), "Nav": "register", "Principal": p,
-		"Header": seckit.Header{Title: string(spec.Kind), Lead: spec.Summary}, "Spec": spec, "Table": table}
+	data["Table"], data["Filters"], data["FilterWords"] = table, filters, filterWords(filters)
 	if total == 0 {
-		data["Empty"] = seckit.Empty{Title: "The register holds no " + string(spec.Kind) + " records",
+		empty := seckit.Empty{Title: "The register holds no " + string(spec.Kind) + " records",
 			Body: "Its fields are listed below, as every record of the kind will have them."}
+		if len(filters) > 0 {
+			empty = seckit.Empty{Title: "No " + string(spec.Kind) + " record has " + filterWords(filters),
+				Href: "/register/kind/" + slug, Action: "Show every " + string(spec.Kind) + " record"}
+		}
+		data["Empty"] = empty
+	}
+	page := func(at int) string {
+		v := filterQuery(filters)
+		v.Set("offset", strconv.Itoa(at))
+		return "/register/kind/" + slug + "?" + v.Encode()
 	}
 	if next := offset + len(entries); next < total {
-		data["Next"] = fmt.Sprintf("/register/kind/%s?offset=%d", strings.TrimPrefix(spec.Collection, register.Prefix), next)
+		data["Next"] = page(next)
 	}
 	if offset > 0 {
-		data["Previous"] = fmt.Sprintf("/register/kind/%s?offset=%d", strings.TrimPrefix(spec.Collection, register.Prefix), max(offset-limit, 0))
+		data["Previous"] = page(max(offset-limit, 0))
 	}
-	s.render(w, r, "register_kind.html", data)
+	export := "/register/export/" + slug + ".csv"
+	if q := filterQuery(filters).Encode(); q != "" {
+		export += "?" + q
+	}
+	data["Export"] = export
+	if _, rated := register.Rating(spec.New().(register.Record)); rated {
+		data["Top"] = "/register/export/" + slug + ".csv?top=10"
+	}
+}
+
+// filterWords is filters as a caption says them.
+func filterWords(filters []register.Filter) string {
+	var parts []string
+	for _, f := range filters {
+		parts = append(parts, f.Field+" "+strconv.Quote(f.Value))
+	}
+	return strings.Join(parts, " and ")
 }
 
 func (s *Server) handleRegisterRecord(w http.ResponseWriter, r *http.Request) {
@@ -203,11 +298,65 @@ func (s *Server) handleRegisterRecord(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = string(e.Kind) + " " + seckit.Short(string(e.ID))
 	}
-	s.render(w, r, "register_record.html", map[string]any{"Title": title, "Nav": "register", "Principal": p,
+	changes, err := reg.History(e.ID, 50)
+	if err != nil {
+		s.registerUnreadable(w, r, p, err)
+		return
+	}
+	events := make([]seckit.Event, 0, len(changes))
+	for _, c := range changes {
+		what := "Changed: " + c.Why
+		if c.New {
+			what = "Written: " + c.Why
+		}
+		by := string(c.By)
+		if by == "" {
+			by = "a service"
+		}
+		events = append(events, seckit.Event{At: c.At.At(), What: what, By: by, Hash: c.Object})
+	}
+	data := map[string]any{"Title": title, "Nav": "register", "Principal": p,
 		"Header": seckit.Header{Title: title, Lead: string(e.Kind) + ": " + spec.Summary},
 		"Entry":  e, "Spec": spec, "Table": table,
 		"Kind":   seckit.LinkCell("/register/kind/"+strings.TrimPrefix(spec.Collection, register.Prefix), string(e.Kind)),
-		"Events": []seckit.Event{{At: e.Created.At(), What: "First written"}, {At: e.Updated.At(), What: "Last changed", Hash: e.Object}}})
+		"Events": events}
+	if named := reg.Named(e.Record); len(named) > 0 {
+		t, err := seckit.NewTable("What it names beside the register: people by pseudonym, text and files by digest",
+			[]string{"Field", "Pseudonym or digest", "Beside the register", "Words"}, namedRows(named))
+		if err != nil {
+			s.registerUnreadable(w, r, p, err)
+			return
+		}
+		data["Named"] = t
+	}
+	s.render(w, r, "register_record.html", data)
+}
+
+// namedRows is what a record names beside the register, a row each, with
+// what the side store holds of it as a status in words: "Subject erased",
+// "Text held".
+func namedRows(named []register.Named) []seckit.Row {
+	var rows []seckit.Row
+	for _, n := range named {
+		tone := seckit.Neutral
+		switch n.State {
+		case register.TextErased:
+			tone = seckit.Warn
+		case register.TextUnreadable:
+			tone = seckit.Bad
+		}
+		word := strings.ToUpper(n.Said[:1]) + n.Said[1:]
+		if n.Erased != nil {
+			word += " " + n.Erased.At.Format("2 Jan 2006")
+		}
+		status := seckit.BadgeCell(seckit.MustBadge(tone, word))
+		value := seckit.HashCell(n.Value)
+		if n.What == "subject" {
+			value = seckit.TextCell(n.Value)
+		}
+		rows = append(rows, seckit.Row{Head: seckit.TextCell(n.Field), Cells: []seckit.Cell{value, status, seckit.TextCell(n.Words)}})
+	}
+	return rows
 }
 
 // fieldRows is a record's fields as rows: each value as the schema types
