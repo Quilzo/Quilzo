@@ -563,14 +563,22 @@ func (s *Server) handlePopulations(w http.ResponseWriter, r *http.Request) {
 	var rows []seckit.Row
 	if err := v.Each(register.KindPopulation, func(e register.Entry, _ map[string]any) error {
 		pop := e.Record.(register.Population)
-		count := func(n int64, unit string, src register.ID) seckit.Cell {
+		// Each count names the sources it was made from, and is graded as
+		// the weakest of them: the disagreement is made from both.
+		count := func(n int64, unit string, srcs ...register.ID) seckit.Cell {
 			if pop.Counted == 0 {
 				return seckit.Cell{}
 			}
-			name := sourceLabel(v, src)
-			f, err := seckit.New(seckit.FigureOf{N: n, Count: true, Unit: unit,
-				Sources: []seckit.Source{{Name: name, ID: src, Href: "/register/record/" + string(src)}},
-				At:      pop.Counted.At(), Hash: pop.Commit, Grade: sourceGrade(v, src), Now: now,
+			var sources []seckit.Source
+			grade := register.GradeConnector
+			for _, src := range srcs {
+				sources = append(sources, seckit.Source{Name: sourceLabel(v, src), ID: src, Href: "/register/record/" + string(src)})
+				if g := sourceGrade(v, src); g.Rank() > grade.Rank() {
+					grade = g
+				}
+			}
+			f, err := seckit.New(seckit.FigureOf{N: n, Count: true, Unit: unit, Sources: sources,
+				At: pop.Counted.At(), Hash: pop.Commit, Grade: grade, Now: now,
 				Window: time.Duration(pop.Fresh) * time.Second})
 			if err != nil {
 				return seckit.TextCell(fmt.Sprintf("%d %s", n, unit))
@@ -584,7 +592,7 @@ func (s *Server) handlePopulations(w http.ResponseWriter, r *http.Request) {
 		cross, unexplained := seckit.TextCell("None: single source"), seckit.Cell{}
 		if pop.CrossCheck != "" {
 			cross = count(pop.CrossSize, "known to the cross-check", pop.CrossCheck)
-			unexplained = count(pop.Unexplained, "unexplained", pop.Source)
+			unexplained = count(pop.Unexplained, "unexplained", pop.Source, pop.CrossCheck)
 		}
 		rows = append(rows, seckit.Row{Head: seckit.LinkCell("/register/record/"+string(e.ID), pop.Name),
 			Cells: []seckit.Cell{count(pop.Size, "members", pop.Source), cross, unexplained, seckit.TextCell(strings.Join(labels, "; "))}})

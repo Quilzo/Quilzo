@@ -194,3 +194,44 @@ func TestTheProgrammeScreensSayWhatTheProgrammeHolds(t *testing.T) {
 		t.Errorf("the waiting installation is not shown with its hash and without a button:\n%s", reqs[strings.Index(reqs, "<main"):])
 	}
 }
+
+// The disagreement between a population's two sources is a figure of its
+// own, and comes from both of them: its provenance names the source the
+// members are read from and the one they are checked against, and its
+// grade is the weaker of the two.
+func TestTheDisagreementNamesBothSources(t *testing.T) {
+	srv, token := setup(t)
+	withProgramme(t, srv)
+	r := register.Open(srv.Store)
+	r.Audit = func(audit.Record) error { return nil }
+	r.Now = func() time.Time { return time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC) }
+	allow := func(auth.Action, string) error { return nil }
+	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
+	p := &programme.Programme{Reg: r, Now: r.Now, Keep: &programme.FileKeeper{Dir: filepath.Join(srv.Store.Root(), "programme")}}
+	hr := register.Source{Name: "hr", Title: "The staff list", Type: "upload", Fresh: 86400, Grade: register.GradeUploaded}
+	hid, _ := register.IDOf(hr)
+	if _, err := r.Put(olu, "the staff list", hr, register.Observation{Source: hid, About: register.ID(strings.Repeat("0", 31) + "1"),
+		Fact: "mfa.registered", Value: register.BoolValue(true), Grade: register.GradeUploaded}); err != nil {
+		t.Fatal(err)
+	}
+	q := register.Query{Of: "Observation", Member: "about", Terms: []register.Term{{Field: "fact", Op: register.OpEquals,
+		Values: []register.Scalar{register.TextValue("mfa.registered")}}}}
+	pop, _, err := p.Define(olu, programme.Definition{Name: "staff", Title: "Staff", Source: "entra", Query: q,
+		Fresh: time.Hour, Independent: true, CrossCheck: "hr", CrossQuery: &q})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.Recount(olu, pop); err != nil {
+		t.Fatal(err)
+	}
+	page := get(t, srv, "/programme/populations", token).Body.String()
+	i := strings.Index(page, `<span class="kit-unit">unexplained</span>`)
+	if i < 0 {
+		t.Fatalf("the populations screen shows no disagreement:\n%s", firstLines(page[strings.Index(page, "<main"):], 80))
+	}
+	cell := page[i:]
+	cell = cell[:strings.Index(cell, "</details>")]
+	if !strings.Contains(cell, "Entra ID") || !strings.Contains(cell, "The staff list") || !strings.Contains(cell, "Uploaded by a person") {
+		t.Errorf("the disagreement's provenance is\n%s", cell)
+	}
+}
