@@ -41,9 +41,15 @@ var owners = []struct{ pattern, feature string }{
 	{"internal/handoff/*", "chatbots"},
 	{"internal/public/forms.go", "forms"},
 	{"internal/form/*", "forms"},
+	// The uploads feature is its two doors, the admin's Media screen and the
+	// share target, and not internal/media and internal/medialib behind
+	// them: those decode and keep every file whoever sends it, so they are
+	// Core. They were said to be uploads', and an exploited flaw in image/gif,
+	// which only internal/media imports, was contained by turning uploads
+	// off while a visitor's file sent to a form went through the same
+	// decoding (internal/form), as did the studio's uploads and the media
+	// library reading back what it keeps.
 	{"internal/public/share.go", "uploads"},
-	{"internal/media/*", "uploads"},
-	{"internal/medialib/*", "uploads"},
 	{"internal/admin/media*.go", "uploads"},
 	{"internal/public/boards.go", "boards"},
 	{"internal/board/*", "boards"},

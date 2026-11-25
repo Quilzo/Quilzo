@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -278,5 +279,38 @@ func TestEveryOwnedPatternNamesFilesThatExist(t *testing.T) {
 		if err != nil || len(got) == 0 {
 			t.Errorf("%s is said to serve %s, and no file is there", o.pattern, o.feature)
 		}
+	}
+}
+
+// The image decoders are what every server runs, not the uploads feature's.
+// internal/media was said to serve uploads alone, so image/gif, which only
+// it imports, was uploads' to contain: an exploited flaw in it turned off
+// the admin's Media screen and the share target, while a visitor's file
+// sent to a form went through the same decoding (internal/form calls
+// media.Accept), as did the studio's uploads and the media library reading
+// back what it keeps.
+func TestTheImageDecodersAreNotOneFeaturesToContain(t *testing.T) {
+	root := filepath.Join("..", "..")
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Skip("not in the source tree")
+	}
+	for _, file := range []string{"internal/media/media.go", "internal/medialib/medialib.go"} {
+		if got := FeatureOf(file); got != Core {
+			t.Errorf("%s is said to serve %s alone", file, got)
+		}
+	}
+	m, err := Map(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range []string{"image", "image/gif", "image/jpeg", "image/png"} {
+		if fs := m.Features(pkg); !slices.Contains(fs, Core) {
+			t.Errorf("%s is said to be used by %v alone", pkg, fs)
+		}
+	}
+	snap := Snapshot{Records: []Record{record("GO-1", "0", "1.27.1", "image/gif", "Decode")}}
+	rep := Assess(snap, "go1.27.0", Linked{"image/gif": {"Decode": true}}, m, func([]string) bool { return true }, t0)
+	if len(rep.Findings) != 1 || rep.Findings[0].Decision != Tell {
+		t.Errorf("an exploited flaw in image/gif: %+v", rep.Findings)
 	}
 }
