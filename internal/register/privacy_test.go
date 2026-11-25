@@ -5,6 +5,10 @@ package register
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -141,7 +145,7 @@ func TestErasedIdentifiersUnrecoverable(t *testing.T) {
 				return err
 			}
 			for _, id := range identifiers {
-				if bytes.Contains(bytes.ToLower(body), bytes.ToLower([]byte(id))) {
+				if readsAs(body, id) {
 					found = append(found, strings.TrimPrefix(path, b.Store.Root())+" holds "+id)
 				}
 			}
@@ -170,6 +174,73 @@ func TestErasedIdentifiersUnrecoverable(t *testing.T) {
 	}
 	for _, f := range scan() {
 		t.Error(f)
+	}
+}
+
+// readsAs reports whether a file holds s as somebody reading the disk
+// would find it: in its bytes, or in a string of its JSON that is bytes
+// written as base64, as a side entry's words are. The bytes alone are not
+// enough: on a store that is not encrypted the words about a person are
+// base64 in their entry's file, and a scan of the bytes found the person
+// in the subject map and passed over every word written about them.
+func readsAs(body []byte, s string) bool {
+	if bytes.Contains(bytes.ToLower(body), bytes.ToLower([]byte(s))) {
+		return true
+	}
+	var v any
+	if json.Unmarshal(body, &v) != nil {
+		return false
+	}
+	var walk func(v any) bool
+	walk = func(v any) bool {
+		switch x := v.(type) {
+		case string:
+			b, err := base64.StdEncoding.DecodeString(x)
+			return err == nil && len(b) > 0 && readsAs(b, s)
+		case map[string]any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		case []any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(v)
+}
+
+// Nothing more is kept beside the register about a person once they are
+// erased. Their pseudonym stays in the records that named it, and a
+// surface that writes words or a file about whoever a record names would
+// otherwise keep them under a pseudonym that names nobody: the person
+// cannot be erased a second time, so those words would be kept until a
+// retention period ended, or for good for a kind that has none.
+func TestNothingIsKeptAboutAPersonErased(t *testing.T) {
+	b, ada, _ := withAda(t)
+	if _, err := b.Erase(dana, erasure(ada)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.PutText(dana, KindRisk, "Ada Lovelace still owns the fix.", ada); !errors.Is(err, ErrErased) {
+		t.Errorf("words about an erased person were answered %v", err)
+	}
+	if _, err := b.PutRaw(dana, KindObservation, "application/json", []byte(`{"user":"ada.lovelace"}`), ada); !errors.Is(err, ErrErased) {
+		t.Errorf("a file about an erased person was answered %v", err)
+	}
+	if about, err := b.Side().About(string(ada)); err != nil || len(about) != 0 {
+		t.Errorf("after the erasure the side store keeps %d entries about her (%v)", len(about), err)
+	}
+	if held := b.TextOf(Text(digestOfWords("Ada Lovelace still owns the fix."))); held.State != TextNotHeld {
+		t.Errorf("the words refused read as %+v", held)
+	}
+	// Words about somebody else, and about nobody, are kept as before.
+	if _, err := b.PutText(dana, KindRisk, "The fix is owned by the identity team.", owner); err != nil {
+		t.Errorf("words about somebody not erased were answered %v", err)
 	}
 }
 
@@ -230,6 +301,16 @@ func TestPutRefusesInlinePersonalIdentifier(t *testing.T) {
 		"a UPN in a reference":  Risk{Ref: "ada@contoso.onmicrosoft.com", Title: "T", Owner: owner, Raised: owner, Likelihood: 1, Impact: 1, Status: "open"},
 		"an address as a fact": Observation{Source: owner, About: owner, Fact: "upn", Value: TextValue("Ada.Lovelace@Example.COM"),
 			Grade: GradeConnector},
+		// An address may be written in any script (RFC 6531), and its
+		// domain is a name of any script too: an address ending in a
+		// letter outside ASCII before the at sign, or with a domain or a
+		// top-level domain that is not ASCII, is still somebody's.
+		"an address ending in a letter outside ASCII": Control{Ref: "AC-12", Title: "Reviewed by jos\u00e9@example.com",
+			Domain: "identity", Owner: owner},
+		"an address with a domain outside ASCII": Control{Ref: "AC-13", Title: "Owned by anna@b\u00fccher.de",
+			Domain: "identity", Owner: owner},
+		"an address in Cyrillic": Control{Ref: "AC-14", Title: "\u0418\u0432\u0430\u043d@\u043f\u0440\u0438\u043c\u0435\u0440.\u0440\u0444 is the owner",
+			Domain: "identity", Owner: owner},
 	} {
 		_, err := b.Put(dana, "a test's write", rec)
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "subject map") {
@@ -240,7 +321,8 @@ func TestPutRefusesInlinePersonalIdentifier(t *testing.T) {
 		t.Errorf("an address in a write's own line was answered %v", err)
 	}
 	// What looks like an address and is not one is a label like any other.
-	for _, title := range []string{"lodash@4.17.21 is pinned", "Rotate keys @ quarter end", "security@ alias is monitored"} {
+	for _, title := range []string{"lodash@4.17.21 is pinned", "Rotate keys @ quarter end", "security@ alias is monitored",
+		"@types/node@20.11.5 is pinned", "Stra\u00dfe @ M\u00fcnchen", "Bericht f\u00fcr Q3@2026"} {
 		c := control("AC-11")
 		c.Title = title
 		if _, err := b.Put(dana, "a test's write", c); err != nil {
@@ -380,10 +462,24 @@ func TestTextIsPutThroughTheGate(t *testing.T) {
 			}
 		}
 	}
+	b.Ready = func() error { return errors.New("the disk holding the audit log is full") }
+	if d, err := b.PutText(dana, KindRisk, "Unrecordable."); err == nil {
+		t.Errorf("words were kept while the audit log could not record it, as %s", d)
+	}
+	if held := b.TextOf(Text(digestOfWords("Unrecordable."))); held.State != TextNotHeld {
+		t.Errorf("words kept while the audit log could not record it read as %+v", held)
+	}
+	b.Ready = nil
 	b.Audit = nil
 	if _, err := b.PutText(dana, KindRisk, "Unrecorded."); err == nil {
 		t.Error("words were kept with no audit log to record it")
 	}
+}
+
+// digestOfWords is the digest words are kept under.
+func digestOfWords(words string) string {
+	sum := sha256.Sum256([]byte(words))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // An erasure's approval is held to the register's check of the decider's

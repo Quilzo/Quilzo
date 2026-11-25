@@ -381,7 +381,15 @@ func validLabel(s, at string) error {
 // shape: a name, an at sign, and a domain whose last part is letters. A
 // version pinned with an at sign (lodash@4.17.21) ends in a number and is
 // not one.
-var reAddress = regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b`)
+//
+// The letters are any script's. An address may be written in any (RFC
+// 6531), and a domain is a name of any script too, so one held to ASCII
+// let josé@example.com, anna@bücher.de and an address under .рф through
+// as labels like any other. The end of the domain is a character that is
+// not a letter, a mark, a digit or an underscore, or the end of the label,
+// which is what \b says in ASCII alone.
+var reAddress = regexp.MustCompile(`[\p{L}\p{M}\p{N}._%+'-]+@[\p{L}\p{M}\p{N}-]+(\.[\p{L}\p{M}\p{N}-]+)*` +
+	`\.\p{L}[\p{L}\p{M}]+(?:[^\p{L}\p{M}\p{N}_]|$)`)
 
 // net4 reports whether a host name is four numbers, which is an address and
 // not a name.

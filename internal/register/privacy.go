@@ -33,7 +33,8 @@ import (
 
 var (
 	// ErrErased is a person who was erased already: the record of it is in
-	// the register, and there is nothing left to erase.
+	// the register, there is nothing left to erase, and nothing more is
+	// kept about them.
 	ErrErased = errors.New("the person was erased already")
 )
 
@@ -67,7 +68,8 @@ func (r *Register) Person(id ID) (side.Person, error) { return r.Side().Who(stri
 // PutText keeps words a person wrote for a record of kind, about the
 // people about names, and returns the Text the record holds in their
 // place. It is asked of the policy gate as a write of the kind is: the
-// words are part of the record that will name them.
+// words are part of the record that will name them. Words about somebody
+// erased already are refused (ErrErased).
 func (r *Register) PutText(by Actor, kind Kind, words string, about ...ID) (Text, error) {
 	d, err := r.putSide(by, kind, "text", []byte(words), about)
 	return Text(d), err
@@ -106,6 +108,12 @@ func (r *Register) putSide(by Actor, kind Kind, media string, content []byte, ab
 		if !id.Valid() {
 			return "", fmt.Errorf("%w: %q is not a pseudonym", ErrInvalid, clipped(string(id)))
 		}
+		// Nothing more is kept about somebody erased. Their pseudonym
+		// stays in the records that named it, and words kept about it now
+		// could never be erased with them: a person is erased once.
+		if r.erased(id) {
+			return "", fmt.Errorf("%w: %s names nobody now, and nothing more is kept about them", ErrErased, id)
+		}
 		people = append(people, string(id))
 	}
 	// Kept as a write is: not while nothing can record it, and recorded
@@ -129,6 +137,15 @@ func (r *Register) putSide(by Actor, kind Kind, media string, content []byte, ab
 		return d, fmt.Errorf("%w: %v", ErrUnrecorded, aerr)
 	}
 	return d, nil
+}
+
+// erased reports whether the person behind a pseudonym was erased: the
+// register holds the record of it, or the subject map the tombstone.
+func (r *Register) erased(id ID) bool {
+	if _, err := r.Get(ErasureID(id)); err == nil {
+		return true
+	}
+	return r.Side().SubjectErased(string(id)) != nil
 }
 
 // SideAction is the name words or a file kept beside the register are

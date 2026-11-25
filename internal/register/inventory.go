@@ -82,12 +82,17 @@ func Inventory() DataInventory {
 			"it and the pseudonyms of the people it is about; sealed with the store's keyring on an encrypted store.",
 		Erasure: "An erasure deletes the subject map's entry for the person and every side entry about them, and " +
 			"writes a signed Erasure record saying whose pseudonym now names nobody, on what basis and on whose " +
-			"decision. The register itself is not changed, so every record and chain still checks.",
+			"decision; nothing more is kept about that pseudonym after it. The register itself is not changed, so " +
+			"every record and chain still checks. A backup is a copy of the store and its side store as they were, " +
+			"so one made before the erasure still holds the person until it is deleted, after backup.keep newer " +
+			"ones, and a backup from before an erasure that is restored brings the person back, to be erased again.",
 		AuditLog: "The audit log, beside the register, records every write, every entry kept in the side store and " +
-			"every erasure under the name the access policy knows whoever did it by, with what was done: the kinds, " +
-			"the counts, the digests and the pseudonyms, never the words or the files. It is a hash chain, which a " +
-			"SIEM may hold a copy of, so an erasure does not reach it: it keeps who answered for the security " +
-			"record, not what the record says about the person erased.",
+			"every erasure with who did it and what was done: the kinds, the counts, the digests and the " +
+			"pseudonyms, never the words or the files. Who did it, and every person an entry names, is written as " +
+			"a pseudonym of the name the access policy knows them by, made with the log's own key (audit.key, " +
+			"beside the log), so whoever holds that key can tell who it was and a copy without it cannot. It is a " +
+			"hash chain, which a SIEM may hold a copy of, so an erasure does not reach it: it keeps who answered " +
+			"for the security record, not what the record says about the person erased.",
 	}
 	for _, k := range Kinds() {
 		ik := InventoryKind{Kind: k.Kind, Collection: k.Collection, Summary: k.Summary, Class: k.Class,

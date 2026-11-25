@@ -45,6 +45,12 @@ func TestHistoryOfARecord(t *testing.T) {
 	if was.Commit != first.Commit || !was.New || was.By != dana.Subject || was.At != TimeOf(b.clock.t.Add(-2*time.Hour)) {
 		t.Errorf("the first change is %+v", was)
 	}
+	// A record first written in a commit that was not the register's first
+	// is new there too, and its history stops at it.
+	later, err := b.History(mustID(t, control("AC-02")), 0)
+	if err != nil || len(later) != 1 || !later[0].New || later[0].Parent != first.Commit {
+		t.Errorf("the history of a record first written later is %+v (%v)", later, err)
+	}
 	if one, _ := b.History(id, 1); len(one) != 1 || one[0].Commit != second.Commit {
 		t.Errorf("a history of one is %+v", one)
 	}
@@ -255,6 +261,18 @@ func TestDataInventoryIsGeneratedFromTheSchemas(t *testing.T) {
 	if !strings.Contains(inv.AuditLog, "audit log") || !strings.Contains(inv.AuditLog, "erasure") ||
 		strings.Contains(inv.SubjectMap, "Nothing else names a person") {
 		t.Errorf("the inventory says of the audit log %q, and of the subject map %q", inv.AuditLog, inv.SubjectMap)
+	}
+	// What the log holds is a pseudonym of that name, keyed by the log's
+	// own key, and the sheet says that and where the key is: the name in
+	// the clear is what a log copied to a SIEM was made not to carry.
+	if !strings.Contains(inv.AuditLog, "pseudonym") || !strings.Contains(inv.AuditLog, "audit.key") {
+		t.Errorf("the inventory says of the audit log %q", inv.AuditLog)
+	}
+	// A backup is a copy of the side store as it was, and an erasure does
+	// not reach one made before it: the sheet says so, and how long they
+	// are kept.
+	if !strings.Contains(inv.Erasure, "backup") || !strings.Contains(inv.Erasure, "backup.keep") {
+		t.Errorf("the inventory says of an erasure %q", inv.Erasure)
 	}
 	// A person-free kind lists no one.
 	if len(byKind[KindRequirement].People) != 0 {
