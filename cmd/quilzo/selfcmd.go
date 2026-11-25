@@ -163,12 +163,24 @@ func selfKEV(root string, args []string) error {
 	// Go database. It was kept without a word, so a flaw found exploited
 	// since the older one was released went from contained at once to
 	// waiting for a person, by somebody giving last month's download.
+	//
+	// Nor one that says no date over one that does, as `self update` takes
+	// no database it cannot tell is newer. Only a dated catalogue was
+	// compared, so one with its dateReleased missing or written another way
+	// replaced the kept one as silently as an older one had.
 	if kept, st := loadKEV(root); st.Kept {
-		was, wasOK := kevReleased(kept.Released)
-		if now, ok := kevReleased(cat.DateReleased); ok && wasOK && now.Before(was) {
-			return fmt.Errorf("that catalogue is of %s, and the one kept is of %s already: an older one "+
-				"would forget what has been found exploited since", now.UTC().Format("2 January 2006"),
-				was.UTC().Format("2 January 2006"))
+		if was, wasOK := kevReleased(kept.Released); wasOK {
+			now, ok := kevReleased(cat.DateReleased)
+			if !ok {
+				return fmt.Errorf("that catalogue says no date it was released (dateReleased %q), and the one "+
+					"kept is of %s: it cannot be told to be no older, and an older one would forget what has "+
+					"been found exploited since", clip(cat.DateReleased, 60), was.UTC().Format("2 January 2006"))
+			}
+			if now.Before(was) {
+				return fmt.Errorf("that catalogue is of %s, and the one kept is of %s already: an older one "+
+					"would forget what has been found exploited since", now.UTC().Format("2 January 2006"),
+					was.UTC().Format("2 January 2006"))
+			}
 		}
 	}
 	sort.Strings(ids)
