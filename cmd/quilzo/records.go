@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/sheet"
@@ -119,7 +120,15 @@ func recordsCollections(root string) error {
 		Count int    `json:"records"`
 	}
 	var rows []row
+	caller := resolveCaller(root, "")
 	for _, n := range names {
+		// Only the collections this caller may read, each asked about
+		// itself, as GET /api/v1/records and list_collections answer. This
+		// listed every one, with its count, to a token limited to other
+		// content types, which the command it is listed for then refuses.
+		if authorise(root, caller, auth.ActView, auth.DataResource(n)) != nil {
+			continue
+		}
 		c, _ := collection.Count(s, tree, n)
 		rows = append(rows, row{n, c})
 	}

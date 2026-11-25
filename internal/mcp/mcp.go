@@ -149,6 +149,13 @@ type Operation struct {
 	// that the caller may act somewhere in the area, and the handler asks
 	// about the one it was given.
 	Area string
+	// AlsoIn are areas where holding the operation's role also admits the
+	// caller, for a read of the whole site that an area's screen shows as
+	// well, as its command's row has them (cmd/quilzo's need.alsoIn): the
+	// store's integrity, which a reader of the site has and Integrity shows
+	// the compliance area. Without them the operation refused there what
+	// its command allowed.
+	AlsoIn []string
 }
 
 // isCheck reports whether an operation is one of the checks that gate

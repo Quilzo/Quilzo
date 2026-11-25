@@ -937,7 +937,11 @@ func (s *Server) can(w http.ResponseWriter, r *http.Request, p principal,
 	// administrator's reader-capped credential still cannot, because their
 	// approve comes from the role.
 	d := s.Policy.Evaluate(p.Name, act, resource)
-	if err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource); err != nil {
+	err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource)
+	if why := s.contentLimit(p, act, resource); err == nil && why != "" {
+		err = errors.New(why)
+	}
+	if err != nil {
 		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
 			"Title": "Not permitted", "Principal": p,
 			"Heading": "This credential cannot do that",
@@ -963,7 +967,78 @@ func (s *Server) allows(p principal, act auth.Action, resource string) bool {
 		return true
 	}
 	d := s.Policy.Evaluate(p.Name, act, resource)
-	return d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource) == nil
+	return d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, resource) == nil &&
+		s.contentLimit(p, act, resource) == ""
+}
+
+// contentLimit is why a credential limited to some content types or
+// languages may not act on a page, or "" when it may: by the type the page
+// is bound to and the language its own fields give, in the draft or else on
+// the live site, as the content API reads both.
+//
+// can and allows asked CheckCredential, which can answer for a collection
+// and not for a page, whose type and language only the store holds. So an
+// administrator's token issued `--types policy` saved the product pages
+// here, and one issued `--locales fr` the English ones, while the content
+// API refused the same token the same pages. The whole site and the areas
+// are no one type or language, and are not asked.
+func (s *Server) contentLimit(p principal, act auth.Action, resource string) string {
+	if !p.Limits.LimitsContent() || auth.IsArea(resource) || strings.Trim(resource, "/") == "" {
+		return ""
+	}
+	page := strings.Trim(resource, "/")
+	fields, ok := s.pageFieldsAt(site.RefDraft, page)
+	if !ok {
+		fields, _ = s.pageFieldsAt(site.RefLive, page)
+	}
+	return s.fieldsLimit(p, act, page, fields)
+}
+
+// fieldsLimit is contentLimit for a page as given rather than as stored: by
+// the type its name is bound to and the language these fields give. A save
+// asks it of the page as the form leaves it, as the content API's PUT asks
+// it of its body, because can asks about the page before the form is read:
+// a token issued `--locales fr` saved the French page as English, and
+// started English pages, here.
+func (s *Server) fieldsLimit(p principal, act auth.Action, page string, fields any) string {
+	if !p.Limits.LimitsContent() {
+		return ""
+	}
+	typeName := ""
+	if s.Types != nil && s.Types.Load != nil {
+		if st, err := s.Types.Load(); err == nil && st != nil {
+			typeName = st.Bound[page]
+		}
+	}
+	return p.Limits.Why(act, typeName, auth.PageLocale(fields))
+}
+
+// pageFieldsAt is one page as a ref holds it, read by itself. Not through
+// site.PagesAt, which answers a copy of every page: a screen asks allows of
+// each row it lists, and for a limited credential that copied the whole
+// draft once a row.
+func (s *Server) pageFieldsAt(ref, page string) (any, bool) {
+	cid := s.Store.GetRef(ref)
+	if cid == "" {
+		return nil, false
+	}
+	c, err := s.Store.GetCommit(cid)
+	if err != nil {
+		return nil, false
+	}
+	tree, err := s.Store.GetTree(c.Tree)
+	if err != nil {
+		return nil, false
+	}
+	oid, ok := tree[page]
+	if !ok || s.Store.IsTree(oid) {
+		return nil, false
+	}
+	var fields any
+	if err := s.Store.GetBlob(oid, &fields); err != nil {
+		return nil, false
+	}
+	return fields, true
 }
 
 // Asking the authorisation question about the page, and not about the site.
@@ -1019,21 +1094,47 @@ func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
 	if s.Policy == nil {
 		return s.can(w, r, p, act, "/")
 	}
-	// The credential's own limits still apply. Its role cap and its read-only
-	// and type dimensions are site-wide by nature — a read-only token is
-	// read-only everywhere — so they are asked here in full. Only its path
-	// dimension is asked about itself rather than about "/", because a token
-	// scoped to /blog failing to cover "/" is the same wrong question this
-	// function exists to stop asking.
+	if s.allowsAnywhere(p, act) {
+		return true
+	}
+	return s.can(w, r, p, act, "/")
+}
+
+// allowsAnywhere is canAnywhere without an answer written: whether somebody
+// may do this somewhere in the site's content, through this session, for
+// deciding what a screen offers before it names a page.
+//
+// The content and not the areas, as auth.Policy.Anywhere reads it, so an
+// analyst's grant on /@security does not open the Pages list. The credential's
+// own limits still apply. Its role cap and its read-only and type dimensions
+// are site-wide by nature — a read-only token is read-only everywhere — so
+// they are asked here in full. Only its path dimension is asked about itself
+// rather than about "/", because a token scoped to /blog failing to cover
+// "/" is the same wrong question this function exists to stop asking.
+//
+// Each place is asked as can asks, the decision there capped by the
+// credential (auth.CheckGranted), so a permission granted on its own is
+// capped by the credential's path and limits rather than its role. Asked of
+// the role, a reader granted use-models, signed in with a reader's session,
+// was refused the question box the grant is for.
+func (s *Server) allowsAnywhere(p principal, act auth.Action) bool {
+	if s.Policy == nil {
+		return s.allows(p, act, "/")
+	}
 	within := strings.TrimSpace(p.Scope)
 	if within == "" {
 		within = "/"
 	}
-	if s.Policy.Anywhere(p.Name, act) &&
-		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil {
-		return true
+	for _, b := range s.Policy.Snapshot() {
+		if b.Principal != p.Name || b.Deny || auth.IsArea(b.Resource) {
+			continue
+		}
+		d := s.Policy.Evaluate(p.Name, act, b.Resource)
+		if d.Allowed && auth.CheckGranted(d, p.Role, p.Scope, p.Limits, act, within) == nil {
+			return true
+		}
 	}
-	return s.can(w, r, p, act, "/")
+	return false
 }
 
 // pageResource is the resource path for a page name.
@@ -2720,6 +2821,10 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		"Unpublished": draft != "" && draft != live,
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 		"CanPublish":  s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
+		// Whether there is anywhere they may start a page, which the address
+		// they give is then asked about (handleNewPage). Offered only to
+		// whoever could edit "/", it was hidden from an author of /blog.
+		"CanStart": s.allowsAnywhere(p, auth.ActEditDraft),
 	})
 }
 
@@ -2731,7 +2836,12 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	// Whether they may write anywhere, which is whether this has anything
+	// to answer them; the address they give is asked about once it is a
+	// name. This asked about "/", which an author granted /blog does not
+	// hold, so they were refused 403 for a page under /blog that the editor
+	// then let them write, and a deny on /legal was never asked at all.
+	if !s.canAnywhere(w, r, p, auth.ActEditDraft) {
 		return
 	}
 	raw := strings.Trim(strings.TrimSpace(r.URL.Query().Get("name")), "/")
@@ -2761,6 +2871,9 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 	if store.CheckPath(name) != nil {
 		http.Redirect(w, r, "/?e="+urlQueryEscape("That address is too long or has a part no page "+
 			"name can hold. Give the new page a shorter one, such as about-us"), http.StatusSeeOther)
+		return
+	}
+	if !s.canPage(w, r, p, auth.ActEditDraft, name) {
 		return
 	}
 	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)
@@ -3664,6 +3777,16 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	body := s.pageFromForm(pages, name, r.Form)
 	pages[name] = body
+	// The page as this save leaves it, whose language the form may change
+	// (fieldsLimit), as well as the page as it was (can).
+	if why := s.fieldsLimit(p, auth.ActEditDraft, name, body); why != "" {
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
+			"Title": "Not permitted", "Principal": p,
+			"Heading": "This credential cannot do that",
+			"Body":    why,
+		})
+		return
+	}
 
 	msg := r.FormValue("__message")
 	if strings.TrimSpace(msg) == "" {

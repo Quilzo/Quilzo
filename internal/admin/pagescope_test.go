@@ -218,8 +218,11 @@ func TestTheListingIsWhatTheReaderMayRead(t *testing.T) {
 		t.Error("the pages screen does not list blog/first, which is the one " +
 			"page this author is scoped to")
 	}
+	// Anywhere on the screen, less the example address the "New page at"
+	// form now offers an author of /blog, about-us, which names no page here.
+	shown := strings.ReplaceAll(body, "about-us", "")
 	for _, hidden := range []string{"legal/terms", "about"} {
-		if strings.Contains(body, hidden) {
+		if strings.Contains(shown, hidden) {
 			t.Errorf("the pages screen names %s to an author scoped to /blog", hidden)
 		}
 	}
@@ -537,5 +540,46 @@ func TestReviewCountsAChangeOutOfReachAndDoesNotNameIt(t *testing.T) {
 	body := getPage(t, srv, "/review", token)
 	if strings.Contains(body, "redundancy") || !strings.Contains(body, "1 change to pages you may not read") {
 		t.Errorf("Review names a page out of reach, or does not count it:\n%s", body)
+	}
+}
+
+// An author granted part of the site starts a page there, as they edit one.
+//
+// Pages offered "New page at" only to whoever could edit "/", and
+// /pages/new asked the same of the whole site, so an author granted /blog
+// was not shown the form and was answered 403 "no binding gives bea any
+// role on /" for a page under /blog, which the editor then let them write.
+// The address they give is what is asked about: outside their part, and
+// under a deny, they are refused.
+func TestAnAuthorOfPartOfTheSiteStartsAPageThere(t *testing.T) {
+	srv, tok := scoped(t,
+		auth.Binding{Principal: "bea", Role: auth.RoleAuthor, Resource: "/blog"},
+		auth.Binding{Principal: "ed", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "ed", Role: auth.RoleAuthor, Resource: "/legal", Deny: true},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/blog"},
+	)
+	if body := get(t, srv, "/", tok["bea"]).Body.String(); !strings.Contains(body, `action="/pages/new"`) {
+		t.Error("Pages does not offer an author of /blog a new page")
+	}
+	if body := get(t, srv, "/", tok["rae"]).Body.String(); strings.Contains(body, `action="/pages/new"`) {
+		t.Error("Pages offers a new page to somebody who may only read")
+	}
+	for _, tc := range []struct {
+		who, name string
+		want      int
+	}{
+		{"bea", "blog/second", http.StatusSeeOther},
+		{"bea", "about-us", http.StatusForbidden},
+		{"rae", "blog/second", http.StatusForbidden},
+		{"ed", "about-us", http.StatusSeeOther},
+		{"ed", "legal/new", http.StatusForbidden},
+	} {
+		w := get(t, srv, "/pages/new?name="+url.QueryEscape(tc.name), tok[tc.who])
+		if w.Code != tc.want {
+			t.Errorf("%s starting %s: %d, want %d", tc.who, tc.name, w.Code, tc.want)
+		}
+		if tc.want == http.StatusSeeOther && w.Header().Get("Location") != "/page/"+tc.name {
+			t.Errorf("%s starting %s was sent to %q", tc.who, tc.name, w.Header().Get("Location"))
+		}
 	}
 }

@@ -560,6 +560,37 @@ func (s *Server) may(r *http.Request, act auth.Action, resource string) error {
 	return nil
 }
 
+// mayInContent is may for a listing or a search, which then asks may of
+// every page it answers: whether the caller may act somewhere in the site's
+// content, through their credential.
+//
+// Both asked about "/", which a grant on /blog does not cover and a token
+// issued `--on /blog` does not reach, so whoever held part of the site was
+// refused the listing and the search of it. The content and not the areas
+// (auth.Policy.Anywhere), and the credential asked about its own path
+// rather than about "/". The refusal is the one may gives for "/".
+func (s *Server) mayInContent(r *http.Request, act auth.Action) error {
+	err := s.may(r, act, "/")
+	if err == nil {
+		return nil
+	}
+	tok := tokenFrom(r)
+	if tok == nil {
+		return err
+	}
+	within := strings.TrimSpace(tok.Resource)
+	if within == "" {
+		within = "/"
+	}
+	if auth.CheckCredential(tok.Role, tok.Resource, tok.Scope, act, within) != nil {
+		return err
+	}
+	if s.Policy != nil && !s.Policy.Anywhere(tok.Principal, act) {
+		return err
+	}
+	return nil
+}
+
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, Error{
 		Error: "no such endpoint",
@@ -632,7 +663,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayInContent(r, auth.ActView); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -998,6 +1029,20 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 		}
 
 		_, exists := pages[name]
+		// A token limited to some content types or languages writes only
+		// what it may read: the page as it stands, answered as get answers
+		// it, and the page as it would be, whose language is the body's. A
+		// read was asked this and a write was not, so a token issued
+		// `--types policy` replaced the product page it was answered 404
+		// for, and one issued `--locales fr` wrote a page as English.
+		if visible, _ := s.visibleTo(tok, name, pages[name]); exists && !visible {
+			status, conflict = http.StatusNotFound, &Error{Error: "no such page"}
+			return nil
+		}
+		if visible, why := s.visibleTo(tok, name, fields); !visible {
+			status, conflict = http.StatusForbidden, &Error{Error: "not permitted", Detail: why}
+			return nil
+		}
 		current := ""
 		if exists {
 			tree, err := s.tree(draft)
@@ -1283,21 +1328,23 @@ func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	closed, ok := s.closedAt(w, idx)
+	pages, closed, ok := s.closedAt(w, idx)
 	if !ok {
 		return
 	}
 	v, ok := idx.Vectors[name]
-	if !ok || closed[name] {
+	visible, _ := s.visibleTo(tokenFrom(r), name, pages[name])
+	if !ok || closed[name] || !visible {
 		// Not indexed and not found answer alike, because distinguishing them
 		// tells a caller which pages exist but hold no text — which is a
 		// question about the store, not about similarity. A page outside its
-		// publish window is not found either, as it is everywhere else.
+		// publish window is not found either, as it is everywhere else, nor
+		// one out of a token's types or languages, as get answers it.
 		writeError(w, http.StatusNotFound, Error{
 			Error: "no such page, or it has no text to compare"})
 		return
 	}
-	s.answerNeighbours(w, r, idx, v, name, closed)
+	s.answerNeighbours(w, r, idx, v, name, pages, closed)
 }
 
 // vectorSearch returns the pages nearest to a query.
@@ -1306,7 +1353,7 @@ func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
 		s.notAllowed(w, r, Error{Error: "GET only"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayInContent(r, auth.ActView); err != nil {
 		writeError(w, http.StatusForbidden, Error{Error: "not permitted",
 			Detail: err.Error()})
 		return
@@ -1329,11 +1376,11 @@ func (s *Server) vectorSearch(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		return
 	}
-	closed, ok := s.closedAt(w, idx)
+	pages, closed, ok := s.closedAt(w, idx)
 	if !ok {
 		return
 	}
-	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "", closed)
+	s.answerNeighbours(w, r, idx, idx.Embed(q, s.Tokenise), "", pages, closed)
 }
 
 func (s *Server) index(w http.ResponseWriter) *vector.Index {
@@ -1365,23 +1412,26 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 // the words it shared, before its window opened. Asked here, at the time
 // of asking, because the index is built once a commit and the windows
 // open and close without one.
-func (s *Server) closedAt(w http.ResponseWriter, idx *vector.Index) (map[string]bool, bool) {
+//
+// And the pages whose windows are open, whose fields give each one's
+// language (visibleTo).
+func (s *Server) closedAt(w http.ResponseWriter, idx *vector.Index) (map[string]any, map[string]bool, bool) {
 	pages, err := site.PagesAt(s.Store, idx.Commit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, Error{
 			Error: "the index could not be queried", Detail: err.Error()})
-		return nil, false
+		return nil, nil, false
 	}
 	closed := map[string]bool{}
 	for _, name := range s.withhold(pages) {
 		closed[name] = true
 	}
-	return closed, true
+	return pages, closed, true
 }
 
 // answerNeighbours writes a result set, filtered by what the caller may see.
 func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
-	idx *vector.Index, q vector.Vector, exclude string, closed map[string]bool) {
+	idx *vector.Index, q vector.Vector, exclude string, pages map[string]any, closed map[string]bool) {
 
 	// Bounded by api.page.max, as every listing is. Similar pages and a
 	// search by meaning answered up to the compiled-in hundred whatever it
@@ -1419,7 +1469,10 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 		if err := s.may(r, auth.ActView, "/"+n.Page); err != nil {
 			continue
 		}
-		if visible, _ := s.visibleTo(tok, n.Page, nil); !visible {
+		// With its fields, which give its language. Asked of none, which
+		// give no language, a token issued `--locales fr` was named the
+		// English pages, with the words each shared with what it asked.
+		if visible, _ := s.visibleTo(tok, n.Page, pages[n.Page]); !visible {
 			continue
 		}
 		out = append(out, n)

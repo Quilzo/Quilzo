@@ -606,9 +606,10 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	})
 
 	// A reader's, as `quilzo verify` is: whether each object is still what
-	// its name says reveals nothing the reader cannot read already.
+	// its name says reveals nothing the reader cannot read already. And the
+	// compliance area's, where Integrity shows it, as the command's is.
 	srv.Register(mcp.Operation{
-		Name: "verify_store", NeedsRole: "reader",
+		Name: "verify_store", NeedsRole: "reader", AlsoIn: []string{auth.AreaCompliance},
 		Summary:  "re-hash every object and report whether each is still what its name says",
 		Keywords: []string{"verify", "integrity", "corruption", "check", "hash"},
 	}, func(map[string]any) (any, error) {

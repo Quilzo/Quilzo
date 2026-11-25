@@ -113,13 +113,21 @@ func findSources(root, ref, query string) (find.Sources, error) {
 		Commit:  s.GetRef(ref),
 		Screens: admin.Screens(),
 	}
+	// Only the pages this caller may read, as find over the machine
+	// interface answers. Every page was searched, so a reader denied a page,
+	// or given only part of the site, was shown its title and its address.
+	caller := resolveCaller(root, "")
 	if pages, perr := site.PagesAt(s, ref); perr == nil {
-		src.Pages = pages
+		if src.Pages, err = visiblePages(root, caller, pages); err != nil {
+			return find.Sources{}, err
+		}
 	}
+	// The library and the types are the whole site's, and are searched for
+	// whoever may read the whole site.
+	whole := authorise(root, caller, auth.ActView, "/") == nil
 
 	// The settings, when this caller may read them. Everything else here is
 	// content or an address; these are the descriptions of controls.
-	caller := resolveCaller(root, "")
 	if authorise(root, caller, auth.ActGrant, "/") == nil {
 		for _, o := range config.All() {
 			src.Settings = append(src.Settings,
@@ -127,7 +135,7 @@ func findSources(root, ref, query string) (find.Sources, error) {
 		}
 	}
 
-	if lib, lerr := openMedia(root); lerr == nil {
+	if lib, lerr := openMedia(root); lerr == nil && whole {
 		if files, ferr := lib.List(); ferr == nil {
 			for _, f := range files {
 				src.Media = append(src.Media, find.File{ID: f.ID, Alt: f.Alt})
@@ -135,7 +143,7 @@ func findSources(root, ref, query string) (find.Sources, error) {
 		}
 	}
 
-	if st, rerr := schema.Load(root); rerr == nil && st != nil && st.Registry != nil {
+	if st, rerr := schema.Load(root); rerr == nil && st != nil && st.Registry != nil && whole {
 		for _, t := range st.Registry.Types {
 			src.Types = append(src.Types, find.ContentType{
 				Name: t.Name, Fields: fieldNames(t),

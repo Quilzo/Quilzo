@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -313,6 +314,14 @@ func typesUnbind(root string, args []string) error {
 		return errMisused{fmt.Errorf("usage: quilzo type unbind <page>")}
 	}
 	page := pos[0]
+	// Asked about the page as well as the whole site, as binding it is. A
+	// page of no type is in reach of every limit to some types
+	// (auth.Scope.AllowsType), so a token issued `--types policy`, asked
+	// about the whole site alone, unbound the product page and then wrote it.
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActPublish, pageResource(page)); err != nil {
+		return err
+	}
 	st, err := schema.Load(root)
 	if err != nil {
 		return err
@@ -324,7 +333,6 @@ func typesUnbind(root string, args []string) error {
 	if err := st.Save(); err != nil {
 		return err
 	}
-	caller := resolveCaller(root, flagToken)
 	record(root, caller.auditRecord("type.unbind", page, audit.Success, nil))
 	w.Human("%s no longer has to satisfy a type\n", page)
 	return nil

@@ -418,6 +418,11 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	if err := auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource); err != nil {
 		return errBlocked{err}
 	}
+	// And a limit to some content types or languages, which only a page's
+	// own binding and fields can answer (contentLimits).
+	if why := contentLimits(root, c)(action, resource); why != "" {
+		return errBlocked{errors.New(why)}
+	}
 	return nil
 }
 

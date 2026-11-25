@@ -99,8 +99,16 @@ type askSources struct {
 }
 
 // askAllowed is whether a person may ask: somebody who may use the store's
-// models somewhere, other than one who only reads the evidence, while a
-// model is set up.
+// models somewhere in the site's content, through the credential they
+// signed in with, other than one who only reads the evidence, while a model
+// is set up.
+//
+// Somewhere in the content, and not anywhere under "/", which holds the
+// areas: the analyst, compliance and support jobs, administrators or
+// authors of their areas, hold use-models there by their rung, where it
+// means nothing, and each spent the models from this box while the writing
+// assistant and `quilzo assist` refused them. The credential's cap was not
+// asked either, so a session issued as a reader asked as its person.
 func (s *Server) askAllowed(p principal) bool {
 	if s.Ask == nil || s.Ask.Model == nil {
 		return false
@@ -108,7 +116,7 @@ func (s *Server) askAllowed(p principal) bool {
 	if s.Policy == nil {
 		return true
 	}
-	return s.Policy.AnywhereUnder(p.Name, auth.ActUseModels, "/") && !s.evidenceOnly(p)
+	return s.allowsAnywhere(p, auth.ActUseModels) && !s.evidenceOnly(p)
 }
 
 // sourcesFor is the collections a person may read that have a type, and

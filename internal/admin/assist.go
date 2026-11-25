@@ -337,8 +337,20 @@ func (s *Server) handleAssistAccept(w http.ResponseWriter, r *http.Request) {
 	// nothing on purpose: accepting the permitted half of a proposal and
 	// dropping the rest would leave a half-applied change nobody asked for,
 	// and the person would be told it worked.
-	for name := range prop.Pages {
+	for name, body := range prop.Pages {
 		if !s.canPage(w, r, p, auth.ActEditDraft, name) {
+			return
+		}
+		// And the page as the model wrote it, whose language may be another
+		// (fieldsLimit), as a save from the editor is asked: asked as it
+		// stood alone, a token issued `--locales fr` had the French page
+		// rewritten in English here, and English pages started.
+		if why := s.fieldsLimit(p, auth.ActEditDraft, name, body); why != "" {
+			s.render(w, r, "message.html", map[string]any{"Status": http.StatusForbidden,
+				"Title": "Not permitted", "Principal": p,
+				"Heading": "This credential cannot do that",
+				"Body":    why,
+			})
 			return
 		}
 	}

@@ -353,7 +353,11 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 	// Add a chatbot, on a screen with no form for one.
 	edit := s.mayUse(p, auth.ActEditDraft, "/")
 	publish := s.mayUse(p, auth.ActPublish, "/")
-	start("pages", edit, "Write a page", "/#newpage-name")
+	// Pages shows its New page box to whoever may write somewhere in the
+	// content through this session (allowsAnywhere). Asked of the person
+	// instead, an administrator signed in with a reader's session was
+	// offered this and sent to a Pages with no box.
+	start("pages", s.allowsAnywhere(p, auth.ActEditDraft), "Write a page", "/#newpage-name")
 	start("media", edit, "Upload a picture", "/media#m-file")
 	start("make", s.Features != nil, "Add a feature", "/make#make-add")
 	start("assistants", publish && !p.Limits.ReadOnly, "Add a chatbot", "/assistants#new-chatbot")

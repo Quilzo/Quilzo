@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -142,6 +143,21 @@ func cmdAssist(root string, args []string) error {
 	if *dryRun {
 		w.Human("\n  %snothing written%s\n", dim, reset)
 		return nil
+	}
+
+	// Each page the model proposes, asked about as it stands and as it would
+	// be written (writeLimits), as the admin's assistant asks each page
+	// before it accepts a proposal. The gate asked whether the caller may use
+	// the models on the whole site, which is no one page, type or language,
+	// so a token issued `--types policy` had the model rewrite the product
+	// page, and one issued `--locales fr` the French page in English.
+	for _, n := range names {
+		if err := authorise(root, caller, auth.ActEditDraft, pageResource(n)); err != nil {
+			return fmt.Errorf("%s: %w", n, err)
+		}
+		if why := writeLimits(root, caller, n, proposal.Pages[n]); why != "" {
+			return errBlocked{fmt.Errorf("%s: %s", n, why)}
+		}
 	}
 
 	// Merge into the draft rather than replacing it. A proposal touching one

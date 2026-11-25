@@ -178,7 +178,21 @@ func lockList(root string) error {
 	if err != nil {
 		return err
 	}
+	// Only the claims on pages this caller may read, as every list of pages
+	// they are shown leaves the rest out: a claim names its page, who holds
+	// it and what they said they were doing.
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return err
+	}
 	active := locks.Active(time.Now())
+	readable := active[:0]
+	for _, l := range active {
+		if may(l.Page) {
+			readable = append(readable, l)
+		}
+	}
+	active = readable
 	if w.JSON(map[string]any{"locks": active}) {
 		return nil
 	}

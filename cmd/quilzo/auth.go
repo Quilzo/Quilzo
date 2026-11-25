@@ -1013,6 +1013,12 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	if *forAPI {
 		scope.ReadOnly = true
 	}
+	// And no wider than the credential it is issued with, as a session
+	// exchanged for a token keeps the token's limits (auth.Scope.Narrow).
+	// Narrowed by the flags alone, an administrator's token issued `--types
+	// policy` issued a publisher's token with no limit at all, and the limit
+	// was one command deep.
+	scope = scope.Narrow(resolveCaller(root, "").Limits)
 
 	life := *ttl
 	if life == 0 {

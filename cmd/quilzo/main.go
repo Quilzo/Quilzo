@@ -1770,6 +1770,15 @@ func cmdAdd(root string, args []string) error {
 		pages[name] = out
 	}
 
+	// Each page as it is to be written, in the language it is written in
+	// (writeLimits), which the gate could not ask before the files were read.
+	caller := resolveCaller(root, "")
+	for _, name := range changedNames(fs.Args()) {
+		if why := writeLimits(root, caller, name, pages[name]); why != "" {
+			return errBlocked{fmt.Errorf("%s: %s", name, why)}
+		}
+	}
+
 	types, err := gateWrite(root, pages)
 	if err != nil {
 		return err
@@ -1778,7 +1787,6 @@ func cmdAdd(root string, args []string) error {
 	// Recorded as the caller's, and --author naming somebody else credits
 	// them in the message (recordedAs): recorded under the name given, dana's
 	// change was lee's to every rule about who may approve it.
-	caller := resolveCaller(root, "")
 	who, message := caller.recordedAs(*author, *msg)
 	changed := changedNames(fs.Args())
 	var cid string
@@ -1939,17 +1947,21 @@ func readableDiff(root string, s *store.Store, from, to string) ([]site.Change, 
 	if err != nil {
 		return nil, err
 	}
-	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	caller := resolveCaller(root, "")
+	may, err := pageCheck(root, caller, auth.ActView)
 	if err != nil {
 		return nil, err
 	}
+	// The records are the whole site's: shown to whoever may read it, now
+	// that somebody who may read only part of it may run this as well.
+	whole := authorise(root, caller, auth.ActView, "/") == nil
 	kept := changes[:0]
 	for _, c := range changes {
 		id := c.After
 		if id == "" {
 			id = c.Before
 		}
-		if s.IsTree(id) || may(c.Path) {
+		if tree := s.IsTree(id); (tree && whole) || (!tree && may(c.Path)) {
 			kept = append(kept, c)
 		}
 	}
@@ -2611,7 +2623,7 @@ func cmdLog(root string, args []string) error {
 		return err
 	}
 	live := s.GetRef(site.RefLive)
-	hist, err := s.History(head, *limit)
+	hist, err := readableHistory(root, s, head, *limit)
 	if err != nil {
 		return err
 	}
@@ -2632,6 +2644,91 @@ func cmdLog(root string, args []string) error {
 		fmt.Printf("  %s  %-10s %s%s\n", short(h.ID), h.Commit.Author, h.Commit.Message, mark)
 	}
 	return nil
+}
+
+// readableHistory is the commits a log shows the caller: the whole history
+// to whoever may read the whole site, and to somebody who may read only part
+// of it the commits that changed pages of that part and nothing else.
+//
+// A commit's message and author say what it changed, and its changes are
+// the whole site's when they reach a page out of the caller's reach or the
+// records, so a commit that touched one is left out whole rather than shown
+// with its message. As many commits as were asked for are shown when there
+// are that many among the last twenty times as many, which is as far back
+// as it looks.
+func readableHistory(root string, s *store.Store, head string, limit int) ([]struct {
+	ID     string
+	Commit store.Commit
+}, error) {
+	caller := resolveCaller(root, "")
+	// A credential limited to some content types or languages is let read
+	// "/", which is no one type or language, and may still not read the
+	// whole site: shown the whole history, a token issued `--types policy`
+	// was listed each commit to the product page that diff leaves out.
+	if authorise(root, caller, auth.ActView, "/") == nil && !caller.Limits.LimitsContent() &&
+		!deniedReadingSomewhere(root, caller) {
+		return s.History(head, limit)
+	}
+	may, err := pageCheck(root, caller, auth.ActView)
+	if err != nil {
+		return nil, err
+	}
+	// Bounded, so a long history with little of it readable is not walked
+	// to its first commit, each with a diff.
+	all, err := s.History(head, limit*20)
+	if err != nil {
+		return nil, err
+	}
+	kept := all[:0]
+	for _, h := range all {
+		if len(kept) == limit {
+			break
+		}
+		parent := ""
+		if len(h.Commit.Parents) > 0 {
+			parent = h.Commit.Parents[0]
+		}
+		changes, err := site.Diff(s, parent, h.ID)
+		if err != nil {
+			return nil, err
+		}
+		readable := len(changes) > 0
+		for _, c := range changes {
+			id := c.After
+			if id == "" {
+				id = c.Before
+			}
+			if s.IsTree(id) || !may(c.Path) {
+				readable = false
+				break
+			}
+		}
+		if readable {
+			kept = append(kept, h)
+		}
+	}
+	return kept, nil
+}
+
+// deniedReadingSomewhere reports whether the caller is denied reading some
+// part of the site's content, which being let read "/" does not show: a
+// deny on /legal does not reach "/". Shown the whole history for being let
+// read "/", a reader denied /legal was listed each commit to the terms by
+// its message and its author, which diff, find and lock list left out.
+//
+// Unreadable policy counts as a deny, so the log errs towards showing less.
+func deniedReadingSomewhere(root string, c *Caller) bool {
+	p, err := loadPolicy(root)
+	if err != nil {
+		return true
+	}
+	for _, b := range p.Snapshot() {
+		if b.Deny && strings.EqualFold(b.Principal, c.Name) && !auth.IsArea(b.Resource) &&
+			!p.Evaluate(c.Name, auth.ActView, b.Resource).Allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func cmdRender(root string, args []string) error {
