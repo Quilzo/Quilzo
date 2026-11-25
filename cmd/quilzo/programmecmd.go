@@ -5,16 +5,16 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
-	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/programme"
 	"github.com/quilzo/quilzo/internal/register"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 // What the security programme's four commands share: `quilzo requirement`,
@@ -23,9 +23,10 @@ import (
 //
 // Each writes through registerWriter, so the audit log, the policy gate as
 // the caller and the register's own rules come with every write. A decision
-// is made the one way internal/programme makes it: the only person who may
-// approve it decides alone, and it is marked so; anybody else's waits for
-// somebody else, who approves it with `quilzo ... approve ID`.
+// is raised as a proposal and approved through the approvals module, as
+// every decision in the register is: by somebody else on Sign-off in the
+// admin, or at the console with `quilzo ... approve ID --surface HASH`, and
+// by its raiser alone only when they are the only person who may.
 
 // Each of the four commands' own row asks what its strictest line asks,
 // and the lines that read narrow it to view, so a line added later without
@@ -40,50 +41,29 @@ func init() {
 	bareRuns["population"] = "list"
 }
 
-// programmeKeeper is where the programme keeps who each pseudonym is and
-// the words of justifications: beside the store, where they can be erased,
-// and on a store encrypted at rest, no words at all.
-func programmeKeeper(root string, s *store.Store) programme.Keeper {
-	return &programme.FileKeeper{Dir: filepath.Join(root, "programme"), NoWords: s.Encrypted()}
-}
-
 // openProgramme is the programme of the store at root, for reading.
 func openProgramme(root string) (*programme.Programme, error) {
 	r, err := openRegister(root)
 	if err != nil {
 		return nil, err
 	}
-	return &programme.Programme{Reg: r, Keep: programmeKeeper(root, r.Store)}, nil
+	return &programme.Programme{Reg: r}, nil
 }
 
 // programmeWriter is the programme of the store at root, wired to write as
-// the caller, and the caller as the register names a writer: a person by
-// the pseudonym the programme keeps for them.
+// the caller through the register's one writer, which names them by their
+// pseudonym in the subject map, and to have its decisions approved through
+// the approvals module, as every decision in the register is.
 func programmeWriter(root string, c *Caller) (*programme.Programme, register.Actor, error) {
 	r, by, err := registerWriter(root, c)
 	if err != nil {
 		return nil, register.Actor{}, err
 	}
-	p := &programme.Programme{Reg: r, Keep: programmeKeeper(root, r.Store)}
-	if c.Kind == audit.KindHuman {
-		if by.Subject, err = p.Keep.Pseudonym(c.Name, "person"); err != nil {
-			return nil, register.Actor{}, err
-		}
+	m, err := approvalsOn(root, r)
+	if err != nil {
+		return nil, register.Actor{}, err
 	}
-	return p, by, nil
-}
-
-// deciderFor is the caller deciding a decision of a kind: how many people
-// may approve one, as the policy has it, and what the caller was proved
-// by.
-func deciderFor(root string, c *Caller, by register.Actor, kind register.Kind) programme.Decider {
-	spec, _ := register.SpecOf(string(kind))
-	proof := "unverified: " + c.Why
-	if c.Verified {
-		proof = "verified by the credential " + c.Credential
-	}
-	return programme.Decider{By: by, Eligible: eligibleFor(root, auth.ActApprove, spec.Resource()),
-		MayApprove: authorise(root, c, auth.ActApprove, spec.Resource()) == nil, Proof: proof}
+	return &programme.Programme{Reg: r, Approvals: m}, by, nil
 }
 
 // eligibleFor is how many principals the policy lets act on a resource. A
@@ -111,21 +91,32 @@ func eligibleFor(root string, act auth.Action, resource string) int {
 	return n
 }
 
-// sayDecided says what became of a decision: written, alone or not, or
-// waiting, with the line that approves it.
+// sayDecided says what became of a decision: waiting for its approvers,
+// with how they approve it and the hash they are shown, or written, alone
+// or not.
 func sayDecided(d programme.Decided, approve string) error {
 	if w.JSON(d) {
 		return nil
 	}
+	line := fmt.Sprintf("quilzo %s approve %s --surface %s", approve, d.ID, d.Surface)
 	switch {
+	case d.Waits && d.Signed > 0:
+		fmt.Printf("  %sapproved%s: %d of the %d approvals it needs; it waits for the rest\n", bold, reset, d.Signed, d.Needed)
+	case d.Waits && d.Yours:
+		fmt.Printf("  %swaits%s for your approval: you are the only person who may approve it, so you approve it alone, "+
+			"and it is marked so, with a review by somebody else due. Read what it is, then type back its hash:\n"+
+			"    quilzo approval show %s\n    %s\n", bold, reset, d.ID, line)
 	case d.Waits:
-		fmt.Printf("  %swaits%s for somebody else who may approve it; they run:\n    quilzo %s approve %s\n",
-			bold, reset, approve, d.ID)
+		fmt.Printf("  %swaits%s for somebody else who may approve it: on Sign-off in the admin with their passkey, or at "+
+			"the console, typing back its hash:\n    %s\n", bold, reset, line)
 	case d.Alone:
 		fmt.Printf("  %sapproved alone%s: you are the only person who may approve it, so it is marked so, and a review "+
 			"by somebody else is due by %s\n", bold, reset, time.Now().Add(programme.ReviewWithin).UTC().Format("2 Jan 2006"))
 	default:
 		fmt.Printf("  %sapproved%s\n", bold, reset)
+	}
+	if d.Surface != "" && !d.Waits {
+		fmt.Printf("  %swhat was approved is %s%s\n", dim, d.Surface, reset)
 	}
 	if d.Receipt.Commit != "" {
 		fmt.Printf("  %sthe register stands at %s; receipt %s%s\n", dim, d.Receipt.Commit, d.Receipt.Digest, reset)
@@ -134,10 +125,24 @@ func sayDecided(d programme.Decided, approve string) error {
 }
 
 // approveDecision approves a waiting decision of one of the kinds a
-// command decides.
-func approveDecision(root, id string, command string, kinds ...register.Kind) error {
+// command decides, at the console, through the approvals module: the
+// person typing back the hash of what it shows, as `quilzo approval
+// approve` takes it, under the separation policy and every rule of the
+// engine. args are the line's own, an identifier and --surface.
+func approveDecision(root string, args []string, command string, kinds ...register.Kind) error {
+	fs := flag.NewFlagSet(command+" approve", flag.ContinueOnError)
+	surface := fs.String("surface", "", "the hash of what it shows, as `quilzo approval show ID` gives it, typed back")
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return err
+	}
+	if len(pos) != 1 || strings.TrimSpace(*surface) == "" {
+		return errMisused{fmt.Errorf("usage: quilzo %s approve ID --surface HASH; `quilzo approval show ID` shows what "+
+			"it approves and the hash to type back", command)}
+	}
+	id := pos[0]
 	caller := resolveCaller(root, flagToken)
-	p, by, err := programmeWriter(root, caller)
+	p, _, err := programmeWriter(root, caller)
 	if err != nil {
 		return err
 	}
@@ -151,8 +156,13 @@ func approveDecision(root, id string, command string, kinds ...register.Kind) er
 		}
 		for _, k := range kinds {
 			if w.Kind == k {
-				d, err := p.Approve(deciderFor(root, caller, by, k), w.ID)
+				who, err := consolePerson(root, caller)
 				if err != nil {
+					return err
+				}
+				d, err := p.Approve(who, w.ID, approval.Proof{Console: &approval.ConsoleProof{
+					Typed: register.Digest(strings.TrimSpace(*surface)), Verified: caller.Verified}})
+				if err != nil && (d.Receipt.Commit == "" || !errors.Is(err, register.ErrUnrecorded)) {
 					return programmeError(err)
 				}
 				return sayDecided(d, command)

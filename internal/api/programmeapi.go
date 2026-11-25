@@ -6,7 +6,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -104,8 +103,7 @@ func (s *Server) programmeReadable(w http.ResponseWriter, r *http.Request) (*pro
 		writeError(w, http.StatusInternalServerError, Error{Error: "the register could not be read", Detail: err.Error()})
 		return nil, nil, false
 	}
-	keep := &programme.FileKeeper{Dir: filepath.Join(s.Store.Root(), "programme"), NoWords: s.Store.Encrypted()}
-	return &programme.Programme{Reg: reg, Keep: keep}, v, true
+	return &programme.Programme{Reg: reg}, v, true
 }
 
 func (s *Server) programmeUnreadable(w http.ResponseWriter, err error) {
@@ -187,7 +185,7 @@ func (s *Server) programmeStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/api/v1/soa/")
-	st, err := programme.StatementAt(v, p.Keep, name)
+	st, err := programme.StatementAt(v, p.Words, name)
 	if err != nil {
 		s.programmeUnreadable(w, err)
 		return

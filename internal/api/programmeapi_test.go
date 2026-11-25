@@ -6,12 +6,12 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/approval"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/programme"
 	"github.com/quilzo/quilzo/internal/register"
@@ -26,20 +26,35 @@ func withProgramme(t *testing.T, s *Server) register.ID {
 	r.Audit = func(audit.Record) error { return nil }
 	r.Now = func() time.Time { return time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC) }
 	allow := func(auth.Action, string) error { return nil }
-	olu := register.Actor{Name: "olu", Subject: "d0000000000000000000000000000001", Kind: audit.KindHuman, Verified: true, May: allow}
-	p := &programme.Programme{Reg: r, Now: r.Now,
-		Keep: &programme.FileKeeper{Dir: filepath.Join(s.Store.Root(), "programme")}}
-	alone := programme.Decider{By: olu, Eligible: 1, MayApprove: true, Proof: "a test"}
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, err := p.Install(alone, "iso-27001")
+	person := func(name string) register.Actor {
+		id, err := r.SubjectFor(name, "person")
+		must(err)
+		return register.Actor{Name: name, Subject: id, Kind: audit.KindHuman, Verified: true, May: allow}
+	}
+	olu, lee := person("olu"), person("lee")
+	p := &programme.Programme{Reg: r, Now: r.Now}
+	// Each decision is approved at the console, on a store with nobody
+	// granted anything, where whoever is at it is the one person eligible.
+	approve := func(by string, id register.ID) {
+		t.Helper()
+		a, err := (&approval.Approvals{Root: s.Store.Root(), Register: r}).Ask(id)
+		must(err)
+		_, err = p.Approve(approval.Person{Name: by, Kind: audit.KindHuman, Verified: true, Console: true, May: allow}, id,
+			approval.Proof{Console: &approval.ConsoleProof{Typed: a.Hash, Verified: true}})
+		must(err)
+	}
+	d, err := p.Install(olu, "iso-27001")
 	must(err)
-	_, err = p.DecideScope(alone, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"}})
+	approve("olu", d.ID)
+	d, err = p.DecideScope(olu, register.Scope{Name: "group", Title: "The group", Domains: []register.Domain{"identity"}})
 	must(err)
+	approve("olu", d.ID)
 	entra := register.Source{Name: "entra", Type: "import", Fresh: 86400, Grade: register.GradeConnector}
 	eid, _ := register.IDOf(entra)
 	recs := []register.Record{entra, register.Control{Ref: "AC-01", Title: "Second factor for every account", Domain: "identity", Owner: olu.Subject}}
@@ -54,15 +69,12 @@ func withProgramme(t *testing.T, s *Server) register.ID {
 	_, _, err = p.Define(olu, programme.Definition{Name: "accounts", Source: "entra",
 		Query: register.Query{Of: "Observation", Member: "about", Terms: fact}, Fresh: time.Hour})
 	must(err)
-	d, err := p.ProposeDraft(olu, programme.Draft{Control: "AC-01", Name: "mfa", Population: "accounts", Assertion: "all",
+	draft, err := p.ProposeDraft(olu, programme.Draft{Control: "AC-01", Name: "mfa", Population: "accounts", Assertion: "all",
 		Query: programme.DraftQuery{Of: "Observation", Member: "about", Terms: append(fact,
 			register.Term{Field: "value", Op: register.OpEquals, Values: []register.Scalar{register.BoolValue(true)}})}})
 	must(err)
-	lee := olu
-	lee.Name, lee.Subject = "lee", "1ee00000000000000000000000000002"
-	_, err = p.Approve(programme.Decider{By: lee, Eligible: 2, MayApprove: true, Proof: "a test"}, d.TestID)
-	must(err)
-	_, rc, err := p.RunTest(programme.Scheduler(), d.TestID)
+	approve(lee.Name, draft.TestID)
+	_, rc, err := p.RunTest(programme.Scheduler(), draft.TestID)
 	must(err)
 	for _, w := range rc.Written {
 		if w.Kind == register.KindTestRun {

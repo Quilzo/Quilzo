@@ -42,6 +42,38 @@ import (
 	"github.com/quilzo/quilzo/internal/register"
 )
 
+// Follows is what a decision of one kind brings with it, written in the
+// commit that writes the decision, and the check that it can be written at
+// all: a starter taken into the programme brings its requirements and
+// mappings, and refuses an edition this program does not carry; a control
+// test brings the query waiting beside it, and refuses a population
+// redefined since it was drafted. rec is the decision as it waits, without
+// its approval, and waiting is everything on the proposals ref.
+type Follows func(r *register.Register, rec register.Record, waiting []register.Proposal) ([]register.Record, error)
+
+// follows is what each kind brings, as the module that owns it says.
+var follows = map[register.Kind]Follows{}
+
+// FollowWith says what a decision of a kind brings with it. It is called
+// from the init of the module that owns the kind, so that the decision is
+// approved here, through the one engine, whichever surface it is approved
+// on, and is written with what it brings.
+func FollowWith(kind register.Kind, f Follows) { follows[kind] = f }
+
+// brings is what a waiting decision brings with it, or why it cannot be
+// written.
+func (m *Approvals) brings(a *Ask) ([]register.Record, error) {
+	f := follows[a.Proposal.Kind]
+	if f == nil {
+		return nil, nil
+	}
+	waiting, err := m.Register.Proposals()
+	if err != nil {
+		return nil, err
+	}
+	return f(m.Register, register.WithApproval(a.Proposal.Record, nil), waiting)
+}
+
 // Approvals is the approvals of one store's register.
 type Approvals struct {
 	// Root is the store's directory, beside which the evidence, the
@@ -158,6 +190,13 @@ type Ask struct {
 // approver is all the rule asks, is two people, and not alone.
 func (a *Ask) AloneFor(subject register.ID) bool {
 	return a.Of == 1 && (a.raisers[subject] || a.Needed > 1)
+}
+
+// Yours reports whether a person, by name and pseudonym, would approve the
+// decision alone: they may approve it, and nobody else may. On a store with
+// nobody granted anything, whoever is at it is the one person eligible.
+func (a *Ask) Yours(name string, subject register.ID) bool {
+	return a.AloneFor(subject) && (a.Eligible(name) || len(a.eligible) == 0 && len(a.seconds) == 0)
 }
 
 // Raisers reports whether the person with this pseudonym raised or drafted
@@ -329,9 +368,14 @@ func (m *Approvals) ask(pol *Policy, p register.Proposal) (*Ask, error) {
 		a.raisers[p.Subject] = true
 		a.Raised = p.Subject
 	}
-	if raised, ok := fieldsOf(p.Record)["raised_by"].(string); ok && register.ID(raised).Valid() {
-		a.raisers[register.ID(raised)] = true
-		a.Raised = register.ID(raised)
+	// A record that says who asked for it, an erasure the person asked
+	// for and somebody else entered, names its requester as the one who
+	// raised it, and whoever entered it raised it too.
+	for _, field := range []string{"raised_by", "requested_by"} {
+		if raised, ok := fieldsOf(p.Record)[field].(string); ok && register.ID(raised).Valid() {
+			a.raisers[register.ID(raised)] = true
+			a.Raised = register.ID(raised)
+		}
 	}
 	if a.Raised == "" && p.Agent != "" {
 		if id, ok, err := known(m.people(), agentName(p.Agent)); err != nil {
@@ -473,6 +517,10 @@ func (m *Approvals) Sign(by Person, id register.ID, proof Proof) (*Outcome, erro
 	if err := m.mayDecide(pol, by); err != nil {
 		return refuse(err)
 	}
+	brings, err := m.brings(a)
+	if err != nil {
+		return refuse(err)
+	}
 	subject, err := m.people().Pseudonym(by.Name)
 	if err != nil {
 		return nil, err
@@ -490,12 +538,13 @@ func (m *Approvals) Sign(by Person, id register.ID, proof Proof) (*Outcome, erro
 		return nil, err
 	}
 	signed.Evidence = d
-	return m.signed(pol, by, subject, a, signed, now)
+	return m.signed(pol, by, subject, a, signed, brings, now)
 }
 
 // signed adds a signature to a request and, once there are enough, writes
-// the record.
-func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, s Signed, now time.Time) (*Outcome, error) {
+// the record, with what it brings in the same commit.
+func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, s Signed, brings []register.Record,
+	now time.Time) (*Outcome, error) {
 	var signers []Signed
 	err := atomicfile.Update(m.requestsPath(), func(f *requestsFile) error {
 		f.prune(now, pol.WaitDays)
@@ -550,7 +599,7 @@ func (m *Approvals) signed(pol *Policy, by Person, subject register.ID, a *Ask, 
 	if ap.Raised == "" {
 		ap.Raised = subject
 	}
-	rc, err := m.Register.Accept(m.actor(by, subject, a), a.Proposal.ID, ap)
+	rc, err := m.Register.AcceptWith(m.actor(by, subject, a), a.Proposal.ID, ap, brings...)
 	if err != nil && !errors.Is(err, register.ErrUnrecorded) {
 		return nil, err
 	}

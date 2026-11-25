@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -66,8 +65,11 @@ type programmeSection struct {
 	Lines     []string
 	Table     *seckit.Table
 	Approvals []seckit.Approval
-	Empty     *seckit.Empty
-	Command   string
+	// Decide is where each waiting decision is decided: Sign-off, with a
+	// passkey bound to its hash.
+	Decide  []decideLink
+	Empty   *seckit.Empty
+	Command string
 }
 
 // programmeReady is a signed-in person who may read the register, the
@@ -82,8 +84,7 @@ func (s *Server) programmeReady(w http.ResponseWriter, r *http.Request) (princip
 		s.registerUnreadable(w, r, p, err)
 		return p, nil, nil, false
 	}
-	keep := &programme.FileKeeper{Dir: filepath.Join(s.Store.Root(), "programme"), NoWords: s.Store.Encrypted()}
-	return p, &programme.Programme{Reg: reg, Keep: keep}, v, true
+	return p, &programme.Programme{Reg: reg}, v, true
 }
 
 // renderProgramme draws a programme screen.
@@ -108,31 +109,37 @@ func table(caption string, columns []string, rows []seckit.Row) *seckit.Table {
 }
 
 // waitingFor is the decisions of some kinds that wait on the proposals
-// ref, as approval requests, each with the hash of exactly what would be
-// approved.
-func (s *Server) waitingFor(reg *register.Register, eligible string, kinds ...register.Kind) []seckit.Approval {
-	list, err := reg.Proposals()
+// ref, as the approvals module asks them of their approvers: each with the
+// hash of exactly what would be approved, who may approve it and how many,
+// and where on Sign-off it is decided. It is the one list of what waits,
+// read through the one engine, so the hash shown here is the hash the
+// passkey signs there and the register holds the record to.
+func (s *Server) waitingFor(p principal, kinds ...register.Kind) ([]seckit.Approval, []decideLink) {
+	m := s.approvalsFor()
+	waiting, err := m.Waiting()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
+	me, _ := m.Known(p.Name)
 	var out []seckit.Approval
-	for _, pr := range list {
+	var links []decideLink
+	for _, a := range waiting {
 		for _, k := range kinds {
-			if pr.Kind != k {
+			if a.Proposal.Kind != k {
 				continue
 			}
-			what := decisionWhat(pr.Record) + ", raised " + seckit.When(pr.At.At())
-			spec, _ := register.SpecOf(string(k))
-			hash, err := reg.Surface(pr.Record, pr.ID)
-			if err != nil {
-				return nil
-			}
-			out = append(out, seckit.Approval{What: what, Hash: hash, Who: eligible,
-				Needed: 1, Of: s.eligible(spec.Resource())})
+			what := decisionWhat(a.Proposal.Record)
+			out = append(out, seckit.Approval{What: what + ", raised " + seckit.When(a.Proposal.At.At()), Hash: a.Hash,
+				Who: a.Rule.Describe(), Needed: a.Needed, Of: a.Of, Alone: a.Yours(p.Name, me)})
+			links = append(links, decideLink{Href: "/register/approvals/item/" + string(a.Proposal.ID),
+				Text: "Decide on Sign-off: " + what})
 		}
 	}
-	return out
+	return out, links
 }
+
+// decideLink is where on Sign-off a waiting decision is decided.
+type decideLink struct{ Href, Text string }
 
 // decisionWhat is what a decision decides, in a line code writes from its
 // typed fields.
@@ -157,24 +164,6 @@ func decisionWhat(rec register.Record) string {
 	return string(rec.Kind())
 }
 
-// eligible is how many people the policy lets approve records of a kind,
-// as the approval request says it.
-func (s *Server) eligible(resource string) int {
-	if s.Policy == nil {
-		return 1
-	}
-	n := 0
-	for _, name := range s.Policy.Principals() {
-		if s.Policy.Evaluate(name, auth.ActApprove, resource).Allowed {
-			n++
-		}
-	}
-	return max(n, 1)
-}
-
-// anyoneElse is who may approve a programme decision, as a screen says it.
-const anyoneElse = "Anybody who may approve records of the register, other than the person who raised it"
-
 func badgeOf(o register.Outcome) seckit.Badge {
 	switch o {
 	case register.Pass:
@@ -188,7 +177,7 @@ func badgeOf(o register.Outcome) seckit.Badge {
 }
 
 func (s *Server) handleRequirements(w http.ResponseWriter, r *http.Request) {
-	p, prog, v, ok := s.programmeReady(w, r)
+	p, _, v, ok := s.programmeReady(w, r)
 	if !ok {
 		return
 	}
@@ -218,10 +207,10 @@ func (s *Server) handleRequirements(w http.ResponseWriter, r *http.Request) {
 			"Quilzo's own words; no standard's text is copied. Taking one in or out is one decision.",
 		Table:   table("The frameworks there are starters for", []string{"Framework", "What it brings", "In the programme", "Decided by"}, rows),
 		Command: "quilzo requirement install FRAMEWORK"}}
-	if waiting := s.waitingFor(prog.Reg, anyoneElse, register.KindStarter); len(waiting) > 0 {
-		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting,
-			Lead: "Each waits for a person who did not raise it. It is decided with a passkey bound to its hash; from a " +
-				"terminal, by approving it.", Command: "quilzo requirement approve ID"})
+	if waiting, decide := s.waitingFor(p, register.KindStarter); len(waiting) > 0 {
+		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting, Decide: decide,
+			Lead: "Each waits for a person who did not raise it. It is decided on Sign-off, with a passkey bound to its " +
+				"hash; from a terminal, by typing the hash back.", Command: "quilzo requirement approve ID --surface HASH"})
 	}
 	if f := r.URL.Query().Get("framework"); f != "" {
 		st, found := programme.StarterNamed(f)
@@ -256,7 +245,7 @@ func (s *Server) handleScopes(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	p, prog, v, ok := s.programmeReady(w, r)
+	p, _, v, ok := s.programmeReady(w, r)
 	if !ok {
 		return
 	}
@@ -286,9 +275,10 @@ func (s *Server) handleScopes(w http.ResponseWriter, r *http.Request) {
 			Body: "A scope is what the programme covers, decided by a person: its domains, populations and frameworks."}
 	}
 	sections := []programmeSection{sec}
-	if waiting := s.waitingFor(prog.Reg, anyoneElse, register.KindScope, register.KindApplicability); len(waiting) > 0 {
-		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting,
-			Lead: "Each waits for a person who did not raise it.", Command: "quilzo soa approve ID"})
+	if waiting, decide := s.waitingFor(p, register.KindScope, register.KindApplicability); len(waiting) > 0 {
+		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting, Decide: decide,
+			Lead: "Each waits for a person who did not raise it. It is decided on Sign-off, with a passkey bound to its hash.",
+			Command: "quilzo soa approve ID --surface HASH"})
 	}
 	s.renderProgramme(w, r, p, "applicability", seckit.Header{Title: "Applicability",
 		Lead: "The statement of applicability: within each scope, whether each requirement applies, and why."},
@@ -301,7 +291,7 @@ func (s *Server) handleStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/programme/soa/")
-	st, err := programme.StatementAt(v, prog.Keep, name)
+	st, err := programme.StatementAt(v, prog.Words, name)
 	if errors.Is(err, register.ErrNotFound) || strings.Contains(name, "/") {
 		http.NotFound(w, r)
 		return
@@ -393,7 +383,7 @@ func (s *Server) handleStatementCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/programme/soa-csv/")
-	st, err := programme.StatementAt(v, prog.Keep, name)
+	st, err := programme.StatementAt(v, prog.Words, name)
 	if errors.Is(err, register.ErrNotFound) || strings.Contains(name, "/") {
 		http.NotFound(w, r)
 		return
@@ -419,7 +409,7 @@ func standingWords(st programme.Standing) string {
 }
 
 func (s *Server) handleProgrammeControls(w http.ResponseWriter, r *http.Request) {
-	p, prog, v, ok := s.programmeReady(w, r)
+	p, _, v, ok := s.programmeReady(w, r)
 	if !ok {
 		return
 	}
@@ -479,9 +469,10 @@ func (s *Server) handleProgrammeControls(w http.ResponseWriter, r *http.Request)
 			Body: "A draft, a person's or a model's, waits for somebody who did not draft it before anything runs it."}
 	}
 	sections := []programmeSection{sec, testSec}
-	if waiting := s.waitingFor(prog.Reg, anyoneElse, register.KindControlTest); len(waiting) > 0 {
-		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting,
-			Lead: "Each draft waits for a person who did not draft it; nothing runs it until then.", Command: "quilzo control approve ID"})
+	if waiting, decide := s.waitingFor(p, register.KindControlTest); len(waiting) > 0 {
+		sections = append(sections, programmeSection{Heading: "Waiting for a decision", Approvals: waiting, Decide: decide,
+			Lead: "Each draft waits for a person who did not draft it; nothing runs it until then. It is decided on " +
+				"Sign-off, with a passkey bound to its hash.", Command: "quilzo control approve ID --surface HASH"})
 	}
 	s.renderProgramme(w, r, p, "control-tests", seckit.Header{Title: "Control tests",
 		Lead: "What the organisation does, and what shows it working: each control as its tests' runs left it."},

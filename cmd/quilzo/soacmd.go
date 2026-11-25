@@ -82,7 +82,7 @@ func cmdSoa(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		d, err := p.DecideScope(deciderFor(root, caller, by, register.KindScope), s)
+		d, err := p.DecideScope(by, s)
 		if err != nil {
 			return programmeError(err)
 		}
@@ -105,20 +105,13 @@ func cmdSoa(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		d, err := p.DecideLine(deciderFor(root, caller, by, register.KindApplicability), pos[0], pos[1], pos[2], *applies, *why)
+		d, err := p.DecideLine(by, pos[0], pos[1], pos[2], *applies, *why)
 		if err != nil {
 			return programmeError(err)
 		}
 		return sayDecided(d, "soa")
 	case "approve":
-		pos, err := positionals(args[1:], 1)
-		if err != nil {
-			return err
-		}
-		if len(pos) != 1 {
-			return errMisused{fmt.Errorf("usage: quilzo soa approve ID")}
-		}
-		return approveDecision(root, pos[0], "soa", register.KindScope, register.KindApplicability)
+		return approveDecision(root, args[1:], "soa", register.KindScope, register.KindApplicability)
 	case "show":
 		fs := flag.NewFlagSet("soa show", flag.ContinueOnError)
 		asCSV := fs.Bool("csv", false, "write the statement as CSV")
@@ -185,7 +178,7 @@ func soaShow(root, scope string, asCSV bool) error {
 	if err != nil {
 		return err
 	}
-	st, err := programme.StatementAt(v, p.Keep, scope)
+	st, err := programme.StatementAt(v, p.Words, scope)
 	if errors.Is(err, register.ErrNotFound) {
 		return errNotFound{fmt.Errorf("there is no scope %q; `quilzo soa scopes` names them", clip(scope, 40))}
 	}
@@ -264,7 +257,7 @@ func soaOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		st, err := programme.StatementAt(v, p.Keep, scope)
+		st, err := programme.StatementAt(v, p.Words, scope)
 		return st, opError(err)
 	})
 }

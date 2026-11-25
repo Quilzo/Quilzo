@@ -35,15 +35,15 @@ const (
 )
 
 // DecideScope raises the decision of what the programme covers.
-func (p *Programme) DecideScope(d Decider, s register.Scope) (Decided, error) {
+func (p *Programme) DecideScope(by register.Actor, s register.Scope) (Decided, error) {
 	s.Approval = nil
-	return p.Raise(d, "the scope "+s.Name, s)
+	return p.Raise(by, "the scope "+s.Name, s)
 }
 
 // DecideLine raises the decision whether one requirement applies within a
-// scope, and why. The words are kept beside the store and the line holds
-// their digest.
-func (p *Programme) DecideLine(d Decider, scope, framework, ref string, applies bool, why string) (Decided, error) {
+// scope, and why. The words are kept in the register's side store and the
+// line holds their digest.
+func (p *Programme) DecideLine(by register.Actor, scope, framework, ref string, applies bool, why string) (Decided, error) {
 	v, err := p.Reg.At("")
 	if err != nil {
 		return Decided{}, err
@@ -57,15 +57,15 @@ func (p *Programme) DecideLine(d Decider, scope, framework, ref string, applies 
 		return Decided{}, fmt.Errorf("%w: the programme holds no requirement %s of %s; a framework's starter brings its requirements",
 			register.ErrNotFound, clip(ref), clip(framework))
 	}
-	text, err := p.Keep.Keep(why)
+	text, err := p.keepWords(by, register.KindApplicability, why)
 	if err != nil {
-		return Decided{}, fmt.Errorf("%w: %v", register.ErrInvalid, err)
+		return Decided{}, err
 	}
 	word := "applies"
 	if !applies {
 		word = "does not apply"
 	}
-	return p.Raise(d, fmt.Sprintf("%s %s %s in the scope %s", framework, ref, word, scope),
+	return p.Raise(by, fmt.Sprintf("%s %s %s in the scope %s", framework, ref, word, scope),
 		register.Applicability{Requirement: rid, Scope: sid, Applicable: applies, Justification: text})
 }
 
@@ -122,7 +122,7 @@ type Statement struct {
 // StatementAt is the statement of applicability for a scope at a view.
 // The frameworks are those the scope answers to whose starters are
 // installed, or every installed one for a scope that names none.
-func StatementAt(v *register.View, keep Keeper, scope string) (Statement, error) {
+func StatementAt(v *register.View, words func(register.Text) (string, bool), scope string) (Statement, error) {
 	// A statement asked for with no scope named is the statement of no
 	// scope there is, which is not there; it is not a register that could
 	// not be read.
@@ -231,8 +231,8 @@ func StatementAt(v *register.View, keep Keeper, scope string) (Statement, error)
 			if a.Applicable {
 				line.State = Applies
 			}
-			if keep != nil {
-				line.Justification, line.Kept = keep.Words(a.Justification)
+			if words != nil {
+				line.Justification, line.Kept = words(a.Justification)
 			}
 		}
 		switch line.State {

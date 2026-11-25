@@ -315,6 +315,7 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 	// Each decision as it stands has to be the one shown: a change since
 	// is a surface the root does not hold.
 	asks := make([]*Ask, len(b.Items))
+	brought := make([][]register.Record, len(b.Items))
 	for i, it := range b.Items {
 		a, err := m.Ask(it.Record)
 		if err != nil {
@@ -326,6 +327,9 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 		}
 		if _, err := m.canSign(pol, by, subject, a, now); err != nil {
 			return refuse(err)
+		}
+		if brought[i], err = m.brings(a); err != nil {
+			return refuse(fmt.Errorf("%s %s: %w", it.Kind, it.Record, err))
 		}
 		asks[i] = a
 	}
@@ -345,13 +349,13 @@ func (m *Approvals) SignBatch(by Person, root register.Digest, proof Proof) (*Ba
 		return nil, err
 	}
 	out := &BatchOutcome{Root: root, Evidence: d, Receipt: rc}
-	for _, a := range asks {
+	for i, a := range asks {
 		s, err := m.canSign(pol, by, subject, a, now)
 		if err != nil {
 			return out, err
 		}
 		s.Evidence, s.Batch = d, root
-		o, err := m.signed(pol, by, subject, a, s, now)
+		o, err := m.signed(pol, by, subject, a, s, brought[i], now)
 		if err != nil && !errors.Is(err, register.ErrUnrecorded) {
 			return out, err
 		}

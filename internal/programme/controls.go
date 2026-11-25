@@ -28,8 +28,8 @@ func (p *Programme) AddControl(by register.Actor, c register.Control) (register.
 }
 
 // MapControl writes how a control relates to a requirement, and why. The
-// words of why are kept beside the store and the mapping holds their
-// digest.
+// words of why are kept in the register's side store and the mapping holds
+// their digest.
 func (p *Programme) MapControl(by register.Actor, control, framework, ref string, rel register.Relation, why string) (register.ID, register.Receipt, error) {
 	v, err := p.Reg.At("")
 	if err != nil {
@@ -44,9 +44,9 @@ func (p *Programme) MapControl(by register.Actor, control, framework, ref string
 		return "", register.Receipt{}, fmt.Errorf("%w: the programme holds no requirement %s of %s", register.ErrNotFound,
 			clip(ref), clip(framework))
 	}
-	text, err := p.Keep.Keep(why)
+	text, err := p.keepWords(by, register.KindMapping, why)
 	if err != nil {
-		return "", register.Receipt{}, fmt.Errorf("%w: %v", register.ErrInvalid, err)
+		return "", register.Receipt{}, err
 	}
 	m := register.Mapping{From: cid, To: rid, Relation: rel, Rationale: text}
 	id, err := register.IDOf(m)

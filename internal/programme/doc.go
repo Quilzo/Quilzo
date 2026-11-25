@@ -68,20 +68,18 @@
 //
 // # Who decides
 //
-// A decision (decide.go) is raised by a person and written at once when
-// they are the only person the policy lets approve it, marked as approved
-// alone with a review by somebody else due; otherwise it waits on the
-// proposals ref and somebody else approves it (Approve), with what it
-// brings in the same commit. The approval's assertion is the hash of the
-// decision's surface with what the surface proved the approver by; a
-// passkey bound to that hash is the approvals module's to add.
+// A decision (decide.go) is raised by a person as a proposal, where it
+// waits, and is approved through the approvals module's engine, as every
+// decision in the register is: under the organisation's separation policy,
+// by somebody other than whoever raised it unless they are the only person
+// eligible, who then approves it alone with a review by somebody else owed,
+// each approval bound to the hash of exactly what was shown and kept with
+// its authentication evidence. What a decision brings with it, a starter's
+// requirements and a test's query, is written in the same commit.
 //
-// Until the register's own map from pseudonym to person and its side store
-// for free text exist, this package keeps both (keeper.go): the pseudonym
-// that stands for each person who decides, and the words of a
-// justification by their digest, each in a file outside the store that can
-// be erased. A record holds only the pseudonym and the digest. On a store
-// encrypted at rest no words are kept beside it, and the screens say so.
+// The pseudonym of each person who decides, and the words of a
+// justification, are kept in the register's side store (words.go), where
+// they can be erased; a record holds only the pseudonym and the digest.
 //
 // # Surfaces
 //

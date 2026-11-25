@@ -149,6 +149,13 @@ func approvalsAt(root string, c *Caller) (*approval.Approvals, error) {
 	if err != nil {
 		return nil, err
 	}
+	return approvalsOn(root, r)
+}
+
+// approvalsOn is the approvals of the store at root over a register a
+// writer opened: the access policy, the audit log and the day after an
+// administrator stopped being one, as every surface's approvals have them.
+func approvalsOn(root string, r *register.Register) (*approval.Approvals, error) {
 	m := &approval.Approvals{Root: root, Register: r, Audit: func(rec audit.Record) error { return recordE(root, rec) },
 		Settling: dualStore(root).Settling}
 	if inUse, err := policyInUse(root); err != nil {
@@ -372,7 +379,7 @@ func approvalApprove(root, id, surface string) error {
 		return err
 	}
 	out, err := m.Sign(who, register.ID(id), approval.Proof{Console: &approval.ConsoleProof{Typed: register.Digest(strings.TrimSpace(surface)),
-		Credential: c.Credential}})
+		Verified: c.Verified}})
 	if err != nil && (out == nil || !out.Done) {
 		return approvalErr(err)
 	}
@@ -425,7 +432,7 @@ func approvalReview(root, id, outcome, surface string) error {
 		return err
 	}
 	rc, err := m.Review(who, register.ID(id), register.ReviewOutcome(outcome),
-		approval.Proof{Console: &approval.ConsoleProof{Typed: register.Digest(strings.TrimSpace(surface)), Credential: c.Credential}})
+		approval.Proof{Console: &approval.ConsoleProof{Typed: register.Digest(strings.TrimSpace(surface)), Verified: c.Verified}})
 	if err != nil && !errors.Is(err, register.ErrUnrecorded) {
 		return approvalErr(err)
 	}

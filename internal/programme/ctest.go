@@ -28,7 +28,8 @@ import (
 // A test is drafted, by a person or by a model filling the draft's typed
 // schema (DraftSchema), and the draft is a proposal: it waits on the
 // register's proposals ref, where nothing runs it, until a person who did
-// not draft it approves it (Programme.Approve). Its approval is bound to the
+// not draft it approves it, through the approvals module (Programme.Approve,
+// or Sign-off in the admin). Its approval is bound to the
 // test, the query's digest among it and its population as it was defined
 // (DenominatorOf), so a test whose query changed is refused, and one whose
 // population was redefined runs over nothing, until somebody approves it
