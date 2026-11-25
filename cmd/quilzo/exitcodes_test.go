@@ -712,3 +712,48 @@ func TestAWarningToAFileIsNotColouredForATerminal(t *testing.T) {
 		t.Errorf("the warning written to a file carried escape codes: %q", firstLines(stderr.String(), 2))
 	}
 }
+
+// No templates to render against is a dependency missing, 5, which is what
+// the help says 5 is for and the one example it gives.
+//
+// Nothing returned 5. `ipfs id`, `a11y`, `site`, `theme show` and `theme
+// set` of a store with no templates exited 1, the code of a render that
+// broke, so a script could not tell "start a site first" from a failure
+// worth retrying. Publishing is still refused by its gate, 3: the check
+// that could not run is the accessibility gate's.
+func TestNoTemplatesIsADependencyMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, line := range [][]string{
+		{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"},
+		{"publish", "--no-a11y-check", "--reason", "this test has no templates"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	for _, c := range []struct {
+		want int
+		line []string
+	}{
+		{out.ExitUnavailable, []string{"a11y"}},
+		{out.ExitUnavailable, []string{"ipfs", "id"}},
+		{out.ExitUnavailable, []string{"ipfs", "write", "-o", filepath.Join(t.TempDir(), "site")}},
+		{out.ExitUnavailable, []string{"compliance", "accessibility"}},
+		{out.ExitUnavailable, []string{"site", "--addr", "127.0.0.1:0"}},
+		{out.ExitUnavailable, []string{"theme", "show"}},
+		{out.ExitUnavailable, []string{"theme", "check"}},
+		{out.ExitUnavailable, []string{"theme", "set", "scheme", "dark"}},
+
+		{out.ExitBlocked, []string{"publish"}},
+	} {
+		_, e, code := cliRun(t, root, "", c.line...)
+		if code != c.want {
+			t.Errorf("`quilzo %s` with no templates exited %d, want %d (%s): %s", strings.Join(c.line, " "),
+				code, c.want, out.Describe(c.want), firstLines(e, 2))
+		}
+	}
+}
