@@ -217,6 +217,36 @@ func viewOf(a *approval.Ask, whole bool) waitingView {
 type heldView struct {
 	approval.Held
 	Status string `json:"status"`
+	// InBatch says, for each signature given in a batch, what the decision
+	// was in it: a spot-check opened, or approved beside them. Show gives
+	// it; the list does not.
+	InBatch []batchSaid `json:"in_batch,omitempty"`
+}
+
+// batchSaid is one signer's batch, as a decision it approved is shown.
+type batchSaid struct {
+	Subject register.ID     `json:"subject"`
+	Root    register.Digest `json:"root"`
+	Said    string          `json:"said"`
+}
+
+// inBatch is what a held decision was in each batch that approved it.
+func inBatch(m *approval.Approvals, h approval.Held) []batchSaid {
+	var out []batchSaid
+	for _, sg := range h.Approval.Signers {
+		if sg.Batch == "" {
+			continue
+		}
+		said := ""
+		switch b, it, err := m.InBatch(h.Record, sg); {
+		case err != nil:
+			said = "the batch's record could not be read: " + err.Error()
+		case it != nil:
+			said = fmt.Sprintf("one of %d, and %s", len(b.Items), approval.SpotCheck(*it))
+		}
+		out = append(out, batchSaid{Subject: sg.Subject, Root: sg.Batch, Said: said})
+	}
+	return out
 }
 
 func statusOf(h approval.Held) string {
@@ -288,7 +318,8 @@ func approvalShow(root, id string) error {
 		}
 		for _, h := range held {
 			if string(h.Record) == id {
-				if w.JSON(heldView{Held: h, Status: statusOf(h)}) {
+				batches := inBatch(m, h)
+				if w.JSON(heldView{Held: h, Status: statusOf(h), InBatch: batches}) {
 					return nil
 				}
 				fmt.Printf("  %s%s%s %s, %s\n", bold, h.Kind, reset, h.Record, statusOf(h))
@@ -299,6 +330,9 @@ func approvalShow(root, id string) error {
 						how = "passkey"
 					}
 					fmt.Printf("  %s by %s, %s; evidence %s\n", s.At.At().Format("2 Jan 2006 15:04 UTC"), s.Subject, how, s.Assertion)
+				}
+				for _, b := range batches {
+					fmt.Printf("  %sin %s's batch whose root is %s: %s%s\n", dim, b.Subject, b.Root, b.Said, reset)
 				}
 				return nil
 			}

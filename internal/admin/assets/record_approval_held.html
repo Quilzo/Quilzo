@@ -12,7 +12,7 @@
 <div class="table-wrap"><table class="kit-table">
 <caption>Who approved it, and whether their evidence holds</caption>
 <thead><tr><th scope="col">Approver</th><th scope="col">When</th><th scope="col">How</th><th scope="col">Evidence</th><th scope="col">Checked</th></tr></thead>
-<tbody>{{range .Signers}}<tr><th scope="row"><code>{{.Subject}}</code></th><td><time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.Format "2 Jan 2006, 15:04"}} UTC</time></td><td>{{if eq .Method "console"}}At the store's console, typing the hash back, which is weaker than a passkey{{else}}A passkey{{end}}{{with .Batch}}, in a batch whose root is <code class="kit-hash">{{.}}</code>{{end}}</td><td><code class="kit-hash">{{.Evidence}}</code></td><td>{{.Checks}}</td></tr>{{end}}</tbody>
+<tbody>{{range .Signers}}<tr><th scope="row"><code>{{.Subject}}</code></th><td><time datetime="{{.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.Format "2 Jan 2006, 15:04"}} UTC</time></td><td>{{if eq .Method "console"}}At the store's console, typing the hash back, which is weaker than a passkey{{else}}A passkey{{end}}{{with .Batch}}, in a batch whose root is <code class="kit-hash">{{.}}</code>{{end}}{{with .InBatch}}: {{.}}{{end}}</td><td><code class="kit-hash">{{.Evidence}}</code></td><td>{{.Checks}}</td></tr>{{end}}</tbody>
 </table></div>
 {{if .Held.Approval.Alone}}<h2>Its compensating review</h2>
 {{with .Held.Review}}<p>Reviewed on <time datetime="{{.At.At.Format "2006-01-02T15:04:05Z07:00"}}">{{.At.At.Format "2 Jan 2006"}}</time> by the person whose pseudonym is <code>{{.Reviewer}}</code>: {{.Outcome}}.</p>

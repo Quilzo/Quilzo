@@ -1,6 +1,6 @@
 {{template "head" .}}
 {{template "kit-header" .Header}}
-{{if .Unopened}}<p class="notice warn" role="status">{{icon "warning"}} Open the {{.Unopened}} decision{{if ne .Unopened 1}}s{{end}} marked "Open this first" before approving. The batch chose {{if ne .Unopened 1}}them{{else}}it{{end}} at random, and is refused until you have.</p>{{end}}
+{{if .Unopened}}<p class="notice warn" role="status">{{icon "warning"}} Open the {{.Unopened}} decision{{if ne .Unopened 1}}s{{end}} marked "Open this first: spot-check" before approving. The batch chose {{if ne .Unopened 1}}them{{else}}it{{end}} at random as spot-checks, and is refused until you have.</p>{{end}}
 <div class="table-wrap"><table class="kit-table">
 <caption>The decisions in this batch, in the order they are shown and signed</caption>
 <thead><tr><th scope="col">Decision</th><th scope="col">Kind</th><th scope="col">Before approving</th><th scope="col">Time spent</th><th scope="col">Hash of what it shows</th></tr></thead>

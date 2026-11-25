@@ -779,11 +779,13 @@ func (s *Server) renderBatch(w http.ResponseWriter, r *http.Request, p principal
 			row.Label = labelOf(a.Proposal.Record, a.Proposal.ID)
 			row.Changing = a.Hash != it.Surface
 		}
+		// The items the batch chose are spot-checks, and called so here and
+		// on every decision the batch approves (approval.SpotCheck).
 		switch {
 		case it.Sampled && it.Opened == 0:
-			row.Status = seckit.MustBadge(seckit.Warn, "Open this first")
+			row.Status = seckit.MustBadge(seckit.Warn, "Open this first: spot-check")
 		case it.Sampled:
-			row.Status = seckit.MustBadge(seckit.Good, "Opened, as asked")
+			row.Status = seckit.MustBadge(seckit.Good, "Opened: spot-check")
 		case it.Opened != 0:
 			row.Status = seckit.MustBadge(seckit.Info, "Opened")
 		default:
@@ -832,9 +834,11 @@ func (s *Server) heldOne(m *approval.Approvals, id register.ID) (approval.Held, 
 }
 
 // signerRow is one approver of a held decision, with whether their
-// evidence checks.
+// evidence checks, and, for one given in a batch, what the decision was in
+// it.
 type signerRow struct {
 	Subject, Method, Evidence, Batch, Checks string
+	InBatch                                  string
 	At                                       time.Time
 	Holds                                    bool
 }
@@ -847,6 +851,14 @@ func (s *Server) renderHeld(w http.ResponseWriter, r *http.Request, p principal,
 			Batch: string(sg.Batch), At: sg.At.At()}
 		if row.Method == "" {
 			row.Method = "passkey"
+		}
+		if sg.Batch != "" {
+			switch b, it, err := m.InBatch(h.Record, sg); {
+			case err != nil:
+				row.InBatch = "the batch's record could not be read: " + err.Error()
+			case it != nil:
+				row.InBatch = fmt.Sprintf("one of %d, and %s", len(b.Items), approval.SpotCheck(*it))
+			}
 		}
 		ev, err := approval.LoadEvidence(s.Store.Root(), sg.Assertion)
 		switch {

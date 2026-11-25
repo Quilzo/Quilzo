@@ -453,3 +453,70 @@ func TestASecondApproverWithNoRoleApprovesInTheAdmin(t *testing.T) {
 		t.Errorf("the head of risk cannot see the decision they approved: %d", w.Code)
 	}
 }
+
+// The items a batch chose at random are spot-checks, and are called so: on
+// the batch, before it is approved, and afterwards on each decision it
+// approved, which says whether that one was a spot-check the approver
+// opened or was approved in the batch without being opened.
+func TestSpotChecksLabelled(t *testing.T) {
+	b := newApprovalBench(t)
+	reg := register.Open(b.srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	ids := []string{string(b.risk)}
+	for _, ref := range []string{"R-26", "R-27"} {
+		rc, err := reg.Propose(register.Actor{Name: "dana", Subject: dana, Kind: audit.KindHuman,
+			May: func(auth.Action, string) error { return nil }}, "raised at the risk review",
+			register.Risk{Ref: ref, Title: "Supplier " + ref, Owner: dana, Raised: dana, Likelihood: 2, Impact: 2, Status: "accepted"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, string(rc.Written[0].ID))
+	}
+	w := postFormAuth(t, b.srv, b.token, "/register/approvals/batch", url.Values{"id": ids})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("starting a batch answered %d", w.Code)
+	}
+	at := w.Header().Get("Location")
+	root := register.Digest("sha256:" + strings.TrimPrefix(at, "/register/approvals/batch/"))
+	batch, err := b.srv.approvalsFor().BatchOf(approval.Person{Name: "ciso"}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(t, b.srv, at, b.token).Body.String()
+	if strings.Count(page, `<span class="kit-badge-word">Open this first: spot-check</span>`) != batch.Unopened() || batch.Unopened() != 2 {
+		t.Fatalf("the batch does not call the %d items it chose spot-checks\n%s", batch.Unopened(), firstLines(page, 60))
+	}
+	var spot, other string
+	for _, it := range batch.Items {
+		if it.Sampled {
+			spot = string(it.Record)
+			if w := get(t, b.srv, at+"/item/"+spot, b.token); w.Code != http.StatusOK {
+				t.Fatalf("opening a spot-check answered %d", w.Code)
+			}
+		} else {
+			other = string(it.Record)
+		}
+	}
+	if page := get(t, b.srv, at, b.token).Body.String(); !strings.Contains(page, `<span class="kit-badge-word">Opened: spot-check</span>`) {
+		t.Errorf("an opened spot-check is not called one\n%s", firstLines(page, 60))
+	}
+	start := decodeBody(t, postJSON(t, b.srv, at+"/challenge", b.token, nil))
+	challenge, _ := start["challenge"].(string)
+	if w := postJSON(t, b.srv, at+"/approve", b.token, b.key.assert(t, challenge)); w.Code != http.StatusOK {
+		t.Fatalf("the batch answered %d: %s", w.Code, w.Body.String())
+	}
+	held := get(t, b.srv, "/register/approvals/held/"+spot, b.token).Body.String()
+	if !strings.Contains(held, "a spot-check the batch chose, opened before it was approved") {
+		t.Errorf("a decision that was a spot-check is not called one\n%s", firstLines(held, 80))
+	}
+	held = get(t, b.srv, "/register/approvals/held/"+other, b.token).Body.String()
+	if !strings.Contains(held, "not a spot-check, and approved in the batch without being opened") {
+		t.Errorf("a decision approved in the batch unopened does not say so\n%s", firstLines(held, 80))
+	}
+	for _, f := range a11y.Check("held", held).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the held decision: %s", f)
+		}
+	}
+}

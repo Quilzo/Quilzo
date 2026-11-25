@@ -344,6 +344,54 @@ func (m *Approvals) shownTo(root register.Digest) bool {
 	return found
 }
 
+// InBatch is the batch a signature given in one names, the signer's own,
+// and the item of it that is this record: what says, once the batch is
+// history, whether the record was a spot-check the approver opened or was
+// approved beside it unopened. A signature given on its own is in no batch,
+// and answers nil.
+func (m *Approvals) InBatch(record register.ID, sg register.Signer) (*register.ApprovalBatch, *register.BatchItem, error) {
+	if sg.Batch == "" {
+		return nil, nil, nil
+	}
+	bid, err := register.IDOf(register.ApprovalBatch{Root: sg.Batch, Approver: sg.Subject})
+	if err != nil {
+		return nil, nil, err
+	}
+	e, err := m.Register.Get(bid)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, ok := e.Record.(register.ApprovalBatch)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: %s is not a batch", register.ErrNotFound, bid)
+	}
+	for i := range b.Items {
+		if b.Items[i].Record == record {
+			return &b, &b.Items[i], nil
+		}
+	}
+	return &b, nil, fmt.Errorf("the batch %s does not hold %s", sg.Batch, record)
+}
+
+// SpotCheck says what a record was in the batch that approved it: one of
+// the spot-checks the batch chose, which had to be opened first, or one
+// approved beside them, opened or not. It is said in these words wherever
+// the record's approval is shown, so a batch read later tells the decisions
+// somebody looked at from those they did not.
+func SpotCheck(it register.BatchItem) string {
+	looked := ""
+	if it.Seconds > 0 {
+		looked = fmt.Sprintf(", for %d second%s", it.Seconds, map[bool]string{true: "", false: "s"}[it.Seconds == 1])
+	}
+	switch {
+	case it.Sampled:
+		return "a spot-check the batch chose, opened before it was approved" + looked
+	case it.Opened:
+		return "not a spot-check, and opened before the batch was approved" + looked
+	}
+	return "not a spot-check, and approved in the batch without being opened"
+}
+
 // recorder is a person writing one of this module's own records, a batch
 // or a review: what lets them is having passed the separation policy's
 // checks for what it records, so the gate is not asked the register's own
