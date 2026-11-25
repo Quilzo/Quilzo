@@ -19,6 +19,10 @@
 //   - No part may declare a document type, which is how an XML bomb is
 //     made and which no workbook needs, and none may nest deeper than any
 //     real workbook does.
+//   - A range is held to what a sheet can hold, and so is what all the
+//     ranges of a workbook name together: a few kilobytes of merged
+//     ranges, defined names or answer lists can name billions of cells, and
+//     a reader that listed them would never finish.
 //   - A formula is never worked out. Its text is kept, and so is the result
 //     the program that saved the file cached beside it, marked as a
 //     formula's: a cached result is whatever that program, or whoever
@@ -27,7 +31,8 @@
 //     followed. This package makes no network call, and a test fails the
 //     moment a read would.
 //   - What is hidden is read and marked (tainted) wherever it is used, and
-//     listed: hidden and very hidden sheets, hidden rows and columns,
+//     listed: hidden and very hidden sheets, hidden rows and columns (and
+//     those given no height or no width, which hide them as well),
 //     comments, defined names, formulas and links. A value from a hidden
 //     row is not a value a person answered; a comment is where words meant
 //     for a model are put.
@@ -73,11 +78,16 @@ type Limits struct {
 	Rows, Columns int
 	// Depth is how deep the elements of a part may nest.
 	Depth int
+	// Expand is the most cells the merged ranges of a workbook may fill,
+	// and the most its answer lists may cover. A merged range or an answer
+	// list is a few bytes that stand for many cells, and that is the bomb
+	// a zip's own limits do not see.
+	Expand int
 }
 
 // DefaultLimits are those a read takes for a zero field.
 var DefaultLimits = Limits{File: 64 << 20, Entries: 10_000, Entry: 256 << 20, Total: 512 << 20, Ratio: 100,
-	Rows: 1_048_576, Columns: 16_384, Depth: 64}
+	Rows: 1_048_576, Columns: 16_384, Depth: 64, Expand: 2_000_000}
 
 func (l Limits) withDefaults() Limits {
 	d := DefaultLimits
@@ -104,6 +114,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.Depth > 0 {
 		d.Depth = l.Depth
+	}
+	if l.Expand > 0 {
+		d.Expand = l.Expand
 	}
 	return d
 }
@@ -238,6 +251,9 @@ type pkg struct {
 	lim   Limits
 	files map[string]*zip.File
 	read  int64
+	// filled and covered are how many cells merged ranges have filled
+	// and answer lists have covered so far, each held to lim.Expand.
+	filled, covered int
 }
 
 // part is one part's bytes, or nil when the workbook does not have it.
@@ -382,7 +398,10 @@ func (p *pkg) workbook() (*Workbook, error) {
 	for _, n := range names {
 		wb.Flags = append(wb.Flags, Flag{Taint: DefinedName, Where: n})
 	}
-	named := namedCells(wb.Names)
+	named, err := namedCells(wb.Names)
+	if err != nil {
+		return nil, err
+	}
 	for _, sr := range sheets {
 		r, ok := rels[sr.rid]
 		if !ok || r.External {
@@ -549,17 +568,67 @@ func isDateFormat(code string) bool {
 	return false
 }
 
-// namedCells is the cells each sheet's defined names point at, by sheet
-// and reference. A name Excel defines for itself (_xlnm., a print area, a
-// filter) is listed in the flags and taints nothing: what it covers is
-// what is shown.
-func namedCells(names map[string]string) map[string]map[string]bool {
-	out := map[string]map[string]bool{}
-	for name, ref := range names {
+// The most cells the defined names of a workbook are listed as one by one,
+// and the most ranges too wide for that a workbook may name. A name over
+// more cells than a hundred thousand, or past the first million listed, is
+// kept as its range and a cell is checked against it; a workbook with more
+// such ranges than maxWide is refused, because checking every cell against
+// each of them is the same bomb by another road.
+const (
+	maxNamedCells = 1_000_000
+	maxListedName = 100_000
+	maxWide       = 256
+)
+
+// span is a range of cells, both corners included.
+type span struct{ lo, hi at }
+
+func (s span) holds(col, row int) bool {
+	return col >= s.lo.col && col <= s.hi.col && row >= s.lo.row && row <= s.hi.row
+}
+
+// cover is the cells a sheet's defined names point at: those few enough to
+// list, by row and column, and the ranges too wide to.
+type cover struct {
+	cells map[int64]bool
+	wide  []span
+}
+
+func cellKey(col, row int) int64 { return int64(row)<<16 | int64(col) }
+
+// has reports whether a name points at the cell.
+func (c *cover) has(col, row int) bool {
+	if c == nil {
+		return false
+	}
+	if c.cells[cellKey(col, row)] {
+		return true
+	}
+	for _, s := range c.wide {
+		if s.holds(col, row) {
+			return true
+		}
+	}
+	return false
+}
+
+// namedCells is the cells each sheet's defined names point at, by sheet.
+// A name Excel defines for itself (_xlnm., a print area, a filter) is
+// listed in the flags and taints nothing: what it covers is what is shown.
+// The names are taken in order, so a workbook is read the same way twice.
+func namedCells(names map[string]string) (map[string]*cover, error) {
+	out := map[string]*cover{}
+	keys := make([]string, 0, len(names))
+	for name := range names {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	listed, wide := 0, 0
+	for _, name := range keys {
 		if strings.HasPrefix(name, "_xlnm.") {
 			continue
 		}
-		for _, part := range strings.Split(ref, ",") {
+		for _, part := range strings.Split(names[name], ",") {
 			sheet, rng, ok := strings.Cut(strings.TrimSpace(part), "!")
 			if !ok {
 				continue
@@ -567,23 +636,33 @@ func namedCells(names map[string]string) map[string]map[string]bool {
 			sheet = strings.Trim(sheet, "'")
 			rng = strings.ReplaceAll(rng, "$", "")
 			lo, hi, ok := rangeOf(rng)
-			if !ok || (hi.col-lo.col+1)*(hi.row-lo.row+1) > 100_000 {
+			if !ok {
 				continue
 			}
 			if out[sheet] == nil {
-				out[sheet] = map[string]bool{}
+				out[sheet] = &cover{cells: map[int64]bool{}}
 			}
+			c := out[sheet]
+			area := (hi.col - lo.col + 1) * (hi.row - lo.row + 1)
+			if area > maxListedName || listed+area > maxNamedCells {
+				if wide++; wide > maxWide {
+					return nil, fmt.Errorf("the workbook's defined names cover more wide ranges than %d, which a workbook is not read with", maxWide)
+				}
+				c.wide = append(c.wide, span{lo, hi})
+				continue
+			}
+			listed += area
 			for r := lo.row; r <= hi.row; r++ {
-				for c := lo.col; c <= hi.col; c++ {
-					out[sheet][cellRef(c, r)] = true
+				for col := lo.col; col <= hi.col; col++ {
+					c.cells[cellKey(col, r)] = true
 				}
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
-func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates map[int]bool, named map[string]bool) error {
+func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates map[int]bool, named *cover) error {
 	b, err := p.part(part)
 	if err != nil {
 		return err
@@ -672,7 +751,7 @@ func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates
 		case xml.StartElement:
 			switch t.Name.Local {
 			case "col":
-				if attr(t, "hidden") == "1" || attr(t, "hidden") == "true" {
+				if hidden(t) || zeroSized(t, "width") {
 					lo, _ := strconv.Atoi(attr(t, "min"))
 					hi, _ := strconv.Atoi(attr(t, "max"))
 					if lo < 1 || hi < lo || hi > p.lim.Columns {
@@ -694,7 +773,7 @@ func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates
 					return fmt.Errorf("the sheet %q has a row numbered %d, out of order or beyond %d", clip(sh.Name), n, p.lim.Rows)
 				}
 				lastRow = n
-				sh.Rows = append(sh.Rows, Row{N: n, Hidden: attr(t, "hidden") == "1" || attr(t, "hidden") == "true"})
+				sh.Rows = append(sh.Rows, Row{N: n, Hidden: hidden(t) || zeroSized(t, "ht")})
 				row = &sh.Rows[len(sh.Rows)-1]
 			case "c":
 				if row == nil {
@@ -788,10 +867,13 @@ func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates
 	if err != nil {
 		return err
 	}
-	if err := fillMerged(sh, p.lim); err != nil {
+	if err := p.fillMerged(sh); err != nil {
 		return err
 	}
-	options := sheetOptions(sh)
+	options, err := p.sheetOptions(sh)
+	if err != nil {
+		return err
+	}
 	cols := make([]int, 0, len(hiddenCols))
 	for c := range hiddenCols {
 		cols = append(cols, c)
@@ -814,7 +896,7 @@ func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates
 				HiddenColumn: hiddenCols[c.Col],
 				Comment:      c.Comment != "",
 				Formula:      c.Formula != "",
-				DefinedName:  named[c.Ref],
+				DefinedName:  named.has(c.Col, r.N),
 				ExternalLink: externalRef(c.Formula),
 			}
 			for _, t := range taintOrder {
@@ -868,85 +950,95 @@ func (p *pkg) comments(part string, out map[string]string) error {
 }
 
 // fillMerged gives every cell of a merged range its top-left cell's value,
-// marked as merged.
-func fillMerged(sh *Sheet, lim Limits) error {
+// marked as merged. A range is held to what a sheet is read with, and all
+// of a workbook's ranges together to lim.Expand cells: a merge is a few
+// bytes that stand for up to a hundred thousand cells, and a few kilobytes
+// of them, or one of them a thousand times over, are gigabytes once filled.
+func (p *pkg) fillMerged(sh *Sheet) error {
 	if len(sh.Merged) == 0 {
 		return nil
 	}
-	rows := map[int]*Row{}
+	index := map[int]int{}
 	for i := range sh.Rows {
-		rows[sh.Rows[i].N] = &sh.Rows[i]
+		index[sh.Rows[i].N] = i
 	}
-	var added []Row
+	fills := map[int]map[int]Cell{}
 	for _, m := range sh.Merged {
 		lo, hi, ok := rangeOf(m)
 		if !ok {
 			return fmt.Errorf("the sheet %q merges %q, which is not a range", clip(sh.Name), clip(m))
 		}
-		if (hi.col-lo.col+1)*(hi.row-lo.row+1) > 100_000 || hi.row > lim.Rows || hi.col > lim.Columns {
+		area := (hi.col - lo.col + 1) * (hi.row - lo.row + 1)
+		if area > 100_000 || hi.row > p.lim.Rows || hi.col > p.lim.Columns {
 			return fmt.Errorf("the sheet %q merges more cells than a sheet is read with", clip(sh.Name))
 		}
-		top := rows[lo.row]
-		var src *Cell
-		if top != nil {
-			for i := range top.Cells {
-				if top.Cells[i].Col == lo.col {
-					src = &top.Cells[i]
-				}
-			}
+		if p.filled += area - 1; p.filled > p.lim.Expand {
+			return fmt.Errorf("the workbook's merged ranges fill more than %d cells, which a workbook is not read with", p.lim.Expand)
 		}
+		i, ok := index[lo.row]
+		if !ok {
+			continue
+		}
+		src := cellAt(sh.Rows[i].Cells, lo.col)
 		if src == nil {
 			continue
 		}
-		val := *src
 		for r := lo.row; r <= hi.row; r++ {
-			row := rows[r]
-			if row == nil {
-				added = append(added, Row{N: r})
-				row = &added[len(added)-1]
-				rows[r] = row
+			if fills[r] == nil {
+				fills[r] = map[int]Cell{}
 			}
 			for c := lo.col; c <= hi.col; c++ {
 				if r == lo.row && c == lo.col {
 					continue
 				}
-				fill := val
+				fill := *src
 				fill.Ref, fill.Col, fill.Row, fill.Merged, fill.Comment = cellRef(c, r), c, r, true, ""
-				replaced := false
-				for i := range row.Cells {
-					if row.Cells[i].Col == c {
-						row.Cells[i], replaced = fill, true
-					}
-				}
-				if !replaced {
-					row.Cells = append(row.Cells, fill)
-				}
+				fills[r][c] = fill
 			}
-			sort.Slice(row.Cells, func(i, j int) bool { return row.Cells[i].Col < row.Cells[j].Col })
 		}
 	}
-	if len(added) > 0 {
-		// Rows that held nothing and are covered by a merge; rows map
-		// pointed into added, so they are copied in now.
-		for _, r := range rows {
-			found := false
-			for i := range sh.Rows {
-				if sh.Rows[i].N == r.N {
-					found = true
-				}
-			}
-			if !found {
-				sh.Rows = append(sh.Rows, *r)
+	added := false
+	for r, cols := range fills {
+		i, ok := index[r]
+		if !ok {
+			// A row that held nothing and is covered by a merge.
+			sh.Rows = append(sh.Rows, Row{N: r})
+			i, index[r], added = len(sh.Rows)-1, len(sh.Rows)-1, true
+		}
+		row := &sh.Rows[i]
+		for j := range row.Cells {
+			if f, ok := cols[row.Cells[j].Col]; ok {
+				row.Cells[j] = f
+				delete(cols, f.Col)
 			}
 		}
+		for _, f := range cols {
+			row.Cells = append(row.Cells, f)
+		}
+		sort.Slice(row.Cells, func(a, b int) bool { return row.Cells[a].Col < row.Cells[b].Col })
+	}
+	if added {
 		sort.Slice(sh.Rows, func(i, j int) bool { return sh.Rows[i].N < sh.Rows[j].N })
 	}
 	return nil
 }
 
+// cellAt is the cell of a row in the given column, or nil. A row's cells
+// are in the order of their columns.
+func cellAt(cells []Cell, col int) *Cell {
+	i := sort.Search(len(cells), func(i int) bool { return cells[i].Col >= col })
+	if i < len(cells) && cells[i].Col == col {
+		return &cells[i]
+	}
+	return nil
+}
+
 // sheetOptions is the answer options of each cell a list validation with
-// its own answers covers.
-func sheetOptions(sh *Sheet) map[string][]string {
+// its own answers covers. Each list's range is walked over the rows it
+// covers and no others, and all of them together over at most lim.Expand
+// cells: ten thousand lists over every cell of a sheet are a few hundred
+// kilobytes and a hundred million steps.
+func (p *pkg) sheetOptions(sh *Sheet) (map[string][]string, error) {
 	out := map[string][]string{}
 	for _, v := range sh.Validations {
 		if len(v.Options) == 0 {
@@ -954,22 +1046,23 @@ func sheetOptions(sh *Sheet) map[string][]string {
 		}
 		for _, rg := range v.Ranges {
 			lo, hi, ok := rangeOf(rg)
-			if !ok || (hi.col-lo.col+1)*(hi.row-lo.row+1) > 1_000_000 {
+			if !ok {
 				continue
 			}
-			for _, r := range sh.Rows {
-				if r.N < lo.row || r.N > hi.row {
-					continue
-				}
-				for _, c := range r.Cells {
-					if c.Col >= lo.col && c.Col <= hi.col {
-						out[c.Ref] = v.Options
+			first := sort.Search(len(sh.Rows), func(i int) bool { return sh.Rows[i].N >= lo.row })
+			for i := first; i < len(sh.Rows) && sh.Rows[i].N <= hi.row; i++ {
+				cells := sh.Rows[i].Cells
+				j := sort.Search(len(cells), func(j int) bool { return cells[j].Col >= lo.col })
+				for ; j < len(cells) && cells[j].Col <= hi.col; j++ {
+					if p.covered++; p.covered > p.lim.Expand {
+						return nil, fmt.Errorf("the workbook's answer lists cover more than %d cells, which a workbook is not read with", p.lim.Expand)
 					}
+					out[cells[j].Ref] = v.Options
 				}
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // serialDate is a date serial as a moment, in the workbook's date system.
@@ -998,14 +1091,23 @@ func serialDate(n float64, from1904 bool) (time.Time, bool) {
 // at is a cell's place.
 type at struct{ col, row int }
 
-// parseRef reads a reference such as B12.
+// The last column and the last row a sheet can have: XFD and 1,048,576.
+const (
+	sheetColumns = 16_384
+	sheetRows    = 1_048_576
+)
+
+// parseRef reads a reference such as B12. A reference past the last column
+// or row a sheet can have is not one: a range to row 4,611,686,018,427,387,904
+// once made its size wrap round to a small number, and a reader that
+// trusted the size then counted to it.
 func parseRef(ref string) (at, bool) {
 	i := 0
 	col := 0
 	for i < len(ref) && ref[i] >= 'A' && ref[i] <= 'Z' {
 		col = col*26 + int(ref[i]-'A'+1)
 		i++
-		if col > 1<<20 {
+		if col > sheetColumns {
 			return at{}, false
 		}
 	}
@@ -1013,7 +1115,7 @@ func parseRef(ref string) (at, bool) {
 		return at{}, false
 	}
 	row, err := strconv.Atoi(ref[i:])
-	if err != nil || row < 1 || ref[i] == '0' || ref[i] == '+' || ref[i] == '-' {
+	if err != nil || row < 1 || row > sheetRows || ref[i] == '0' || ref[i] == '+' || ref[i] == '-' {
 		return at{}, false
 	}
 	return at{col: col, row: row}, true
@@ -1160,6 +1262,25 @@ func innerText(d *xml.Decoder, depth int) (string, error) {
 	return b.String(), nil
 }
 
+// hidden reports whether a row or a column says it is hidden.
+func hidden(se xml.StartElement) bool {
+	v := attr(se, "hidden")
+	return v == "1" || v == "true"
+}
+
+// zeroSized reports whether a row's height or a column's width is given as
+// nothing, which hides it from a person as surely as saying it is hidden:
+// a spreadsheet draws a row no pixels high, and a reader that looked only
+// at the hidden mark read it as one a person saw.
+func zeroSized(se xml.StartElement, size string) bool {
+	v := strings.TrimSpace(attr(se, size))
+	if v == "" {
+		return false
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	return err == nil && n <= 0
+}
+
 func attr(se xml.StartElement, name string) string {
 	for _, a := range se.Attr {
 		if a.Name.Local == name && (a.Name.Space == "" || name == "id") {
@@ -1180,11 +1301,13 @@ func rid(se xml.StartElement) string {
 }
 
 // clip is a name from the file, short enough to quote in an error, with
-// no character in it that would move a terminal's cursor.
+// no character in it that would move a terminal's cursor: neither the
+// seven-bit controls nor the eight-bit ones, which some terminals take as
+// the escape that starts a command.
 func clip(s string) string {
 	r := []rune(s)
 	for i, c := range r {
-		if c < 0x20 || c == 0x7f {
+		if c < 0x20 || c >= 0x7f && c < 0xa0 {
 			r[i] = '?'
 		}
 	}
