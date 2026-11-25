@@ -755,3 +755,29 @@ func TestAReviewCountsOnlyWithItsEvidence(t *testing.T) {
 		t.Errorf("a review whose evidence does not hold is shown as the review: %+v", held[0].Review)
 	}
 }
+
+// A record the register holds with its approval, written again unchanged,
+// writes nothing, as any record does: a run that finds nothing new is not
+// refused for it. Its surface now has no change in it, so held to the
+// surface it was approved over it was refused as "not what is being
+// written", and a module re-asserting what it had found failed on every
+// approved record. Changed and carrying the old approval, it is refused.
+func TestAnApprovedRecordWrittenAgainUnchangedWritesNothing(t *testing.T) {
+	b := newBench(t, holds("ciso", auth.ActAcceptRisk))
+	id := b.propose("dana", b.risk("R-44", "dana", 2))
+	if _, err := b.sign("ciso", id); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := b.reg.Get(id)
+	allow := func(auth.Action, string) error { return nil }
+	svc := register.Actor{Name: "sync", Kind: audit.KindService, May: allow}
+	rc, err := b.reg.Put(svc, "a run that found nothing new", e.Record)
+	if err != nil || len(rc.Written) != 0 || rc.Unchanged != 1 {
+		t.Fatalf("the approved record written again unchanged: %+v %v", rc, err)
+	}
+	changed := e.Record.(register.Risk)
+	changed.Title = "Payments supplier outage, and its backup"
+	if _, err := b.reg.Put(svc, "a change under the old approval", changed); !errors.Is(err, register.ErrInvalid) {
+		t.Fatalf("a changed record was written under the approval of what it was: %v", err)
+	}
+}

@@ -4,6 +4,7 @@
 package approval
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -46,6 +47,18 @@ func Verify(r *register.Register, rec register.Record, id register.ID, a *regist
 		return fmt.Errorf("there is no register to check the approval against")
 	}
 	root := r.Store.Root()
+	// The record as the register holds it, approval and all, was checked
+	// when it was written, and writing it again unchanged writes nothing.
+	// Its surface now would hold no change, so held to the surface it was
+	// approved over it was refused, and a run re-asserting what it found
+	// failed on every approved record.
+	if e, err := r.Get(id); err == nil {
+		held, herr := register.Canonical(e.Record)
+		again, aerr := register.Canonical(rec)
+		if herr == nil && aerr == nil && bytes.Equal(held, again) {
+			return nil
+		}
+	}
 	s, err := SurfaceOf(r, rec, id)
 	if err != nil {
 		return err
