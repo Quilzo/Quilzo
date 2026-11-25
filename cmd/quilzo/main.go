@@ -871,8 +871,12 @@ func main() {
 		rest = append(rest, args[i])
 	}
 	if len(rest) == 0 {
-		usage()
-		os.Exit(2)
+		// As a command's page is (usagePage): `quilzo --json` wrote the whole
+		// help to stdout, which carries one document under --json.
+		if err := usagePage(fullHelp(), nil); err != nil {
+			w.Error(err)
+		}
+		os.Exit(out.ExitUsage)
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]

@@ -180,8 +180,10 @@ func (p payer) Charge(ctx context.Context, agentName string, in agent.Integratio
 	}, nil
 }
 
-func spendUsage() error {
-	fmt.Print(`quilzo spend — what agents may pay, and what they paid
+func spendUsage() error { return usagePage(spendPage, nil) }
+
+// spendPage is spend's page of subcommands.
+const spendPage = `quilzo spend — what agents may pay, and what they paid
 
   grant AGENT --currency USD --per 50 --budget 500 --payee PAYEE [--payee ...]
               --purpose "what for" [--tool TOOL] [--until YYYY-MM-DD] [--without-asking]
@@ -193,9 +195,7 @@ A paying tool declares where its amount, currency and payee are ("pays" on
 a REST operation). Within a mandate granted --without-asking a payment goes
 ahead; otherwise a person decides, as paying always has. Every payment leaves
 a receipt.
-`)
-	return nil
-}
+`
 
 func cmdSpend(root string, args []string) error {
 	if len(args) == 0 {
@@ -214,8 +214,7 @@ func cmdSpend(root string, args []string) error {
 	}
 	// A word that is none of them is refused, with the commands there are:
 	// it printed them and exited 0.
-	_ = spendUsage()
-	return errMisused{fmt.Errorf("unknown spend command %q", args[0])}
+	return usagePage(spendPage, errMisused{fmt.Errorf("unknown spend command %q", args[0])})
 }
 
 type listFlag []string

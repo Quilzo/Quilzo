@@ -187,9 +187,9 @@ func TestTheOnlyAdministratorGetsTheirFirstToken(t *testing.T) {
 func TestEveryAuthSynopsisNamesTheArgumentsTheCommandNeeds(t *testing.T) {
 	root := connectStore(t)
 	help := helpText(t)
-	_, read := captureStdout(t)
-	_ = authUsage()
-	own := read()
+	// The page itself: under --json, as this store's output is read, the
+	// bare command is refused rather than printing it (usagePage).
+	own := authPage()
 
 	for _, sub := range []string{"grant", "deny", "revoke", "explain", "enrol", "unlock"} {
 		err := cmdAuth(root, []string{sub})
