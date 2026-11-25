@@ -303,6 +303,13 @@ func TestAnErasureRaisedByItsDeciderIsSaidBesideWhoAsked(t *testing.T) {
 	if r.SubjectState(ada).State != register.SubjectHeld {
 		t.Error("the refused erasure erased the person")
 	}
+	// Nor does anybody decide their own: that is said beside the person.
+	w = postForm(t, srv, "/register/erase", token, url.Values{"subject": {"editor"}, "basis": {"request"},
+		"requested": {"subject"}, "confirm": {"yes"}}.Encode())
+	if body := w.Body.String(); w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `id="erase-subject-error"`) ||
+		strings.Contains(body, `id="erase-requested-error"`) {
+		t.Errorf("an erasure of its own decider answered %d\n%s", w.Code, firstLines(body, 60))
+	}
 	// Asked for by the person, it is decided.
 	w = postForm(t, srv, "/register/erase", token, url.Values{"subject": {string(ada)}, "basis": {"request"},
 		"requested": {"subject"}, "confirm": {"yes"}}.Encode())
