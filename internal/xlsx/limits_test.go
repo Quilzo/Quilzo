@@ -178,3 +178,27 @@ func TestClipDropsEightBitControls(t *testing.T) {
 		t.Errorf("clip left a control in %q", got)
 	}
 }
+
+// A workbook is held to a number of cells, as a JSON document is held to
+// a number of values: what a sheet holds is what is kept in memory, and a
+// workbook's parts may expand to half a gigabyte of them.
+func TestCellLimit(t *testing.T) {
+	var rows strings.Builder
+	for r := 1; r <= 100; r++ {
+		fmt.Fprintf(&rows, `<row r="%d">`, r)
+		for c := 1; c <= 20; c++ {
+			fmt.Fprintf(&rows, `<c r="%s"><v>1</v></c>`, cellRef(c, r))
+		}
+		rows.WriteString(`</row>`)
+	}
+	b := book(t, simple(t, rows.String()))
+	if _, err := Read(b, Limits{Cells: 2000}); err != nil {
+		t.Fatalf("a workbook of as many cells as the limit is refused: %v", err)
+	}
+	if _, err := Read(b, Limits{Cells: 1999}); err == nil || !strings.Contains(err.Error(), "cells") {
+		t.Errorf("a workbook of more cells than the limit is read: %v", err)
+	}
+	if DefaultLimits.Cells <= 0 {
+		t.Error("a workbook is held to no number of cells by default")
+	}
+}

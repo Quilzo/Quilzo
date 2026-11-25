@@ -77,13 +77,14 @@ func readMapped(rd *reader) error {
 		t   *table
 		err error
 	)
+	keep := keepOnly(mapColumns(m))
 	switch rd.in.Format {
 	case FormatCSV:
-		t, err = csvTable(rd.in.Body, int(m.Header))
+		t, err = csvTable(rd.in.Body, int(m.Header), keep, 0)
 	case FormatXLSX:
-		t, err = xlsxTable(rd, rd.in.Body, m.Sheet, int(m.Header))
+		t, err = xlsxTable(rd, rd.in.Body, m.Sheet, int(m.Header), keep, 0)
 	case FormatJSON:
-		t, err = jsonTable(rd.in.Body, m.Rows, mapColumns(m))
+		t, err = jsonTable(rd.in.Body, m.Rows, mapColumns(m), keep, 0)
 	}
 	if err != nil {
 		return err
@@ -117,6 +118,28 @@ func readMapped(rd *reader) error {
 	}
 	return nil
 }
+
+// draftRows is how many rows a draft reads: the sample it shows.
+const draftRows = 5
+
+// keepOnly is the set of columns a read keeps of each row: those its map
+// reads, and no other. A table is held in memory as those columns only,
+// because a cell held is a hundred bytes or more, and a CSV of one-letter
+// cells a thousand columns wide would otherwise be read into a hundred and
+// sixty times its size.
+func keepOnly(columns []string) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range columns {
+		if c != "" {
+			out[c] = true
+		}
+	}
+	return out
+}
+
+// kept reports whether a read that keeps only some columns keeps this one;
+// a nil set keeps every column, as a draft does.
+func kept(keep map[string]bool, heading string) bool { return keep == nil || keep[heading] }
 
 // mapColumns is every column a map reads.
 func mapColumns(m *register.ColumnMap) []string {
@@ -400,8 +423,10 @@ func firstTaint(ts ...register.Taint) register.Taint {
 	return best
 }
 
-// csvTable reads a CSV under the headings on its header row.
-func csvTable(b []byte, header int) (*table, error) {
+// csvTable reads a CSV under the headings on its header row: of each row
+// the columns keep names (every column when it is nil), and with most more
+// than zero no more rows than that.
+func csvTable(b []byte, header int, keep map[string]bool, most int) (*table, error) {
 	if header < 1 {
 		header = 1
 	}
@@ -411,7 +436,7 @@ func csvTable(b []byte, header int) (*table, error) {
 	}
 	r := csv.NewReader(bytes.NewReader(b))
 	r.FieldsPerRecord = -1
-	r.ReuseRecord = false
+	r.ReuseRecord = true
 	t := &table{}
 	line := 0
 	for {
@@ -433,18 +458,22 @@ func csvTable(b []byte, header int) (*table, error) {
 			t.headings = headings(rec)
 			continue
 		}
+		if most > 0 && len(t.rows) >= most {
+			break
+		}
 		if len(t.rows) >= MaxRecords {
 			return nil, fmt.Errorf("%w: it has more than %d rows", ErrUnreadable, MaxRecords)
 		}
 		row := tableRow{place: "row " + strconv.Itoa(line), cells: map[string]cell{}}
 		for i, v := range rec {
-			if i >= len(t.headings) || t.headings[i] == "" {
-				continue
-			}
 			if len(v) > maxCell {
 				return nil, fmt.Errorf("%w: a cell in row %d is longer than %d bytes", ErrUnreadable, line, maxCell)
 			}
-			c := cell{text: strings.TrimSpace(v), place: colName(i+1) + strconv.Itoa(line)}
+			if i >= len(t.headings) || t.headings[i] == "" || !kept(keep, t.headings[i]) {
+				continue
+			}
+			// A copy, so that a cell kept does not keep its whole row.
+			c := cell{text: strings.Clone(strings.TrimSpace(v)), place: colName(i+1) + strconv.Itoa(line)}
 			c.value = scalarOf(c.text)
 			if sheet.IsFormula(v) || sheet.IsFormula(c.text) {
 				// A spreadsheet would run it; nothing here does, and the
@@ -481,8 +510,9 @@ func headings(rec []string) []string {
 }
 
 // xlsxTable reads a worksheet under the headings on its header row, with
-// what was hidden about each cell.
-func xlsxTable(rd *reader, b []byte, sheetName string, header int) (*table, error) {
+// what was hidden about each cell: of each row the columns keep names, and
+// with most more than zero no more rows than that.
+func xlsxTable(rd *reader, b []byte, sheetName string, header int, keep map[string]bool, most int) (*table, error) {
 	if header < 1 {
 		header = 1
 	}
@@ -539,10 +569,13 @@ func xlsxTable(rd *reader, b []byte, sheetName string, header int) (*table, erro
 			}
 			continue
 		}
+		if most > 0 && len(t.rows) >= most {
+			break
+		}
 		tr := tableRow{place: sh.Name + "!" + strconv.Itoa(row.N), cells: map[string]cell{}}
 		for _, c := range row.Cells {
 			h, ok := byCol[c.Col]
-			if !ok {
+			if !ok || !kept(keep, h) {
 				continue
 			}
 			if len(c.Text) > maxCell {
@@ -577,7 +610,9 @@ func xlsxTable(rd *reader, b []byte, sheetName string, header int) (*table, erro
 // jsonTable reads a JSON list of objects, at a pointer, as rows whose
 // columns are the objects' keys. A column the map names with a JSON
 // pointer, beginning with a slash, is read at that pointer in each object.
-func jsonTable(b []byte, rows string, wanted []string) (*table, error) {
+// Of each row the columns keep names are kept (every column when it is
+// nil), and with most more than zero no more rows than that.
+func jsonTable(b []byte, rows string, wanted []string, keep map[string]bool, most int) (*table, error) {
 	var v any
 	if err := decodeJSON(b, &v); err != nil {
 		return nil, err
@@ -632,7 +667,9 @@ func jsonTable(b []byte, rows string, wanted []string) (*table, error) {
 				seen[h] = true
 				t.headings = append(t.headings, h)
 			}
-			row.cells[h] = jsonCell(text, native, place+"/"+escapeToken(k))
+			if kept(keep, h) && (most == 0 || len(t.rows) < most) {
+				row.cells[h] = jsonCell(text, native, place+"/"+escapeToken(k))
+			}
 		}
 		for _, w := range wanted {
 			if !strings.HasPrefix(w, "/") {
@@ -644,7 +681,9 @@ func jsonTable(b []byte, rows string, wanted []string) (*table, error) {
 				}
 			}
 		}
-		t.rows = append(t.rows, row)
+		if most == 0 || len(t.rows) < most {
+			t.rows = append(t.rows, row)
+		}
 	}
 	sort.Strings(t.headings)
 	return t, nil
@@ -698,11 +737,11 @@ func DraftMap(f Format, body []byte, kind, name, sheetName string) (*Draft, erro
 	)
 	switch f {
 	case FormatCSV:
-		t, err = csvTable(body, 1)
+		t, err = csvTable(body, 1, nil, draftRows)
 	case FormatXLSX:
-		t, err = xlsxTable(rd, body, sheetName, 1)
+		t, err = xlsxTable(rd, body, sheetName, 1, nil, draftRows)
 	case FormatJSON:
-		t, err = jsonTable(body, "", nil)
+		t, err = jsonTable(body, "", nil, nil, draftRows)
 	}
 	if err != nil {
 		return nil, err
@@ -770,7 +809,7 @@ func DraftMap(f Format, body []byte, kind, name, sheetName string) (*Draft, erro
 		}
 	}
 	for i, row := range t.rows {
-		if i == 5 {
+		if i == draftRows {
 			break
 		}
 		line := make([]string, len(d.Headings))

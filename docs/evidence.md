@@ -23,10 +23,11 @@ itself has gone.
    Two keys of a JSON table's row that become one column heading are
    refused too. A workbook is read with the standard library's zip and XML
    readers alone: a zip bomb, an XML bomb, a document type declaration and
-   a part nested past any real workbook are refused, and so are merged
-   ranges and answer lists that would stand for more than two million
-   cells, and defined names over more than 256 wide ranges; no formula is
-   worked out; no link is followed.
+   a part nested past any real workbook are refused, and so are a workbook
+   of more than four million cells, merged ranges and answer lists that
+   would stand for more than two million, and defined names over more than
+   256 wide ranges; no formula is worked out; no link is followed. Of a
+   table, only the columns its map reads are kept in memory.
 3. **Every fact says where it came from.** Each Observation and Evidence
    record carries its grade, the digest of the file, the place it was read
    from (a cell such as `Devices!B4`, a row, or a JSON pointer such as

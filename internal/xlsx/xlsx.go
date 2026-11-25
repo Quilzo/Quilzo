@@ -19,6 +19,9 @@
 //   - No part may declare a document type, which is how an XML bomb is
 //     made and which no workbook needs, and none may nest deeper than any
 //     real workbook does.
+//   - Its sheets are held to a number of cells together, as a JSON
+//     document is held to a number of values, since every cell read is
+//     kept in memory.
 //   - A range is held to what a sheet can hold, and so is what all the
 //     ranges of a workbook name together: a few kilobytes of merged
 //     ranges, defined names or answer lists can name billions of cells, and
@@ -78,6 +81,10 @@ type Limits struct {
 	Rows, Columns int
 	// Depth is how deep the elements of a part may nest.
 	Depth int
+	// Cells is the most cells the sheets of a workbook may hold together:
+	// every cell read is held in memory, and the parts of a workbook may
+	// expand to half a gigabyte of them.
+	Cells int
 	// Expand is the most cells the merged ranges of a workbook may fill,
 	// and the most its answer lists may cover. A merged range or an answer
 	// list is a few bytes that stand for many cells, and that is the bomb
@@ -87,7 +94,7 @@ type Limits struct {
 
 // DefaultLimits are those a read takes for a zero field.
 var DefaultLimits = Limits{File: 64 << 20, Entries: 10_000, Entry: 256 << 20, Total: 512 << 20, Ratio: 100,
-	Rows: 1_048_576, Columns: 16_384, Depth: 64, Expand: 2_000_000}
+	Rows: 1_048_576, Columns: 16_384, Depth: 64, Cells: 4_000_000, Expand: 2_000_000}
 
 func (l Limits) withDefaults() Limits {
 	d := DefaultLimits
@@ -114,6 +121,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.Depth > 0 {
 		d.Depth = l.Depth
+	}
+	if l.Cells > 0 {
+		d.Cells = l.Cells
 	}
 	if l.Expand > 0 {
 		d.Expand = l.Expand
@@ -251,9 +261,10 @@ type pkg struct {
 	lim   Limits
 	files map[string]*zip.File
 	read  int64
-	// filled and covered are how many cells merged ranges have filled
-	// and answer lists have covered so far, each held to lim.Expand.
-	filled, covered int
+	// cells is how many cells the sheets have held so far, held to
+	// lim.Cells; filled and covered are how many cells merged ranges have
+	// filled and answer lists have covered, each held to lim.Expand.
+	cells, filled, covered int
 }
 
 // part is one part's bytes, or nil when the workbook does not have it.
@@ -798,6 +809,9 @@ func (p *pkg) sheet(part string, sh *Sheet, wb *Workbook, shared []string, dates
 				}
 				if len(row.Cells) > 0 && row.Cells[len(row.Cells)-1].Col >= col {
 					return fmt.Errorf("the sheet %q has cells out of order in row %d", clip(sh.Name), row.N)
+				}
+				if p.cells++; p.cells > p.lim.Cells {
+					return fmt.Errorf("the workbook holds more than %d cells, which a workbook is not read with", p.lim.Cells)
 				}
 				cell = &Cell{Ref: cellRef(col, r), Col: col, Row: r}
 				cellType = attr(t, "t")

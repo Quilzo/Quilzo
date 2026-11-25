@@ -11,6 +11,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -301,5 +303,50 @@ func TestEverySealIsRecorded(t *testing.T) {
 	}
 	if _, err := w.g.Raw.Meta(digestOf([]byte("unrecorded"))); !errors.Is(err, ErrNotHeld) {
 		t.Errorf("a file was sealed with no audit log to record it in: %v", err)
+	}
+}
+
+// A table is held in memory as the columns its map reads, and a draft as
+// its first rows: a CSV of single letters a thousand columns wide took a
+// hundred and sixty times its size to read, so the 64 MB a file may be
+// was ten gigabytes, and a server that read one was stopped by its host.
+func TestWideTablesHeldToTheirMap(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 1000; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("c" + strconv.Itoa(i))
+	}
+	b.WriteByte('\n')
+	row := strings.TrimSuffix(strings.Repeat("a,", 1000), ",") + "\n"
+	for b.Len() < 8<<20 {
+		b.WriteString(row)
+	}
+	body := []byte(b.String())
+	m := &register.ColumnMap{Name: "wide", Makes: "Observation", Format: "csv",
+		Columns: []register.MapColumn{{Field: "about", Column: "c0", Asset: "device"}},
+		Facts:   []register.MapFact{{Fact: "x", Column: "c1"}}}
+	allocated := func(read func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		read()
+		runtime.ReadMemStats(&after)
+		return (after.TotalAlloc - before.TotalAlloc) >> 20
+	}
+	if mb := allocated(func() {
+		if _, err := Read(Input{Format: FormatCSV, Body: body, Map: m}); err != nil {
+			t.Fatal(err)
+		}
+	}); mb > 400 {
+		t.Errorf("reading two columns of an 8 MB table took %d MB", mb)
+	}
+	if mb := allocated(func() {
+		d, err := DraftMap(FormatCSV, body, "Observation", "wide", "")
+		if err != nil || len(d.Headings) != 1000 || len(d.Sample) != 5 {
+			t.Fatalf("the draft is %v", err)
+		}
+	}); mb > 100 {
+		t.Errorf("drafting a map from an 8 MB table took %d MB", mb)
 	}
 }
