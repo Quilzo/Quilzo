@@ -181,6 +181,12 @@ type Input struct {
 	// theirs, and is refused when the surface does not know it. Ingest
 	// sets it from the person writing, whatever a caller gives.
 	Subject register.ID
+
+	// pull and pipeline are set by Collect and Push alone (pull.go): how a
+	// connector's run or a pipeline's push came, which is the half of the
+	// grade no caller can say.
+	pull     *pulled
+	pipeline *pushed
 }
 
 // Fact is one record a file yielded, as a preview shows it and as the list
@@ -296,9 +302,12 @@ func Read(in Input) (*Batch, error) {
 	if len(in.Body) == 0 {
 		return nil, fmt.Errorf("%w: it is empty", ErrUnreadable)
 	}
-	if _, ok := FormatNamed(string(in.Format)); !ok {
+	if _, ok := FormatNamed(string(in.Format)); !ok && (in.Format != FormatPull || in.pull == nil) {
 		return nil, fmt.Errorf("%w: %q is not a format this reads; the formats are %s", ErrUnreadable,
 			plaintext.Clip(string(in.Format), 40, "…"), formatNames())
+	}
+	if in.Format == FormatPull && in.pipeline != nil {
+		return nil, fmt.Errorf("%w: a pipeline pushes a file in a format it names", ErrUnreadable)
 	}
 	if in.Format.mapped() {
 		if in.Map == nil {
@@ -319,7 +328,15 @@ func Read(in Input) (*Batch, error) {
 		name = DefaultSource(in.Format, grade, in.Map)
 	}
 	src := register.Source{Name: name, Type: sourceType(grade), Title: sourceTitle(in.Format, grade, in.Map),
-		Fresh: DefaultFresh, Grade: grade}
+		Fresh: DefaultFresh, Grade: grade, By: byOf(in.By)}
+	// A connector's run and a pipeline's push are filed under the source a
+	// person made for them, as it stands, and graded by how they came.
+	switch {
+	case in.pull != nil:
+		src, grade = in.pull.source, register.GradeConnector
+	case in.pipeline != nil:
+		src, grade = in.pipeline.source, register.GradeCI
+	}
 	if err := register.Validate(src); err != nil {
 		return nil, fmt.Errorf("the source %q: %w", plaintext.Clip(name, 40, "…"), err)
 	}
@@ -343,6 +360,9 @@ func Read(in Input) (*Batch, error) {
 	}
 	if len(rd.order) == 0 {
 		return nil, fmt.Errorf("%w: it holds nothing this reads as a fact", ErrUnreadable)
+	}
+	if err := checkPushed(rd); err != nil {
+		return nil, err
 	}
 	b := &Batch{Format: in.Format, Digest: rd.digest, Size: int64(len(in.Body)), Grade: rd.grade, Source: src,
 		SourceID: srcID, Flags: rd.flags, Notes: rd.notes}

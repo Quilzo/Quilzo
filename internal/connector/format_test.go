@@ -268,3 +268,60 @@ func TestASecondKeyIsCheckedLikeTheFirst(t *testing.T) {
 		t.Error("a second key with no place in the path was accepted")
 	}
 }
+
+// Every page a run reads is handed over exactly as it came, and a page the
+// tool refused is handed over by its status; read again, a kept page gives
+// the records the run gave.
+func TestEveryPageIsKeptAsItCameAndReadsAgainTheSame(t *testing.T) {
+	calls := 0
+	s := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Write(page([]map[string]any{{"device_id": 1, "device_name": "a"}}, map[string]any{"next": "/api/v1/devices?page=2"}))
+			return
+		}
+		w.Write(page([]map[string]any{{"device_id": 2, "device_name": "b"}}, nil))
+	})
+	m := people()
+	m.Endpoints[0].Page = Pagination{Kind: NextURL, From: "next"}
+	x, err := NewSession(m, dialTo(t, s), secrets(), noSleep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []Page
+	x.Keep = func(p Page) { kept = append(kept, p) }
+	out, err := x.Run(context.Background(), "devices", State{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 2 || kept[0].Status != 200 || !strings.HasPrefix(kept[1].Path, "/api/v1/devices") {
+		t.Fatalf("kept %+v", kept)
+	}
+	var again []map[string]string
+	for _, p := range kept {
+		recs, err := Records(m, p.Endpoint, p.Body, p.Parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again = append(again, recs...)
+	}
+	if len(again) != len(out.Records) || again[1]["name"] != out.Records[1]["name"] {
+		t.Errorf("read again %v, and the run read %v", again, out.Records)
+	}
+	for _, p := range kept {
+		if strings.Contains(p.Path, "s3cret") {
+			t.Error("a kept page's path holds the credential")
+		}
+	}
+
+	refused := serve(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) })
+	x, _ = NewSession(people(), dialTo(t, refused), secrets(), noSleep)
+	kept = nil
+	x.Keep = func(p Page) { kept = append(kept, p) }
+	if _, err := x.Run(context.Background(), "devices", State{}); err == nil {
+		t.Fatal("a refusal read as a page")
+	}
+	if len(kept) != 1 || kept[0].Status != http.StatusForbidden || kept[0].Body != nil {
+		t.Errorf("a refused page was kept as %+v", kept)
+	}
+}

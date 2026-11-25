@@ -157,7 +157,7 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 	if in.Shown != "" && b.Raw.Yield != in.Shown {
 		return Result{Batch: b, Sealed: sealed}, fmt.Errorf("%w: nothing was written; look at what it would write again", ErrChanged)
 	}
-	recs, err := g.withSource(b)
+	recs, err := g.withSource(b, by.Kind, in.pull != nil || in.pipeline != nil)
 	if err != nil {
 		return Result{Sealed: sealed}, err
 	}
@@ -287,20 +287,37 @@ func (g *Ingester) confirmed(m *register.ColumnMap) error {
 
 // withSource is a batch's records with its source and its seal: a source
 // already in the register is used as it stands, and is refused when it
-// yields facts of another grade than the file's.
-func (g *Ingester) withSource(b *Batch) ([]register.Record, error) {
+// yields facts of another grade than the file's, or belongs to another kind
+// of actor than whoever brought the file. A connector's run and a
+// pipeline's push (made) are filed only under a source a person made for
+// them, which must be there.
+//
+// The kind of actor is what keeps a person's table from overwriting what a
+// connector observed: the table's facts would have the connector's
+// identifiers, since an identifier is the source and the natural key, and
+// the source says whose they are.
+func (g *Ingester) withSource(b *Batch, kind audit.Kind, made bool) ([]register.Record, error) {
 	recs := make([]register.Record, 0, len(b.Records)+2)
 	e, err := g.Reg.Get(b.SourceID)
 	switch {
+	case errors.Is(err, register.ErrNotFound) && made:
+		return nil, fmt.Errorf("%w: the source %s is not in the register; a person adds it first", register.ErrNotFound, b.Source.Name)
 	case errors.Is(err, register.ErrNotFound):
 		recs = append(recs, b.Source)
 	case err != nil:
 		return nil, err
 	default:
-		have := e.Record.(register.Source)
+		have, ok := e.Record.(register.Source)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s is not a source", register.ErrInvalid, b.SourceID)
+		}
 		if have.Grade != b.Grade {
 			return nil, fmt.Errorf("%w: the source %s yields facts graded %s, and this file's are %s; name another source",
 				register.ErrInvalid, have.Name, have.Grade, b.Grade)
+		}
+		if have.By != "" && have.By != byOf(kind) {
+			return nil, fmt.Errorf("%w: the source %s belongs to a %s, and these facts were brought by a %s; name another source",
+				ErrNotTheirs, have.Name, have.By, byOf(kind))
 		}
 		b.Source = have
 	}
@@ -565,7 +582,19 @@ func rawOf(rec register.Record) (register.Digest, bool) {
 func (g *Ingester) replay(rf register.RawFile, body, list []byte) string {
 	in := Input{Format: Format(rf.Format), Body: body, By: audit.KindHuman, Received: rf.Received.At(), Subject: rf.Stated}
 	if e, err := g.Reg.Get(rf.Source); err == nil {
-		in.Source = e.Record.(register.Source).Name
+		src := e.Record.(register.Source)
+		in.Source = src.Name
+		// A run and a push are read again as they came: a run by its
+		// recipe, naming accounts only by the pseudonyms they were given,
+		// and a push as the job the source names.
+		switch rf.Grade {
+		case register.GradeConnector:
+			in.By = audit.KindService
+			in.pull = &pulled{source: src, subjects: g.known}
+		case register.GradeCI:
+			in.By = audit.KindService
+			in.pipeline = &pushed{source: src, job: Workload{Repository: src.Repository, Workflow: src.Workflow}}
+		}
 	}
 	if rf.Map != "" {
 		e, err := g.Reg.Get(rf.Map)
@@ -593,6 +622,19 @@ func (g *Ingester) replay(rf register.RawFile, body, list []byte) string {
 		return fmt.Sprintf("%d records now, and %d then", len(b.Facts), strings.Count(string(list), "\n"))
 	}
 	return "same"
+}
+
+// known is the pseudonym an account was given, without giving one to an
+// account that has none: a run read again names only who it named then.
+func (g *Ingester) known(name string, _ register.SubjectType) (register.ID, error) {
+	id, ok, err := g.Reg.Side().Lookup(name)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", errors.New("the account has no pseudonym now; it was erased, or never named")
+	}
+	return register.ID(id), nil
 }
 
 // ExpireAction is the name an erasure of raw files whose time was up is

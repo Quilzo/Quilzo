@@ -57,10 +57,30 @@ type Session struct {
 	// included, because the tool counts them.
 	Requests int
 
+	// Keep, when set, is handed every page a run reads, exactly as the
+	// tool sent it, and every page the tool refused, before anything is
+	// mapped from it: the raw evidence a caller seals so each fact can be
+	// followed back to the bytes it was read from. Nil keeps nothing.
+	Keep func(Page)
+
 	last    time.Time
 	static  string
 	token   string
 	expires time.Time
+}
+
+// Page is one response a run read, as Keep is handed it.
+type Page struct {
+	Endpoint string `json:"endpoint"`
+	// Path is the request's path and query on the manifest's host, which
+	// holds no credential: a credential goes in a header.
+	Path string `json:"path"`
+	// Parent is the key a per-record endpoint was read for.
+	Parent string `json:"parent,omitempty"`
+	Status int    `json:"status"`
+	// Body is the response as it came, for a page that was read; empty for
+	// one the tool refused.
+	Body []byte `json:"-"`
 }
 
 // Clock sets what the session takes the time to be, for a test: the pace,
@@ -543,7 +563,7 @@ func (x *Session) pages(ctx context.Context, e Endpoint, next *url.URL,
 				"stopped after %d page(s); there may be more", maxPages)
 			return highest, nil
 		}
-		body, header, err := x.fetchPage(ctx, next, e, timeout, out)
+		body, header, err := x.fetchPage(ctx, next, e, timeout, out, stamp["parent"])
 		if errors.Is(err, ErrBudget) {
 			out.Truncated = "the request budget for " + x.m.Name + " is " +
 				"spent; the rest is read on the next run"
@@ -602,7 +622,7 @@ func (x *Session) pages(ctx context.Context, e Endpoint, next *url.URL,
 // fetchPage gets one page, honouring rate limits and replacing a refused
 // access token once.
 func (x *Session) fetchPage(ctx context.Context, u *url.URL, e Endpoint,
-	timeout time.Duration, out *Result) (any, http.Header, error) {
+	timeout time.Duration, out *Result, parent string) (any, http.Header, error) {
 
 	reauthed := false
 	for attempt := 1; ; attempt++ {
@@ -688,6 +708,7 @@ func (x *Session) fetchPage(ctx context.Context, u *url.URL, e Endpoint,
 		if status < 200 || status > 299 {
 			res.Body.Close()
 			cancel()
+			x.keep(e, u, parent, status, nil)
 			return nil, nil, &HTTPError{Tool: x.m.Name, Endpoint: e.Name, Status: status}
 		}
 
@@ -707,8 +728,60 @@ func (x *Session) fetchPage(ctx context.Context, u *url.URL, e Endpoint,
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s/%s: %w", x.m.Name, e.Name, err)
 		}
+		x.keep(e, u, parent, status, body)
 		return parsed, res.Header, nil
 	}
+}
+
+// keep hands a page to Keep, when the caller asked for pages.
+func (x *Session) keep(e Endpoint, u *url.URL, parent string, status int, body []byte) {
+	if x.Keep == nil {
+		return
+	}
+	path := u.EscapedPath()
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	x.Keep(Page{Endpoint: e.Name, Path: path, Parent: parent, Status: status, Body: body})
+}
+
+// Records is what an endpoint's mapping reads from one page the tool sent:
+// the records a run would have handed over for it, with parent set for a
+// per-record endpoint. It reads a page kept by Keep again, so a fact read
+// from a sealed page is read from it the way the run read it.
+func Records(m Manifest, endpoint string, body []byte, parent string) ([]map[string]string, error) {
+	e, ok := m.Endpoint(endpoint)
+	if !ok {
+		return nil, fmt.Errorf("%s has no endpoint called %q", m.Name, endpoint)
+	}
+	if len(body) > MaxBody {
+		return nil, fmt.Errorf("%s/%s: a page of more than %d bytes", m.Name, e.Name, MaxBody)
+	}
+	parsed, err := decode(body)
+	if err != nil {
+		return nil, fmt.Errorf("%s/%s: %w", m.Name, e.Name, err)
+	}
+	var records []any
+	if e.Single {
+		records, err = single(parsed, e.Records)
+	} else {
+		records, err = recordsIn(parsed, e.Records)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s/%s: %w", m.Name, e.Name, err)
+	}
+	if e.Explode != "" {
+		records = explode(records, e.Explode)
+	}
+	out := make([]map[string]string, 0, len(records))
+	for _, rec := range records {
+		mapped := apply(e, rec)
+		if e.Each != nil {
+			mapped["parent"] = parent
+		}
+		out = append(out, mapped)
+	}
+	return out, nil
 }
 
 // decode parses a body keeping every number exactly as the tool wrote it.
@@ -756,7 +829,7 @@ func (x *Session) Shape(ctx context.Context, name, key string) (any,
 	_, _, timeout := x.m.Limits()
 	var out Result
 	body, header, err := x.fetchPage(ctx, x.m.first(e, State{}), e, timeout,
-		&out)
+		&out, "")
 	if err != nil {
 		return nil, nil, err
 	}
