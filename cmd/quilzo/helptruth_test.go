@@ -794,3 +794,50 @@ func TestMenuRemoveIsDescribedAsItIsTyped(t *testing.T) {
 		t.Errorf("`quilzo menu remove main %s` exited %d: %s", set.Menus[0].Items[0].ID, code, firstLines(e, 2))
 	}
 }
+
+// Each command in the help is under a heading that describes it.
+//
+// "sharing a screen" was the heading of the calls, and when they left
+// Quilzo what came after them stayed under it: `flow demo`, the connected
+// apps, the shield and the checks of the binary's own flaws, none of which
+// has anything to do with a screen. `annotate follow`, which draws on a
+// shared screen, did not say so, so it read as unrelated as the rest.
+func TestTheHelpsHeadingsDescribeWhatIsUnderThem(t *testing.T) {
+	sections := map[string][]string{}
+	heading := ""
+	for _, l := range strings.Split(fullHelp(), "\n") {
+		switch {
+		case l != "" && l[0] != ' ':
+			heading = l
+		case strings.HasPrefix(l, "  quilzo "):
+			sections[heading] = append(sections[heading], l)
+		}
+	}
+	if len(sections["sharing a screen"]) == 0 {
+		t.Fatal("the help has no section headed \"sharing a screen\"; the scan is wrong")
+	}
+	for _, l := range sections["sharing a screen"] {
+		if !strings.Contains(l, "shared screen") {
+			t.Errorf("under \"sharing a screen\", and nothing of a shared screen:\n%s", l)
+		}
+	}
+	shield := "the shield (Quilzo defends itself)"
+	for cmd, under := range map[string]string{
+		"flow": "agents and integrations", "apps": "connected apps", "shield": shield, "self": shield,
+	} {
+		seen := false
+		for h, lines := range sections {
+			for _, l := range lines {
+				if strings.HasPrefix(l, "  quilzo "+cmd+" ") {
+					seen = true
+					if h != under {
+						t.Errorf("`quilzo %s` is under %q, not %q:\n%s", cmd, h, under, l)
+					}
+				}
+			}
+		}
+		if !seen {
+			t.Errorf("the help has no `quilzo %s` line", cmd)
+		}
+	}
+}

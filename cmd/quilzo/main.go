@@ -226,14 +226,17 @@ templates and design
 
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen costs, losslessly; the codec's figures alone
-  quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
-  quilzo flow demo                         automation whose books have to add up
+  quilzo annotate follow --scroll 128      marks drawn on a shared screen keep to the content as it scrolls
+
+connected apps
   quilzo apps list                         apps connected to the agent interface, and what may connect
   quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
   quilzo apps register NAME --redirect URI an app that cannot publish its own metadata; prints its client_id
   quilzo apps unregister ID | disconnect ID   remove a registered app, or end one connection
   quilzo apps receipt CONNECTION [-o FILE] every call an app made through one connection, with proofs and a signed head
   quilzo apps could CONNECTION OP [PAGE]   could the app do it, and why: asked of the code that admits its calls
+
+the shield (Quilzo defends itself)
   quilzo shield status | list [--all]      what Quilzo is doing to protect itself, its playbooks, and what ended
   quilzo self check | verify | vex         known flaws in this build, decided by what is linked; is the binary itself
   quilzo self update vulndb.zip            a newer Go vulnerability database, read offline
@@ -655,6 +658,7 @@ agents and integrations
   quilzo webhook add https://...           tell another system when you
                                             publish, or when a form arrives
   quilzo webhook list | remove URL | test  signed, timestamped, replay-proof
+  quilzo flow demo                         automation whose books have to add up
 
 security posture
   quilzo config show | list                everything settable, and its default
