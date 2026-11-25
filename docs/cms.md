@@ -2558,7 +2558,14 @@ agent interface's `approval_list`, `approval_show` and `approval_policy`, and
 
 **Who may approve** is the organisation's separation policy:
 `quilzo approval policy` shows it, and `quilzo approval policy set FILE`
-declares one, as JSON, at the console. Each rule names a kind of record,
+declares one, as JSON, at the console; an administrator of the register
+declares it in the admin too, on Sign-off's separation policy page
+(`/register/approvals/policy`), where one that cannot be applied is refused
+with the reason beside the field.
+Declaring it is an administrator's either way, because whoever can rewrite
+the policy can make themselves the only person it needs, and the audit
+entry `approval.policy` carries the hash of the policy declared. Each rule
+names a kind of record,
 the permission that makes somebody eligible (`accept-risk`,
 `approve-exception`, `sign-board-pack`, `publish-external`,
 `manage-connectors`, `read-evidence`, `run-crew`, `record-minute`, each
@@ -2578,6 +2585,14 @@ not for a day after another administrator stopped being one. A review that
 has not come by then, and an approval that has lapsed, are posture problems
 (`approval.review-overdue`, `approval.lapsed`).
 
+A second approver need hold no role here. The head of risk granted
+`accept-risk` alone, or an adviser the policy names under `seconds` and the
+access policy does not, opens Sign-off and is shown the decisions they are
+eligible for, the ones they approved and the ones made alone whose review
+could be theirs, and nothing else of the register. Sign-off is not in their
+menu, which lists what a role reaches; the address is
+`/register/approvals`.
+
 **What a passkey signs.** The page shows the decision, what it cites by hash,
 what it changes field by field, and beside the button the SHA-256 of all
 three. The passkey signs a fresh challenge whose bytes are that hash and a
@@ -2589,16 +2604,23 @@ record holds, and `quilzo approval check ID` checks it again with nothing
 but those files. The register checks every approval written to it the same
 way, whichever surface wrote it. Several decisions are approved by one
 assertion over the RFC 6962 Merkle root of their hashes in the order shown,
-once the approver has opened the ones the batch chose at random (about the
-square root of how many); the batch's record holds which were opened and the
-seconds spent on each.
+once the approver has opened the spot-checks the batch chose at random
+(about the square root of how many); the batch's record holds which were
+opened and the seconds spent on each, and every decision it approved says
+whether it was a spot-check opened or was approved beside them unopened. Two
+people who each approve the same decisions, as one that takes two of them
+asks, are each shown the batch with a sample of their own, sign the same
+root, and each has a batch record of their own.
 
 **At the console**, an administrator approves, rejects and reviews by typing
 back the hash `quilzo approval show ID` gave: `quilzo approval approve ID
 --surface HASH`. No passkey can be asked from a terminal, so the record says
 the approval was the console's, and the admin shows it as weaker. Over the
 agent interface and the API nothing is approved: `approval_approve` answers
-with where the person approves, and a POST to the API's routes is refused.
+an administrator with where the person approves, and refuses anybody else
+before that, and a POST to the API's routes is refused. A reader of the
+register runs `quilzo approval`, `list`, `show`, `check` and `policy`; every
+other line of the command is an administrator's.
 
 **Signing in to decide.** Whoever may approve, accept a risk, publish outside
 the organisation or administer signs in with a passkey, or through single

@@ -16,7 +16,7 @@
 // The register is typed records in collections whose names begin sec_
 // (Prefix), on the store ref "register" (Ref), which is never promoted to
 // a site. Each kind is a Go struct whose field types and tags are its schema
-// (kind.go, types.go, validate.go). The kinds are defined in four files, by
+// (kind.go, types.go, validate.go). The kinds are defined in five files, by
 // what they hold:
 //
 //	kind_facts.go      Asset, Subject, Source, Observation, Link, Population, Extracted
@@ -24,8 +24,12 @@
 //	                   ControlTest, TestRun, Evidence
 //	kind_decisions.go  Risk, Exception, Decision, RiskAppetite, MetricValue
 //	kind_estate.go     Service, Vendor, AISystem, Incident, Policy, Acknowledgement
+//	kind_approvals.go  Review, ApprovalBatch
 //
-// and an Approval is embedded in the record it decides, never filed apart.
+// and an Approval is embedded in the record it decides, never filed apart:
+// what follows it, the review a decision made alone owes and the batch in
+// which several were approved by one assertion, are the last file's kinds,
+// and internal/approval is the module that fills an Approval in.
 // Facts that were collected (Observation), runs of a test (TestRun) and
 // what a run shows of a control (Evidence) are three kinds, so a figure can
 // be followed from the board's number to the members that were counted.
