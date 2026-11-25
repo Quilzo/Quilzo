@@ -694,3 +694,62 @@ func TestANamedSecondIsAskedForAPasskeyAsAnApproverIs(t *testing.T) {
 		t.Errorf("somebody who decides nothing was asked for a passkey: %d", w.Code)
 	}
 }
+
+// The review of a decision made alone shows the reviewer what was approved:
+// the record as it was written, field by field, under the hash their
+// passkey is to sign. It showed the hash and a link to the record, and an
+// adviser named as a second, who does not read the register, followed the
+// link to a refusal and was asked to sign a hash of something they had not
+// seen.
+func TestTheReviewShowsWhatWasApproved(t *testing.T) {
+	srv, token := setup(t)
+	srv.Passkeys = &Passkeys{}
+	key := newFake(t, "editor-key")
+	key.register(t, srv, token)
+	pol := approval.Default()
+	pol.Seconds = []approval.Second{{Principal: "adviser", As: "adviser"}}
+	if err := approval.SavePolicy(srv.Store.Root(), pol); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "adviser", Permission: auth.ActReadEvidence, Resource: register.Area}); err != nil {
+		t.Fatal(err)
+	}
+	reg := register.Open(srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	editor, err := approval.PeopleAt(srv.Store.Root()).Pseudonym("editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	risk := register.Risk{Ref: "R-28", Title: "One office router", Owner: editor, Raised: editor, Likelihood: 2, Impact: 3, Status: "accepted"}
+	if _, err := reg.Propose(register.Actor{Name: "editor", Subject: editor, Kind: audit.KindHuman,
+		May: func(auth.Action, string) error { return nil }}, "raised by the only administrator", risk); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := register.IDOf(risk)
+	if out := approveIn(t, srv, token, key, id); out["done"] != true {
+		t.Fatalf("approving alone did not write it: %v", out)
+	}
+	adviser, _ := sessionFor(t, srv, "adviser")
+	w := get(t, srv, "/register/approvals/review/"+string(id), adviser)
+	body := w.Body.String()
+	if w.Code != http.StatusOK {
+		t.Fatalf("the adviser's review answered %d\n%s", w.Code, firstLines(body, 40))
+	}
+	if !strings.Contains(body, "<caption>The record as it was approved") || !strings.Contains(body, ">likelihood<") ||
+		!strings.Contains(body, ">impact<") {
+		t.Fatalf("the review does not show what was approved\n%s", firstLines(body, 80))
+	}
+	if strings.Contains(body, `href="/register/record/`+string(id)+`"`) {
+		t.Error("the review sends somebody who does not read the register to the register's page of the record")
+	}
+	for _, f := range a11y.Check("review", body).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the review: %s", f)
+		}
+	}
+	// Whoever reads the register is still offered the record's own page.
+	if page := get(t, srv, "/register/approvals/review/"+string(id), token).Body.String(); !strings.Contains(page,
+		`href="/register/record/`+string(id)+`"`) {
+		t.Error("the review does not offer the record's page to somebody who reads the register")
+	}
+}

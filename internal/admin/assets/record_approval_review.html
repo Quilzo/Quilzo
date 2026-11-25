@@ -1,9 +1,11 @@
 {{template "head" .}}
 {{template "kit-header" .Header}}
 <dl class="kit-facts">
-<dt>What was approved</dt><dd>The surface whose hash is <code class="kit-hash">{{.Hash}}</code>. <a href="{{.Record}}">The record as the register holds it</a>.</dd>
+<dt>What was approved</dt><dd>The surface whose hash is <code class="kit-hash">{{.Hash}}</code>: the record below, what it cited and what it changed when it was approved.{{with .Record}} <a href="{{.}}">The record as the register holds it</a>.{{end}}</dd>
 <dt>Rule</dt><dd>{{.Held.Approval.Rule}}, by holding {{.Held.Approval.Atom}}</dd>
 </dl>
+<h2>The record that was approved</h2>
+{{template "kit-table" .Fields}}
 {{with .Reviewed}}<p class="notice" role="status">{{icon "info"}} It has been reviewed: {{.Outcome}}.</p>
 {{else}}<section class="kit-approval" aria-labelledby="review-h">
 <h2 id="review-h">Your review</h2>

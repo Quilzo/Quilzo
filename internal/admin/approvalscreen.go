@@ -937,6 +937,22 @@ func (s *Server) handleApprovalReview(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case "":
+		// The record as it was written, its approval aside, is the record
+		// the hash was taken over, so it is what the reviewer is shown:
+		// somebody named as a second who does not read the register would
+		// otherwise sign the hash of a page they could not open.
+		e, err := m.Register.Get(id)
+		if err != nil {
+			s.registerUnreadable(w, r, p, err)
+			return
+		}
+		spec, _ := register.SpecOf(string(e.Kind))
+		fields, err := seckit.NewTable("The record as it was approved, its approval aside", []string{"Field", "Value", "What it is for"},
+			fieldRows(spec.Fields, register.WithApproval(e.Record, nil)))
+		if err != nil {
+			s.registerUnreadable(w, r, p, err)
+			return
+		}
 		n, _ := nonce()
 		base := "/register/approvals/review/" + string(id)
 		label := labelOf2(h)
@@ -945,8 +961,11 @@ func (s *Server) handleApprovalReview(w http.ResponseWriter, r *http.Request) {
 				"eligible. Its review is yours to make if you are somebody else: look at exactly what was approved, and " +
 				"say whether it stands."},
 			"Held": h, "ID": string(id), "Hash": string(h.Approval.Surface), "Short": seckit.Short(string(h.Approval.Surface)),
-			"Action": base + "/approve", "Record": "/register/record/" + string(id),
+			"Action": base + "/approve", "Fields": fields,
 			"Ceremony": map[string]any{"Nonce": n, "Challenge": base + "/challenge", "Approve": base + "/approve"}}
+		if s.seesAll(p) {
+			data["Record"] = "/register/record/" + string(id)
+		}
 		if h.Review != nil {
 			data["Reviewed"] = h.Review
 			delete(data, "Ceremony")
