@@ -251,16 +251,20 @@ func configExplain(args []string) error {
 // does (nearestWords). `config set site.nmae Hello` was told to look
 // through `config list`, which is a hundred and twenty-nine settings, for
 // the one transposition.
+//
+// The settings are this program's, as its subcommands are, so a key none of
+// them has is a misused command line, exit 2, as a mistyped subcommand is:
+// it exited 1, as though the setting had been tried and had failed.
 func notASetting(key string) error {
 	var keys []string
 	for _, s := range config.All() {
 		keys = append(keys, s.Key)
 	}
 	if near := nearestWords(key, keys); len(near) > 0 {
-		return fmt.Errorf("%q is not a setting; did you mean %s? `quilzo config list` "+
-			"shows every one", key, strings.Join(near, ", or "))
+		return errMisused{fmt.Errorf("%q is not a setting; did you mean %s? `quilzo config list` "+
+			"shows every one", key, strings.Join(near, ", or "))}
 	}
-	return fmt.Errorf("%q is not a setting; `quilzo config list` shows every one", key)
+	return errMisused{fmt.Errorf("%q is not a setting; `quilzo config list` shows every one", key)}
 }
 
 func configSet(root string, args []string) error {

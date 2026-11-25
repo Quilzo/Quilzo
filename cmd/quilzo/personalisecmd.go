@@ -73,7 +73,7 @@ func personaliseList(root string) error {
 func parseCondition(s string) (personalise.Condition, error) {
 	field, values, ok := strings.Cut(s, "=")
 	if !ok {
-		return personalise.Condition{}, fmt.Errorf("%q is not FIELD=VALUES", s)
+		return personalise.Condition{}, errMisused{fmt.Errorf("%q is not FIELD=VALUES", s)}
 	}
 	c := personalise.Condition{Field: personalise.Field(field), Values: splitList(values)}
 	if f, name, has := strings.Cut(field, ":"); has && f == "param" {

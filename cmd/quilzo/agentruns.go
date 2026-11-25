@@ -644,8 +644,10 @@ func runUnfinished(path string) bool {
 
 func loadAgentRun(root, id string) (agent.Record, error) {
 	var rec agent.Record
+	// A word no run can be called is the command line's, exit 2, as `agent
+	// receipt` refuses it: `agent trace ab` and `agent resume ab` exited 1.
 	if !agent.ValidRecordID(id) {
-		return rec, fmt.Errorf("%q is not a run", id)
+		return rec, errMisused{fmt.Errorf("%q is not a run", id)}
 	}
 	b, err := readBounded(filepath.Join(agentRunsDir(root), id+".json"), 16<<20)
 	if os.IsNotExist(err) {
@@ -1142,7 +1144,7 @@ func runAndStep(args []string, usage string) (string, int, error) {
 	}
 	n, err := strconv.Atoi(args[1])
 	if err != nil || n < 0 {
-		return "", 0, fmt.Errorf("%q is not a step", args[1])
+		return "", 0, errMisused{fmt.Errorf("%q is not a step", args[1])}
 	}
 	return args[0], n, nil
 }
@@ -1161,7 +1163,7 @@ func agentAnswerQuestion(root string, args []string) error {
 	for _, kv := range args[2:] {
 		name, value, ok := strings.Cut(kv, "=")
 		if !ok || strings.TrimSpace(name) == "" {
-			return fmt.Errorf("%q is not NAME=VALUE", kv)
+			return errMisused{fmt.Errorf("%q is not NAME=VALUE", kv)}
 		}
 		answers[strings.TrimSpace(name)] = value
 	}

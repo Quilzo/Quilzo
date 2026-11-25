@@ -587,6 +587,82 @@ func TestAWrongCommandLineExitsTwoWhereverItIsRead(t *testing.T) {
 	}
 }
 
+// The same wrong word exits 2 in the commands beside the ones above, which
+// read it by the same rule.
+//
+// Marking the commands one by one left their neighbours at 1: `shield trust
+// add ab` exited 2 and `shield trust remove ab` 1, `evolve run` without
+// --program 2 and with `--program a.go` 1, and `agent receipt ab` 2 while
+// `agent trace ab`, `agent resume ab` and `agent approve ab 1` refused the
+// same word as no run and exited 1. And the mistakes the test above names
+// went on exiting 1 wherever else they were made: a NAME=VALUE without its =
+// (`section set`, `agent answer`, `agent program --env`, `experiment add
+// --variant`, `personalise add --when`, `theme import --set`, `integrations
+// call`), a number that is not one (`section fields x`, `agent approve RUN
+// x`, a weight, `geo network add --lat`), a network that is not one (`geo
+// network add`, as `shield trust add` refuses it), a direction or a kind
+// that is neither, and `annotate follow --scroll -5`. So did a credential's
+// name no credential can have, and a setting this program has none of,
+// which `config set site.nmae` was asked whether it meant site.name and
+// exited 1 as though the setting had been tried and failed, where a
+// subcommand mistyped the same way exits 2.
+func TestTheSameWrongWordExitsTwoBesideTheCommandsThatSayIt(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	for _, line := range [][]string{
+		{"agent", "new", "bot", "--kind", "retrieval"},
+		{"integrations", "template", "github-issues"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	tokens := filepath.Join(t.TempDir(), "tokens.json")
+	if err := os.WriteFile(tokens, []byte(`{"color":{"bg":{"$type":"color","$value":"#ffffff"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range [][]string{
+		{"shield", "trust", "remove", "ab"},
+		{"evolve", "run", "--program", "a.go", "--evaluator", "b.py"},
+		{"agent", "trace", "ab"},
+		{"agent", "resume", "ab"},
+		{"agent", "approve", "ab", "1"},
+		{"agent", "approve", "ab", "x"},
+		{"agent", "answer", "ab", "1", "novalue"},
+		{"agent", "program", "bot", "--env", "NOVALUE", "--", "/bin/true"},
+		{"experiment", "add", "t1", "--page", "index", "--variant", "bnovalue"},
+		{"experiment", "add", "t1", "--page", "index", "--variant", "b=index:many"},
+		{"personalise", "add", "r1", "--page", "index", "--variant", "index", "--when", "campaignX"},
+		{"theme", "import", tokens, "--set", "primary"},
+		{"integrations", "call", "github-issues", "listIssues", "novalue"},
+		{"geo", "network", "add", "ab", "office"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--kind", "home"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--lat", "north"},
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--lon", "west"},
+		{"section", "fields", "index", "x"},
+		{"section", "move", "index", "x", "up"},
+		{"section", "move", "index", "0", "sideways"},
+		{"section", "set", "index", "x", "a=b"},
+		{"section", "set", "index", "0", "novalue"},
+		{"section", "item", "add", "index", "x", "items"},
+		{"section", "item", "remove", "index", "0", "items", "x"},
+		{"section", "backdrop", "index", "x", "/media/ab"},
+		{"annotate", "follow", "--scroll", "-5"},
+		{"secret", "set", "Not A Name"},
+		{"config", "set", "site.nmae", "Hello"},
+		{"config", "explain", "site.nmae"},
+		{"config", "unset", "site.nmae"},
+	} {
+		if _, e, code := cliRun(t, root, "", line...); code != out.ExitUsage {
+			t.Errorf("`quilzo %s` exited %d, want %d (%s): %s", strings.Join(line, " "),
+				code, out.ExitUsage, out.Describe(out.ExitUsage), firstLines(e, 2))
+		}
+	}
+}
+
 // A colour decided by stdout is written only to stdout.
 //
 // What is written to stderr is coloured as stderr is (noteRed and the

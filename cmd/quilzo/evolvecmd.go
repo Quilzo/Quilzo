@@ -631,13 +631,17 @@ func reservedInput(name string) bool {
 }
 
 // checkScript validates a script path's shape and returns its extension.
+//
+// A path left out and a path of a kind nothing here runs are both the
+// command line's, exit 2: only the first was, so `evolve run` without
+// --program exited 2 and with `--program a.go` 1.
 func checkScript(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", errMisused{fmt.Errorf("a path is required")}
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	if _, ok := interpreters[ext]; !ok {
-		return "", fmt.Errorf("%s is not a script this runs: Python (.py), R (.R) or Julia (.jl)", path)
+		return "", errMisused{fmt.Errorf("%s is not a script this runs: Python (.py), R (.R) or Julia (.jl)", path)}
 	}
 	if _, err := os.Stat(path); err != nil {
 		return "", err

@@ -406,8 +406,11 @@ func shieldTrust(root string, args []string) error {
 			shieldAudit(root, c, "shield.trust-add", audit.Denied, map[string]string{"network": network, "error": err.Error()})
 		}
 		// A word that is not a network is the command line's mistake, as
-		// `shield block` refuses one: it exited 1, a failure.
-		if _, perr := shield.Network(args[1]); perr != nil && add {
+		// `shield block` refuses one: it exited 1, a failure. Adding or
+		// removing, since Trust reads the word before the list and refuses
+		// the same word the same way: `trust remove ab` exited 1 once
+		// `trust add ab` exited 2.
+		if _, perr := shield.Network(args[1]); perr != nil {
 			return errMisused{err}
 		}
 		return err

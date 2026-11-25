@@ -90,17 +90,18 @@ func changeExperiments(root string, caller *Caller, change, name string,
 	return nil
 }
 
-// parseVariant reads NAME=PAGE or NAME=PAGE:WEIGHT.
+// parseVariant reads NAME=PAGE or NAME=PAGE:WEIGHT. What it refuses is the
+// word typed after --variant, so a misused command line, exit 2.
 func parseVariant(s string) (experiment.Variant, error) {
 	name, rest, ok := strings.Cut(s, "=")
 	if !ok {
-		return experiment.Variant{}, fmt.Errorf("%q is not NAME=PAGE[:WEIGHT]", s)
+		return experiment.Variant{}, errMisused{fmt.Errorf("%q is not NAME=PAGE[:WEIGHT]", s)}
 	}
 	page, weight := rest, 50
 	if p, wt, has := strings.Cut(rest, ":"); has {
 		n, err := strconv.Atoi(wt)
 		if err != nil {
-			return experiment.Variant{}, fmt.Errorf("%q: the weight is not a number", s)
+			return experiment.Variant{}, errMisused{fmt.Errorf("%q: the weight is not a number", s)}
 		}
 		page, weight = p, n
 	}

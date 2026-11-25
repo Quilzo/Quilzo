@@ -45,9 +45,10 @@ func annotateFollow(args []string) error {
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
+	// A flag's value of the wrong sign is the command line's, exit 2.
 	if *scroll < 0 {
-		return fmt.Errorf("scrolling up is the same problem upside down; " +
-			"pass a positive number")
+		return errMisused{fmt.Errorf("scrolling up is the same problem upside down; " +
+			"pass a positive number")}
 	}
 
 	// A document taller than the window, so scrolling reveals content

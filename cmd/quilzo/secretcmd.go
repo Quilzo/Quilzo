@@ -142,8 +142,10 @@ func cmdSecret(root string, args []string) error {
 }
 
 func secretSetCmd(root, name string, caller *Caller) error {
+	// A name no credential can have is the word typed, so misused, exit 2,
+	// as a usage refused above is.
 	if !reSecretName.MatchString(name) {
-		return fmt.Errorf("%q is not a credential's name: lower-case letters, digits, '.', '_' and '-', up to 64", name)
+		return errMisused{fmt.Errorf("%q is not a credential's name: lower-case letters, digits, '.', '_' and '-', up to 64", name)}
 	}
 	value, err := secretValue()
 	if err != nil {
