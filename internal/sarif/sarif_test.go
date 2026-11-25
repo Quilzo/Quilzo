@@ -81,8 +81,9 @@ const semgrepish = `{
 }`
 
 // The fixture is the one the reader's source repository tests with, byte
-// for byte: the same digest is held there, so a change to either copy's
-// fixture is a change to both readers' tests, and is seen.
+// for byte, and this is its digest: a change to this copy's fixture fails
+// here and is seen. The source repository is to hold the same digest in its
+// own test, so that a change to either copy fails one of the two.
 func TestFixtureDigestShared(t *testing.T) {
 	sum := sha256.Sum256([]byte(semgrepish))
 	if got := hex.EncodeToString(sum[:]); got != "e976bf8f6764e07880cb61f00d1a832751870df65b064f601b3e1e1ec8c16518" {
