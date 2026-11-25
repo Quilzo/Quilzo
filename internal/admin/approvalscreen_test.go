@@ -655,3 +655,42 @@ func TestTheSSOScreenTakesThePhishingResistantClasses(t *testing.T) {
 		}
 	}
 }
+
+// A second the separation policy names decides, whatever the access policy
+// grants them, so their sign-in has to be one that cannot be phished too: a
+// single sign-on that said only "mfa" is asked for their passkey before
+// anything else, as an approver's is. Asked nothing, the adviser opened
+// Sign-off, and their approval was refused for a sign-in nobody had offered
+// them a way to confirm.
+func TestANamedSecondIsAskedForAPasskeyAsAnApproverIs(t *testing.T) {
+	b := newApprovalBench(t)
+	pol := approval.Default()
+	pol.Seconds = []approval.Second{{Principal: "adviser", As: "adviser"}}
+	if err := approval.SavePolicy(b.srv.Store.Root(), pol); err != nil {
+		t.Fatal(err)
+	}
+	// Known to the access policy, as everybody who signs in is, and granted
+	// nothing that decides.
+	if err := b.srv.Policy.Grant(auth.Binding{Principal: "adviser", Permission: auth.ActReadEvidence, Resource: register.Area}); err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := b.srv.Tokens.IssueSession("test", "adviser", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodSSO)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := get(t, b.srv, "/register/approvals", secret)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/signin/verify" {
+		t.Fatalf("a named second whose sign-in can be phished reached Sign-off: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if verify := get(t, b.srv, "/signin/verify", secret).Body.String(); !strings.Contains(verify, "cannot be phished") {
+		t.Errorf("the confirmation page does not say why\n%s", firstLines(verify, 40))
+	}
+	// Somebody the policy does not name, granted the same, is not held.
+	if err := b.srv.Policy.Grant(auth.Binding{Principal: "auditor", Permission: auth.ActReadEvidence, Resource: register.Area}); err != nil {
+		t.Fatal(err)
+	}
+	other, _, _ := b.srv.Tokens.IssueSession("test", "auditor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodSSO)
+	if w := get(t, b.srv, "/", other); w.Header().Get("Location") == "/signin/verify" {
+		t.Errorf("somebody who decides nothing was asked for a passkey: %d", w.Code)
+	}
+}

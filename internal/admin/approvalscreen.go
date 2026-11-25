@@ -71,7 +71,11 @@ var decidingAtoms = []auth.Action{auth.ActAcceptRisk, auth.ActApproveException, 
 
 // mustResistPhishing reports whether a person's sign-in has to be one that
 // cannot be phished: the separation policy asks it, and they may approve,
-// accept a risk, publish outside the organisation or administer.
+// accept a risk, publish outside the organisation or administer. A second
+// the policy names may approve whatever the access policy grants them, and
+// is asked as an approver is; asked only about their grants, an adviser who
+// signed in with "mfa" was let into Sign-off and refused there, with no
+// passkey ever asked for.
 func (s *Server) mustResistPhishing(name string) bool {
 	if s.Store == nil || s.Policy == nil {
 		return false
@@ -79,6 +83,9 @@ func (s *Server) mustResistPhishing(name string) bool {
 	pol, _, err := approval.LoadPolicy(s.Store.Root())
 	if err == nil && !pol.PhishingResistant {
 		return false
+	}
+	if err == nil && pol.SecondAs(name) != "" {
+		return true
 	}
 	// A policy that cannot be read asks the stricter thing.
 	if s.Policy.Evaluate(name, auth.ActGrant, "/").Allowed {
@@ -139,9 +146,11 @@ func (s *Server) approver(p principal) approval.Person {
 // approvalsReady is a signed-in person who may read the register, or who
 // may decide something in it, and its approvals.
 //
-// A second approver need hold no role here: the head of risk granted
-// accept-risk alone, or an outside adviser the separation policy names and
-// the access policy does not. Asked only for a view of the register, they
+// A second approver need hold no role over the register: the head of risk
+// granted accept-risk alone, or an outside adviser the separation policy
+// names and the access policy grants nothing that decides. (It has to know
+// them by some grant, as every sign-in asks; enrolling a guest by link is
+// not built yet.) Asked only for a view of the register, they
 // could not open the page their passkey is to sign, and the second pair of
 // eyes the policy promises would exist on paper. So whoever may decide
 // something is let in, and shown what is theirs to decide and nothing else

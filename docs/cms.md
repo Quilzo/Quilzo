@@ -2585,11 +2585,16 @@ not for a day after another administrator stopped being one. A review that
 has not come by then, and an approval that has lapsed, are posture problems
 (`approval.review-overdue`, `approval.lapsed`).
 
-A second approver need hold no role here. The head of risk granted
-`accept-risk` alone, or an adviser the policy names under `seconds` and the
-access policy does not, opens Sign-off and is shown the decisions they are
-eligible for, the ones they approved and the ones made alone whose review
-could be theirs, and nothing else of the register. Sign-off is not in their
+A second approver need hold no role over the register. The head of risk
+granted `accept-risk` alone, or an adviser the policy names under `seconds`
+whom the access policy grants nothing that decides, opens Sign-off and is
+shown the decisions they are eligible for, the ones they approved and the
+ones made alone whose review could be theirs, and nothing else of the
+register. Signing in still needs the access policy to know them, as every
+sign-in does, and enrolling a guest by link is not built yet: grant an
+outside adviser something narrow, such as `read-evidence` on the register.
+A named second signs in as an approver does, with a method that cannot be
+phished, or is asked for their passkey first. Sign-off is not in their
 menu, which lists what a role reaches; the address is
 `/register/approvals`.
 
