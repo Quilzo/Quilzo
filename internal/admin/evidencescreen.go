@@ -30,7 +30,10 @@ import (
 // store the moment it arrives, before anything parses it, and read; the
 // person is shown every record it would write, with the place in the file
 // each was read from and what was hidden there; and only when they confirm
-// is anything written to the register, through register.Put, as them. A
+// is anything written to the register, through register.Put, as them. The
+// confirmation carries the digest of what they were shown, and writes
+// nothing if the file reads otherwise by then: a column map somebody else
+// changed in between would otherwise have them write facts they never saw. A
 // table needs a column map, and a person confirms one here once, having
 // seen the rows it reads. A key that signed files are verified against is
 // pinned here by a person too.
@@ -486,7 +489,8 @@ func (s *Server) handleEvidenceConfirm(w http.ResponseWriter, r *http.Request) {
 		fail(err.Error())
 		return
 	}
-	in := evidence.Input{Format: format, Body: body, Source: f.Source, By: audit.KindHuman}
+	in := evidence.Input{Format: format, Body: body, Source: f.Source, By: audit.KindHuman,
+		Shown: register.Digest(r.FormValue("shown"))}
 	if err := wr.Prepare(&in, f.Map); err != nil {
 		fail(err.Error())
 		return
