@@ -12,11 +12,15 @@
 {{if .ByAgent}}<figure class="kit-fenced"><figcaption>Written by the agent {{.Proposer}}, not by a person, and not checked. It is shown as it was proposed; nothing on this page is taken from it.</figcaption><blockquote><p>{{.Why}}</p></blockquote></figure>
 {{else}}<p>{{.Why}} <span class="hint">Proposed by the person whose pseudonym is <code>{{.Proposer}}</code>.</span></p>{{end}}{{end}}
 <h2>What you are approving</h2>
-{{template "kit-table" .Fields}}
+{{if .ByAgent}}<figure class="kit-fenced"><figcaption>Drafted by the agent {{.Proposer}}, not by a person, and not checked. Every value below is the agent's until you approve it; approving makes it the record's, and yours.</figcaption>
+{{template "kit-table" .Fields}}</figure>
+{{else}}{{template "kit-table" .Fields}}{{end}}
 <h2>What it cites</h2>
 {{if .Evidence}}<ul class="kit-cited">{{range .Evidence}}<li><code class="kit-hash">{{.}}</code></li>{{end}}</ul>{{else}}<p>It cites nothing by hash.</p>{{end}}
 <h2>What changes</h2>
-{{template "kit-table" .Diff}}
+{{if .ByAgent}}<figure class="kit-fenced"><figcaption>The change the agent {{.Proposer}} drafted, not checked: every value it would write is the agent's until you approve it.</figcaption>
+{{template "kit-table" .Diff}}</figure>
+{{else}}{{template "kit-table" .Diff}}{{end}}
 {{with .Signed}}<h2>Approvals given so far</h2>{{template "kit-timeline" .}}{{end}}
 {{template "kit-approval" .Approval}}
 {{with .Ceremony}}{{template "approval-ceremony" .}}{{end}}

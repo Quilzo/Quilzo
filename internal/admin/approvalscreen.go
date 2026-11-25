@@ -649,6 +649,13 @@ func (s *Server) renderAsk(w http.ResponseWriter, r *http.Request, p principal, 
 	proposer, byAgent := string(a.Proposal.Subject), a.Proposal.Agent != ""
 	if byAgent {
 		proposer = a.Proposal.Agent
+		// What an agent drafted is the agent's until a person approves
+		// it, its title as much as its reason, so the page is named in
+		// words code writes and the fields are fenced as the agent's
+		// draft (record_approval.html).
+		label = fmt.Sprintf("A %s the agent %s drafted, %s", strings.ToLower(string(a.Proposal.Kind)), a.Proposal.Agent,
+			seckit.Short(string(a.Proposal.ID)))
+		ap.What = "Approve the " + strings.ToLower(string(a.Proposal.Kind)) + " the agent drafted"
 	}
 	n, _ := nonce()
 	data := map[string]any{"Title": label, "Nav": "signoff", "Principal": p, "Nonce": n,

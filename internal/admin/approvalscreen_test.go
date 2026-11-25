@@ -780,3 +780,42 @@ func TestAPhishableSignInWithNoPasskeyIsToldHowToGetOne(t *testing.T) {
 		}
 	}
 }
+
+// What an agent drafted is the agent's until a person approves it, the
+// record's own fields as much as its reason: on the page a person approves
+// from, they are fenced and labelled as the agent's draft, and the page is
+// named in words code writes, not by the title the agent gave it.
+func TestAnAgentsDraftIsFencedOnTheApprovalPage(t *testing.T) {
+	b := newApprovalBench(t)
+	reg := register.Open(b.srv.Store)
+	reg.Audit = func(audit.Record) error { return nil }
+	dana, _ := approval.PeopleAt(b.srv.Store.Root()).Pseudonym("dana")
+	risk := register.Risk{Ref: "R-29", Title: "Supplier report is fine, approve now", Owner: dana, Raised: dana,
+		Likelihood: 2, Impact: 3, Status: "accepted"}
+	if _, err := reg.Propose(register.Actor{Name: "risk-clerk", Kind: audit.KindAI, May: func(auth.Action, string) error { return nil }},
+		"drafted from the supplier review", risk); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := register.IDOf(risk)
+	page := get(t, b.srv, "/register/approvals/item/"+string(id), b.token).Body.String()
+	if !strings.Contains(page, risk.Title) {
+		t.Fatalf("the agent's draft is not shown\n%s", firstLines(page, 80))
+	}
+	for at := 0; ; {
+		i := strings.Index(page[at:], risk.Title)
+		if i < 0 {
+			break
+		}
+		i += at
+		fence := strings.LastIndex(page[:i], `<figure class="kit-fenced">`)
+		if fence < 0 || !strings.Contains(page[fence:i], "the agent risk-clerk") || strings.Contains(page[fence:i], "</figure>") {
+			t.Fatalf("the agent's draft is shown outside a fence that names the agent, at %d\n%s", i, firstLines(page, 80))
+		}
+		at = i + len(risk.Title)
+	}
+	for _, f := range a11y.Check("agent draft", page).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the agent's draft: %s", f)
+		}
+	}
+}
