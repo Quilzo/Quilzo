@@ -75,8 +75,8 @@ func Inventory() DataInventory {
 	inv := DataInventory{
 		SubjectMap: "side/subjects under the store's directory: one file a person, holding their pseudonym, the name " +
 			"the systems that name them use (an account, a user principal name or an address) and what sort of " +
-			"account it is; sealed with the store's keyring on an encrypted store. Nothing in the register itself " +
-			"names a person.",
+			"account it is, and an index of those names to find a person by; sealed with the store's keyring on " +
+			"an encrypted store. Nothing in the register itself names a person.",
 		SideStore: "side/entries under the store's directory: the free text people wrote and the raw files facts " +
 			"were read from, each named by its SHA-256 and checked against it when read, with the kinds that hold " +
 			"it and the pseudonyms of the people it is about; sealed with the store's keyring on an encrypted store.",

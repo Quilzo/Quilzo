@@ -282,3 +282,55 @@ func TestTheSideStoreRefusesWhatItCannotName(t *testing.T) {
 		t.Errorf("an entry never put answered %v", err)
 	}
 }
+
+// A name is found in the subject map by its bucket of the name index,
+// without reading every person the map holds: a connector names thousands
+// of accounts on every run, and a map read whole for each would take as
+// long as their number squared. So one person's file that does not read
+// stops nobody else being found or enrolled; an index that is missing is
+// built again from the map; and an erased person's name goes from the
+// index with their file, so no file of the side store holds it.
+func TestTheSubjectMapFindsANameByItsBucket(t *testing.T) {
+	s, _, _ := newSide(t)
+	ada, _, err := s.Enrol("ada.lovelace@example.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grace, _, _ := s.Enrol("grace@example.com", "person")
+	if err := os.WriteFile(s.personPath(grace), []byte("not a person"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if found, ok, err := s.Lookup("ADA.LOVELACE@example.com"); err != nil || !ok || found != ada {
+		t.Fatalf("with another person's file unreadable, ada is found as %q, %v (%v)", found, ok, err)
+	}
+	if _, minted, err := s.Enrol("lin@example.com", "person"); err != nil || !minted {
+		t.Fatalf("with another person's file unreadable, enrolling answered %v, %v", minted, err)
+	}
+	if err := os.RemoveAll(filepath.Join(s.dir, "subjects", "names")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(s.personPath(grace)); err != nil {
+		t.Fatal(err)
+	}
+	if found, ok, err := s.Lookup("ada.lovelace@example.com"); err != nil || !ok || found != ada {
+		t.Fatalf("with the index gone, ada is found as %q, %v (%v)", found, ok, err)
+	}
+	if again, minted, _ := s.Enrol("ada.lovelace@example.com", "person"); minted || again != ada {
+		t.Fatalf("with the index built again, ada enrolled as %s (minted %v)", again, minted)
+	}
+	if err := s.EraseSubject(ada, "request"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.Lookup("ada.lovelace@example.com"); ok {
+		t.Error("the erased person is still found")
+	}
+	_ = filepath.WalkDir(s.dir, func(path string, de fs.DirEntry, err error) error {
+		if err != nil || de.IsDir() {
+			return err
+		}
+		if b, _ := os.ReadFile(path); bytes.Contains(bytes.ToLower(b), []byte("ada.lovelace")) {
+			t.Errorf("%s still holds the erased person's name", path)
+		}
+		return nil
+	})
+}

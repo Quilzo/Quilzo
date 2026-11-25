@@ -21,6 +21,7 @@
 //	side/entries/AB/CDEF…       one entry: what it holds, which kinds hold it, whom it is about
 //	side/erased/ABCDEF….json    what was erased, when and why; nothing of what it held
 //	side/subjects/ID            one person: the pseudonym, their name, what sort of account
+//	side/subjects/names/XX      a bucket of the name index: the names that hash to XX, each with its pseudonym
 //	side/subjects/erased/ID.json  an erased person: when and why; nothing of who they were
 //	side/.lock                  held while anything here changes
 //
@@ -211,6 +212,97 @@ func (s *Store) read(path string, aad []byte) ([]byte, error) {
 
 func entryAAD(hexd string) []byte { return []byte("quilzo/side/entry/" + hexd) }
 func personAAD(id string) []byte  { return []byte("quilzo/side/subject/" + id) }
+func bucketAAD(b string) []byte   { return []byte("quilzo/side/names/" + b) }
+
+// The name index: which pseudonym a name is, found without reading every
+// person in the map.
+//
+// A connector names every account it reads, on every run, and a map read
+// whole to find each one takes as long as the number of accounts squared,
+// and stops at the first person's file that does not read. So a name is
+// filed in one of 256 buckets by the first byte of a hash of it, and found
+// by reading that bucket alone. A bucket is sealed as a person's file is,
+// so the names in it are no more in the clear than the map's; its own name
+// says one byte of a hash, which tells nobody whether a given person is in
+// the map. A person's file is the authority: the index is checked against
+// it, built again from the map when it is missing, and an erasure takes
+// the person's name out of it with their file.
+
+// nameKey is a name as the index compares it, without regard to letter
+// case, as an address or an account name is compared.
+func nameKey(name string) string { return strings.ToLower(strings.ToUpper(strings.TrimSpace(name))) }
+
+// bucketOf is the bucket a name is filed in.
+func bucketOf(name string) string {
+	sum := sha256.Sum256([]byte("quilzo/side/name/v1\x00" + nameKey(name)))
+	return hex.EncodeToString(sum[:1])
+}
+
+func (s *Store) namesDir() string           { return filepath.Join(s.dir, "subjects", "names") }
+func (s *Store) bucketPath(b string) string { return filepath.Join(s.namesDir(), b) }
+
+// bucket is one bucket of the index: each name's key and its pseudonym.
+func (s *Store) bucket(b string) (map[string]string, error) {
+	payload, err := s.read(s.bucketPath(b), bucketAAD(b))
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
+	if err := json.Unmarshal(payload, &m); err != nil {
+		return nil, fmt.Errorf("the subject map's name index does not read: %w", err)
+	}
+	return m, nil
+}
+
+// file puts a name in the index, or takes it out with an empty pseudonym.
+// It is called holding the lock.
+func (s *Store) file(name, pseudonym string) error {
+	b := bucketOf(name)
+	m, err := s.bucket(b)
+	if err != nil {
+		return err
+	}
+	if pseudonym == "" {
+		delete(m, nameKey(name))
+	} else {
+		m[nameKey(name)] = pseudonym
+	}
+	if len(m) == 0 {
+		if err := os.Remove(s.bucketPath(b)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	payload, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return s.write(s.bucketPath(b), payload, bucketAAD(b))
+}
+
+// indexed builds the name index from the map when it is missing and the
+// map is not empty: a map written before the index was, or an index
+// somebody deleted. It is called holding the lock, and a person whose file
+// does not read is an error, because an index built without them would
+// mint a second pseudonym for them.
+func (s *Store) indexed() error {
+	if _, err := os.Stat(s.namesDir()); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	people, err := s.Subjects()
+	if err != nil || len(people) == 0 {
+		return err
+	}
+	for _, p := range people {
+		if err := s.file(p.Name, p.Pseudonym); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Put keeps content under its digest, as held by a record of kind and about
 // the people subjects names by pseudonym, and returns the digest. The same
@@ -489,7 +581,10 @@ func (s *Store) Enrol(name, typ string) (pseudonym string, minted bool, err erro
 		if err != nil {
 			return err
 		}
-		return s.write(s.personPath(pseudonym), payload, personAAD(pseudonym))
+		if err := s.write(s.personPath(pseudonym), payload, personAAD(pseudonym)); err != nil {
+			return err
+		}
+		return s.file(name, pseudonym)
 	})
 	return pseudonym, minted, err
 }
@@ -514,20 +609,48 @@ func validName(name string) error {
 // Lookup is the pseudonym of the person a name belongs to, if they are
 // enrolled and not erased.
 func (s *Store) Lookup(name string) (string, bool, error) {
-	return s.lookup(strings.TrimSpace(name))
+	name = strings.TrimSpace(name)
+	if _, err := os.Stat(s.namesDir()); errors.Is(err, fs.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(s.dir, "subjects")); errors.Is(err, fs.ErrNotExist) {
+			return "", false, nil
+		}
+		var found string
+		var ok bool
+		err := s.locked(func() error {
+			var err error
+			found, ok, err = s.lookup(name)
+			return err
+		})
+		return found, ok, err
+	}
+	return s.lookup(name)
 }
 
+// lookup finds a name in its bucket of the index, building the index first
+// when it is missing, and checks the person's own file says the same.
 func (s *Store) lookup(name string) (string, bool, error) {
-	people, err := s.Subjects()
+	if err := s.indexed(); err != nil {
+		return "", false, err
+	}
+	m, err := s.bucket(bucketOf(name))
 	if err != nil {
 		return "", false, err
 	}
-	for _, p := range people {
-		if strings.EqualFold(p.Name, name) {
-			return p.Pseudonym, true, nil
-		}
+	pseudonym, ok := m[nameKey(name)]
+	if !ok {
+		return "", false, nil
 	}
-	return "", false, nil
+	p, err := s.Who(pseudonym)
+	var erased *Erased
+	switch {
+	case err == nil && strings.EqualFold(p.Name, name):
+		return pseudonym, true, nil
+	case err == nil, errors.As(err, &erased), errors.Is(err, ErrNoSubject):
+		// The index is behind the map: an erasure that stopped between
+		// the two, or a person whose file was replaced. The file wins.
+		return "", false, nil
+	}
+	return "", false, err
 }
 
 // Who is the person a pseudonym stands for. An erased one answers *Erased,
@@ -583,14 +706,21 @@ func (s *Store) Subjects() ([]Person, error) {
 // nobody. A pseudonym already erased answers *Erased, and one never named
 // ErrNoSubject.
 func (s *Store) EraseSubject(pseudonym, basis string) error {
-	if _, err := s.Who(pseudonym); err != nil {
+	p, err := s.Who(pseudonym)
+	if err != nil {
 		return err
 	}
 	return s.locked(func() error {
+		if err := s.indexed(); err != nil {
+			return err
+		}
 		if err := s.tombstone(s.personTomb(pseudonym), basis); err != nil {
 			return err
 		}
-		return os.Remove(s.personPath(pseudonym))
+		if err := os.Remove(s.personPath(pseudonym)); err != nil {
+			return err
+		}
+		return s.file(p.Name, "")
 	})
 }
 
