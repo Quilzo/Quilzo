@@ -8,6 +8,8 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -134,7 +136,10 @@ func callGraph(t *testing.T) (map[string]bool, map[string][]string) {
 }
 
 // dispatchTargets maps each case label in main's command switch to the
-// function it calls.
+// function it calls, and each command a module registers (registerCLI) to
+// its run function, which main dispatches without a case of its own. A
+// module's command whose own row of the privilege table asks for more than
+// a read is held to reaching the log as a command in the switch is.
 func dispatchTargets(t *testing.T) map[string]string {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
@@ -172,5 +177,11 @@ func dispatchTargets(t *testing.T) map[string]string {
 		}
 		return true
 	})
+	for _, m := range cliModules {
+		// The name is the package's path and the function's:
+		// github.com/quilzo/quilzo/cmd/quilzo.cmdRegister.
+		name := runtime.FuncForPC(reflect.ValueOf(m.run).Pointer()).Name()
+		out[m.command] = name[strings.LastIndex(name, ".")+1:]
+	}
 	return out
 }
