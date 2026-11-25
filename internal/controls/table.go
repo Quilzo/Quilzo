@@ -56,6 +56,10 @@ var table = []Implementation{
 		Statement: "The admin is a separate process from the public site, listens on loopback unless told otherwise, and every request to it is authenticated; the posture scan reports an admin exposed to the internet.",
 		Customer:  "Decides how the admin is reached (VPN, private network or proxy) and with what single sign-on.",
 		Where:     []string{"quilzo serve", "quilzo site"}},
+	{Control: "AC-21", Title: "Information Sharing", Responsibility: Shared,
+		Statement: "The security register's restricted records (incidents, board decisions, risks and who was erased) are not shared with an app a person connects through OAuth: the agent interface's register operations answer such an app only once the organisation switches mcp.register_for_apps on, with the risk accepted, and the Settings screen lists it on among the settings that give up security. A person's own client, holding their own token, reads what their role allows, as on every other surface.",
+		Customer:  "Decides whether apps connected through OAuth may read the register, and accepts the risk when it lets them.",
+		Where:     []string{"mcp.register_for_apps", "cmd/quilzo/registergeneric.go", "internal/mcp"}},
 
 	// -- audit and accountability --------------------------------------------
 	{Control: "AU-2", Title: "Event Logging", Responsibility: Quilzo,
