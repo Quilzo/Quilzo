@@ -186,11 +186,16 @@ func soaShow(root, scope string, asCSV bool) error {
 	if err != nil {
 		return err
 	}
-	if asCSV {
-		return st.WriteCSV(os.Stdout)
-	}
+	// Under --json stdout carries one document, so the statement is that
+	// document whether or not it was asked for as CSV too, as `quilzo
+	// register export` answers --json with its table: `quilzo --json soa
+	// show SCOPE --csv` wrote the CSV, which nothing reading the document
+	// parses.
 	if w.JSON(st) {
 		return nil
+	}
+	if asCSV {
+		return st.WriteCSV(os.Stdout)
 	}
 	fmt.Printf("  %s%s%s, at %s\n", bold, printable(st.Scope.Title), reset, st.Commit)
 	fmt.Printf("  %d apply, %d do not, %d undecided, across %s\n\n", st.Applying, st.NotApplying, st.Undecided,

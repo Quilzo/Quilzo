@@ -542,7 +542,18 @@ func publicTargetCmd(root string, args []string) error {
 		return errMisused{errors.New("usage: quilzo public target [https://PUBLIC-HOST | /DIRECTORY]")}
 	}
 	c := resolveCaller(root, "")
-	return setTarget(root, c, args[0])
+	if err := setTarget(root, c, args[0]); err != nil {
+		return err
+	}
+	// Under --json, where transfers go now, as the line with no address
+	// answers it: setting one confirmed only in prose, so a script got an
+	// empty stdout and exit 0, as from a line that had set nothing.
+	to, err := loadTarget(root)
+	if err != nil {
+		return err
+	}
+	w.JSON(map[string]string{"to": to})
+	return nil
 }
 
 // setTarget says where transfers go, as c, an administrator, recorded.

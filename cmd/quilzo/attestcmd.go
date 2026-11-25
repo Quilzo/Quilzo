@@ -90,38 +90,48 @@ func setDraft(root string, c *Caller, body []byte, surface string) (*attest.File
 // reason. It is sent at once only when c is the only administrator, and the
 // record says so; otherwise it waits for a second (quilzo pending approve).
 func proposePublication(root string, c *Caller, reason string) (sent bool, err error) {
+	s, err := publishOrPropose(root, c, reason)
+	return s != nil, err
+}
+
+// publishOrPropose is proposePublication with what was sent, when it was
+// sent at once: nil when the publication waits for a second administrator.
+func publishOrPropose(root string, c *Caller, reason string) (*publicSent, error) {
 	if strings.TrimSpace(reason) == "" {
-		return false, errMisused{errors.New("a reason is required: publishing to the public instance is " +
+		return nil, errMisused{errors.New("a reason is required: publishing to the public instance is " +
 			"speaking for the organisation, and the record keeps why")}
 	}
 	if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
-		return false, err
+		return nil, err
 	}
 	draft, err := loadDraft(root, time.Now())
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if draft == nil {
-		return false, errNotFound{errors.New("there are no attestations to publish: quilzo attest set FILE " +
+		return nil, errNotFound{errors.New("there are no attestations to publish: quilzo attest set FILE " +
 			"keeps a file of them as the draft")}
 	}
 	to, err := loadTarget(root)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if to == "" {
-		return false, errBlocked{errors.New("there is nowhere to publish to: quilzo public target " +
+		return nil, errBlocked{errors.New("there is nowhere to publish to: quilzo public target " +
 			"https://PUBLIC-HOST says where the public instance is")}
 	}
 	what := fmt.Sprintf("publish %s's attestations (%s, %s) to the public instance at %s", draft.Organisation,
 		count(len(draft.Attestations), "attestation"), count(len(draft.Policies), "policy"), to)
 	now, err := proposeSecond(root, c, dualPublishExternal, what, publishChange{Digest: draft.Digest(), Target: to}, reason)
 	if err != nil || !now {
-		return false, err
+		return nil, err
 	}
-	_, err = publishProjection(root, attestationsPath(root), publication{approvers: []string{c.Name},
+	sent, err := publishProjection(root, attestationsPath(root), publication{approvers: []string{c.Name},
 		alone: true, reason: reason, by: c})
-	return err == nil, err
+	if err != nil {
+		return nil, err
+	}
+	return &sent, nil
 }
 
 // applyPublishExternal is an approved publication, sent: the draft, as long
@@ -187,11 +197,15 @@ func cmdAttest(root string, args []string) error {
 		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
-		sent, err := proposePublication(root, resolveCaller(root, ""), *reason)
+		sent, err := publishOrPropose(root, resolveCaller(root, ""), *reason)
 		if err != nil {
 			return err
 		}
-		if sent {
+		// Sent at once, by the only administrator: under --json what was
+		// sent, as `quilzo public send` answers it. It was said only in
+		// prose, so the line that waits for a second administrator answered
+		// its request and the one that published answered nothing.
+		if sent != nil && !w.JSON(sent) {
 			w.Human("%spublished%s to the public instance\n", bold, reset)
 		}
 		return nil

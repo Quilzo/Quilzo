@@ -429,7 +429,14 @@ func profileManifest(root string, args []string) error {
 	}
 	body = append(body, '\n')
 	if !toStdout(*out) {
-		return atomicfile.Write(*out, body, 0o644)
+		if err := atomicfile.Write(*out, body, 0o644); err != nil {
+			return err
+		}
+		// Under --json, what was written and where: the line wrote the
+		// file and answered nothing, so a script was told by an empty
+		// stdout and exit 0 what it is told when nothing ran.
+		w.JSON(map[string]any{"file": *out, "manifest": sm.Digest, "key": sm.Signature.KeyID})
+		return nil
 	}
 	_, err = os.Stdout.Write(body)
 	return err
