@@ -93,6 +93,14 @@ func cmdAuditDir(root string, args []string) error {
 		return nil
 	}
 	dir := args[0]
+	// An empty word is no directory, not this one. filepath.Abs makes the
+	// working directory of "", so `quilzo auditlog dir "$AUDIT"` with AUDIT
+	// unset pointed every reader at wherever the command ran: a new, empty
+	// chain that verified intact, and the real log left where nobody read it.
+	if strings.TrimSpace(dir) == "" {
+		return errMisused{errors.New("no directory was given, and the log stays where it is; " +
+			"usage: quilzo auditlog dir [DIRECTORY]")}
+	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err
