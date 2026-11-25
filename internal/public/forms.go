@@ -126,7 +126,9 @@ func (st *Site) stampKey() []byte {
 
 // ownStampKey is this process's key for stamps, for a site whose host gave
 // it none: every page it serves is answered while it runs, and one served
-// before a restart is asked to be sent again.
+// before a restart is refused as a script's is (form.ErrSpam), because
+// nothing tells a stamp signed with a key since forgotten from one the
+// sender wrote.
 var ownStampKey = sync.OnceValue(func() []byte {
 	k := make([]byte, 32)
 	_, _ = rand.Read(k) // crypto/rand does not fail; it stops the program

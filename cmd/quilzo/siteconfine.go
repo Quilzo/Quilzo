@@ -91,7 +91,9 @@ func prepareSite(root string, strict bool) ([]string, error) {
 	}
 	// The key forms' timing stamps are signed with (form.Stamp), the same
 	// way. Without it the site signs with a key of its own, which a restart
-	// forgets: a page opened before one is asked to be sent again.
+	// forgets: a form on a page opened before one is refused as a script's
+	// is, because nothing tells a stamp signed with a key since forgotten
+	// from one the sender wrote.
 	if err := form.MakeStampKey(formStampKeyPath(root)); err != nil {
 		if strict {
 			return nil, fmt.Errorf("making the key for forms' stamps: %w", err)
