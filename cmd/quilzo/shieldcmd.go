@@ -868,7 +868,12 @@ func shieldDryRun(root string, args []string) error {
 		"note": "the log holds each source once per ten minutes with a count, so this is close to what the playbooks would have seen, not the same"}) {
 		return nil
 	}
-	w.Human("%sover the last %d days%s: %s in the log\n", bold, *days, reset, countWord(len(sigs), "signal", "signals"))
+	// "the last day" for one: it said "over the last 1 days".
+	back := countWord(*days, "day", "days")
+	if *days == 1 {
+		back = "day"
+	}
+	w.Human("%sover the last %s%s: %s in the log\n", bold, back, reset, countWord(len(sigs), "signal", "signals"))
 	w.Human("%sthe log keeps each source once per ten minutes, with a count: close to what the playbooks would have seen, not the same%s\n\n", dim, reset)
 	for _, r := range runs {
 		w.Human("  %s%-24s%s %s\n", bold, r.Playbook, reset, r.Summary)
