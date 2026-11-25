@@ -329,11 +329,12 @@ func (r *Register) Erase(by Actor, req ErasureRequest) (Receipt, error) {
 		rec.Erased = Digest("sha256:" + hex.EncodeToString(sum[:]))
 	}
 	rec.Approval = r.erasureApproval(rec, req)
-	if err := validate(rec); err != nil {
-		return Receipt{}, err
-	}
-	if err := r.gate(by, auth.ActEditDraft, spec.Resource()); err != nil {
-		r.audited(by, Ref, audit.Denied, map[string]string{"reason": "authorisation", "kind": spec.Collection})
+	// The record is held to everything Put will hold it to, its approval's
+	// check of the decider's evidence (Register.Approvals) among them,
+	// before anything is deleted: a person erased with no record of it is
+	// the one outcome this must not have.
+	why := "erasure of a person, on the basis " + string(req.Basis)
+	if _, err := r.prepare(Ref, by, why, []Record{rec}); err != nil {
 		return Receipt{}, err
 	}
 	if r.Audit == nil {
@@ -353,7 +354,7 @@ func (r *Register) Erase(by Actor, req ErasureRequest) (Receipt, error) {
 			return Receipt{}, err
 		}
 	}
-	rc, err := r.Put(by, "erasure of a person, on the basis "+string(req.Basis), rec)
+	rc, err := r.Put(by, why, rec)
 	if err != nil && !errors.Is(err, ErrUnrecorded) {
 		return rc, fmt.Errorf("the person's data was erased and the record of it was not written: %w", err)
 	}

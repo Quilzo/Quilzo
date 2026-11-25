@@ -385,3 +385,35 @@ func TestTextIsPutThroughTheGate(t *testing.T) {
 		t.Error("words were kept with no audit log to record it")
 	}
 }
+
+// An erasure's approval is held to the register's check of the decider's
+// authentication evidence before anything is deleted, as every other rule
+// of its record is: an approval that does not hold leaves the person in
+// the map and every word about them where it was, rather than erasing them
+// and failing to write the record that says so.
+func TestAnErasureWhoseApprovalDoesNotHoldErasesNothing(t *testing.T) {
+	b, ada, words := withAda(t)
+	b.Approvals = func(rec Record, id ID, a *Approval) error {
+		if rec.Kind() == KindErasure {
+			return errors.New("the passkey assertion does not verify")
+		}
+		return nil
+	}
+	head := b.Head()
+	if _, err := b.Erase(dana, erasure(ada)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("an erasure whose approval does not hold was answered %v", err)
+	}
+	if who := b.SubjectState(ada); who.State != SubjectHeld {
+		t.Errorf("the person was erased all the same: %+v", who)
+	}
+	if held := b.TextOf(words); held.State != TextHeld {
+		t.Errorf("the words about them were erased all the same: %+v", held)
+	}
+	if b.Head() != head {
+		t.Errorf("the register moved from %s to %s", head, b.Head())
+	}
+	b.Approvals = nil
+	if _, err := b.Erase(dana, erasure(ada)); err != nil {
+		t.Errorf("with the approval holding, the erasure was answered %v", err)
+	}
+}
