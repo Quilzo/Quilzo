@@ -175,8 +175,8 @@ importing
   quilzo form list | expire | erase VALUE [--yes]   forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show
   quilzo terms list | check                the controlled vocabularies
-  quilzo menu list | check                 navigation, and whether it resolves
-  quilzo menu add NAME | remove NAME       edit it; a broken target is refused
+  quilzo menu list | check                 navigation, each entry by its id, and whether it resolves
+  quilzo menu add NAME | remove NAME ITEM-ID   edit it; a broken target is refused
   quilzo ipfs id                           what the permanent web will call this site
   quilzo ipfs write -o site                render it for 'ipfs add -r'
   quilzo ipfs write --base-path /d2       ...to live in a subdirectory
