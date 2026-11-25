@@ -1686,6 +1686,19 @@ module brings passkeys bound to the decision's hash, a decision is approved
 on the command line, where the assertion recorded is a hash of the
 decision with the credential the session was verified by.
 
+The admin's four programme screens (Requirements, Applicability, Control
+tests and Populations, under Assurance) and the content API under
+`/api/v1/requirements`, `/api/v1/soa`, `/api/v1/controls` and
+`/api/v1/populations` read the programme; each waiting decision is shown
+with the hash of exactly what would be approved, and the command that
+decides it. Adding a control, mapping it, defining and counting a
+population and running a test are done on the command line, and an agent
+drafts a test through the agent interface's `control_draft`, which waits
+like any other draft. Not built yet: the posture rows counted against these
+populations, and a replay that parses the sealed raw files again; a replay
+today reads the facts as the register held them at the run's commit, each
+fact naming the digest of the raw file it was read from.
+
 ## How this uses AI, and why it is not what everyone else means
 
 Almost every CMS shipping "AI" in 2026 means one of two things: a text box that
