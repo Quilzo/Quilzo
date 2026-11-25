@@ -6,7 +6,9 @@ package side
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -255,12 +257,86 @@ func TestASealedSideStoreKeepsNothingInTheClear(t *testing.T) {
 		}
 		b, _ := os.ReadFile(path)
 		for _, secret := range []string{"ada.lovelace", "Ada Lovelace"} {
-			if bytes.Contains(b, []byte(secret)) {
+			if readsAs(b, secret) {
 				t.Errorf("%s holds %q in the clear", path, secret)
 			}
 		}
 		return nil
 	})
+}
+
+// readsAs reports whether a file holds s as somebody reading the disk
+// would find it: in its bytes, or in a string of its JSON that is bytes
+// written as base64, as an entry's content is. Its bytes alone are not
+// enough: words kept in an entry written in the clear are base64 there,
+// and a scan of the bytes passed over every one of them.
+func readsAs(body []byte, s string) bool {
+	if bytes.Contains(bytes.ToLower(body), bytes.ToLower([]byte(s))) {
+		return true
+	}
+	var v any
+	if json.Unmarshal(body, &v) != nil {
+		return false
+	}
+	var walk func(v any) bool
+	walk = func(v any) bool {
+		switch x := v.(type) {
+		case string:
+			b, err := base64.StdEncoding.DecodeString(x)
+			return err == nil && len(b) > 0 && readsAs(b, s)
+		case map[string]any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		case []any:
+			for _, e := range x {
+				if walk(e) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(v)
+}
+
+// A name is one person's whatever the case of its ASCII letters, and no
+// other character stands in for one of them, as the access policy compares
+// an address with the one a provider signs somebody in by (sameBarCase in
+// internal/admin). Folded as Unicode folds, the Kelvin sign (U+212A) was a
+// k and the long s (U+017F) an s, so an account whose name had one of them,
+// a mailbox of its own that the policy tells apart, was given the
+// pseudonym of the person whose name had the letter: it wrote the register
+// as them, and could be erased in their place.
+func TestANameIsOnePersonsByTheCaseOfItsASCIILettersOnly(t *testing.T) {
+	s, _, _ := newSide(t)
+	kate, _, err := s.Enrol("kate@acme.com", "person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sam, _, _ := s.Enrol("sam@acme.com", "person")
+	for name, theirs := range map[string]string{"\u212Aate@acme.com": kate, "\u017Fam@acme.com": sam, "\u00C9mile@acme.com": ""} {
+		id, minted, err := s.Enrol(name, "person")
+		if err != nil || !minted || id == theirs {
+			t.Errorf("%+q was enrolled as %s (minted %v, %v); kate is %s and sam %s", name, id, minted, err, kate, sam)
+		}
+		if found, ok, err := s.Lookup(name); err != nil || !ok || found != id {
+			t.Errorf("%+q is found as %q, %v (%v)", name, found, ok, err)
+		}
+	}
+	if again, minted, _ := s.Enrol("KATE@Acme.COM", "person"); minted || again != kate {
+		t.Errorf("KATE@Acme.COM is %s (minted %v); kate is %s", again, minted, kate)
+	}
+	if other, _, _ := s.Enrol("\u00E9mile@acme.com", "person"); other == "" {
+		t.Error("nobody was enrolled")
+	} else if was, _, _ := s.Lookup("\u00C9mile@acme.com"); was == other {
+		t.Error("a letter outside ASCII was matched without regard to its case")
+	}
+	if found, ok, _ := s.Lookup("\u212Aate@acme.com"); ok && found == kate {
+		t.Error("the Kelvin sign found kate")
+	}
 }
 
 // What the side store refuses: a pseudonym that is not one, an empty name,
@@ -328,7 +404,7 @@ func TestTheSubjectMapFindsANameByItsBucket(t *testing.T) {
 		if err != nil || de.IsDir() {
 			return err
 		}
-		if b, _ := os.ReadFile(path); bytes.Contains(bytes.ToLower(b), []byte("ada.lovelace")) {
+		if b, _ := os.ReadFile(path); readsAs(b, "ada.lovelace") {
 			t.Errorf("%s still holds the erased person's name", path)
 		}
 		return nil

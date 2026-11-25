@@ -228,9 +228,25 @@ func bucketAAD(b string) []byte   { return []byte("quilzo/side/names/" + b) }
 // it, built again from the map when it is missing, and an erasure takes
 // the person's name out of it with their file.
 
-// nameKey is a name as the index compares it, without regard to letter
-// case, as an address or an account name is compared.
-func nameKey(name string) string { return strings.ToLower(strings.ToUpper(strings.TrimSpace(name))) }
+// nameKey is a name as the index compares it: the case of an ASCII letter
+// passed over, and every other byte as it is, as the access policy
+// compares an address with the one a provider signs somebody in by
+// (sameBarCase in internal/admin).
+//
+// It folded case as Unicode folds it, and Unicode folds the Kelvin sign
+// (U+212A) to a k and the long s (U+017F) to an s. An account whose name
+// had one of them is a mailbox of its own, and the policy tells it apart;
+// the map gave it the pseudonym of the person whose name had the letter, so
+// it wrote the register as them, and erasing it by name erased them.
+func nameKey(name string) string {
+	b := []byte(strings.TrimSpace(name))
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
 
 // bucketOf is the bucket a name is filed in.
 func bucketOf(name string) string {
@@ -561,7 +577,8 @@ func expired(e Entry, retain func(string) time.Duration, now time.Time) bool {
 
 // Enrol is the pseudonym of the person a name belongs to, minted the first
 // time they are named. minted says it was new. Names are compared without
-// regard to letter case, as an address or an account name is.
+// regard to the case of their ASCII letters, and by every other character
+// exactly (nameKey), as the access policy compares an address.
 func (s *Store) Enrol(name, typ string) (pseudonym string, minted bool, err error) {
 	name = strings.TrimSpace(name)
 	if err := validName(name); err != nil {
@@ -643,7 +660,7 @@ func (s *Store) lookup(name string) (string, bool, error) {
 	p, err := s.Who(pseudonym)
 	var erased *Erased
 	switch {
-	case err == nil && strings.EqualFold(p.Name, name):
+	case err == nil && nameKey(p.Name) == nameKey(name):
 		return pseudonym, true, nil
 	case err == nil, errors.As(err, &erased), errors.Is(err, ErrNoSubject):
 		// The index is behind the map: an erasure that stopped between
