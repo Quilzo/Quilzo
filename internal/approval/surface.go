@@ -202,11 +202,12 @@ const (
 )
 
 // tags begin a challenge, one for each purpose, and say which way of
-// writing it this is.
+// writing it this is. They are written with dots, not spaces, so that
+// nothing reads one as a command somebody is told to run.
 var tags = map[Purpose]string{
-	ForApproval: "quilzo approve v1\x00",
-	ForBatch:    "quilzo batch v1\x00",
-	ForReview:   "quilzo review v1\x00",
+	ForApproval: "quilzo.approve.v1\x00",
+	ForBatch:    "quilzo.batch.v1\x00",
+	ForReview:   "quilzo.review.v1\x00",
 }
 
 // nonceSize is how many random bytes follow the hash in a challenge: the

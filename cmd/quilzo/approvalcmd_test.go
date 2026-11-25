@@ -151,3 +151,33 @@ func policyFile(t *testing.T, v any) string {
 	}
 	return path
 }
+
+// A reader of the register reads its approvals, and nothing a reader runs
+// gives one, rejects one or declares who may: the separation policy is an
+// administrator's to declare, as approving at the console is.
+func TestOnlyAnAdministratorDeclaresTheSeparationPolicy(t *testing.T) {
+	root, token := accessStore(t)
+	id := proposeRisk(t, root, "R-33")
+	if _, e, code := cliRun(t, root, token, "auth", "grant", "rita", "reader", "--on", "/@compliance"); code != 0 {
+		t.Fatalf("auth grant: %s", e)
+	}
+	reader := issueToken(t, root, token, "rita-token", "rita", "reader")
+	for _, line := range [][]string{{"approval"}, {"approval", "list"}, {"approval", "show", string(id)}, {"approval", "policy"}} {
+		if _, e, code := cliRun(t, root, reader, append(line, "--json")...); code != 0 {
+			t.Errorf("a reader could not run quilzo %s: exit %d: %s", strings.Join(line, " "), code, firstLines(e, 2))
+		}
+	}
+	good := policyFile(t, approval.Default())
+	for _, line := range [][]string{{"approval", "policy", "set", good}, {"approval", "reject", string(id)},
+		{"approval", "approve", string(id), "--surface", "sha256:" + strings.Repeat("0", 64)}} {
+		if _, _, code := cliRun(t, root, reader, line...); code != 3 {
+			t.Errorf("a reader ran quilzo %s: exit %d", strings.Join(line, " "), code)
+		}
+	}
+	if _, err := os.Stat(approval.PolicyPath(root)); err == nil {
+		t.Fatal("a reader declared the separation policy")
+	}
+	if _, _, code := cliRun(t, root, token, "approval", "policy", "set", good); code != 0 {
+		t.Fatal("the administrator could not declare the separation policy")
+	}
+}

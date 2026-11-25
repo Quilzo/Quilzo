@@ -44,16 +44,25 @@ func init() {
 			"  quilzo approval check ID                 check a held decision's evidence again, offline\n" +
 			"  quilzo approval policy [set FILE]        the separation policy, or declare it from a JSON file\n",
 		run: cmdApproval,
-		// Reading the approvals is a view of the register's area. Giving
-		// one at the console is an administrator's, and the module asks the
-		// rule's own atom besides; declaring the policy is an
-		// administrator's.
+		// The command asks an administrator of the register's area, and the
+		// lines that only read narrow it to a view, so a subcommand added
+		// later arrives guarded rather than open. Giving an approval at the
+		// console is an administrator's, and the module asks the rule's own
+		// atom besides; declaring who may approve is an administrator's too,
+		// because whoever can rewrite the separation policy can make
+		// themselves the only person it needs.
 		needs: map[string]need{
-			"approval":         {action: auth.ActView},
-			"approval approve": {action: auth.ActGrant, hint: "approving at the console is for an administrator of the register; anybody else approves in the admin with their passkey"},
-			"approval reject":  {action: auth.ActGrant, hint: "rejecting at the console is for an administrator of the register; anybody else rejects in the admin"},
-			"approval review":  {action: auth.ActGrant, hint: "reviewing at the console is for an administrator of the register; anybody else reviews in the admin with their passkey"},
-			"approval policy":  {action: auth.ActView},
+			"approval": {action: auth.ActGrant, hint: "giving, rejecting or reviewing an approval at the console, and " +
+				"declaring the separation policy, are for an administrator of the register; list, show, check and " +
+				"policy only read"},
+			"approval list":       {action: auth.ActView},
+			"approval show":       {action: auth.ActView},
+			"approval check":      {action: auth.ActView},
+			"approval policy":     {action: auth.ActView},
+			"approval policy set": {action: auth.ActGrant, hint: "the separation policy says who may approve what, and declaring it is for an administrator of the register"},
+			"approval approve":    {action: auth.ActGrant, hint: "approving at the console is for an administrator of the register; anybody else approves in the admin with their passkey"},
+			"approval reject":     {action: auth.ActGrant, hint: "rejecting at the console is for an administrator of the register; anybody else rejects in the admin"},
+			"approval review":     {action: auth.ActGrant, hint: "reviewing at the console is for an administrator of the register; anybody else reviews in the admin with their passkey"},
 		},
 		area:   register.Area,
 		reads:  [][]string{{"approval", "list"}, {"approval", "policy"}},
@@ -62,6 +71,9 @@ func init() {
 		notForRuns: "an approval is a person's passkey over what they were shown, and what waits for one is restricted; " +
 			"an outside agent reads the approvals under its person's own grant and never gives one",
 	})
+	// `quilzo approval` alone lists, as a reader may, rather than asking
+	// what the command as a whole asks.
+	bareRuns["approval"] = "list"
 }
 
 func cmdApproval(root string, args []string) error {
@@ -604,8 +616,11 @@ func registerApprovalOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		return map[string]any{"declared": declared, "policy": pol}, nil
 	})
+	// It is asked as the console's approval is, of an administrator of the
+	// register, although it never approves: an operation that would write
+	// is gated as a write, so a reader is refused before it says why.
 	srv.Register(mcp.Operation{
-		Name: "approval_approve", NeedsRole: "reader", Area: register.Area, Writes: true,
+		Name: "approval_approve", NeedsRole: "admin", Area: register.Area, Writes: true,
 		Summary: "refused: an approval is given in the admin with a passkey, never over the agent interface",
 		Detail: "An approval in the security record is a person's fresh passkey assertion over the hash of exactly " +
 			"what they were shown, and no agent approves anything. This operation answers with where the person " +
