@@ -263,6 +263,13 @@ func (rd *reader) recordRow(m *register.ColumnMap, spec register.Spec, row table
 	}
 	for name, f := range fields {
 		switch {
+		case name == "attested" && f.Ref == register.KindSubject && fieldsOf["run"] == nil:
+			// A statement is the person's who brought the file.
+			if rd.in.Subject == "" {
+				return fmt.Errorf("%w: at %s, the record is a statement, which is the person's who brings the file, "+
+					"and this surface does not know their pseudonym", ErrUnreadable, row.place)
+			}
+			fieldsOf[name], rd.stated = string(rd.in.Subject), rd.in.Subject
 		case name == "source" && f.Ref == register.KindSource:
 			fieldsOf[name] = string(rd.source)
 		case name == "grade" && f.Type == "enum":
@@ -736,7 +743,7 @@ func DraftMap(f Format, body []byte, kind, name, sheetName string) (*Draft, erro
 		byNorm := map[string]register.Field{}
 		for _, fl := range spec.Fields {
 			switch fl.Name {
-			case "grade", "raw", "place", "taint":
+			case "grade", "raw", "place", "taint", "attested":
 				continue
 			}
 			if fl.Name == "source" && fl.Ref == register.KindSource {

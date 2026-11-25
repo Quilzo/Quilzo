@@ -208,7 +208,7 @@ func (s *Server) importData(p principal, g *evidence.Ingester, f importForm, pro
 	}
 	var kinds []string
 	for _, k := range register.Kinds() {
-		if !k.Signed && !k.Unconfirmed && k.Kind != register.KindRawFile && k.Kind != register.KindColumnMap &&
+		if !k.Signed && !k.Unconfirmed && !k.Immutable && k.Kind != register.KindRawFile && k.Kind != register.KindColumnMap &&
 			k.Kind != register.KindPinnedKey && k.Kind != register.KindSubject {
 			kinds = append(kinds, string(k.Kind))
 		}

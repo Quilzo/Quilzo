@@ -176,6 +176,11 @@ type Input struct {
 	Shown register.Digest
 	// Received is when the file was first sealed. Zero is now.
 	Received time.Time
+	// Subject is the pseudonym of the person who brought the file. A
+	// statement a table makes (an Evidence record a person attests) is
+	// theirs, and is refused when the surface does not know it. Ingest
+	// sets it from the person writing, whatever a caller gives.
+	Subject register.ID
 }
 
 // Fact is one record a file yielded, as a preview shows it and as the list
@@ -363,7 +368,8 @@ func Read(in Input) (*Batch, error) {
 	ysum := sha256.Sum256(b.yield)
 	b.Raw = register.RawFile{Digest: rd.digest, Source: srcID, Format: string(in.Format), Grade: rd.grade,
 		Size: int64(len(in.Body)), Received: register.TimeOf(received), Facts: int64(len(b.Facts)),
-		Tainted: int64(b.Tainted()), Yield: register.Digest("sha256:" + hex.EncodeToString(ysum[:])), Signer: rd.signer}
+		Tainted: int64(b.Tainted()), Yield: register.Digest("sha256:" + hex.EncodeToString(ysum[:])), Signer: rd.signer,
+		Stated: rd.stated}
 	if in.Map != nil {
 		b.Raw.Map, _ = register.IDOf(*in.Map)
 	}
@@ -416,6 +422,9 @@ type reader struct {
 	source register.ID
 	digest register.Digest
 	signer string
+	// stated is the person whose statements the file's records were read
+	// as, when any were.
+	stated register.ID
 
 	records  map[register.ID]*held
 	order    []register.ID

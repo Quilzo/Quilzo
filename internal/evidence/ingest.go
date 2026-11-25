@@ -173,6 +173,10 @@ func (g *Ingester) Ingest(by register.Actor, why string, in Input) (Result, erro
 		return Result{}, fmt.Errorf("the file could not be sealed, so it was not read: %w", err)
 	}
 	in.By = by.Kind
+	in.Subject = ""
+	if by.Kind == audit.KindHuman {
+		in.Subject = by.Subject
+	}
 	in.Received = sealed.Received
 	b, err := Read(in)
 	if err != nil {
@@ -510,7 +514,7 @@ func rawOf(rec register.Record) (register.Digest, bool) {
 // replay reads a held file again as it was read the first time, and says
 // whether the list is the same.
 func (g *Ingester) replay(rf register.RawFile, body, list []byte) string {
-	in := Input{Format: Format(rf.Format), Body: body, By: audit.KindHuman, Received: rf.Received.At()}
+	in := Input{Format: Format(rf.Format), Body: body, By: audit.KindHuman, Received: rf.Received.At(), Subject: rf.Stated}
 	if e, err := g.Reg.Get(rf.Source); err == nil {
 		in.Source = e.Record.(register.Source).Name
 	}

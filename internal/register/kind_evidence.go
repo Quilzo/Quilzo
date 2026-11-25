@@ -61,6 +61,10 @@ type RawFile struct {
 	// key a signed file was verified against.
 	Map    ID     `json:"map,omitempty" reg:"ref=ColumnMap" about:"the confirmed column map it was read with"`
 	Signer string `json:"signer,omitempty" reg:"slug" about:"the name of the pinned key its signature was verified against"`
+	// Stated is the person a table's statements were read as: whoever
+	// brought it, whose statements they are. It is kept so that the file
+	// read again to be checked yields what it did.
+	Stated ID `json:"stated,omitempty" reg:"ref=Subject" about:"the person whose statements a table's records are: who brought it"`
 }
 
 const KindRawFile Kind = "RawFile"
@@ -159,6 +163,12 @@ func (m ColumnMap) Check() error {
 		return fmt.Errorf("a %s is a decision and carries the approval that made it, which no import can give", spec.Kind)
 	case spec.Unconfirmed:
 		return fmt.Errorf("a %s is what a model read, which no table is", spec.Kind)
+	case spec.Immutable:
+		// A decision, a person's acknowledgement and a metric's value are
+		// made by what they record, and never changed: one read from a
+		// table would name a decider or a reader who never acted, or a
+		// figure nothing computed, and stand so for good.
+		return fmt.Errorf("a %s is never changed once written, and is made by what it records, never read from a table", spec.Kind)
 	case spec.Kind == KindColumnMap || spec.Kind == KindRawFile || spec.Kind == KindPinnedKey || spec.Kind == KindSubject:
 		return fmt.Errorf("a %s is not read from a table", spec.Kind)
 	case spec.Kind == KindObservation && len(m.Facts) == 0:
@@ -184,6 +194,11 @@ func (m ColumnMap) Check() error {
 		switch c.Field {
 		case "grade", "raw", "place", "taint":
 			return fmt.Errorf("the field %q is the importer's to write, never a column's", c.Field)
+		}
+		// Who stated something is who brought the file that says it: a
+		// column naming another person would put words in their mouth.
+		if f, ok := fields[c.Field]; ok && c.Field == "attested" && f.Ref == KindSubject {
+			return fmt.Errorf("the field %q is the person's who brings the file, and the importer writes it, never a column", c.Field)
 		}
 		if f, ok := fields[c.Field]; ok && c.Field == "source" && f.Ref == KindSource {
 			return fmt.Errorf("a %s's source is the one it is imported under, never a column", strings.ToLower(string(spec.Kind)))

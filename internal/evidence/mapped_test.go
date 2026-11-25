@@ -112,7 +112,7 @@ func TestMappedJSONToAnyKind(t *testing.T) {
 		`{"control":"AC-02","result":"fail","checked":"2026-11-02T09:30:00Z","by":"d0000000000000000000000000000001"}]}}`)
 	m := &register.ColumnMap{Name: "statements", Makes: "Evidence", Format: "json", Rows: "/export/items",
 		Columns: []register.MapColumn{{Field: "control", Column: "control", Of: "Control"},
-			{Field: "outcome", Column: "result"}, {Field: "at", Column: "checked"}, {Field: "attested", Column: "by", ID: true}}}
+			{Field: "outcome", Column: "result"}, {Field: "at", Column: "checked"}}}
 	res := w.ingest(t, person, Input{Format: FormatJSON, Body: body, Map: m})
 	entries, _, err := w.reg.List(register.KindEvidence, 0, 10)
 	if err != nil || len(entries) != 2 {

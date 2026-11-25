@@ -211,3 +211,53 @@ func TestCellsAsTheyAreKept(t *testing.T) {
 		}
 	}
 }
+
+// A table does not say who decided, who read a policy, who stated how a
+// control stood, or what a metric was. A Decision, an Acknowledgement and a
+// MetricValue are never changed once written, and are made by what they
+// record: a table read into one would stand for good, naming a decider or
+// a reader who never acted, or a figure nothing computed. A statement read
+// from a table is the person's who brings the file, and a column naming
+// somebody else as its maker is refused.
+func TestMapRefusesWhatATableCannotSay(t *testing.T) {
+	for kind, field := range map[string]string{"Decision": "title", "Acknowledgement": "at", "MetricValue": "at"} {
+		m := register.ColumnMap{Name: "x", Makes: kind, Format: "csv",
+			Columns: []register.MapColumn{{Field: field, Column: "When"}}}
+		if err := register.Validate(m); err == nil {
+			t.Errorf("a map that reads a table into %s records is accepted", kind)
+		}
+	}
+	forged := register.ColumnMap{Name: "statements", Makes: "Evidence", Format: "json",
+		Columns: []register.MapColumn{{Field: "control", Column: "control", Of: "Control"}, {Field: "outcome", Column: "result"},
+			{Field: "at", Column: "checked"}, {Field: "attested", Column: "by", ID: true}}}
+	if err := register.Validate(forged); err == nil || !strings.Contains(err.Error(), "attested") {
+		t.Errorf("a map that reads who stated it from a column is accepted: %v", err)
+	}
+
+	w := newWorld(t, false)
+	body := []byte(`[{"control":"AC-01","result":"pass","checked":"2026-11-01","by":"d00000000000000000000000000000ff"}]`)
+	m := &register.ColumnMap{Name: "statements", Makes: "Evidence", Format: "json",
+		Columns: []register.MapColumn{{Field: "control", Column: "control", Of: "Control"}, {Field: "outcome", Column: "result"},
+			{Field: "at", Column: "checked"}}}
+	w.ingest(t, person, Input{Format: FormatJSON, Body: body, Map: m})
+	entries, _, err := w.reg.List(register.KindEvidence, 0, 10)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("%d evidence records, %v", len(entries), err)
+	}
+	if ev := entries[0].Record.(register.Evidence); ev.Attested != person.Subject {
+		t.Errorf("a statement brought by %s is attested by %s", person.Subject, ev.Attested)
+	}
+	// Read again to be checked, the file yields what it did: the person
+	// it was read as is kept with its seal.
+	if checks, err := w.g.Verify(); err != nil || len(checks) != 1 || !checks[0].OK() || checks[0].Replay != "same" {
+		t.Errorf("the statements' file does not check: %+v, %v", checks, err)
+	}
+	nameless := person
+	nameless.Subject = ""
+	w2 := newWorld(t, false)
+	w2.confirm(t, m)
+	if _, err := w2.g.Ingest(nameless, "", Input{Format: FormatJSON, Body: body, Map: m}); !errors.Is(err, ErrUnreadable) ||
+		!strings.Contains(err.Error(), "pseudonym") {
+		t.Errorf("a statement brought by somebody the surface names by no pseudonym is read: %v", err)
+	}
+}
